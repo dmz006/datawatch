@@ -2349,6 +2349,20 @@ The platform context is a short section of text that tells every session what da
 
 Set it on the **Platform context** card in Settings, with `configure platform_context enabled on|off` or `configure platform_context note <text>` on the comm channel, or read it with the `platform_context_status` MCP tool. See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#what-a-session-is-told-about-datawatch).
 
+### RTK instructions
+
+The RTK instructions are the short block of text that tells a session to put `rtk` (Rust Token Killer) in front of its shell commands so the output is compressed before it reaches the model. The block is delimited by the marker lines `<!-- rtk-instructions -->` and `<!-- /rtk-instructions -->`. By default datawatch delivers it through the [untracked session context file](#untracked-session-context-file), and it never writes it into `AGENT.md` or `CLAUDE.md`. The setting `rtk.write_rules_files` (default `false`) restores the old behaviour for the RTK block and for the memory instructions and cross-session communication rule too: they are merged into the tracked [rules files](#rules-files) instead, together with a refresh of the `# Session Guardrails` header, and the untracked file no longer carries them. The session record's `rtk_instructions_delivered` field is `true` once the text is in place by either route.
+
+At daemon start a cleanup pass removes old RTK, memory and cross-session blocks from a tracked rules file only when those blocks are the file's sole difference from the committed version — the file is tracked, has one plain unstaged modification, and is byte-identical to `git show HEAD:<file>` without them. Otherwise the file is left untouched and one warning alert per worktree names it. The pass is skipped while `rtk.write_rules_files` is on. Set the setting in Settings → General → **RTK (Token Savings)**, in `config.yaml`, with `PUT /api/config`, `datawatch config set`, the `config_set` MCP tool or `configure rtk.write_rules_files=true` on the comm channel. See the RTK how-to, [rtk-integration.md](rtk-integration.md#where-the-rtk-instructions-go).
+
+### Rules files
+
+The rules files are the files that carry a project's working rules: `AGENT.md` and `CLAUDE.md` in the project directory, and the file the rules and context policy names (see [Rules and context](#rules-and-context)). People write them; the daemon does not. By default the daemon never writes into them: it does not create them, does not refresh their `# Session Guardrails` header, and does not append the RTK instructions, the memory instructions, the cross-session communication rule or the platform context — all of those go to the [untracked session context file](#untracked-session-context-file) — and the single setting `rtk.write_rules_files` is what turns the old merge back on — and an Automaton worker must not add checkpoint or progress entries to them (see [Worker checkpoint rule](#worker-checkpoint-rule)). A change to the project rules file is also a [protected path](#protected-paths) by default.
+
+### Untracked session context file
+
+The untracked session context file is `CLAUDE.local.md` in a project directory: the per-session file through which datawatch hands a claude-code session its [platform context](#platform-context), its [RTK instructions](#rtk-instructions), its memory instructions and its cross-session communication rule, each in its own marked block. In a git repository the filename is added to the repository's `info/exclude` list, a per-clone ignore list that is not itself tracked, so writing it never changes `git status` and the file cannot reach a commit. Text you write outside the marked blocks is kept, and the file is deleted when nothing is left in it. A `CLAUDE.local.md` that the project already tracks is never written to.
+
 
 ### Worker session profile
 
