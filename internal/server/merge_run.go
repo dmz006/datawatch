@@ -23,6 +23,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/deploy"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 )
@@ -257,7 +258,19 @@ func (s *Server) mergeShipRunner() mergepipeline.ShipRunner {
 	if s.mergeShip != nil {
 		return s.mergeShip
 	}
-	return mergepipeline.ExecShipRunner{}
+	return deployShipRunner(s.statePath(), s.deployConfig(), s.restartSource())
+}
+
+// deployShipRunner is the production ShipRunner with the autonomous.deploy
+// block wired in: an empty block skips the deploy step, a set one runs the
+// deploy sequence with the daemon's session restart source.
+func deployShipRunner(dataDir string, deployCfg config.DeployConfig, restart deploy.RestartSource) mergepipeline.ExecShipRunner {
+	return mergepipeline.ExecShipRunner{
+		DeployConfig: deployCfg,
+		NewDeploy: func(dir string, c config.DeployConfig) *deploy.Runner {
+			return newDeployRunner(dir, dataDir, c, restart)
+		},
+	}
 }
 
 // mergeNotifier delivers the notify built-in's message through the daemon's
@@ -331,4 +344,39 @@ func (s *Server) mergePipelineConfig() config.MergePipelineConfig {
 		return config.MergePipelineConfig{}
 	}
 	return s.cfg.Autonomous.MergePipeline.Clone()
+}
+
+// deployConfig returns the operator's autonomous.deploy block.
+func (s *Server) deployConfig() config.DeployConfig {
+	if s.cfg == nil {
+		return config.DeployConfig{}
+	}
+	return s.cfg.Autonomous.Deploy.Clone()
+}
+
+// noFinalGateDrain reports no running final-gate task: the daemon has no
+// final-gate counter to read yet, so the drain wait never blocks.
+type noFinalGateDrain struct{}
+
+func (noFinalGateDrain) RunningFinalGate(context.Context) (int, error) { return 0, nil }
+
+// noRestartRecord records nothing about sessions or leases before a restart.
+type noRestartRecord struct{}
+
+func (noRestartRecord) RunningSessionIDs(context.Context) ([]string, error) { return nil, nil }
+func (noRestartRecord) HeldLeaseCount(context.Context) (int, error)         { return 0, nil }
+
+// newDeployRunner builds the deploy sequence Runner for dir.
+func newDeployRunner(dir, data string, cfg config.DeployConfig, restart deploy.RestartSource) *deploy.Runner {
+	if restart == nil {
+		restart = noRestartRecord{}
+	}
+	return &deploy.Runner{
+		Config: cfg, Dir: dir, DataDir: data,
+		Cmd:     deploy.ExecCommandRunner{},
+		Drain:   noFinalGateDrain{},
+		Clock:   deploy.SystemClock{},
+		Store:   deploy.FileStore{Path: filepath.Join(data, "deploy", "state.json")},
+		Restart: restart,
+	}
 }

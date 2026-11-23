@@ -1394,6 +1394,18 @@ Post-ship hooks are the small steps a project runs after a merge pipeline's push
 
 The operator guide is [howto/post-ship-hooks.md](howto/post-ship-hooks.md).
 
+### Deploy after ship
+
+After a release ships the daemon can build, install, restart and health check itself. Every step is a setting under `autonomous.deploy` (`build_command`, `install_command`, `binary_path`, `restart_command`, `health_check`, `drain_timeout` default `10m`, `health_timeout` default `2m`) and an empty one does nothing, so nothing deploys until you set it up. The outcomes are done, skipped (nothing configured), deferred (final-gate tasks still running after `drain_timeout`), rolled back (the new binary failed its health check, lost a session or lost a capacity lease, so the previous binary is restored, the daemon restarts again and you are asked) and `rollback_failed` (the restore or the second restart failed; no further automatic action, and you are asked). The operator guide is [howto/deploy-after-ship.md](howto/deploy-after-ship.md).
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` > `autonomous:` > `deploy:` |
+| **CLI** | `datawatch config set autonomous.deploy.<key> <value>`; `datawatch autonomous deploy show`; `datawatch autonomous deploy run` |
+| **Web UI** | Settings > Automation > **Deploy** card (settings, last outcome, **Run now**) |
+| **REST API** | `PUT /api/config` with `{"autonomous.deploy.<key>": "value"}`; `GET /api/autonomous/deploy`; `POST /api/autonomous/deploy/run` |
+| **Comm channel** | `configure autonomous.deploy.<key>=<value>`; `autonomous deploy [show]`; `autonomous deploy run` |
+
 ### Onboarding report
 
 `datawatch automation onboarding-report` (also the PWA card, the `onboarding_report` tool, the chat verb `onboarding-report` and `GET /api/automation/onboarding-report`) lists what is configured, what is missing and what to try next. It runs six checks (`backends`, `models`, `projects`, `channels`, `memory`, `merge_pipeline`) and reads only configuration; it changes nothing. `onboarding_report.enabled` (default on) turns it off, `onboarding_report.disabled_checks` leaves chosen checks out, and `onboarding_report.include_next_steps` (default on) adds the suggestions. The operator guide is [howto/onboarding-report.md](howto/onboarding-report.md).

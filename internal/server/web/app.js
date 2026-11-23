@@ -17146,6 +17146,15 @@ function settingsSectionHeader(key, title, docsPath) {
 // and target-choice order; reproduced here, not re-derived.
 const DOCS_DEFINITIONS = 'datawatch-definitions.md';
 const DOCS_LINKS_BY_KEY = {
+  // Deploy after ship: the card and each deploy setting
+  'autonomous.deploy.build_command': DOCS_DEFINITIONS + '#autonomous-deploy-build-command',
+  'autonomous.deploy.install_command': DOCS_DEFINITIONS + '#autonomous-deploy-install-command',
+  'autonomous.deploy.binary_path': DOCS_DEFINITIONS + '#autonomous-deploy-binary-path',
+  'autonomous.deploy.restart_command': DOCS_DEFINITIONS + '#autonomous-deploy-restart-command',
+  'autonomous.deploy.health_check': DOCS_DEFINITIONS + '#autonomous-deploy-health-check',
+  'autonomous.deploy.drain_timeout': DOCS_DEFINITIONS + '#autonomous-deploy-drain-timeout',
+  'autonomous.deploy.health_timeout': DOCS_DEFINITIONS + '#autonomous-deploy-health-timeout',
+  deploy_card_title: DOCS_DEFINITIONS + '#deploy-after-ship',
   // Screen headers
   view_sessions: DOCS_DEFINITIONS + '#sessions-list',
   view_session_detail: DOCS_DEFINITIONS + '#inside-a-session-terminal-area',
@@ -17581,6 +17590,11 @@ function supervisorLoopDocsLink(key) {
   const rest = key.slice('supervisor_loop.'.length).replace(/[._]+/g, '-');
   return DOCS_DEFINITIONS + '#supervisor-loop-' + rest;
 }
+// The Deploy card and its settings map to the Deploy after ship section; the
+// per-setting keys have their own entries in DOCS_LINKS_BY_KEY above.
+const DOCS_DEPLOY_LINKS = [
+  [['autonomous.deploy.', 'settings_deploy_', 'deploy_'], DOCS_DEFINITIONS + '#deploy-after-ship'],
+];
 
 // Mirrors DocsLinks.kt's forKey(): exact key match first, then the same
 // 4 dynamic-prefix fallbacks (per-panel stats cards, per-backend config
@@ -17600,6 +17614,9 @@ function docsLinkForKey(key) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   for (const [prefixes, link] of DOCS_MERGE_PIPELINE_LINKS) {
+    if (prefixes.some(p => key.startsWith(p))) return link;
+  }
+  for (const [prefixes, link] of DOCS_DEPLOY_LINKS) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   for (const [prefixes, link] of DOCS_ONBOARDING_REPORT_LINKS) {
@@ -27414,6 +27431,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_shadow.enabled', label: 'Merge shadow (the finish-time shadow merge plan; on by default)', labelKey: 'settings_merge_shadow_enabled', helpKey: 'settings_merge_shadow_enabled_help', helpDocs: 'howto/merge-shadow.md', type: 'toggle' },
     { key: 'autonomous.merge_shadow.gate_timeout', label: 'Merge shadow gate timeout (a Go duration per gate, default 20m)', labelKey: 'settings_merge_shadow_gate_timeout', helpKey: 'settings_merge_shadow_gate_timeout_help', helpDocs: 'howto/merge-shadow.md', type: 'text', placeholder: '20m' },
     { key: 'autonomous.merge_shadow.plan_keep', label: 'Merge shadow plans kept per project (whole number, minimum 1, default 200)', labelKey: 'settings_merge_shadow_plan_keep', helpKey: 'settings_merge_shadow_plan_keep_help', helpDocs: 'howto/merge-shadow.md', type: 'number', placeholder: '200', min: 1, step: 1 },
+    // Deploy — how a shipped build becomes a running daemon: build, install, restart, health check.
+    { label: 'Deploy', labelKey: 'settings_deploy_group', docsKey: 'deploy_card_title', type: 'group' },
+    { key: 'autonomous.deploy.build_command', label: 'Deploy build command', labelKey: 'settings_deploy_build_command', hintKey: 'settings_deploy_build_command_hint', docsKey: 'autonomous.deploy.build_command', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.install_command', label: 'Deploy install command', labelKey: 'settings_deploy_install_command', hintKey: 'settings_deploy_install_command_hint', docsKey: 'autonomous.deploy.install_command', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.binary_path', label: 'Deploy installed binary path', labelKey: 'settings_deploy_binary_path', hintKey: 'settings_deploy_binary_path_hint', docsKey: 'autonomous.deploy.binary_path', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.restart_command', label: 'Deploy restart command', labelKey: 'settings_deploy_restart_command', hintKey: 'settings_deploy_restart_command_hint', docsKey: 'autonomous.deploy.restart_command', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.health_check', label: 'Deploy health check', labelKey: 'settings_deploy_health_check', hintKey: 'settings_deploy_health_check_hint', docsKey: 'autonomous.deploy.health_check', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.drain_timeout', label: 'Deploy drain timeout', labelKey: 'settings_deploy_drain_timeout', hintKey: 'settings_deploy_drain_timeout_hint', docsKey: 'autonomous.deploy.drain_timeout', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.health_timeout', label: 'Deploy health timeout', labelKey: 'settings_deploy_health_timeout', hintKey: 'settings_deploy_health_timeout_hint', docsKey: 'autonomous.deploy.health_timeout', type: 'text', placeholder: '' },
     // Onboarding report — what is configured, what is missing and what to try next. The
     // list is comma separated; an id that names no check is ignored.
     // Tracing — how much of each agent's activity is recorded for the Trace card.
@@ -40433,6 +40459,78 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<div id="mergePipelineMessage" class="merge-pipeline-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;"></div></details>`;
   return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${confirmation}${releaseApproval}${statusBlock}${editor}</div>`;
 };
+// ── Deploy card ─────────────────────────────────────────────────────────────
+// deployCardHtml(view, opts) turns the decoded GET /api/autonomous/deploy body
+// into the Automation Overview card: the settings in effect (commands as text),
+// the phase and last outcome, the deferred reason and a Run now button. The
+// button is disabled while no build, install or restart command is set, and
+// while a merge or deploy is running. opts.result is the last Run now answer.
+// A missing view renders the placeholder; the loader owns the failed state.
+// Every value is escaped.
+const DEPLOY_FIELDS = [
+  ['build_command', 'deploy_field_build_command'],
+  ['install_command', 'deploy_field_install_command'],
+  ['binary_path', 'deploy_field_binary_path'],
+  ['restart_command', 'deploy_field_restart_command'],
+  ['health_check', 'deploy_field_health_check'],
+  ['drain_timeout', 'deploy_field_drain_timeout'],
+  ['health_timeout', 'deploy_field_health_timeout'],
+];
+window.deployCardHtml = function(view, opts) {
+  opts = opts || {};
+  const head = `<div class="cap-title">${escHtml(t('deploy_card_title'))}</div>`;
+  if (!view || typeof view !== 'object') {
+    return `<div class="prd-capacity-card deploy-card">${head}<div style="color:var(--text2);">${escHtml(t('deploy_placeholder'))}</div></div>`;
+  }
+  const st = (view.settings && typeof view.settings === 'object') ? view.settings : {};
+  const val = k => (typeof st[k] === 'string' ? st[k].trim() : '');
+  const rows = DEPLOY_FIELDS.map(([k, lk]) => {
+    const v = val(k);
+    return `<div class="deploy-setting" style="display:flex;flex-wrap:wrap;gap:2px 8px;min-width:0;padding:2px 0;">` +
+      `<span style="font-size:12px;color:var(--text2);">${escHtml(t(lk))}</span>` +
+      `<code class="deploy-value" style="font-size:12px;overflow-wrap:anywhere;min-width:0;">${escHtml(v || t('deploy_not_set'))}</code></div>`;
+  }).join('');
+  const settings = `<div class="deploy-settings" style="margin-top:6px;min-width:0;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('deploy_settings_heading'))}</div>${rows}</div>`;
+  let last = '';
+  if (view.phase || view.outcome) {
+    last = (view.phase ? `<div class="deploy-phase">${escHtml(t('deploy_phase_label', [view.phase]))}</div>` : '') +
+      (view.outcome ? `<div class="deploy-outcome">${escHtml(t('deploy_outcome_label', [view.outcome]))}</div>` : '');
+  } else {
+    last = `<div class="deploy-none" style="color:var(--text2);">${escHtml(t('deploy_none_recorded'))}</div>`;
+  }
+  const deferred = view.deferred && view.deferred.reason
+    ? `<div class="deploy-deferred" style="color:var(--warning,#a06b00);overflow-wrap:anywhere;">${escHtml(t('deploy_deferred_reason', [view.deferred.reason]))}</div>` : '';
+  const running = view.running ? `<div class="deploy-running" style="color:var(--text2);">${escHtml(t('deploy_running'))}</div>` : '';
+  const hasCommand = !!(val('build_command') || val('install_command') || val('restart_command'));
+  const disabled = !hasCommand || !!view.running;
+  const hint = hasCommand ? '' : `<div class="deploy-run-hint" style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(t('deploy_run_now_disabled_hint'))}</div>`;
+  const button = `<div style="margin-top:8px;"><button type="button" class="btn-primary deploy-run" style="font-size:11px;padding:3px 10px;"${disabled ? ' disabled' : ''} onclick="window.deployRunNow()">${escHtml(t('deploy_run_now'))}</button>${hint}` +
+    `<div id="deployMessage" class="deploy-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;">${escHtml(typeof opts.result === 'string' ? opts.result : '')}</div></div>`;
+  return `<div class="prd-capacity-card deploy-card" style="min-width:0;">${head}${settings}<div style="margin-top:6px;">${last}${deferred}${running}</div>${button}</div>`;
+};
+window._deployResult = '';
+window.deployRunNow = function() {
+  const msg = document.getElementById('deployMessage');
+  if (msg) { msg.textContent = t('deploy_run_started'); msg.style.color = 'var(--text2)'; }
+  return Promise.resolve(apiFetch('/api/autonomous/deploy/run', { method: 'POST' }))
+    .then(r => {
+      r = r || {};
+      const text = r.error ? t('deploy_run_failed', [r.error])
+        : (r.note ? t('deploy_run_result_note', [r.status || '', r.note]) : t('deploy_run_result', [r.status || '']));
+      window._deployResult = text;
+      const el = document.getElementById('deployMessage');
+      if (el) { el.textContent = text; el.style.color = r.error ? 'var(--error,#c00)' : 'var(--text2)'; }
+      const l = window._listLoaders && window._listLoaders.automation_deploy;
+      if (l && typeof l.retry === 'function') l.retry();
+    })
+    .catch(e => {
+      const text = t('deploy_run_failed', [(e && e.message) || String(e)]);
+      window._deployResult = text;
+      const el = document.getElementById('deployMessage');
+      if (el) { el.textContent = text; el.style.color = 'var(--error,#c00)'; }
+    });
+};
+
 // The card's state: the project shown, the registry names and the project
 // list. The loader reads it on every poll. When no project is chosen the
 // card preselects the first project of the list: an empty choice with no
@@ -48763,6 +48861,18 @@ function _automationMergePipelineLoader() {
       if (view && view.project) window._mergePipelineShown = view.project;
       return window.mergePipelineCardHtml(view, { models: window._mergePipelineModels, projects: window._mergePipelineProjects, mergeStatus: window._mergeStatus.body });
     },
+  });
+}
+
+// _automationDeployLoader reads the deploy settings and status beside the merge
+// pipeline card. It does not poll: Run now reads it again. Its failed state is
+// the list loader's banner.
+function _automationDeployLoader() {
+  return window._listLoaders.automation_deploy || listLoader({
+    key: 'automation_deploy', el: 'automationDeployCard', url: '/api/autonomous/deploy', pollMs: 0,
+    failedText: msg => t('deploy_failed', [msg]),
+    active: () => !!document.getElementById('automationDeployCard'),
+    render: view => window.deployCardHtml(view, { result: window._deployResult }),
   });
 }
 
