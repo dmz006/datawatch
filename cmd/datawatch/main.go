@@ -15887,7 +15887,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
 	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                            // BL357
 	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))              // BL358
-	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360
+	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360 — standalone stdio MCP: independent opener, safe via the locked re-read-and-merge in Put/Delete
 	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
