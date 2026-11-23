@@ -480,9 +480,11 @@ failed to be found) and an `action`: the next step it suggests.
   passed, and only your decision moves it on. The `cause` starts with "not
   judged" and names the backends that timed out, how many, and their limit (for
   example, "not judged: the judge timed out on 2 backend(s): ollama-a, ollama-b,
-  limit 30m0s"). Each judge attempt in the review state also lists its outcome,
-  its session id and the last output of that judge, the tail of what it printed
-  before the limit, so read that output to see how far the judge got. The
+  limit 30m0s"). The review state also lists each backend the judge tried with
+  its outcome. The session id and the last output of each judge that timed out
+  (the tail of what it printed before the limit) are on that attempt in the
+  Automaton's verdicts (`judge_attempts`), readable with `autonomous_prd_get`;
+  read that output to see how far the judge got. The
   `action` is one of two:
   - **`retry`** — every timed-out attempt came from a backend in the judge
     policy, so re-judging on the same judge order is the sensible next step.

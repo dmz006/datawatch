@@ -273,10 +273,12 @@ when the completion judge timed out on every backend in the judge policy. No
 verdict was made, so nothing about the work is judged good or bad.
 
 - **The review state reads `timed_out`.** It uses "not judged" wording: the
-  Automaton was not judged, and the review state lists each backend tried, its
-  outcome (`timed_out`, `no_slot` or `could_not_start`), the session id and the
-  last output of each judge that timed out. Read the last output first: it shows
-  how far the judge got.
+  Automaton was not judged. The review state lists each backend the judge tried
+  and its outcome (`timed_out`, `no_slot` or `could_not_start`). The session id
+  and the last output of each judge that timed out are on that judge's attempt
+  in the Automaton's `verdicts` (`judge_attempts`), readable with
+  `autonomous_prd_get` or `GET /api/autonomous/prds/{id}`. Read the last output
+  first: it shows how far the judge got.
 - **Run the review again. The same branch head is judged again.** No new commit
   is needed, and a stored verdict is never reused because a timed-out judge stores
   none. Every task must be `completed` (or `cancelled`, with at least one
