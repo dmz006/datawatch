@@ -11,12 +11,11 @@ import (
 
 // The dormant features tool is read-only and proxies GET
 // /api/autonomous/dormant-features. It takes no arguments; one that is
-// supplied is refused rather than ignored. Nothing here turns a feature on:
-// a setting is changed only through the existing config set paths.
+// supplied is refused rather than ignored.
 
 func (s *Server) toolAutonomousDormantFeatures() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_dormant_features",
-		mcpsdk.WithDescription("List the dormant features: the shipped Automaton features that are switched off or unused on this daemon, each with what it does and where it is configured. Lists only; it never changes a setting, starts a feature or runs any Automaton. Takes no arguments; any argument is refused. Read-only: change a feature's setting with the config set tool. The same object as GET /api/autonomous/dormant-features."),
+		mcpsdk.WithDescription("List the Automata features that are shipped but currently dormant (switched off or in report mode), so an operator can see what is available to turn on. Takes no arguments; any argument is refused. Read-only: it only lists and never changes a setting (change a setting with the config set tool). The same object as GET /api/autonomous/dormant-features."),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
