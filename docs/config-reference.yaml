@@ -358,8 +358,10 @@ tracing:
   # Maximum bytes of a tool-call argument summary stored per event.
   # 0 or unset reads 512; allowed range 0..1048576.
   arg_cap_bytes: 512
-  # Days trace events are kept. 0 or unset reads 14; allowed range 0..3650.
-  retention_days: 14
+  # Days trace events are kept. 0 = keep forever (the default);
+  # a positive number of days prunes by age (the daemon runs a prune pass
+  # once a day). Allowed range 0..3650.
+  retention_days: 0
   # Per-backend switches, e.g. {pi: false}. A backend not listed is traced.
   backends: {}
 
@@ -1006,6 +1008,13 @@ rtk:
   auto_update: false
   # Seconds between version checks against GitHub releases (default: 86400 = daily, 0 = disabled)
   update_check_interval: 86400
+  # The one gate for everything the daemon writes into the project's tracked
+  # AGENT.md / CLAUDE.md at session start (legacy behaviour): creating the file,
+  # refreshing its "# Session Guardrails" header, and appending the RTK, memory and
+  # cross-session sections. Default false: the daemon never writes those files and the
+  # three sections are delivered through the untracked CLAUDE.local.md instead,
+  # leaving no change in git status.
+  write_rules_files: false
 
 # ── Pipelines (Session Chaining) ──
 # Chain tasks in a DAG with parallel execution and dependency tracking.
@@ -2123,6 +2132,11 @@ autonomous:
   #   judges the lanes from the readable hosts. An absent key reads 10; an
   #   explicit 0 never treats an unreachable host as down and survives a round
   #   trip. Negative or non-integer values are refused.
+  # stalled_merge_minutes: whole number >= 0, default 30. How many whole
+  #   minutes a task-branch merge may stay pending without progress before the
+  #   Automaton stops holding its lane; the stalled merge is alerted and
+  #   retried. An absent key reads 30; an explicit 0 turns the rule off and
+  #   survives a round trip. Negative or non-integer values are refused.
   # require_confirmed_proposal: bool, default true (an absent key reads true).
   #   An implementation Automaton is taken only when a proposal file it names
   #   (docs/plans/<name>.md, read from the base repository) has a line starting
@@ -2172,6 +2186,7 @@ autonomous:
     count_verifier_wait: true
     stale_after_hours: 72
     host_down_after_minutes: 10
+    stalled_merge_minutes: 30
     require_confirmed_proposal: true
     check_main_carries: true
     require_worktree: true
