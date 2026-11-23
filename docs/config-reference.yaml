@@ -1070,6 +1070,10 @@ whisper:
   # 0 disables chunking; otherwise the value must be >= 30 (whisper's own window is 30 s).
   # Other values are ignored when set through the API. Local whisper backend only.
   chunk_seconds: 120
+  # Fixed deadline (seconds) for one voice transcription request.
+  # 0 (default) = automatic: 5 minutes, or twice the audio length when longer, capped at 30 minutes.
+  # A positive value replaces the automatic deadline; it must be >= 30 (other values are ignored when set through the API).
+  timeout_seconds: 0
 
 # ── Vision Image Description ──
 # Describes image attachments from messaging backends (Signal, Telegram) as text.
@@ -2842,6 +2846,14 @@ autonomous:
     # re-plan it the way the planning question's fix answer does; otherwise it is
     # reported once with an alert and left alone. off, report or on. Default: report.
     planning: report
+    # One-time: an archived Automaton whose branch still has unmerged commits is
+    # moved back to its pre-archive status (completed, or cancelled if it was
+    # cancelled before the archive), with one decision (unarchive_unmerged) and
+    # one alert. Operator archives and cancellations are never touched, and a
+    # branch state that cannot be checked is left archived. The pass runs once
+    # and never again. off does nothing; report records what it would do until
+    # it does; on performs the one pass. Default: report.
+    unarchive: report
     # Seconds a stuck state must persist before it is reported or repaired.
     # Whole number, 0 or more; 0 means no grace. Default: 300.
     grace_seconds: 300
@@ -4419,6 +4431,14 @@ autonomous:
   #                  up to auto_fix_retries, then mark the task failed.
   #   max_failures - 3 by default; 4 or more is allowed, the minimum is 1.
   #   steps        - up to 8 entries of backend, model, effort, attempts.
+  # A model-less claude-code step runs on the daemon's default model (sonnet;
+  # haiku for a mechanical task kind) rather than the backend's built-in or
+  # the account's default. While the usage back-off guard has a step's backend
+  # backed off, that step is skipped for the attempt (the escalation never
+  # starts a new session on a backed-off backend; the attempt runs on the
+  # task's normally resolved worker instead), and the step, the model and
+  # every skip are recorded on the attempt record and in the decision log as
+  # a failure_escalation entry naming the step's backend and model.
   failure_escalation:
     enabled: true
     max_failures: 3

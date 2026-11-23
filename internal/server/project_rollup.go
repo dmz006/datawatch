@@ -89,6 +89,10 @@ type rollupAutomaton struct {
 	Tasks        rollupTasks `json:"tasks"`
 	Points       float64     `json:"points"`
 	SessionIDs   []string    `json:"session_ids"`
+	// MergeState is the derived, read-only merge state (finished_not_merged
+	// when a finished record's branch holds commits that never landed).
+	// Omitted when the record has none.
+	MergeState string `json:"merge_state,omitempty"`
 }
 
 // rollupGroup is one arc, the unassigned bucket, or the whole-project total.
@@ -149,6 +153,9 @@ type rollupInput struct {
 	// landed (zero time = unknown). It is asked only for a cancelled or
 	// archived Automaton with no shipped record. Nil means not merged.
 	Merged func(e autonomous.SummaryEntry) (merged bool, at time.Time)
+	// MergeState returns the derived merge_state of one Automaton (the same
+	// read-only value the list and detail views show). Nil hides the field.
+	MergeState func(e autonomous.SummaryEntry) string
 	// ReleaseHeld says whether a release plan holds an Automaton. An Automaton
 	// no arc holds that a release plan holds is attributed to that plan, so it
 	// is left out of the unassigned group. Nil means no release plans.
@@ -286,6 +293,9 @@ func rollupAutomatonFor(p *autonomous.SummaryEntry, auto string, in rollupInput,
 	}
 	if ids := rollupSessionIDs(p, in.ExtraSessionIDs); ids != nil {
 		ra.SessionIDs = ids
+	}
+	if in.MergeState != nil {
+		ra.MergeState = in.MergeState(*p)
 	}
 	finished, finishedAt := rollupFinished(p, in)
 	ra.Finished = finished

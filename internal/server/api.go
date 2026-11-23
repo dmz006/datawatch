@@ -7159,11 +7159,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// daemon was honoring the YAML value (e.g. "ollama" → BL201
 			// inheritance silently routed through OpenWebUI's audio API).
 			// Operator-flagged after Chrome PWA audit.
-			"backend":       s.cfg.Whisper.Backend,
-			"model":         s.cfg.Whisper.Model,
-			"language":      s.cfg.Whisper.Language,
-			"venv_path":     s.cfg.Whisper.VenvPath,
-			"chunk_seconds": s.cfg.Whisper.ChunkSeconds,
+			"backend":         s.cfg.Whisper.Backend,
+			"model":           s.cfg.Whisper.Model,
+			"language":        s.cfg.Whisper.Language,
+			"venv_path":       s.cfg.Whisper.VenvPath,
+			"chunk_seconds":   s.cfg.Whisper.ChunkSeconds,
+			"timeout_seconds": s.cfg.Whisper.TimeoutSeconds,
 		},
 		"vision": map[string]interface{}{
 			"enabled":         s.cfg.Vision.Enabled,
@@ -9965,6 +9966,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && (n == 0 || n >= 30) {
 				cfg.Whisper.ChunkSeconds = n
 			}
+		case "whisper.timeout_seconds":
+			// 0 keeps the automatic deadline; a positive value is a fixed
+			// deadline. Below 30 s no transcription could finish, so 1 to
+			// 29 is skipped, not stored.
+			if n, ok := toInt(v); ok && (n == 0 || n >= 30) {
+				cfg.Whisper.TimeoutSeconds = n
+			}
 		// v4.0.8 (B38) — autonomous / plugins / orchestrator keys.
 		// Without these cases the PWA + mobile-client save forms
 		// for these sections silently no-op: the handler returns
@@ -10154,7 +10162,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
 		case "autonomous.housekeeping_repairs.task_chain", "autonomous.housekeeping_repairs.advance_judge",
 			"autonomous.housekeeping_repairs.lane_fill", "autonomous.housekeeping_repairs.leftovers",
-			"autonomous.housekeeping_repairs.planning",
+			"autonomous.housekeeping_repairs.planning", "autonomous.housekeeping_repairs.unarchive",
 			"autonomous.housekeeping_repairs.grace_seconds":
 			// Validated in handlePutConfig before this runs. The Repairer reads
 			// the block live through its Settings hook, so no restart is needed.

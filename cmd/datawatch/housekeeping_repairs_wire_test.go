@@ -116,13 +116,13 @@ func TestWireHousekeepingRepairs_ReportOnOffModes(t *testing.T) {
 
 // TestWireSupervisorLoop_InstallsRepairer proves the daemon's own start-up
 // function (not only the helper) installs the Repairer: after it runs, the
-// Manager read returns the four groups with their modes.
+// Manager read returns the six groups with their modes.
 func TestWireSupervisorLoop_InstallsRepairer(t *testing.T) {
 	coord, m, aAPI, cfg := newHousekeepingWiringRig(t)
 	wireSupervisorLoop(coord, m, aAPI, cfg, nil, nil, nil)
 	v := m.HousekeepingRepairsView()
-	if len(v.Groups) != 5 {
-		t.Fatalf("view has %d groups, want 5", len(v.Groups))
+	if len(v.Groups) != 6 {
+		t.Fatalf("view has %d groups, want 6", len(v.Groups))
 	}
 	for _, g := range v.Groups {
 		if g.Mode != "report" {

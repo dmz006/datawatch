@@ -116,7 +116,7 @@ can retry it.
 |---|---|---|
 | 503 "voice transcription not enabled" | Whisper not configured | `datawatch setup whisper` |
 | 413 | Upload larger than 25 MB | Record a shorter clip |
-| 502, `cause` `timeout` | Ran past the deadline (5 minutes, or twice the audio length, capped at 30 minutes) | Trim the recording, pick a smaller whisper model, or lower `whisper.chunk_seconds` |
+| 502, `cause` `timeout` | Ran past the deadline (5 minutes, or twice the audio length, capped at 30 minutes, or `whisper.timeout_seconds` when set) | Trim the recording, pick a smaller whisper model, lower `whisper.chunk_seconds`, or raise `whisper.timeout_seconds` |
 | 502, `cause` `killed` | whisper ended by SIGKILL, usually the kernel out-of-memory killer | Use `small` or `base` on hosts with 8 GiB of RAM or less; lower `whisper.chunk_seconds` |
 | 502, `cause` `out_of_memory` | whisper reported it ran out of memory | Same as `killed` |
 | 502, `cause` `ffmpeg_missing` | `ffmpeg` is not installed or not on PATH | Install `ffmpeg` on the daemon host |

@@ -4212,7 +4212,7 @@ type AutonomousConfig struct {
 	AutoTags AutoTagsConfig `yaml:"auto_tags" json:"auto_tags"`
 
 	// HousekeepingRepairs — one off|report|on mode per repair group
-	// (task_chain, advance_judge, lane_fill, leftovers, planning; default report) and
+	// (task_chain, advance_judge, lane_fill, leftovers, planning, unarchive; default report) and
 	// the grace seconds. See housekeeping_repairs.go.
 	HousekeepingRepairs HousekeepingRepairsConfig `yaml:"housekeeping_repairs" json:"housekeeping_repairs"`
 
@@ -8223,6 +8223,14 @@ type WhisperConfig struct {
 	// disables chunking. Valid values are 0 or >= 30 (whisper's own
 	// window is 30 s). Used only by the `whisper` backend.
 	ChunkSeconds int `yaml:"chunk_seconds" json:"chunk_seconds"`
+
+	// TimeoutSeconds is a fixed deadline, in seconds, for one voice
+	// transcription request. 0 (the default) keeps the automatic deadline:
+	// 5 minutes, or twice the audio length when that is longer, capped at
+	// 30 minutes. A positive value replaces the automatic deadline, so a
+	// very long recording on a slow host can be given more than 30 minutes
+	// (or a tight host less). Valid values are 0 or >= 30.
+	TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
 
 	// Endpoint is the base URL for the `openai` / `openai_compat`
 	// backend (e.g. "https://api.openai.com/v1" or

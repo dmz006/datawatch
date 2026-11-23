@@ -4081,7 +4081,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     const links = sessions.length ? `<div style="margin-top:2px;">${sessions.map(sessionLink).join('')}</div>` : '';
     return `<div class="project-automaton" data-automaton="${escHtml(a.id)}" style="margin:6px 0 6px 12px;">
       <a href="#" class="project-automaton-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(a.id)});return false;`)}" style="font-size:14px;">${escHtml(title)}</a>
-      <span style="color:var(--text2);font-size:12px;"> ${escHtml(a.status || '')}${pts(a.points)}</span>${links}</div>`;
+      <span style="color:var(--text2);font-size:12px;"> ${escHtml(a.status || '')}${pts(a.points)}</span>${renderMergeStateBadge(a)}${links}</div>`;
   };
   const automataList = list => list.map(automatonHTML).join('');
   const cardState = _projectsRollupCardState(roll, rollErr);
@@ -5138,7 +5138,7 @@ function _projectGanttInnerHTML(g, ui) {
         + (sp.running ? `<span class="project-gantt-now" style="right:0;">${escHtml(t('projects_gantt_running'))}</span>` : '');
     }
     const focusBtn = ui.focusButtons && r.kind === 'arc' ? projectsFocusButtonHtml(r.id, label, 'project') : '';
-    rows += `<div class="project-gantt-row" data-kind="${escHtml(r.kind)}" data-key="${escHtml(it.key)}"><div class="project-gantt-label" style="padding-left:${pad}px;${r.kind === 'task' ? 'color:var(--text2);' : 'font-weight:600;'}">${toggle}<span class="project-gantt-label-text" title="${escHtml(label)}">${escHtml(label)}</span>${focusBtn}</div><div class="project-gantt-track">${track}</div></div>`;
+    rows += `<div class="project-gantt-row" data-kind="${escHtml(r.kind)}" data-key="${escHtml(it.key)}"><div class="project-gantt-label" style="padding-left:${pad}px;${r.kind === 'task' ? 'color:var(--text2);' : 'font-weight:600;'}">${toggle}<span class="project-gantt-label-text" title="${escHtml(label)}">${escHtml(label)}</span>${r.kind === 'automaton' ? renderMergeStateBadge(r) : ''}${focusBtn}</div><div class="project-gantt-track">${track}</div></div>`;
   });
   const note = capped.total > capped.items.length
     ? `<div style="color:var(--text2);font-size:12px;margin-top:4px;">${escHtml(t('projects_gantt_bounded', [capped.items.length, capped.total]))}</div>` : '';
@@ -23616,6 +23616,20 @@ function renderPlanningFailureBadge(prd) {
   return `<span class="planning-failure-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid #ef4444;" title="${escHtml(pf.reason)}">${escHtml(t('planning_failure_badge') || 'Planning failed')}</span>`;
 }
 
+// Badge on an Automata card for a finished record whose working branch still
+// has commits that never landed on the base branch: the read-only
+// merge_state field the daemon derives (never persisted). Only the
+// unfinished value carries this badge; an absent field renders nothing.
+function mergeStateHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('merge_state_help_link');
+  return `<a href="/diagrams.html#docs/datawatch-definitions.md#automaton-merge-state" target="_blank" rel="noopener noreferrer" class="docs-link merge-state-help" onclick="event.stopPropagation()" title="${escHtml(label)}">?</a>`;
+}
+function renderMergeStateBadge(prd) {
+  if (!prd || prd.merge_state !== 'finished_not_merged') return '';
+  return `<span class="merge-state-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(217,119,6,0.15);color:#d97706;border:1px solid #d97706;white-space:nowrap;" title="${escHtml('Branch work not merged into the base branch (merge_state: finished_not_merged)')}">${escHtml(t('prd_merge_state_badge') || 'Branch not merged')}${mergeStateHelpLink()}</span>`;
+}
+
 // The open planning question per Automaton id, fetched from the ordinary
 // question list (asked_by planning, prd_id = the Automaton).
 window._planningQuestionByPrd = window._planningQuestionByPrd || {};
@@ -23888,7 +23902,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${renderMergeStateBadge(prd)}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -27489,6 +27503,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.housekeeping_repairs.lane_fill', label: 'Lane fill repairs', labelKey: 'settings_housekeeping_lane_fill', helpKey: 'settings_housekeeping_lane_fill_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.planning', label: 'Planning repairs', labelKey: 'settings_housekeeping_planning', helpKey: 'settings_housekeeping_planning_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.leftovers', label: 'Leftover repairs', labelKey: 'settings_housekeeping_leftovers', helpKey: 'settings_housekeeping_leftovers_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.housekeeping_repairs.unarchive', label: 'Unarchive unmerged repairs', labelKey: 'settings_housekeeping_unarchive', helpKey: 'settings_housekeeping_unarchive_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     // Gate repair — the gate failure repair engine, one mode (off, report or on;
     // default report).
     { label: 'Gate repair', labelKey: 'settings_gate_repairs', hintKey: 'settings_gate_repairs_hint', type: 'group' },
@@ -27904,6 +27919,7 @@ const GENERAL_CONFIG_FIELDS = [
     // or directly in YAML.
     { key: 'whisper.language', label: 'Language — tracks PWA language (Settings → About). Override via CLI/YAML if needed.', type: 'readonly' },
     { key: 'whisper.venv_path', label: 'Python venv path (local whisper only)', type: 'text', placeholder: '.venv' },
+    { key: 'whisper.timeout_seconds', label: 'Transcription deadline per request (sec; 0=automatic, otherwise 30 or more)', type: 'number', placeholder: '0' },
     { key: 'whisper.chunk_seconds', label: 'Longest audio slice per local whisper run (sec; 0=no chunking, otherwise 30 or more)', type: 'number', placeholder: '120' },
     { key: 'whisper.test_button', label: 'Test transcription endpoint', type: 'button', action: 'testWhisperBackend' },
   ]},
@@ -35505,7 +35521,7 @@ function renderAutomataCard(prd, alsoInHtml) {
     statusHtml: (shippedChipHtml(prd) || statusPill(status)) + renderPrdPushState(prd),
     title: title,
     checkHtml: checkboxCell,
-    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${planProjectChipHtml(prd)}${parentLink}${pinMark}${watchMark}`,
+    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${renderMergeStateBadge(prd)}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${planProjectChipHtml(prd)}${parentLink}${pinMark}${watchMark}`,
     backend: [prd.backend, prd.model].filter(Boolean).join(' · '),
     progress: counts,
     progressLabel: t('work_tile_progress', [counts.done, counts.total]),
@@ -42755,8 +42771,8 @@ function _automationUnlandedWorkLoader() {
 // housekeepingRepairsCardHtml(data) draws GET /api/autonomous/housekeeping-repairs:
 // { grace_seconds, groups: [{group, mode, would, did, failed, skipped_unsafe}] }.
 // Each group shows its mode, what it would do (report mode) and what it did.
-const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers', 'planning'];
-const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers', planning: 'housekeeping_repairs_group_planning' };
+const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers', 'planning', 'unarchive'];
+const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers', planning: 'housekeeping_repairs_group_planning', unarchive: 'housekeeping_repairs_group_unarchive' };
 const HOUSEKEEPING_MODE_LABELS = { off: 'housekeeping_repairs_mode_off', report: 'housekeeping_repairs_mode_report', on: 'housekeeping_repairs_mode_on' };
 function _housekeepingRecs(list) {
   return (Array.isArray(list) ? list : []).filter(r => r && typeof r === 'object');
@@ -46087,6 +46103,16 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
     ? `<button class="btn-primary prd-action-btn prd-resume-btn" style="background:#10b981;color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'resume','POST',{actor:'operator'})" title="${escHtml(t('prd_btn_resume_title')||'Resume the run that the daemon restart parked')}">▶ ${escHtml(t('prd_btn_resume')||'Resume')}</button>` +
       `<span class="prd-park-reason" style="font-size:11px;color:var(--text2);flex-basis:100%;">${escHtml(prd.blocked_reason || parkDec.note || '')}</span>`
     : '';
+  // Re-review button — re-run this Automaton's completion rules review
+  // (re-judging the completion guardrail) for a record whose review is
+  // open to re-running: blocked (a stale block after the work moved on),
+  // or finished (completed/archived) with unmerged work and a review that
+  // is still pending, blocked, or passed on an older head. The server is
+  // the authority: a refused record comes back with the reason (already
+  // passed on this head, or the work has landed), shown in the toast.
+  const reReviewBtn = (status === 'blocked' || status === 'completed' || status === 'archived')
+    ? `<button class="btn-secondary prd-action-btn" style="background:rgba(96,165,250,0.15);color:var(--accent);" onclick="event.stopPropagation();reviewRejudge(${escHtml(idJ)},'')" title="${escHtml(t('prd_btn_rejudge_title')||'Re-run the completion review again (re-judge); a pass clears a stale block and a block flips the record back to blocked')}">&#10227; ${escHtml(t('prd_btn_rejudge')||'Re-review')}</button>`
+    : '';
   const editBtn = editMenuItems.length > 0
     ? `<div style="position:relative;display:inline-flex;"><button class="btn-icon prd-edit-overflow-btn" onclick="_toggleEditMenu(event,this)" title="${escHtml(t('prd_edit_menu_tip')||'Edit / Settings / Clone')}">⋯ ${escHtml(t('prd_btn_edit')||'Edit')}</button><div id="prdEditMenu" class="prd-edit-menu" style="display:none;">${editMenuItems.join('')}</div></div>`
     : '';
@@ -46166,7 +46192,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       ${_prdGeneratedArtefactsBlock(prd)}
       <div id="prdDecomposeLintSlot" class="prd-plan-coverage" style="display:none;margin-top:8px;"></div>
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
-        ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resumeBtn}${resetToDraftBtn}${buttons.join('')}
+        ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resumeBtn}${reReviewBtn}${resetToDraftBtn}${buttons.join('')}
         <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>
       </div>
       ${(terminal && status !== 'cancelled') ? `<div class="prd-detail-terminal-hint" style="font-size:11px;color:var(--text2);margin-top:6px;padding:0 2px;">${escHtml(t('prd_terminal_state_hint')||`This automaton is in terminal state (${status}). Only Clone-to-Template + Delete remain.`)}</div>` : ''}

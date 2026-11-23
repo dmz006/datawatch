@@ -86,6 +86,16 @@ func voiceTranscribeTimeout(audio time.Duration, known bool) time.Duration {
 	return d
 }
 
+// voiceDeadline resolves the transcription deadline for one request: the
+// operator's fixed whisper.timeout_seconds when it is positive, otherwise the
+// automatic deadline sized from the clip (voiceTranscribeTimeout).
+func voiceDeadline(s *Server, audio time.Duration, known bool) time.Duration {
+	if s != nil && s.cfg != nil && s.cfg.Whisper.TimeoutSeconds > 0 {
+		return time.Duration(s.cfg.Whisper.TimeoutSeconds) * time.Second
+	}
+	return voiceTranscribeTimeout(audio, known)
+}
+
 // transcribeSurface is the narrow interface the handler needs; the
 // full transcribe.Transcriber implements it. Defined here so server
 // tests can plug a fake without importing whisper/venv machinery.
@@ -224,7 +234,7 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 	// Size the transcription deadline from the (possibly transcoded) clip so
 	// a long recording on a slow host is not cut off by a flat budget.
 	audioLen, audioKnown := transcribe.AudioDuration(r.Context(), tmpPath)
-	ctx, cancel := context.WithTimeout(r.Context(), voiceTranscribeTimeout(audioLen, audioKnown))
+	ctx, cancel := context.WithTimeout(r.Context(), voiceDeadline(s, audioLen, audioKnown))
 	defer cancel()
 
 	transcribeStart := time.Now()
