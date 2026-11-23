@@ -681,14 +681,16 @@ are a distinct role in the verifier routing policy. Their backend list is
 `autonomous.judge_policy`, one attempt per backend; an empty list means the
 judges follow the verifier policy above. `autonomous.judge_timeout_seconds` is
 the time limit for one judge run, 1800 seconds by default, and the wait for a
-capacity slot does not count against it. When every backend in the judge policy
-has timed out, the Automaton is held in `needs_review` and an error alert lists
-every attempt. `autonomous.judge_size_threshold_lines` (default 400, `0` = off) is the
+capacity slot does not count against it. Above `autonomous.judge_size_threshold_lines`
+the limit grows by `autonomous.judge_timeout_per_thousand_lines_seconds` (default 600) for
+every 1,000 changed lines, capped at four times the base limit; `0` adds nothing. When every
+backend in the judge policy has timed out, the Automaton is held in `needs_review` and an
+error alert lists every attempt. `autonomous.judge_size_threshold_lines` (default 400, `0` = off) is the
 changed-line count (added plus deleted, on the Automaton branch against its merge
 base, lock files left out) above which the judges try `claude-code` first and the
 rest follow in their usual order, still one attempt per backend; the decision log
 names the rule and the line count. The settings are read and written with `GET/PUT /api/autonomous/config`
-(`judge_policy`, `judge_timeout_seconds`, `judge_size_threshold_lines`), MCP `autonomous_config_set`, the CLI
+(`judge_policy`, `judge_timeout_seconds`, `judge_size_threshold_lines`, `judge_timeout_per_thousand_lines_seconds`), MCP `autonomous_config_set`, the CLI
 `autonomous config-set --judge-policy --judge-timeout-seconds --judge-size-threshold-lines`, and the comm verbs
 `autonomous judge-policy` and `autonomous judge-policy-set`. The guide, with the
 modes, the alerts and how to resolve a hold, is [howto/judge-policy.md](../howto/judge-policy.md).
@@ -2672,7 +2674,7 @@ Five keys, one block, daemon-wide (there is no per-record override): every one i
 
 ### The dashboard card
 
-The dashboard carries a **Shipped** system card — it is in the factory layout and is re-added if removed, not deletable. `GET /api/dashboard/cards/shipped` (and the `data` field of the `shipped` entry in `GET /api/dashboard/cards`) returns the live per-status count plus the in-force settings, computed at read time. The PWA renders no shipped card, selection or chip yet; that client-side gap, and the Android/iOS build, are the parity item in [plans/2026-11-01-shipped-status-parity-issue.md](plans/2026-11-01-shipped-status-parity-issue.md).
+The dashboard carries a **Shipped** system card — it is in the factory layout and is re-added if removed, not deletable. `GET /api/dashboard/cards/shipped` (and the `data` field of the `shipped` entry in `GET /api/dashboard/cards`) returns the live per-status count plus the in-force settings, computed at read time. The PWA renders no shipped card, selection or chip yet; that client-side gap, and the Android/iOS build, are the parity item in [plans/2026-11-01-shipped-status-parity-issue.md](../plans/2026-11-01-shipped-status-parity-issue.md).
 
 ### The merge step
 
@@ -2685,7 +2687,7 @@ The dashboard carries a **Shipped** system card — it is in the factory layout 
 - It is not a per-record override; the settings are daemon-wide.
 - It never fails a merge; the merge step's record is best-effort.
 
-See also: the operator walk-through [howto/automata-shipped-status.md](../howto/automata-shipped-status.md), the [Shipped section of implementation.md](../implementation.md#shipped-state-autonomousshipped), the [Shipped entry of datawatch-definitions.md](../datawatch-definitions.md#shipped), the plan [plans/2026-11-01-shipped-status.md](plans/2026-11-01-shipped-status.md), and the companion-app parity issue [plans/2026-11-01-shipped-status-parity-issue.md](plans/2026-11-01-shipped-status-parity-issue.md).
+See also: the operator walk-through [howto/automata-shipped-status.md](../howto/automata-shipped-status.md), the [Shipped section of implementation.md](../implementation.md#shipped-state-autonomousshipped), the [Shipped entry of datawatch-definitions.md](../datawatch-definitions.md#shipped), the plan [plans/2026-11-01-shipped-status.md](../plans/2026-11-01-shipped-status.md), and the companion-app parity issue [plans/2026-11-01-shipped-status-parity-issue.md](../plans/2026-11-01-shipped-status-parity-issue.md).
 
 ## Configuration
 
