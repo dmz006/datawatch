@@ -112,8 +112,9 @@ The check is conservative. The spec must carry a merge signal (merge, rebase, la
 conflict, or a finished-branch phrase) and none of the work verbs (add, implement,
 create, write, fix, build, in the inflected forms the check lists). Any doubt keeps the spec as not
 merge-only, so the `docs_set` task stays. An extra docs task is the safe failure.
-When a merge-only Automaton skips it, the decompose log records
-`docs set task skipped: merge-only Automaton`.
+When a merge-only Automaton is decomposed, the daemon log gets the line
+`docs set task skipped: merge-only Automaton` for it. The line is written whenever the
+spec is merge-only, so it appears even when the `docs_set` task was already switched off.
 
 Before the change, a merge-only Automaton still received a `docs_set` task. That task
 could never produce a change, so the Automaton was blocked. A spec that adds any work
