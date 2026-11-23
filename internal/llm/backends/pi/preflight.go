@@ -49,7 +49,7 @@ func Preflight(ctx context.Context, client HTTPDoer, baseURL, model string) erro
 	if err != nil {
 		return fmt.Errorf("preflight %s model %q: %w", baseURL, model, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
 		return fmt.Errorf("preflight %s model %q: status %d: %s", baseURL, model, resp.StatusCode, strings.TrimSpace(string(snippet)))
