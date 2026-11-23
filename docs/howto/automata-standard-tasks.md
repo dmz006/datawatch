@@ -116,9 +116,10 @@ When a merge-only Automaton is decomposed, the daemon log gets the line
 `docs set task skipped: merge-only Automaton` for it. The line is written whenever the
 spec is merge-only, so it appears even when the `docs_set` task was already switched off.
 
-Before the change, a merge-only Automaton still received a `docs_set` task. That task
-could never produce a change, so the Automaton was blocked. A spec that adds any work
-keeps its `docs_set` task as before.
+Why the rule exists: a `docs_set` task on a merge-only spec has no feature behavior to
+document, so it could never produce a change and the Automaton stalled waiting on it.
+The rule removes that task for merge-only specs only. A spec that adds any work keeps
+its `docs_set` task.
 
 ## Mode: who runs each task
 
