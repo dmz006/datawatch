@@ -354,12 +354,12 @@ task's spec right before it runs, not just each story up front.
      $BASE/api/autonomous/prds/$PRD_ID/approve_task
    ```
 
-Independent of per-story approval — a PRD can use either, both, or
+Independent of per-story approval — an Automaton can use either, both, or
 neither. See "Guided Mode and the Per-Task Approval Gate" in
 [`../operations.md`](../operations.md) for the full writeup, including
 the `scope_drift` project rule that pairs with it as an automated
 detector for the same failure mode (a decomposer writing code tasks
-into a doc-only PRD).
+into a doc-only Automaton).
 
 ## See also
 
