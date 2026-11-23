@@ -5198,6 +5198,7 @@
   "merge_blocked_age_hours": "%1$s h",
   "merge_blocked_age_days": "%1$s j",
   "merge_blocked_help_link": "Que signifie une fusion bloquée ? Ouvrir l'aide sur la fusion de l'Automate",
+  "merge_state_help_link": "Que signifie une branche non fusionnée ? Ouvrir l'aide sur l'état de fusion de l'Automate",
   "sessions_auto_story_root": "Sans storyline",
   "sessions_auto_ungrouped": "Sans automate",
   "sessions_group_automaton": "Automate",
@@ -5857,6 +5858,8 @@
   "planning_failure_retry_counts": "Nouvelles tentatives :",
   "planning_failure_retry_budget": "Budget de tentatives :",
   "planning_failure_badge": "Échec de la planification",
+
+  "prd_merge_state_badge": "Branche non fusionnée",
   "planning_failure_question_pending": "Question en attente : corriger la formulation et replanifier",
   "planning_failure_question_fix": "Corriger la formulation et replanifier",
   "planning_failure_question_leave": "Laisser tel quel",

@@ -966,6 +966,9 @@ func (r *Router) handleAutonomousListVerb(args []string) {
 	if lines := autonomous.PlanningFailureListLines([]byte(out)); len(lines) > 0 {
 		reply += "\n" + strings.Join(lines, "\n")
 	}
+	if lines := autonomous.MergeStateListLines([]byte(out)); len(lines) > 0 {
+		reply += "\n" + strings.Join(lines, "\n")
+	}
 	r.reply("autonomous list", reply)
 }
 
@@ -1109,6 +1112,9 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		reply := prettyJSON(out)
 		if line := autonomous.PlanningFailureOneLine(autonomous.PlanningFailureFromBody([]byte(out))); line != "" {
+			reply += "\n" + line
+		}
+		if line := autonomous.MergeStateGetLine([]byte(out)); line != "" {
 			reply += "\n" + line
 		}
 		if lines := rulesReviewOutcomeLines([]byte(out)); len(lines) > 0 {

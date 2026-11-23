@@ -1027,6 +1027,9 @@ autonomous.shipped.filter_default view applies (all / shipped / unshipped).`,
 			for _, line := range autonomous.PlanningFailureListLines(body) {
 				_, _ = fmt.Fprintln(note, "planning failed: "+line)
 			}
+			for _, line := range autonomous.MergeStateListLines(body) {
+				_, _ = fmt.Fprintln(note, "branch not merged: "+line)
+			}
 			return nil
 		},
 	}
@@ -1229,6 +1232,9 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 				_, _ = fmt.Fprint(out, block)
 			}
 			for _, line := range autonomous.PlanningFailureLines(body) {
+				_, _ = fmt.Fprintln(out, line)
+			}
+			if line := autonomous.MergeStateGetLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}
 			if line := prdPushLine(body); line != "" {

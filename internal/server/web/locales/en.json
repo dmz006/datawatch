@@ -5198,6 +5198,7 @@
   "merge_blocked_age_hours": "%1$s h",
   "merge_blocked_age_days": "%1$s d",
   "merge_blocked_help_link": "What does a blocked merge mean? Open the Automaton merge help",
+  "merge_state_help_link": "What does branch not merged mean? Open the Automaton merge state help",
   "sessions_group_by": "Group by",
   "sessions_group_state": "State",
   "sessions_group_node": "Node",
@@ -5886,6 +5887,8 @@
   "planning_failure_retry_counts": "Retries:",
   "planning_failure_retry_budget": "Retry budget:",
   "planning_failure_badge": "Planning failed",
+
+  "prd_merge_state_badge": "Branch not merged",
   "planning_failure_question_pending": "Question waiting: Fix the wording and plan again",
   "planning_failure_question_fix": "Fix the wording and plan again",
   "planning_failure_question_leave": "Leave it",

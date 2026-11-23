@@ -300,10 +300,16 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 					set := idx.NotifyEffectiveForEntry(e)
 					row.NotifyEventsEffective = &set
 					fillRow(&row, project)
-					if e.HasPlanningFailure {
+					finished := e.Status == autonomous.PRDCompleted || e.Status == autonomous.PRDArchived
+					if e.HasPlanningFailure || finished {
 						if raw, ok := s.autonomousMgr.GetPRD(e.ID); ok {
 							if prd, err := toPRD(raw); err == nil {
-								row.PlanningFailure = s.planningFailureOf(prd)
+								if e.HasPlanningFailure {
+									row.PlanningFailure = s.planningFailureOf(prd)
+								}
+								if finished {
+									row.MergeState = s.mergeStateOf(prd)
+								}
 							}
 						}
 					}
@@ -323,6 +329,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 			}
 			fillRow(&row, project)
 			row.PlanningFailure = s.planningFailureOf(prd)
+			row.MergeState = s.mergeStateOf(prd)
 			items = append(items, prdListItem{ID: row.ID, UpdatedAt: row.UpdatedAt, Status: row.Status,
 				row: func() autonomous.SummaryRow { return row }})
 		}
