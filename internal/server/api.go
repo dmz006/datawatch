@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.79"
+var Version = "9.182.81"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -630,8 +630,12 @@ type Server struct {
 	questionRaiseNotifier QuestionRaiseNotifier
 	// questionNotifies — counts the raise fan-out goroutines in flight
 	// (see WaitQuestionNotifies) so a caller can block until the latest
-	// raise's alert-write side effect has completed.
-	questionNotifies sync.WaitGroup
+	// raise's alert-write side effect has completed. Serialized (a mutex
+	// guards the WaitGroup, see questionNotifyGate) so a new raise's Add
+	// can never run concurrently with a Wait on a zero counter — the
+	// "WaitGroup misuse" panic that was reachable on the daemon-exit
+	// path.
+	questionNotifies questionNotifyGate
 	// questionAnswerReturnPath — the per-question opt-in session line on
 	// answer (one line of DATAWATCH_ANSWER: into the asking session); wired
 	// by main.go via SetQuestionAnswerReturnPath; nil (default) = no
@@ -10425,7 +10429,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			laneFillKeyPrefix + "poll_seconds", laneFillKeyPrefix + "gpu_backend",
 			laneFillKeyPrefix + "gpu_model", laneFillKeyPrefix + "claude_backend",
 			laneFillKeyPrefix + "count_verifier_wait", laneFillKeyPrefix + "stale_after_hours",
-			laneFillKeyPrefix + "host_down_after_minutes",
+			laneFillKeyPrefix + "host_down_after_minutes", laneFillKeyPrefix + "stalled_merge_minutes",
 			laneFillKeyPrefix + "require_confirmed_proposal", laneFillKeyPrefix + "check_main_carries",
 			laneFillKeyPrefix + "require_worktree", laneFillKeyPrefix + "lane_counts_from_caps",
 			laneFillKeyPrefix + "gpu_mode", laneFillKeyPrefix + "claude_mode":
