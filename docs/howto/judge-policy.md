@@ -362,8 +362,8 @@ comm channel, `PUT /api/autonomous/config` or `autonomous_config_set` with
 ## Alerts
 
 Judge alerts go to the daemon's existing alert channels, the same ones other
-Automaton alerts use. Each alert names the Automaton by its id (the id the API
-also calls the PRD id), the backends tried so far and the time spent.
+Automaton alerts use. Each alert names the Automaton by its id (the same id the
+API uses), the backends tried so far and the time spent.
 
 | Level | When | Title | Body (the wording of each part) |
 |---|---|---|---|
@@ -497,7 +497,7 @@ failed to be found) and an `action`: the next step it suggests.
 
 Where you see it:
 
-- **PRD JSON** — `review_state` (`state`, `cause`, `action`, `attempts`) on
+- **Automaton JSON** — `review_state` (`state`, `cause`, `action`, `attempts`) on
   the Automaton's list and detail views (`GET /api/autonomous/prds`,
   `GET /api/autonomous/prds/{id}`, `datawatch autonomous prd-get <id>`).
 - **PWA** — an amber **Review timed out** badge beside the status badge (a
