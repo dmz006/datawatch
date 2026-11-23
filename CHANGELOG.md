@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Merge-only Automata no longer get a docs set task.** An Automaton whose spec only merges, rebases, resolves conflicts on or lands an existing finished branch, and names no work verb (add, implement, create, write, fix, build), is detected from its spec text and skips the `docs_set` standard task, which could never produce a change for it and blocked the Automaton. Every other standard task, including `final_gate`, is still applied, and a spec that adds any work keeps its docs task. The decompose log records `docs set task skipped: merge-only Automaton`. Docs: [automata standard tasks](docs/howto/automata-standard-tasks.md#when-docs_set-is-skipped-merge-only-automata), [operations](docs/operations.md). Operators: check that merge-only specs which should skip the task do, since detection reads the spec words only.
+
 ### Fixed
 
 - **The daemon's stderr stays in the service journal, and the crash log keeps its job.** The daemon no longer redirects its stderr (fd 2) into `<data>/daemon-crash.log` at start — before this fix the journal received nothing from the daemon after boot and its ordinary log lines landed in the crash log. Stderr is left untouched, so the journal (and any other stderr consumer) keeps receiving everything as before; the runtime's fatal crash output is additionally written to the crash log with Go 1.23+ `debug.SetCrashOutput` (`GOTRACEBACK=crash` unchanged, all-goroutine dump on a fatal). `<data>/daemon-crash.log` therefore now holds the per-start header and the crash dumps only, not the daemon's ordinary log lines; a SIGABRT core image is still recovered with `coredumpctl`. Docs: the decompose-async how-to, the decompose-abort operations section and the definitions glossary entry.
