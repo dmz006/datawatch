@@ -280,7 +280,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable`, `plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list` |
 | Plugin service lifecycle + rotation (MCP-only) | `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate` |
 | Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs` (deprecated; plans replace it), `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
-| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`, and the release plan tools `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert` (see [Plan record tools](#plan-record-tools)) |
+| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_rollup`, `plan_create`, `plan_rename`, `plan_edit`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`, and the release plan tools `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert` (see [Plan record tools](#plan-record-tools)) |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model`, `compute_node_headroom_measure`, `compute_node_headroom_get` |
@@ -1160,6 +1160,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   ```
 
 - **`usage_backoff_status` / `usage_backoff_recheck` — pattern staleness fields.** The status response carries `patterns_version` (a fingerprint of the effective rate-limit patterns), `patterns_stale` (true when the effective patterns or the claude tool's version text changed since the last operator recheck) and `claude_cli_version` (the claude tool's version text, `unknown` when the tool is absent or its version command fails — which on its own never raises the flag). `usage_backoff_recheck` stores both the pattern fingerprint and the current version text as rechecked, clearing `patterns_stale`. `capacity_status` and `autonomous_status` carry the same three fields. See [howto/automata-capacity.md](howto/automata-capacity.md) (`### Pattern staleness and manual recheck`).
+- **`usage_backoff_set` / `usage_backoff_clear` — optional `models` list.** An array of model names (compared lower-cased). A set with it holds only the named models of the backend and the others keep running; a set without it holds the whole backend. A clear with it removes only the named models from the flag's list (dropping the flag when that empties the list) and requires a named backend; a clear-all is never model-scoped, and whole-backend flags are never narrowed. A `models` list with no usable names is an operator error on every surface. See [howto/usage-backoff.md](howto/usage-backoff.md) (`### Holding only certain models`).
 - **Automation model-tier tools: `automation_set_llm` and `automation_set_verification_llm`.** An Automation carries default model settings for the member Automata it runs. These two tools set them; each proxies to `POST /api/automations/{id}/set_llm` or `/set_verification_llm` (see [api/autonomous.md](api/autonomous.md) for the full semantics, response codes and audit entries). Resolution order for the execution backend, model and effort, and for the verification LLM: task → story → Automaton → Automation → global. Backend and model come from the same level; effort resolves independently. Each task run records `executor_source` (`task` | `story` | `prd` | `automation` | `global`) beside `verifier_source`. Planning has its own optional pair, `planning_backend` and `planning_model` (unset means the global planning backend); it is used only when a member is decomposed and never changes the run or verify default. Both tools are allowed while the Automation is `draft`, `active`, `paused` or `blocked`.
 
   | Argument | Required | Tools | Description |
@@ -1831,7 +1832,10 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_record_search` | Search titles, older titles and notes (read-only) | `GET /api/plan-records/search` |
 | `plan_record_import` | Import a project's registry rows and findings files; previews unless `dry_run` is `false` | `POST /api/plan-records/import` |
 | `plan_migrate` | Build plans from the older project plan lists (arcs) and registry rows (mode `arcs`, the default), or file a project's Automata under release plans and themes (mode `release`: `project`, optional `current_release`, `next_release`, `marks`); previews unless `apply` is `true`, and a release write needs the `preview_id` of the preview | `POST /api/plans/migrate` |
+| `plan_rollup` | Roll plan statuses up from their linked Automata and Automations (optional `project`, `dry_run`); `dry_run` true previews and writes nothing, otherwise the changes are written; a status set by hand is kept and reported (`set_by_hand_kept`) | `GET /api/plans/rollup?dry_run=true` (preview) or `POST /api/plans/rollup` (apply) |
 | `plan_create` | Create a plan in a registered project (`project`, `title`, optional `goal`; `plan_kind` `release` with a `release` label makes a release plan) | `POST /api/plans` |
+| `plan_rename` | Rename a plan (`plan`, `title`: one line, at most 100 characters, unique in the project); a taken title is refused and names the plan that has it; the old title stays as an older title | `PATCH /api/plans/{ref}` |
+| `plan_edit` | Set a plan's goal (`plan`, `goal`, at most 2000 characters; an empty goal clears it) | `PATCH /api/plans/{ref}` |
 | `plan_reorder` | Set the plan priority order (`plans`: ids or titles, first plan first) | `PUT /api/plans/order` |
 | `plan_reorder_automata` | Set the order of a plan's Automata (`plan`, `automata`: every Automaton once); the answer shows what runs next, skipping blocked and held | `PUT /api/plans/{ref}/automata/order` |
 | `plan_attach` | Attach an Automaton, Automation or finding to a plan (`plan`, `kind`, `id`); a link held elsewhere is refused and named | `POST /api/plans/{ref}/attach` |
@@ -1845,7 +1849,7 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_row_plan_list` | The plans the plans migration made from registry rows (read-only) | `GET /api/plans/migrate/row-plans` |
 | `plan_row_plan_convert` | Convert them into release plan items; previews unless `apply` is `true`, and a write needs the `preview_id` of the preview | `POST /api/plans/migrate/row-plans` |
 
-`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and
+`plan_create`, `plan_rename`, `plan_edit`, `plan_rollup`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and
 `plan_detach` need `autonomous:write` when called by a federated peer. Of the
 release plan tools, `plan_theme_list`, `plan_unattributed_list` and
 `plan_row_plan_list` need `autonomous:read` and the others `autonomous:write`.
@@ -1854,6 +1858,9 @@ The release migration (`plan_migrate` with `mode` `release`) and
 `preview_id` the preview returned; a stale id is refused by the daemon. Each
 tool's description links the how-to
 [plan-records.md](howto/plan-records.md#release-plans-and-themes).
+`plan_record_get` and `plan_record_list` show each record's `state` (the status)
+and `set_by_hand`, which is true when the status was written by hand so the plan
+roll-up keeps it.
 `project_set_arcs` stays as a deprecated alias for the older plan list (arcs).
 
 **Release plan tools: every surface side by side.** Each release plan tool
@@ -3087,7 +3094,7 @@ argument overrides the stored setting for this one call only.
 
 ### Burn guard tools
 
-The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_pi_prompt`, `hold_claude`) when the projection runs over the line plus the margin. It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.
+The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_entry`, `route_cheaper_model`, `hold_entry`; the legacy first-version names `route_pi_prompt` and `hold_claude` are accepted and normalize to the entry-generic names) when the projection runs over the line plus the margin. `route_cheaper_model` keeps the backend and sends the entry's new work to its cheaper model (the entry's `route_cheaper_model` field, or its cheapest other priced model). It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.
 
 | Tool | Arguments | Result |
 |---|---|---|
@@ -3099,7 +3106,7 @@ The burn guard compares the projected weekly burn with the pace line and steps d
 ```
 burn_guard_status()
 burn_guard_run()
-burn_guard_config_set(margin_points=3, ladder=["lower_inflight","hold_claude"])
+burn_guard_config_set(margin_points=3, ladder=["lower_inflight","hold_entry"])
 ```
 
 ### `usage_advice`

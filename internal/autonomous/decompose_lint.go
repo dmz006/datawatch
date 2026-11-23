@@ -109,6 +109,9 @@ type compiledMatch struct {
 	unknownFlag         bool
 	textNotInSpec       bool
 	branchArtefactFiles bool
+	roWritesOut         bool
+	absPathOut          bool
+	scriptPreds         scriptPredID
 	kind                string
 	anyOf               []compiledMatch
 	allOf               []compiledMatch
@@ -117,7 +120,7 @@ type compiledMatch struct {
 // usesScriptContent reports whether this condition tree reads script
 // content (so a finding carries the script path).
 func (m *compiledMatch) usesScriptContent() bool {
-	if m.taskFilesOnly || m.docsNoSync || m.artefactFiles || m.finalGateArtefact || m.invokesUnknownFlag || m.specUnanchored ||
+	if m.taskFilesOnly || m.docsNoSync || m.scriptPreds != 0 || m.artefactFiles || m.finalGateArtefact || m.invokesUnknownFlag || m.specUnanchored ||
 		m.branchArtefactFiles || m.finalGateRerun || m.unknownFlag || m.textNotInSpec {
 		return true
 	}
@@ -134,7 +137,7 @@ func (m *compiledMatch) usesScriptContent() bool {
 	return false
 }
 
-func (m *compiledMatch) matchTask(t Task, dir string) bool {
+func (m *compiledMatch) matchTask(t Task, dir string, plan *lintPlan) bool {
 	if m.spec != nil && !m.spec.MatchString(t.Spec) {
 		return false
 	}
@@ -158,6 +161,14 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	}
 	if m.kind != "" && !strings.EqualFold(strings.TrimSpace(t.Kind), m.kind) {
 		return false
+	}
+	if m.roWritesOut && readOnlyWriteLine(t) == "" {
+		return false
+	}
+	if m.absPathOut {
+		if line, _ := specAbsolutePathOutside(t.Spec, dir); line == "" {
+			return false
+		}
 	}
 	if m.taskFilesOnly {
 		if _, ok := verifyScriptTaskFilesOnly(dir, t); !ok {
@@ -214,6 +225,13 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 			return false
 		}
 	}
+	for _, sp := range scriptPredicates {
+		if m.scriptPreds&sp.id != 0 {
+			if _, ok := sp.check(dir, t, plan); !ok {
+				return false
+			}
+		}
+	}
 	if m.files != nil {
 		matched := false
 		for _, f := range t.FilesPlanned {
@@ -229,7 +247,7 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	if len(m.anyOf) > 0 {
 		anyMatched := false
 		for _, sub := range m.anyOf {
-			if sub.matchTask(t, dir) {
+			if sub.matchTask(t, dir, plan) {
 				anyMatched = true
 				break
 			}
@@ -239,7 +257,7 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 		}
 	}
 	for _, sub := range m.allOf {
-		if !sub.matchTask(t, dir) {
+		if !sub.matchTask(t, dir, plan) {
 			return false
 		}
 	}
@@ -292,7 +310,7 @@ func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, err
 		specUnanchored: m.VerificationScriptSpecUnanchored, fixedDate: m.FixedCalendarDateInTest,
 		branchArtefactFiles: m.VerificationScriptArtefactFiles, finalGateRerun: m.VerificationScriptFinalGateRerun,
 		unknownFlag: m.VerificationScriptUnknownFlag, textNotInSpec: m.VerificationScriptTextNotInSpec,
-		kind: strings.ToLower(strings.TrimSpace(m.Kind))}
+		scriptPreds: scriptPredsOf(m), roWritesOut: m.ReadOnlyWritesOutsideReport, absPathOut: m.SpecAbsolutePathOutsideProject, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -341,6 +359,7 @@ func LintTasksWithErrors(stories []Story, rules []Rule) ([]LintFinding, []error)
 // only (a path cannot be checked without a base directory).
 func LintTasksInDir(dir string, stories []Story, rules []Rule) ([]LintFinding, []error) {
 	compiled := compileRules(rules)
+	plan := newLintPlan(stories)
 	var errs []error
 	var findings []LintFinding
 	for i := range compiled {
@@ -356,7 +375,7 @@ func LintTasksInDir(dir string, stories []Story, rules []Rule) ([]LintFinding, [
 				if daemonRunsTask(t) {
 					continue
 				}
-				if !cr.match.matchTask(t, dir) {
+				if !cr.match.matchTask(t, dir, plan) {
 					continue
 				}
 				f := LintFinding{
@@ -365,10 +384,10 @@ func LintTasksInDir(dir string, stories []Story, rules []Rule) ([]LintFinding, [
 					Message:  cr.rule.Message,
 					Story:    s.ID,
 					Task:     t.ID,
-					Matched:  excerptFor(cr.match, t, dir),
+					Matched:  excerptFor(cr.match, t, dir, plan),
 				}
 				if cr.match.usesScriptContent() {
-					f.Script = verifyScriptFindingPath(cr.match, dir, t)
+					f.Script = verifyScriptFindingPathIn(cr.match, dir, t, plan)
 					if f.Script != "" {
 						f.Message += " (verification script: " + f.Script + ")"
 					}
@@ -458,7 +477,9 @@ func EffectiveRules(cfg config.DecomposeLintConfig) []Rule {
 // instead.
 const maxExcerptLen = 160
 
-func firstMatch(re *regexp.Regexp, s string) string {
+// firstMatchLine returns the whole line the first hit of re sits on, so a
+// finding quotes the offending spec line rather than a bare fragment of it. A long line is clipped around the hit.
+func firstMatchLine(re *regexp.Regexp, s string) string {
 	if re == nil || s == "" {
 		return ""
 	}
@@ -466,7 +487,20 @@ func firstMatch(re *regexp.Regexp, s string) string {
 	if loc == nil {
 		return ""
 	}
-	return clipExcerpt(s[loc[0]:loc[1]])
+	start := strings.LastIndex(s[:loc[0]], "\n") + 1
+	end := len(s)
+	if i := strings.IndexByte(s[loc[0]:], '\n'); i >= 0 {
+		end = loc[0] + i
+	}
+	line := s[start:end]
+	if strings.TrimSpace(line) == "" {
+		return clipExcerpt(s[loc[0]:loc[1]])
+	}
+	hit := s[loc[0]:loc[1]]
+	if j := strings.IndexByte(hit, '\n'); j >= 0 {
+		hit = hit[:j]
+	}
+	return quoteSpecLine(line, hit)
 }
 
 func clipExcerpt(s string) string {
@@ -478,27 +512,27 @@ func clipExcerpt(s string) string {
 	return string(r[:maxExcerptLen-1]) + "…"
 }
 
-func excerptFor(m *compiledMatch, t Task, dir string) string {
+func excerptFor(m *compiledMatch, t Task, dir string, plan *lintPlan) string {
 	if e := regexExcerpt(m, t); e != "" {
 		return e
 	}
 	for i := range m.anyOf {
-		if e := excerptFor(&m.anyOf[i], t, dir); e != "" {
+		if e := excerptFor(&m.anyOf[i], t, dir, plan); e != "" {
 			return e
 		}
 	}
 	for i := range m.allOf {
-		if e := excerptFor(&m.allOf[i], t, dir); e != "" {
+		if e := excerptFor(&m.allOf[i], t, dir, plan); e != "" {
 			return e
 		}
 	}
-	return predicateExcerpt(m, t, dir)
+	return predicateExcerpt(m, t, dir, plan)
 }
 
 // regexExcerpt is the first regex hit in priority order: spec, files
 // entries, title.
 func regexExcerpt(m *compiledMatch, t Task) string {
-	if e := firstMatch(m.spec, t.Spec); e != "" {
+	if e := firstMatchLine(m.spec, t.Spec); e != "" {
 		return e
 	}
 	if m.files != nil && len(t.FilesPlanned) > 0 {
@@ -508,13 +542,13 @@ func regexExcerpt(m *compiledMatch, t Task) string {
 			}
 		}
 	}
-	return firstMatch(m.title, t.Title)
+	return firstMatchLine(m.title, t.Title)
 }
 
 // predicateExcerpt describes the asserted field state of a
 // predicate-only condition (read_only, the files list, an empty
 // verification script).
-func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
+func predicateExcerpt(m *compiledMatch, t Task, dir string, plan *lintPlan) string {
 	var parts []string
 	if m.readOnly != nil {
 		parts = append(parts, fmt.Sprintf("read_only=%v", *m.readOnly))
@@ -544,6 +578,16 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	}
 	if m.kind != "" {
 		parts = append(parts, "kind="+m.kind)
+	}
+	if m.roWritesOut {
+		if l := readOnlyWriteLine(t); l != "" {
+			parts = append(parts, quoteSpecLine(l, ""))
+		}
+	}
+	if m.absPathOut {
+		if l, p := specAbsolutePathOutside(t.Spec, dir); l != "" {
+			parts = append(parts, quoteSpecLine(l, p))
+		}
 	}
 	if m.taskFilesOnly {
 		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (compares only against the task's own files, never the merge base)")
@@ -586,6 +630,14 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	if m.textNotInSpec {
 		if _, detail, ok := verifyScriptTextNotInSpec(dir, t); ok {
 			parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" ("+detail+")")
+		}
+	}
+	for _, sp := range scriptPredicates {
+		if m.scriptPreds&sp.id == 0 {
+			continue
+		}
+		if hit, ok := sp.check(dir, t, plan); ok {
+			parts = append(parts, hit.Path+": "+hit.Line)
 		}
 	}
 	if len(parts) == 0 {

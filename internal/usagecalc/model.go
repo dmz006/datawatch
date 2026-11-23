@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -98,6 +99,44 @@ type Reading struct {
 	Lanes       *int   `json:"lanes,omitempty"`
 	LanesSource string `json:"lanes_source,omitempty"`
 	Source      string `json:"source"`
+	// LLM names the paid LLM entry the reading measures. Empty means the first entry
+	// (the reading series predates per-entry readings, so an unnamed reading keeps
+	// meaning what it always did).
+	LLM string `json:"llm,omitempty"`
+}
+
+// defaultReadingEntry is the name of the first paid LLM entry, the one an unnamed
+// reading belongs to. The daemon sets it from usage.burn_guard; empty means only
+// unnamed readings are the first entry's.
+var defaultReadingEntry atomic.Value
+
+// SetDefaultReadingEntry records the name of the first paid LLM entry.
+func SetDefaultReadingEntry(name string) { defaultReadingEntry.Store(strings.TrimSpace(name)) }
+
+// DefaultReadingEntry is the name SetDefaultReadingEntry recorded ("" when none).
+func DefaultReadingEntry() string {
+	v, _ := defaultReadingEntry.Load().(string)
+	return v
+}
+
+// ReadingsForEntry returns the readings that measure the named entry, in order. first
+// is true for the first entry, which also owns every reading that names no entry.
+func ReadingsForEntry(rs []Reading, entry string, first bool) []Reading {
+	entry = strings.TrimSpace(entry)
+	out := make([]Reading, 0, len(rs))
+	for _, r := range rs {
+		name := strings.TrimSpace(r.LLM)
+		if (name == "" && first) || (name != "" && name == entry) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// DefaultEntryReadings is ReadingsForEntry for the first entry: the readings the
+// account-wide calculator advice reads.
+func DefaultEntryReadings(rs []Reading) []Reading {
+	return ReadingsForEntry(rs, DefaultReadingEntry(), true)
 }
 
 // RemainingWork is the work still to run under the run-flat-out policy, in points of the

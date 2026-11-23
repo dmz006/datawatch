@@ -344,6 +344,17 @@ func BackoffWaitText(now func() time.Time, backend string, until time.Time, rese
 	return text
 }
 
+// BackoffModelsWaitText is BackoffWaitText for a flag that may be limited to
+// a model list: with models it names them ("backend X backed off for models
+// a, b until ..."), keeping the wording the wait-cause classifier matches.
+func BackoffModelsWaitText(now func() time.Time, backend string, models []string, until time.Time, resetKnown bool, note string) string {
+	text := BackoffWaitText(now, backend, until, resetKnown, note)
+	if len(models) == 0 {
+		return text
+	}
+	return strings.Replace(text, backoffInfix, backoffInfix+" for models "+strings.Join(models, ", "), 1)
+}
+
 // BudgetWaitText words a wait on a full budget window: the LLM, the spend
 // against the ceiling, and when the window rolls over. peerUSD > 0 splits the
 // spend into local and peer parts. A nil rollsOver means the window frees up

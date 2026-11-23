@@ -132,11 +132,52 @@ test('hostile text in a reconciliation date is escaped', () => {
   assert.ok(html.includes('&lt;img'));
 });
 
+test('by-model section: one row per model with tokens and API-equivalent dollars; absent when the report has none', () => {
+  const sb = load();
+  const rep = Object.assign({}, REPORT, {
+    model_rows: [
+      { model: 'claude-sonnet-4', sessions: 1, tokens_in: 1000, tokens_out: 500, cache_read: 100000, cache_creation: 20000, tool_calls: 3, api_equivalent_usd: 4.5 },
+      { model: 'gpt-5.2', sessions: 2, tokens_in: 340, tokens_out: 210, cache_read: 50, cache_creation: 0, tool_calls: 1, api_equivalent_usd: 1.2 },
+    ],
+  });
+  const text = textOf(sb.costReportCardHtml(rep, {}));
+  assert.ok(text.includes('By model'), 'section title: ' + text);
+  assert.ok(text.includes('API-equivalent at each model'), 'note label: ' + text);
+  assert.ok(text.includes('an equivalence, not a bill'));
+  assert.ok(text.includes('claude-sonnet-4'));
+  assert.ok(text.includes('gpt-5.2'));
+  assert.ok(text.includes('1000 in · 500 out · cache 100000 / 20000'));
+  assert.ok(text.includes('340 in · 210 out · cache 50 / 0'));
+  assert.ok(text.includes('$4.50 API-equivalent'), 'model dollars labelled: ' + text);
+  assert.ok(text.includes('$1.20 API-equivalent'));
+  assert.ok(!/\$\d+\.\d\d(?! API-equivalent)/.test(text), 'no bare dollar figure: ' + text);
+  // No model_rows (older daemon): no section at all.
+  assert.ok(!textOf(sb.costReportCardHtml(REPORT, {})).includes('By model'));
+  assert.equal(sb.costReportModelRowsHtml({}), '');
+  assert.equal(sb.costReportModelRowsHtml(null), '');
+  // A model without a rate still lists its tokens; the dollar shows — only when
+  // some row has one.
+  const noRate = textOf(sb.costReportModelRowsHtml({
+    model_rows: [{ model: 'local-llama', sessions: 1, tokens_in: 10, tokens_out: 20, cache_read: 0, cache_creation: 0 }],
+  }));
+  assert.ok(noRate.includes('local-llama'));
+  assert.ok(noRate.includes('10 in · 20 out · cache 0 / 0'));
+  assert.ok(!noRate.includes('$'), 'no dollar at all when no model carries a rate');
+});
+
+test('hostile model name in the by-model section is escaped', () => {
+  const sb = load();
+  const html = sb.costReportModelRowsHtml({ model_rows: [{ model: HOSTILE, sessions: 1, tokens_in: 1, tokens_out: 1 }] });
+  assert.ok(!html.includes('<img'));
+  assert.ok(html.includes('&lt;img'));
+});
+
 test('every new operator-visible string has a key in all five locales', () => {
   const keys = ['dash_card_off_cost_report_reason', 'dash_card_off_cost_report_link', 'cost_report_usd_api_value',
     'cost_report_column_cache', 'cost_report_cache_io', 'cost_report_column_local', 'cost_report_totals',
     'cost_report_reconcile_title', 'cost_report_reconcile_points', 'cost_report_reconcile_ahead',
-    'cost_report_reconcile_within', 'cost_report_reconcile_implied', 'cost_report_reconcile_day'];
+    'cost_report_reconcile_within', 'cost_report_reconcile_implied', 'cost_report_reconcile_day',
+    'cost_report_by_model_title', 'cost_report_by_model_note', 'cost_report_by_model_tokens'];
   for (const lang of LANGS) {
     const b = bundle(lang);
     for (const k of keys) assert.ok(typeof b[k] === 'string' && b[k].trim(), `${lang} lacks ${k}`);

@@ -282,7 +282,8 @@ saved value falls back to its default with a logged warning, as `normalizeUsageC
 - `margin_points` — how far the projection may run over the pace line before the guard acts, 0 to 50 (default `2.0`).
 - `max_projection_gap_points` — largest gap in points allowed between the projection and the pace line, 0 to 100 (default `25`); `0` means never compare.
 - `ask_on_change` — whether a rung change also raises an operator question (default `false`: one alert per change, no question; `true`: at most one open guard question, and none for a step that changes nothing).
-- `ladder` — ordered rungs applied while over the line: `lower_inflight`, `route_pi_prompt`, `hold_claude` (default all three in that order; unknown or repeated rungs are dropped).
+- `ladder` — ordered rungs applied while over the line: `lower_inflight`, `route_entry`, `route_cheaper_model`, `hold_entry` (default `lower_inflight`, `route_entry`, `hold_entry`; unknown or repeated rungs are dropped; the legacy first-version names `route_pi_prompt` and `hold_claude` are still accepted and normalize to `route_entry` and `hold_entry`).
+- `entries` — per-paid-LLM guard entries (unset: the guard watches `claude-code` alone). Each entry has `llm`, `usage_source` (`readings` or `none`; `none` is never held), `plan` (`flat` or `metered`), `period_target`, `model`, `ladder`, `held_models`, `route_to`, `route_cheaper_model`, and `points_per_usd` for `flat` entries.
 - `step_back` — undo rungs in reverse once back under the line (default `true`).
 - `cache_write_points_per_million` — weekly points per million cache-write tokens, above 0 (default `0.373`).
 - `cache_read_points_per_million` — weekly points per million cache-read tokens, above 0 (default `0.0069`).
@@ -2334,8 +2335,8 @@ A compute node runs one verifier by default and needs no measurement for that. A
   - `autonomous.lane_fill.gpu_mode` and `autonomous.lane_fill.claude_mode` (`string`, default empty, `EffectiveModeFor`): the mode for one lane kind. Empty inherits `mode`; otherwise `off`, `shadow` or `on`. Checked by `ValidateLaneFillKindMode`. A kind in `shadow` records decisions without executing them while the other kind can be `on`.
   - Refusals are `blocked` decisions carrying `eligibility_reason` (seven stable codes: `held`, `sequenced_after_unshipped`, `stale`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work`, `worktree_invalid`); `GET /api/autonomous/lane-fill` also returns `lane_counts` and `modes`.
 - **Per-Automaton field:** `lane_preference` on the Automaton record (`internal/autonomous/models.go`, `LanePreference`), with `gpu`, `claude` or `any`. Empty and absent mean `any`. Normalised by `internal/autonomous/lane_preference.go`.
-- **Planner:** `PlanLaneFill` in `internal/autonomous/lane_fill.go` is a pure function over a snapshot (lanes, candidates, pool evidence, time). It does no I/O and starts no goroutine.
-- **Coordinator:** `laneFillPoll` in `internal/autonomous/lane_fill_coordinator.go` runs on each poll. `off` returns before anything is read. `shadow` records decisions with `executed: false`. `on` carries them out through the starter's run call, the decompose call (in the background), and, where needed, the approve and backend-change calls, which are recorded under the actor `lane_fill`.
+- **Planner:** `PlanLaneFill` in `internal/autonomous/lane_fill.go` is a pure function over a snapshot (lanes, candidates, pool evidence, time). It does no I/O and starts no goroutine. A lane is occupied only by an Automaton with a live worker, verifier or judge session, or a task that is starting: `classifyLaneOccupant` in `internal/autonomous/lane_fill_idle_occupant.go` classifies each running Automaton against the store and the capacity ledger before the planner reads it. One that holds no live work never enters the running list or the candidate list, so its lane reads idle and the planner cannot start a second run of it; it is reported instead in the status `waiting` list (`LaneFillWaitingOcc`: `prd_id`, `title`, `backend`, `wait_reason`, `reason_code` of `waiting_review_merge`, `merge_stalled` or `no_task_startable`; an empty list, never null). Verified work pending its merge keeps the lane until `autonomous.lane_fill.stalled_merge_minutes` passes (`*int`, default 30, `EffectiveStalledMergeMinutes`; an explicit 0 turns the rule off and keeps the lane).
+- **Coordinator:** `laneFillPoll` in `internal/autonomous/lane_fill_coordinator.go` runs on each poll. `off` returns before anything is read. `shadow` records decisions with `executed: false`. `on` carries them out through the starter's run call, the decompose call (in the background), and, where needed, the approve and backend-change calls, which are recorded under the actor `lane_fill`. The stalled-merge pass (`taskMergeStallPass` in `internal/autonomous/task_merge_stall.go`) follows the same mode: `shadow` records the stalled merge as a decision only, `on` raises one "Task merge stalled" warning alert per stalled merge and retries the Automaton's merges, spaced a few minutes apart, and a merge held for the operator is alerted and never retried. Its first-seen-pending clock is in memory only.
 - **Records:** decisions are kept in `lane_fill_decisions.json` in the autonomous data directory, bounded to 1000 newest first (`internal/autonomous/lane_fill_records.go`). Each new record is audited as action `lane_fill`.
 - **Evidence:** `NewPoolEvidenceSource` in `internal/autonomous/lane_fill_evidence.go`, wired in `cmd/datawatch/lane_fill_wiring.go`. Counts running sessions on the GPU backend or on a pool host, reads loaded models from each pool host's Ollama `/api/ps`, caches for 5 seconds, and reports partial data with the failing host named. A failed host read blocks unless the host is degraded (holds no work per `HostHolders`, unreachable for at least `autonomous.lane_fill.host_down_after_minutes`, `*int`, default 10, `EffectiveHostDownAfterMinutes`; `0` never degrades); a degraded host is listed in `PoolEvidence.Degraded` and the status `evidence.degraded`, not in the error. A failed session list always blocks.
 - **Idle alert:** `laneFillCheckAlerts` in `internal/autonomous/lane_fill_alert.go`, sent through the existing alert path at warning level.
@@ -2720,6 +2721,37 @@ Operator view: `docs/howto/automaton-parallel-tasks.md`. Terms: "Read-only tasks
 - **Surfaces:** `PUT /api/config` with the dotted keys, the MCP `autonomous_config_set` arguments `parallel_*`, the CLI and chat `configure`, the web app Settings rows (each with a definitions help link in `DOCS_LINKS_BY_KEY`), the task merge badge and the Parallel execution card.
 - **Tests:** `internal/config/parallel_policy_test.go`, `internal/autonomous/parallel_config_test.go`, `parallel_metrics_test.go`, `internal/mcp/parallel_config_test.go`, `internal/router/parallel_config_surface_test.go`, `cmd/datawatch/parallel_config_cli_test.go`, and the web tests `app-parallel-task-merge.test.js` and `app-parallel-metrics.test.js`.
 
+## Decompose lint mode and rule pack
+
+- **Config:** `autonomous.decompose_lint` (`config.DecomposeLintConfig` in
+  `internal/config/decompose_lint.go`): `mode`, `max_retries`, `rules`,
+  `disabled_rules`. `NormalizeDecomposeLintMode` resolves an empty mode to
+  `enforce` (the default, also `DefaultDecomposeLint`); `off` and `shadow`
+  are the other two values, and any other word is a load and write error.
+  `EffectiveDecomposeLintMode` is what the decompose hook reads.
+- **Pack:** `DefaultDecomposeLintRules` in
+  `internal/autonomous/decompose_lint_rules.go` returns twenty-one rules,
+  sixteen `block` then five `warn`. The block rules are the six boundary rules,
+  `read_only_task_writes_file` and `spec_path_outside_allowed_dirs` (spec-line
+  rules, `decompose_lint_spec_paths.go`), and the eight verification-script
+  rules: `verify_script_task_files_only`, `verify_script_docs_without_sync`,
+  `verify_script_rejects_own_files`, `verify_script_needs_later_task_output`,
+  `verify_script_sh_for_bash`, `verify_script_pipe_grep_q`,
+  `verify_script_hex_pattern` and `final_gate_without_script`. The warn rules
+  are `no_verification_script`, `unexecutable_verification_script`,
+  `names_tracker_id`, `version_number_in_spec` and `unbounded_load_step`.
+- **Switching a rule:** a same-id entry in `rules` replaces the built-in (use
+  `severity: warn` to demote it), and `disabled_rules` or a
+  `{id, disabled: true}` entry removes it. `LintTasksInDir` applies the
+  effective pack.
+- **Finding format:** `LintFinding` carries `rule_id`, `severity`, `message`,
+  `story`, `task` and `matched` (the offending line, clipped); the text form is
+  `[severity] rule_id task: message [line: …]` (`decompose_lint_text.go`), and a
+  script rule adds the script path to the message.
+- **Docs:** [decompose-lint how-to](howto/automaton-decompose-lint.md),
+  [verification-scripts how-to](howto/automaton-verification-scripts.md) and
+  [definitions](datawatch-definitions.md#decompose-lint).
+
 ## Read-only tasks and report paths
 
 Operator-facing description of what a read-only task may do and where its
@@ -2761,6 +2793,14 @@ section above) — no new config key is introduced here.
   `decompose_lint_script_help.go` and `decompose_lint_spec_text.go`).
   A planner-written final gate off the last story is rejected by the plan check
   (`verification_script_coverage.go`).
+- **Script-content rules:** five more block rules read the script text and
+  quote the offending line (`verify_script_rejects_own_files`,
+  `verify_script_needs_later_task_output`, `verify_script_sh_for_bash`,
+  `verify_script_pipe_grep_q`, `verify_script_hex_pattern`), via the
+  `verification_script_*` match predicates in
+  `internal/autonomous/decompose_lint_verify_script_rules.go`. The
+  needs-later-task-output check reads the whole plan (`newLintPlan`, built in
+  `LintTasksInDir`) and honours task and story `depends_on`.
 - **Still to review (operator):** the seven stability rules ship at `block`
   severity (the first three by operator decision 2026-11-12, option 2; the
   four added 2026-11-17 ship `block` as well); whether `shadow` should

@@ -125,9 +125,9 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: twenty-two rules —
-the seventeen `block` rules first (the six boundary rules, then the
-verification-script stability rules), then the five `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: thirty rules —
+the twenty-four `block` rules first (the six boundary rules, the two spec-line
+rules, then the verification-script rules), then the six `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -140,12 +140,19 @@ and never name a particular project, repository or home directory.
 | `reads_operator_data_or_config_folders` | block | a spec that reads a home-directory dot folder (`.datawatch`, `.config`, `.ssh`, `.aws`, …) |
 | `read_only_but_writes_files` | block | a task marked `read_only` that still lists files |
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
+| `read_only_task_writes_file` | block | a read-only task (flag or `READ-ONLY:` marker) whose spec tells it to write, create or edit a file other than its single report path (for example a file under `docs/plans`); give it a report path under `.datawatch/reports/` instead. The finding quotes the offending spec line |
+| `spec_path_outside_allowed_dirs` | block | a spec line that names an absolute path (under a system root such as `/usr`, `/opt`, `/etc`, `/var`, `/home`, `/tmp`) outside the project directory; repo-relative paths, paths inside the project tree, URLs, shebang lines and `/dev` paths are ignored. The finding quotes the offending spec line |
 | `verify_script_task_files_only` | block | a verification script that compares only against the task's own files (a literal allowed-file list equal to them, or a file-listing diff of HEAD, the working tree or main) and never against `git merge-base`; a sourced helper (one level deep) that uses the merge base passes. The finding names the script path. A script that does not exist yet is skipped |
 | `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
 | `artefact_files_allowed` | block | a verification script that does a changed-file-set check without exempting the generated artefacts (changelog draft, parity draft, gate report) the daemon writes per Automaton — the final gate re-runs the script on the cumulative tree where those files are present, so a file-set check without them can only fail. Fix: exclude `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` from the unexpected-files computation |
 | `final_gate_artefact_allowed` | block | a verification script that asserts the whole changed-file set against a finite list with no guard for the final gate re-running it on the cumulative tree. Fix: check only the files this task adds, or skip the file-set check when the final gate re-runs the script |
 | `script_invokes_known_flag` | block | a verification script that invokes a command with a long flag the command's own help does not list as a whole option: the rule resolves the command on PATH and probes its help with `prefix --help` only (never `-h`, never the bare prefix), under a 5-second timeout, in its own process group, with its output capped at 64 KiB. A command that does not resolve, a probe that times out, fails or prints nothing, short flags and a script that does not exist yet are all skipped — the rule skips on uncertainty rather than guessing. The finding names the script path and the offending invocation |
 | `check_matches_spec_text` | block | a verification script (directly or through a sourced helper, one level deep) that checks for a markdown heading (a quoted string of one to six `#` followed by a space, as quoted or in a sed address like `/## Gates/`) or the exact gate output format `Final answer` / `Verification summary` that the task's own spec does not state — verbatim or in equivalent wording, the same words in any order. A heading also anchors with its leading `#` stripped (a spec that says “gates section” anchors a check of `## Gates`). Quoted literals of arbitrary words and quotes on non-check lines never fire, and a script that does not exist yet is skipped. The finding names the script path and the unanchored checked item |
+| `verify_script_rejects_own_files` | block | a verification script whose allowed-file list (an `allowed=(…)` style list, a `git diff --name-only | grep -v …` filter that then fails, or a `case` over the changed file with a failing `*)` branch) is built only from literals that omit a file the task itself plans or the standard allowed set (changelog, README, docs, locales, tests), with no shared allowed list sourced. The finding names the script path and the offending line |
+| `verify_script_needs_later_task_output` | block | a verification script that requires a file (`test -f`, a grep target) or a phrase that only a task it does not depend on creates, judged against every other task's files and `files_generated` and the `depends_on` edges of the task and its story. The finding names the script path and the offending line |
+| `verify_script_sh_for_bash` | block | a verification script that uses bash-only syntax (`[[ ]]`, arrays, process substitution, `pipefail`) under an sh shebang, or a spec or script line that runs a bash script with `sh` instead of `bash`. The finding names the script path and the offending line |
+| `verify_script_pipe_grep_q` | block | a verification script that pipes into `grep -q`; grep exits at the first match, the producer gets SIGPIPE and the pipeline fails under `pipefail`. The finding names the script path and the offending line |
+| `verify_script_hex_pattern` | block | a verification script whose grep pattern matches a bare `#<digits>` run, which also matches CSS hex colours such as `#123456` as tracker ids; put a tracker word (issue, fixes, closes) before the `#`. The finding names the script path and the offending line |
 | `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
 | `verify_script_artefact_files` | block | a verification script that flags unexpected changed files without exempting the daemon-generated artefact folders (`docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/`) and `CHANGELOG.md`; the same fault as `artefact_files_allowed`, detected by the shape of the changed-set check rather than by a literal artefact-path scan, so the two can both fire on one script |
 | `verify_script_final_gate_rerun` | block | a script that holds the whole changed-file set to a finite allow-list with no guard for the final gate rerunning it on the cumulative tree; the sibling of `final_gate_artefact_allowed` with the guard recognition (env var, `--final` argument, add-only check) of the stability checks |
@@ -153,13 +160,14 @@ and never name a particular project, repository or home directory.
 | `verify_script_text_not_in_spec` | block | a verification script that greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase the task spec does not state — verbatim or in equivalent wording; the spec is the contract, so an expectation stated nowhere is unverifiable |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
-| `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
+| `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `issue #1234`); a bare `#123456` or `#abc123` is a hex colour and never matches |
+| `version_number_in_spec` | warn | a spec or title that names a dotted version of a tool or library (a Python, Go or Node version, a `lib==1.2.3` pin) rather than the release |
 | `fixed_calendar_date_in_test` | warn | a test-writing task (a test file such as `*_test.go`, `*.test.js`, `*.spec.ts` or `test_*.py` in its files, or a title starting with Add/Write that names a test) whose spec holds a fixed `YYYY-MM-DD` date; the test passes today and the gate fails later. Fix: take times from the current time (for example `time.Now` with a fixed offset) or an injected clock |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
 
 ### The verification-script stability rules
 
-The last seven `block` rules read the task's verification script from the
+The verification-script `block` rules below read the task's verification script from the
 project directory (and any helper it sources, one level deep) and name the
 **script path and the rule id** in the finding:
 
@@ -224,6 +232,11 @@ project directory (and any helper it sources, one level deep) and name the
   not state, verbatim or in equivalent wording. Fix: state the heading or the
   format being checked in the task spec — the same words are enough, in any
   order.
+- `verify_script_rejects_own_files`, `verify_script_needs_later_task_output`,
+  `verify_script_sh_for_bash`, `verify_script_pipe_grep_q` and
+  `verify_script_hex_pattern` — read the script text and name the **offending
+  line** as well as the script. See the verification-scripts how-to for the fix
+  for each.
 
 ### The unknown-flag and spec-text rules, by id
 
@@ -360,6 +373,13 @@ hold for the same task. The leaves:
 | `verification_script_final_gate_rerun` | assert the script checks the whole changed-file set against a finite allow-list with no final-gate rerun guard; skipped when the script file does not exist |
 | `verification_script_unknown_flag` | assert the script passes a long flag, to an invoked command or subcommand, the command's own `--help` output does not list; commands the environment cannot find are not checked, and unreadable help output is skipped |
 | `verification_script_text_not_in_spec` | assert the script greps or compares against a markdown heading or a multi-word output phrase the task spec does not state, verbatim or in equivalent wording; text the script generates (echo/printf writes, comments) is not an assertion; skipped when the script file does not exist |
+| `verification_script_rejects_own_files` | assert the script's literal allowed-file list omits the task's own planned files or the standard allowed set, with no shared allowed list; skipped when the script file does not exist |
+| `verification_script_needs_later_task_output` | assert the script requires a file or phrase only a task it does not depend on creates (plan-wide, honours `depends_on`); skipped when the script file does not exist |
+| `verification_script_sh_for_bash` | assert the script uses bash-only syntax under an sh shebang, or a spec/script line runs a bash script with `sh`; skipped when the script file does not exist |
+| `verification_script_pipe_grep_q` | assert the script pipes into `grep -q`; skipped when the script file does not exist |
+| `verification_script_hex_pattern` | assert a grep pattern in the script matches a bare `#<digits>` run (CSS hex colours as tracker ids); skipped when the script file does not exist |
+| `read_only_writes_outside_report` | assert the task is read-only and a spec line tells it to write, create or edit a file other than its report path |
+| `spec_absolute_path_outside_project` | assert a spec line names an absolute system path outside the project directory |
 | `kind` | assert the task kind (for example `final_gate`), case-insensitive |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
@@ -378,6 +398,42 @@ validator. Two shapes worth knowing:
   `read_only_unverifiable` uses `any_of: [{read_only: true}, {spec_regex:
   "(?i)\\A\\s*READ-ONLY:"}]` so the flag and the spec marker both count,
   then requires `verification_script_empty` and `report_path_empty`.
+
+### Switching a rule to warn, or off
+
+Every shipped rule in the thirty-rule pack starts at its own severity (the
+twenty-four `block` rules stop a decompose in `enforce` mode, the six
+`warn` rules never do). To change one rule without touching the rest:
+
+- **To warn.** Replace the rule with the same id and `severity: warn`, and keep
+  its `match` and `message`. The finding is still recorded and shown, but it no
+  longer feeds a retry or stops the decompose. This is the way to watch how
+  often a planner trips a rule before letting it block.
+
+  ```yaml
+  autonomous:
+    decompose_lint:
+      rules:
+        - id: verify_script_pipe_grep_q
+          severity: warn
+          match:
+            verification_script_pipe_grep_q: true
+          message: >
+            The verification script pipes into grep -q; capture the output
+            first or drop -q.
+  ```
+
+- **Off.** Add the id to `disabled_rules`, or write `{id: <id>, disabled: true}`
+  in `rules`. The rule no longer runs and no finding is recorded for it.
+- **Every rule at once.** Set `mode: shadow` (record only, never block) or
+  `mode: off` (no lint at all). `shadow` keeps the findings; `off` records
+  nothing.
+
+On the CLI, `datawatch autonomous lint config-set disabled_rules=<id>,<id>`
+turns rules off and keeps the rest of the pack; the Settings panel and the
+`autonomous_decompose_lint_config_set` tool do the same. A severity change
+needs the same-id rule, so it goes through the `rules` list (Settings, REST
+`PUT /api/autonomous/decompose-lint/config`, the MCP tool, or the YAML file).
 
 ### Turning rules off, three ways
 
@@ -662,8 +718,10 @@ lint enforces the same contract on what comes back — see
 `artefact_files_allowed`, `final_gate_artefact_allowed`,
 `script_invokes_known_flag`, `check_matches_spec_text`,
 `final_gate_without_script`, `verify_script_unknown_flag` and
-`verify_script_text_not_in_spec` in the rule table above. All eleven block; the
-ten script-content rules read the script file from the project directory
+`verify_script_text_not_in_spec`, and the five rules `verify_script_rejects_own_files`,
+`verify_script_needs_later_task_output`, `verify_script_sh_for_bash`,
+`verify_script_pipe_grep_q`, `verify_script_hex_pattern` in the rule table above. All block; the
+script-content rules read the script file from the project directory
 (one level into a sourced helper) and are skipped when it does not exist yet —
 the full authoring guide and the fix for each rule is
 [Write verification scripts that stay stable](automaton-verification-scripts.md).
@@ -862,11 +920,15 @@ with zero stories and no explanation.
 
 **1. The daemon corrects fixed release numbers itself.** When the
 `release-version-fixed` check is the **only** content failure of a plan,
-the daemon rewrites each fixed three-part number in a release story or
-release task (title, description or spec) instead of sending the plan back
+the daemon rewrites each fixed three-part number that is the Automaton's
+own release version, in a release story or release task (title, description
+or spec), instead of sending the plan back
 to the planner: a number introduced by the word "version" or "release" is
 replaced together with that word by "the release", and a bare number
-becomes "the next patch above main". It only does this when every other
+becomes "the next patch above main". A version of something else (a Python,
+Go or Node version, a library pin such as `requests==2.31.0`, a path, URL or
+image tag) is never rewritten and never counts as a release number. It only
+does this when every other
 plan check passes on the corrected plan; otherwise the plan takes the
 ordinary path (retry or failure) untouched. Each correction is written to
 the Automaton's decision log as one `auto_correct` line that lists every
@@ -961,11 +1023,13 @@ alert or question for a failure that is still within its retry budget.
 A finding is `{rule_id, severity, message, story, task, matched}` — the
 offending task, or its story when the finding is story-scoped, or `-`
 when it is whole-plan. Every surface renders the same line:
-`[severity] rule_id task: message`; an empty set renders as
+`[severity] rule_id task: message [line: <offending spec line>]` (the quoted
+line is `matched`, the whole spec line the rule fired on, clipped to 160
+characters around the hit; the retry feedback to the planner carries it too); an empty set renders as
 `clean: 0 findings`.
 
 ```
-decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
+decompose lint of prd-9f3a (mode enforce, 30 active rules): 1 block, 2 warn
 [block] runs_hosting_cli task-2: Task spec invokes the hosting CLI (gh/glab/hub); hosting operations run on the operator's host, not inside a task.
 [warn] no_verification_script task-5: Task has no verification script; every decomposed task should declare one so its result can be checked.
 [warn] no_verification_script story-1: Task has no verification script; every decomposed task should declare one so its result can be checked.

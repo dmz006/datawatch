@@ -2205,6 +2205,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			textCounted = act == infraFailureCounted
 		} else {
 			m.store.WithLock(func() { clearInfraRetryCount(t) })
+			m.resetNodeUnresponsive(t.ComputeNode)
 		}
 		vrFinal := vr
 		m.store.WithLock(func() { t.Verification = &vrFinal })
@@ -2655,7 +2656,14 @@ func (m *Manager) handleInfraFailure(ctx context.Context, prd *PRD, t *Task, run
 	if err == nil || ctx.Err() != nil {
 		return infraFailureNone, nil
 	}
-	if plan, ok := m.planInfraRetry(prd, t, err); ok {
+	plan, ok := m.planInfraRetry(prd, t, err)
+	if ok && plan.Class == InfraClassModelUnresponsive {
+		// Name the model in the reason; the node comes from the task.
+		if p2, ok2 := m.planModelUnresponsiveRetry(m.infraRetryConfig(), t, err, run.Backend, run.Model); ok2 {
+			plan = p2
+		}
+	}
+	if ok {
 		m.releaseCapacity(t.ID)
 		log.Printf("[autonomous] prd=%s task=%s: infrastructure failure (%s), retry %d of %d in %s: %v",
 			prd.ID, t.ID, plan.Class, plan.Number, plan.MaxTries, plan.Delay, err)
@@ -3544,8 +3552,14 @@ func resolveTaskExecutionLLM(t *Task, story *Story, prd *PRD, auto *Automation, 
 	if to, ok := routeBackend(backend); ok {
 		// The burn guard routes new work meant for this backend elsewhere. The
 		// model belongs to the backend it was set for, so it is dropped (empty =
-		// the target backend's default).
+		// the target backend's default). A backend route takes precedence over a
+		// model route: once the backend changes the original model is meaningless
+		// anyway.
 		backend, model, source = to, "", ExecutorSourceBurnGuard
+	} else if m, ok := routeModelFor(backend); ok {
+		// The route_cheaper_model rung keeps this backend but sends new work to a
+		// cheaper model on it: the model is replaced, the backend is unchanged.
+		model, source = m, ExecutorSourceBurnGuard
 	}
 	// Explicit-model policy (model_policy.go): a claude-code worker session is
 	// started with an explicit model. After the precedence above (task ->
@@ -3589,6 +3603,32 @@ func routeBackend(backend string) (string, bool) {
 		return "", false
 	}
 	return to, true
+}
+
+var backendModelRoute atomic.Pointer[func(backend string) (string, bool)]
+
+// SetBackendModelRoute wires the lookup consulted when a task's backend is resolved:
+// it returns the model new work meant for backend runs with, if the burn guard routes
+// it. Nil clears it. It changes only the model of new work on the same backend; it
+// never changes the backend and never touches a running session.
+func SetBackendModelRoute(fn func(backend string) (string, bool)) {
+	if fn == nil {
+		backendModelRoute.Store(nil)
+		return
+	}
+	backendModelRoute.Store(&fn)
+}
+
+func routeModelFor(backend string) (string, bool) {
+	fn := backendModelRoute.Load()
+	if fn == nil || backend == "" {
+		return "", false
+	}
+	model, ok := (*fn)(backend)
+	if !ok || model == "" {
+		return "", false
+	}
+	return model, true
 }
 
 // resolveTaskEffort resolves a task's execution effort: task → story → PRD →

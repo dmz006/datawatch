@@ -145,9 +145,18 @@ func ValidVerificationMode(m VerificationMode) bool {
 
 // EnabledModel pairs one ComputeNode with one model name.
 // Node is empty for SaaS kinds (claude, gemini).
+//
+// The optional rate fields carry this model's own USD price per 1K tokens
+// (input, output, cache read, cache write). They are provider-dependent and
+// configuration only: an unset (nil) field falls back to the per-backend
+// cost_rates entry — see config.ResolveModelCostRate.
 type EnabledModel struct {
-	Node  string `yaml:"node,omitempty" json:"node,omitempty"`
-	Model string `yaml:"model" json:"model"`
+	Node           string   `yaml:"node,omitempty" json:"node,omitempty"`
+	Model          string   `yaml:"model" json:"model"`
+	InPerK         *float64 `yaml:"in_per_k,omitempty" json:"in_per_k,omitempty"`
+	OutPerK        *float64 `yaml:"out_per_k,omitempty" json:"out_per_k,omitempty"`
+	CacheReadPerK  *float64 `yaml:"cache_read_per_k,omitempty" json:"cache_read_per_k,omitempty"`
+	CacheWritePerK *float64 `yaml:"cache_write_per_k,omitempty" json:"cache_write_per_k,omitempty"`
 }
 
 // LLM is one named LLM definition in the registry.

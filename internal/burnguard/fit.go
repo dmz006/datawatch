@@ -17,6 +17,16 @@ type Coefficients struct {
 	CacheWritePerM float64 `json:"cache_write_per_million"`
 	// CacheReadPerM is points per million cache-read tokens.
 	CacheReadPerM float64 `json:"cache_read_per_million"`
+	// InputPerM and OutputPerM price input and output tokens per million. They are
+	// zero for the fitted coefficients (the fit reads cache tokens only) and set when
+	// the coefficients come from a model's own cost rate (CoefficientsFromRate).
+	InputPerM  float64 `json:"input_per_million,omitempty"`
+	OutputPerM float64 `json:"output_per_million,omitempty"`
+}
+
+// price is the cost of the token sums at c.
+func price(s tokenSums, c Coefficients) float64 {
+	return s.cw/1e6*c.CacheWritePerM + s.cr/1e6*c.CacheReadPerM + s.in/1e6*c.InputPerM + s.out/1e6*c.OutputPerM
 }
 
 // DefaultCoefficients are the values fitted to the operator's readings of 2026-10-25 to
@@ -97,7 +107,7 @@ func Intervals(buckets []Bucket, readings []usagecalc.Reading, through time.Time
 	return out
 }
 
-type tokenSums struct{ cw, cr float64 }
+type tokenSums struct{ cw, cr, in, out float64 }
 
 // tokensBetween sums the cache tokens in [from, to). A bucket partly inside the span counts
 // in proportion to the overlap, as if its tokens were spread evenly over the hour. The hour
@@ -123,6 +133,8 @@ func tokensBetween(buckets []Bucket, from, to, through time.Time) tokenSums {
 		t := b.Total()
 		s.cw += float64(t.CacheWrite) * frac
 		s.cr += float64(t.CacheRead) * frac
+		s.in += float64(t.Input) * frac
+		s.out += float64(t.Output) * frac
 	}
 	return s
 }

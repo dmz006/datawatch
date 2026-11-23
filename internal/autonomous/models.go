@@ -1345,6 +1345,11 @@ type Task struct {
 	// GateRestartRetryUsed is true once the Automaton has retried this final
 	// gate after a daemon restart killed it; a second kill is not retried.
 	GateRestartRetryUsed bool `json:"gate_restart_retry_used,omitempty"`
+	// ModelUnresponsiveRetries is the consecutive requeues of this task after
+	// a model-unresponsive failure. It has its own bounded backoff and never
+	// touches InfraRetryCount; it is reset with it when the task gets a fair
+	// attempt.
+	ModelUnresponsiveRetries int `json:"model_unresponsive_retries,omitempty"`
 	// SystemTags is the placement-derived tag set this task carries (its
 	// Automaton's project, Automation and Automaton, plus the stage the
 	// Automaton's member slot carries): derived by ObjectTagsForTask under

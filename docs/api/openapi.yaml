@@ -1087,7 +1087,12 @@ paths:
         false only `gpu_lanes` and `claude_lanes` set the lane counts) and
         `autonomous.lane_fill.gpu_mode` and `autonomous.lane_fill.claude_mode`
         (off | shadow | on, or empty to follow `autonomous.lane_fill.mode`; they set
-        the mode for one lane kind). A bad lane fill value rejects the whole PUT with
+        the mode for one lane kind). `autonomous.lane_fill.stalled_merge_minutes`
+        (whole number >= 0, default 30; minutes a verified task's merge into the
+        Automaton branch may stay pending with no progress before the Automaton stops
+        holding its lane and appears in the `waiting` list of the lane fill status
+        with the reason code `merge_stalled`; `0` turns the rule off and the lane is
+        kept; an unset key reads as 30). A bad lane fill value rejects the whole PUT with
         400 and nothing is written. GET returns the values in effect and the running planner picks up
         changes without a restart.
         `autonomous.failure_escalation.enabled` (true|false, default true),
@@ -1586,7 +1591,9 @@ paths:
         each lane type, the evidence from the last poll (active GPU sessions and loaded
         models), the newest planner decisions and the idle alerts. `modes` gives the
         mode in effect for each lane kind and `lane_counts` the lane counts the last
-        poll used. A decision that refused an Automaton carries `eligibility_reason`,
+        poll used. `waiting` lists each running Automaton that holds no live work, with
+        its title and the reason it waits; the lane it sat on is left idle for the next
+        eligible work. A decision that refused an Automaton carries `eligibility_reason`,
         the stable code for the refusal. `limit` caps the decision history, newest first. Needs the autonomous read capability when
         called by a federated peer.
       operationId: autonomousLaneFillStatus
@@ -2465,8 +2472,10 @@ paths:
     get:
       summary: A project's plans in order, with a Backlog group
       description: |
-        Lists the project's plans in priority order, each with its goal, state,
-        progress (Automata done out of total, with a whole-number percent for a bar),
+        Lists the project's plans in priority order, each with its goal, state (the
+        status, derived from the linked work by `POST /api/plans/rollup` unless it was
+        set by hand), `set_by_hand` (true when the status was written by hand, so the
+        roll-up keeps it), progress (Automata done out of total, with a whole-number percent for a bar),
         points, the ids of its Automations and Automata, and a next marker naming the
         Automaton that runs next. Plans with no Automaton yet are in the `backlog`
         group, in priority order. Paged with `limit` and `offset` (default 50, at most
@@ -2492,7 +2501,7 @@ paths:
                 type: object
                 properties:
                   project: {type: string}
-                  plans: {type: array, items: {type: object}}
+                  plans: {type: array, items: {$ref: "#/components/schemas/PlanRow"}}
                   page: {type: object}
                   backlog: {type: object}
         "400": {description: A paging value is not a whole number}
@@ -2561,7 +2570,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  plan: {type: object}
+                  plan: {$ref: "#/components/schemas/PlanHeader"}
                   progress: {type: object}
                   next: {type: object, nullable: true}
                   automata: {type: array, items: {type: object}}
@@ -2596,7 +2605,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  plan: {type: object}
+                  plan: {$ref: "#/components/schemas/PlanHeader"}
                   tasks: {type: array, items: {type: object}}
                   page: {type: object}
         "400": {description: A paging value is not a whole number}
@@ -2638,6 +2647,80 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans/rollup:
+    get:
+      summary: Preview the plan status roll-up (what would change)
+      description: |
+        Shows what the roll-up would change, and writes nothing. A plan's status is
+        derived from the state recorded on each link to an Automaton or Automation
+        (the state seen when it was attached, and `shipped` when it is recorded as
+        shipped; not the live state): no linked work leaves the plan alone; any failed or blocked item makes
+        it `blocked`; any running item keeps it `open`; all items shipped makes it
+        `shipped`; all items finished makes it `done`; anything else keeps it `open`.
+        A plan whose status was set by hand is never changed: it is listed with
+        `set_by_hand_kept` true and the status the roll-up would have written.
+        `dry_run` defaults to true on this route and `dry_run=false` is refused with
+        400: a read never writes, so use `POST /api/plans/rollup` to apply. `project`
+        limits it to one registered project alias; without it every project is
+        previewed. Needs the autonomous read capability when called by a federated
+        peer.
+      operationId: plansRollupPreview
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Registered project alias; default every project"}
+        - {name: dry_run, in: query, schema: {type: boolean, default: true}, description: "Only true is accepted on GET"}
+      responses:
+        "200":
+          description: The changes the roll-up would make
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRollupResult"
+        "400": {description: dry_run is false or not a boolean, or the project is not a registered alias}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+    post:
+      summary: Apply the plan status roll-up
+      description: |
+        Derives each plan's status from its linked work (see `GET /api/plans/rollup`
+        for the rules) and writes it. It applies by default; `{"dry_run": true}` in the
+        body, or `?dry_run=true`, only reports what would change and writes nothing, so
+        the same request can be run both ways. A plan whose status was set by hand is
+        kept and reported with `set_by_hand_kept` true. A plan that becomes closed
+        gets its `closed_at`; one that becomes open again loses it. Each write is
+        recorded in the audit log with the actor `rollup`. Both body fields are
+        optional; an empty body rolls every project up. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: plansRollupApply
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Registered project alias; the body's project wins"}
+        - {name: dry_run, in: query, schema: {type: boolean}, description: "true previews instead of applying"}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project: {type: string, description: "Registered project alias; default every project"}
+                dry_run: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The changes made (or, with dry_run, the changes that would be made)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRollupResult"
+        "400": {description: Bad body, dry_run is not a boolean, or the project is not a registered alias}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Plan records are turned off}
         "503": {description: Plan records are not available}
   /api/plans/migrate:
@@ -2766,6 +2849,56 @@ paths:
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Plan records are turned off}
         "409": {description: The title is already used in the project, or the project already has a release plan for that release (the answer names it)}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}:
+    patch:
+      summary: Rename a plan and/or edit its goal
+      description: |
+        Gives the plan a new title, a new goal, or both; a field that is left out is
+        left alone. The body must hold at least one of `title` and `goal`. A title is
+        trimmed, must not be empty, is one line and is at most 100 characters, and
+        must not be used by another record in the plan's project; an invalid title
+        answers 400, and a taken title answers 409 with a message that names the
+        record holding it (and `existing`, that record), exactly as create does.
+        Renaming a plan to the title it already has changes nothing. The old title
+        stays as an alias, so older references still resolve, and a renamed plan
+        keeps its title through a later plans migration. A goal is trimmed and is
+        at most 2000 characters; an empty `goal` clears it. The whole request is
+        checked before anything is written, so a refused goal never leaves a rename
+        behind. Needs the autonomous write capability when called by a federated
+        peer. Both changes are written to the audit log with the old and new value
+        and the actor.
+      operationId: planEdit
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid, title or an older title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                title: {type: string, maxLength: 100, description: "The new title: one line, at most 100 characters, unique in the project"}
+                goal: {type: string, maxLength: 2000, description: "The new goal; an empty string clears it"}
+      responses:
+        "200":
+          description: The stored plan, title first, with its goal and whether its title is kept by hand
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  goal: {type: string}
+                  title_set_by_hand: {type: boolean}
+        "400": {description: Nothing to change, an empty, multi-line or over-long title, an over-long goal, or the reference is not a plan}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The title is already used in the project (the answer names the other record), or the reference is ambiguous}
         "503": {description: Plan records are not available}
   /api/plans/order:
     put:
@@ -12356,10 +12489,57 @@ components:
           items: {type: object, properties: {kind: {type: string}, ref: {type: string}}}
         aliases: {type: array, items: {type: string}}
         needs_review: {type: boolean}
+        set_by_hand: {type: boolean, description: "True when the status (state) was written by hand, so the plan roll-up keeps it. Always present"}
         review_reason: {type: string}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         closed_at: {type: string, format: date-time}
+    PlanRow:
+      type: object
+      description: One plan of the plans list. The title comes first and the id second.
+      properties:
+        title: {type: string}
+        id: {type: string}
+        uid: {type: string}
+        goal: {type: string}
+        state:
+          type: string
+          description: The plan's status. Derived from its linked work by the roll-up unless set_by_hand is true.
+        set_by_hand: {type: boolean, description: "True when the status was written by hand; the roll-up keeps it and a client marks it (by hand)"}
+        order: {type: integer}
+        progress: {type: object, properties: {done: {type: integer}, total: {type: integer}, percent: {type: integer}}}
+        points: {type: number}
+        automation_ids: {type: array, items: {type: string}}
+        automaton_ids: {type: array, items: {type: string}}
+        finding_count: {type: integer}
+        next: {type: object, nullable: true, properties: {automaton_id: {type: string}, title: {type: string}}}
+    PlanHeader:
+      type: object
+      description: The plan header of the plan detail reads (the Automata and tasks routes).
+      properties:
+        title: {type: string}
+        id: {type: string}
+        state: {type: string, description: The plan's status}
+        set_by_hand: {type: boolean, description: True when the status was written by hand}
+    PlanRollupChange:
+      type: object
+      description: One plan the roll-up found different from its derived status.
+      properties:
+        title: {type: string}
+        plan: {type: string, description: The plan id}
+        from: {type: string, description: The status the plan has}
+        to: {type: string, description: The status the roll-up derives}
+        reason: {type: string}
+        set_by_hand_kept: {type: boolean, description: "True when the status was set by hand: `to` is what the roll-up would have written and nothing was"}
+    PlanRollupResult:
+      type: object
+      properties:
+        project: {type: string, description: Present when the roll-up was limited to one project}
+        dry_run: {type: boolean}
+        applied: {type: boolean, description: True when the changes were written}
+        changes: {type: array, items: {$ref: "#/components/schemas/PlanRollupChange"}}
+        changed: {type: integer, description: Plans written, or that would be on a dry run}
+        kept: {type: integer, description: Plans whose hand-set status was left alone}
     PlanRecordResponse:
       type: object
       properties:
@@ -12879,6 +13059,22 @@ components:
         alerts:
           type: array
           items: {$ref: "#/components/schemas/LaneFillAlert"}
+        waiting:
+          type: array
+          description: Running Automata that hold no live work, in the order the snapshot read them. The lane each one sat on is left idle for the next eligible work, and lane fill never starts a second run of it. Empty when nothing running is idle.
+          items: {$ref: "#/components/schemas/LaneFillWaiting"}
+    LaneFillWaiting:
+      type: object
+      description: One running Automaton that holds no live work
+      properties:
+        prd_id: {type: string, description: "The Automaton's id"}
+        title: {type: string, description: "The Automaton's title"}
+        backend: {type: string, description: "The backend the Automaton runs on; left out when not known"}
+        wait_reason: {type: string, description: "Why it waits, in words"}
+        reason_code:
+          type: string
+          enum: [waiting_review_merge, merge_stalled, no_task_startable]
+          description: "The stable code behind wait_reason. waiting_review_merge: every task is completed and merged, and the Automaton waits for the completion review. merge_stalled: a verified task's merge stayed pending past autonomous.lane_fill.stalled_merge_minutes with no progress. no_task_startable: no task can start and no verified work is pending a merge."
     LaneFillLaneCounts:
       type: object
       description: The lane counts of the last poll, per lane kind
@@ -13958,6 +14154,13 @@ components:
             verification_script_reason_empty: {type: boolean, description: "Assert the task states no reason for lacking a verification script"}
             verification_script_task_files_only: {type: boolean, description: "Assert the verification script compares only against the task's own files and never the merge base"}
             verification_script_docs_without_sync: {type: boolean, description: "Assert the verification script checks docs without running make sync-docs"}
+            verification_script_rejects_own_files: {type: boolean, description: "Assert the verification script's literal allowed-file list omits the task's own files or the standard allowed set"}
+            verification_script_needs_later_task_output: {type: boolean, description: "Assert the verification script requires a file or phrase only a task it does not depend on creates"}
+            verification_script_sh_for_bash: {type: boolean, description: "Assert the verification script uses bash-only syntax under an sh shebang, or a bash script is run with sh"}
+            verification_script_pipe_grep_q: {type: boolean, description: "Assert the verification script pipes into grep -q"}
+            verification_script_hex_pattern: {type: boolean, description: "Assert a grep pattern in the verification script matches CSS hex colours as tracker ids"}
+            read_only_writes_outside_report: {type: boolean, description: "Assert the task is read-only and a spec line tells it to write, create or edit a file other than its report path"}
+            spec_absolute_path_outside_project: {type: boolean, description: "Assert a spec line names an absolute system path outside the project directory"}
             kind: {type: string, description: "Assert the task kind (for example final_gate), case-insensitive"}
             files_regex: {type: string, description: "Regex a task's declared files must match (RE2)"}
             any_of: {type: array, items: {type: object}, description: "Matches when at least one sub-condition matches"}
@@ -13967,7 +14170,7 @@ components:
       type: object
       description: |
         `autonomous.decompose_lint`. Defaults when unset: `mode: shadow`,
-        `max_retries: 2`, the seventeen-rule built-in pack (thirteen block, four warn), and an empty
+        `max_retries: 2`, the thirty-rule built-in pack (twenty-four block, six warn), and an empty
         `disabled_rules`. `mode` empty normalizes to `shadow`; a typo is a
         validation error. `max_retries` clamps negatives to 0 (0 = valid,
         lint-and-record without retrying) and above the cap (5) to the cap.
@@ -14039,7 +14242,8 @@ components:
         message: {type: string, description: "The rule's finding text"}
         story: {type: string, description: 'Story the offending task belongs to (may be "-" for plan-level findings)'}
         task: {type: string, description: 'Offending task id (may be "-" for story-/plan-level findings)'}
-        matched: {type: string, description: "The matched snippet, or a short description of an asserted field state for predicate-only rules"}
+        matched: {type: string, description: "The offending line: the whole spec line a spec rule fired on (clipped around the hit), the script line a script-content rule fired on, or a short description of an asserted field state for predicate-only rules"}
+        script: {type: string, description: "For a verification-script rule, the repo-relative path of the script the finding is about"}
     LintSummary:
       type: object
       required: [block, warn]
