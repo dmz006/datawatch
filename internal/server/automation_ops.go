@@ -38,6 +38,8 @@ var automationRESTOperations = []AutomationRESTOperation{
 	{"set_budget", http.MethodPost},
 	{"set_effort_ceiling", http.MethodPost},
 	{"set_decision_assistant", http.MethodPost},
+	{"set_max_parallel", http.MethodPost},
+	{"set_stage_gate", http.MethodPost},
 	{"status", http.MethodGet},
 	{"import-graph", http.MethodPost},
 }
@@ -79,4 +81,39 @@ func insertMemberTarget(prdID, memberItemID, bodyItemID string) (prd, item strin
 		item = strings.TrimSpace(bodyItemID)
 	}
 	return prd, item
+}
+
+// insertMemberKindError checks which kind of member an insert body names and
+// returns the 400 message when it does not name exactly one: an Automaton
+// (prd_id), a pending item (pending_item_id) or a decision wait (question).
+// kind is optional and, when set, can only be decision_wait and needs question.
+func insertMemberKindError(kind, question, prdID, itemID string) string {
+	switch strings.TrimSpace(kind) {
+	case "", "decision_wait":
+	default:
+		return "400: member kind " + strings.TrimSpace(kind) + " cannot be inserted; only a decision_wait member (with question) can be inserted by kind"
+	}
+	if strings.TrimSpace(kind) == "decision_wait" && question == "" {
+		return "400: a decision_wait member needs a question"
+	}
+	if prdID != "" && itemID != "" {
+		return "400: an insert takes either prd_id or pending_item_id, not both"
+	}
+	if question != "" && (prdID != "" || itemID != "") {
+		return "400: an insert takes one of prd_id, pending_item_id or question, not several"
+	}
+	return ""
+}
+
+// auditTextMax bounds free text copied into an audit record, in runes.
+const auditTextMax = 160
+
+// truncateAuditText cuts s to auditTextMax runes so a long question never
+// bloats an audit record.
+func truncateAuditText(s string) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= auditTextMax {
+		return string(r)
+	}
+	return string(r[:auditTextMax])
 }
