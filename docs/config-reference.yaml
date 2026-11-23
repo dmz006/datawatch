@@ -4419,6 +4419,14 @@ autonomous:
   #                  up to auto_fix_retries, then mark the task failed.
   #   max_failures - 3 by default; 4 or more is allowed, the minimum is 1.
   #   steps        - up to 8 entries of backend, model, effort, attempts.
+  # A model-less claude-code step runs on the daemon's default model (sonnet;
+  # haiku for a mechanical task kind) rather than the backend's built-in or
+  # the account's default. While the usage back-off guard has a step's backend
+  # backed off, that step is skipped for the attempt (the escalation never
+  # starts a new session on a backed-off backend; the attempt runs on the
+  # task's normally resolved worker instead), and the step, the model and
+  # every skip are recorded on the attempt record and in the decision log as
+  # a failure_escalation entry naming the step's backend and model.
   failure_escalation:
     enabled: true
     max_failures: 3

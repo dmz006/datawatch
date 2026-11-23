@@ -44,6 +44,25 @@ func selectEscalationStep(eff EffectiveFailureEscalation, failures int) (step Fa
 	return step, index, step.Backend != ""
 }
 
+// stepBackendBackedOff reports whether the usage guard currently backs off
+// backend, and, when it does, the wait text that says until when. A nil or
+// unwired registry (back-off disabled) and an empty backend never block a
+// step. It consults the same flag admission consults, so a step whose
+// backend is backed off is skipped rather than launched onto it.
+func (m *Manager) stepBackendBackedOff(backend string) (blocked bool, why string) {
+	if backend == "" {
+		return false, ""
+	}
+	m.mu.Lock()
+	bo := m.backoff
+	m.mu.Unlock()
+	if bo == nil {
+		return false, ""
+	}
+	blocked, why = bo.Blocked(backend)
+	return blocked, why
+}
+
 // recordFailureEscalationDecision appends a failure_escalation entry to the
 // Automaton's decision log when an attempt moves the task to a different
 // worker. It reads the PRD fresh from the store, so it is safe while other
