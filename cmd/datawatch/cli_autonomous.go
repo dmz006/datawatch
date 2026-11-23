@@ -249,6 +249,7 @@ Subcommands:
   events --queue <name>           Read pending events from an mcp_queue queue [--since <cursor>] [--limit n] [--json]
   merge-pipeline show|set-record|clear-record|validate   The merge pipeline of a project, its record, and a check of a pipeline
   merge-shadow status|compare <automaton>   Merge shadow matched/different counts per release size, and one Automaton's differences
+  deploy show|run                 The deploy settings and last record; start a deploy now
 `,
 	}
 	cmd.AddCommand(
@@ -260,6 +261,7 @@ Subcommands:
 		newAutonomousInfraRetriesCmd(),
 		newAutonomousMergePipelineCmd(),
 		newAutonomousMergeShadowCmd(),
+		newAutonomousDeployCmd(),
 		newAutonomousStatusCmd(),
 		newAutonomousGeneratedArtefactsCmd(),
 		newAutonomousChangeRecordCmd(),

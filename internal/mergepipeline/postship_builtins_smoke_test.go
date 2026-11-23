@@ -52,9 +52,9 @@ func (f *smokeShip) Push(_ context.Context, _, branch, tag string) error {
 	f.record("push " + branch + " " + tag)
 	return nil
 }
-func (f *smokeShip) Deploy(_ context.Context, _ string) error {
+func (f *smokeShip) Deploy(_ context.Context, _ string) (ShipResult, error) {
 	f.record("deploy")
-	return nil
+	return ShipResult{}, nil
 }
 func (f *smokeShip) Hook(_ context.Context, _ string, s Step) (string, error) {
 	f.record("hook " + s.Name)

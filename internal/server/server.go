@@ -635,6 +635,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline", api.handleMergePipeline)                           // merge pipeline in effect for a project: definition, source, reason, conflict policy, overrides
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/record", api.handleMergePipelineRecord)              // PUT sets and DELETE removes a project's daemon-held pipeline record
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/validate", api.handleMergePipelineValidate)          // POST checks a pipeline body or a repository file without saving
+	apiMux.HandleFunc("/api/autonomous/deploy", api.handleAutonomousDeploy)                                // GET effective deploy settings, last deploy phase and outcome, deferral, snapshot time and SHA-256
+	apiMux.HandleFunc("/api/autonomous/deploy/run", api.handleAutonomousDeployRun)                         // POST starts the deploy sequence for the current build now; 409 while a merge or deploy runs
 	apiMux.HandleFunc("/api/autonomous/release-readiness", api.handleReleaseReadiness)                     // release readiness for one size: record, conflict and PWA counts against the bar, zeros included
 	apiMux.HandleFunc("/api/autonomous/checks", api.handleAutonomousChecks)                                // resolved checks policy + recorded check findings
 	apiMux.HandleFunc("/api/autonomous/restart-interruptions", api.handleAutonomousRestartInterruptions)   // what a restart now would interrupt + the restart policy
@@ -1713,6 +1715,9 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 
 	// The observer pull collector starts with the daemon and stops with ctx.
 	s.api.StartObserverPull(ctx)
+	// Finish a deploy the restart interrupted (health check, rollback) and
+	// retry a deferred one, in the background.
+	s.StartDeployResume(ctx)
 
 	// Wire real-time stats broadcast — fires on every collection (every 5s).
 	// Chain with any existing onCollect (e.g. Prometheus metrics update).

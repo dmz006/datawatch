@@ -638,6 +638,12 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   An unknown project is a not-found answer; a project with no release yet answers with `last_release` null and defaults for unset settings.
+- **`autonomous_deploy_get`**, **`autonomous_deploy_run`** — the deploy after a ship. `_get` reads the effective `autonomous.deploy` settings, whether a merge or deploy is running, the last deploy phase and outcome, any deferral and its reason, and the snapshot's time and SHA-256 (never its contents). `_run` starts the deploy sequence for the current build now; it is refused with a conflict while a merge or deploy is running. Neither takes arguments. Change the settings with `config_set` (for example `config_set(key="autonomous.deploy.health_timeout", value="3m")`); an empty value means that step does nothing. `_get` needs the autonomous read capability and `_run` the write capability when called by a federated peer. See [howto/deploy-after-ship.md](howto/deploy-after-ship.md).
+
+  ```
+  autonomous_deploy_get()
+  autonomous_deploy_run()
+  ```
 
   ```
   autonomous_merge_pipeline_get(project="demo")

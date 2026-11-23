@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.92"
+var Version = "9.182.94"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -7085,6 +7085,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"infra_retry":     infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
 			// Effective, not raw: the merge pipeline values with defaults filled in.
 			"merge_pipeline": mergePipelineConfigSurface(s.cfg.Autonomous.MergePipeline),
+			// Effective, not raw: the deploy block with the timeout defaults filled in.
+			"deploy": deployConfigSurface(s.cfg.Autonomous.Deploy),
 			// Effective, not raw: all eleven request watch values with the
 			// defaults filled in; remediation_options is the list in effect.
 			"request_watch": requestWatchConfigSurface(s.cfg.Autonomous.RequestWatch),
@@ -7935,6 +7937,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// already holds is accepted, as is a single PUT that sets the target and
 	// the hook together.
 	if err := validateMergePipelinePatchBase(s.cfg.Autonomous.MergePipeline, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The deploy block is checked as a whole against the block after the patch.
+	if err := validateDeployPatch(s.cfg.Autonomous.Deploy, patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -11522,6 +11529,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// validateMergePipelinePatch. The merge run reads the live block,
 			// so the change applies with no restart.
 			if applyMergePipelinePatch(cfg, k, v) {
+				continue
+			}
+			// autonomous.deploy.*; checked by validateDeployPatch. The deploy
+			// step reads the live block, so the change applies with no restart.
+			if applyDeployPatch(cfg, k, v) {
 				continue
 			}
 			// autonomous.request_watch.*; the values were checked by

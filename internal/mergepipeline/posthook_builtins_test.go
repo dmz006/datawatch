@@ -43,7 +43,9 @@ func (f *fakeBuiltinShip) Tag(_ context.Context, _, tag, _ string) error {
 func (f *fakeBuiltinShip) Push(_ context.Context, _, b, tag string) error {
 	return f.note("push " + b + " " + tag)
 }
-func (f *fakeBuiltinShip) Deploy(_ context.Context, _ string) error { return f.note("deploy") }
+func (f *fakeBuiltinShip) Deploy(_ context.Context, _ string) (ShipResult, error) {
+	return ShipResult{}, f.note("deploy")
+}
 func (f *fakeBuiltinShip) Hook(_ context.Context, _ string, s Step) (string, error) {
 	return "hook ran", f.note("hook " + s.Name)
 }
