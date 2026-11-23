@@ -119,7 +119,7 @@ echo ""
 if [[ "$STRAY_FOUND" -eq 1 ]]; then
   echo "check-no-stray-daemons: FAIL — ${STRAY_FOUND:-0} sandbox daemon(s) still running (stray). "
   echo "  Stop each by its RECORDED PID (the test script owns its own daemon; see its logs/pidfile) —"
-  echo "  this checker never kills on its own terms, and never pkill -f datawatch."
+  echo "  this checker never kills on its own terms, and never signals a process by name."
   if [[ "$ARG" == "--list" ]]; then exit 0; fi
   exit 1
 fi
