@@ -6063,5 +6063,7 @@
   "cost_charts_col_local_tokens": "Tokens de modelos locales",
   "cost_charts_col_active": "Tiempo activo",
   "cost_charts_not_reported_marker": "no informado (%1$s)",
-  "cost_report_not_reported": "no informado (%1$s)"
+  "cost_report_not_reported": "no informado (%1$s)",
+  "settings_rtk_write_rules_files": "Escribir las instrucciones de sesión en AGENT.md y CLAUDE.md",
+  "settings_rtk_write_rules_files_help": "Si está desactivado (el valor predeterminado), el daemon nunca escribe en AGENT.md ni en CLAUDE.md: no los crea, no actualiza su encabezado de sesión ni añade las instrucciones de RTK, de memoria o de comunicación entre sesiones. Van a un archivo por sesión que no se versiona. Los archivos de reglas solo los escriben las personas."
 }

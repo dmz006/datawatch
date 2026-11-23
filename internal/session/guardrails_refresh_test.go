@@ -5,7 +5,8 @@
 // stopped mid-task to ask which assignment was real, because
 // WriteSessionGuardrails only merged in missing memory/RTK sections when
 // the file already existed and never refreshed the header for the current
-// session. This covers the fix.
+// session. This covers the fix, which now applies only when
+// rtk.write_rules_files is on (the default never touches the rules file).
 
 package session
 
@@ -33,7 +34,7 @@ func TestWriteSessionGuardrails_RefreshesStaleHeader_WhenProjectFileAlreadyExist
 	if err != nil {
 		t.Fatalf("NewTracker (first): %v", err)
 	}
-	if err := tr1.WriteSessionGuardrails("", first); err != nil {
+	if err := tr1.WriteSessionGuardrails("", first, GuardrailsOptions{WriteRulesFiles: true}); err != nil {
 		t.Fatalf("WriteSessionGuardrails (first): %v", err)
 	}
 
@@ -61,7 +62,7 @@ func TestWriteSessionGuardrails_RefreshesStaleHeader_WhenProjectFileAlreadyExist
 	if err != nil {
 		t.Fatalf("NewTracker (second): %v", err)
 	}
-	if err := tr2.WriteSessionGuardrails("", second); err != nil {
+	if err := tr2.WriteSessionGuardrails("", second, GuardrailsOptions{WriteRulesFiles: true}); err != nil {
 		t.Fatalf("WriteSessionGuardrails (second): %v", err)
 	}
 
