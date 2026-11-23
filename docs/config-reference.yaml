@@ -2778,6 +2778,50 @@ autonomous:
     # Whole number, 0 or more; 0 means no grace. Default: 300.
     grace_seconds: 300
 
+
+  # Gate repair: the engine behind a failed final gate script. After a gate
+  # fails it classifies the failure (a gate that still points at a later
+  # story's script, a stale docs mirror, an allowed-list that now rejects a
+  # required file, a tracker id or CSS hex the gate misflags, a piped command
+  # killed by SIGPIPE, a run killed by a restart - or unknown). In `on` it
+  # applies the safe repair for the class once per class per task (the repair
+  # budget persists), then resets the failed task and its dependents so the
+  # gate runs again. A spent budget, an unknown class or a refused repair is
+  # one held operator question (options `retry` - retry the gate now, the
+  # question's default - or `cancel` - the task stays failed), never a guess,
+  # and a failed repair spends nothing, raises no question and leaves the
+  # gate failed. Read with `GET /api/autonomous/gate-repair`: each record
+  # says what it found, what it would do or did, and the undo (the
+  # `before`/`after` pair when the script was edited; for the docs-mirror
+  # repair the `after` is the `make sync-docs` output). A repair never
+  # merges, ships, deletes, ends or
+  # signals a session, changes a model or backend setting, or touches a
+  # security workflow; script edits are limited to the task's own
+  # .datawatch/verify folder. The key is settable on every configuration
+  # channel: PUT /api/config {"autonomous.gate_repair.mode": <value>} (GET
+  # /api/config shows the effective value under autonomous.gate_repair),
+  # CLI `datawatch config set autonomous.gate_repair.mode <value>`, MCP
+  # `config_set` with key autonomous.gate_repair.mode (requires
+  # mcp.allow_self_config=true), comm `configure autonomous.gate_repair.mode=<value>`,
+  # and the web app Settings (Automata, Gate repair). An invalid value is
+  # refused on every surface with the same message and nothing is written.
+  # Read what it found and did with GET /api/autonomous/gate-repair, the
+  # MCP tool autonomous_gate_repair_status, `datawatch autonomous gate-repair
+  # status` and the chat verb `autonomous gate-repair status`; run the engine
+  # now — one pass over every failed gate, or one failed gate with both ids —
+  # with POST /api/autonomous/gate-repair/run, the MCP tool
+  # autonomous_gate_repair_run, `datawatch autonomous gate-repair run` and
+  # `autonomous gate-repair run` in chat (a run honors the mode in effect and
+  # changes nothing else). The earlier plural reads (GET
+  # /api/autonomous/gate-repairs, the gate_repairs MCP tool, `datawatch
+  # autonomous gate-repairs`) still answer the same object. A change takes
+  # effect on the next pass without a restart. See docs/howto/automaton-gate-repair.md
+  # for the walkthrough: the classes, report versus on, the budget and the held question.
+  gate_repair:
+    # The engine mode: off (does nothing), report (records what it would do
+    # and changes nothing) or on (repairs and reruns the gate). Default: report.
+    mode: report
+
   # The LLM registry entry's `billing_group` field (set in PWA Settings →
   # Compute → LLM edit, comm `llm add|update ... billing_group=<label>`, REST
   # `PUT /api/llms/{name}`, MCP `llm_add`/`llm_update`, or `datawatch llm

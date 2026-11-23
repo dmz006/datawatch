@@ -7833,6 +7833,48 @@ of that category.
 
 Details and the question's wording: [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#6a-planning-failures-what-you-see-what-the-daemon-fixes-what-it-asks).
 
+## Gate repair (`autonomous.gate_repair.mode`)
+
+When the script gate of an Automaton final gate fails for a cause the daemon owns, the gate repair engine works it out **of band, after the verdict is in**: it classifies the failure, and in `on` mode applies the safe repair and re-runs the gate once. Its result never changes the gate's verdict — the gate still ended failed in every case — and it never guesses. The mode is read live from the config on each failed gate, so a `configure` change applies to the next failure with no restart. The walkthrough is [howto/automaton-gate-repair.md](howto/automaton-gate-repair.md); the terms are in [datawatch-definitions.md](datawatch-definitions.md#gate-repair).
+
+**The failure classes and their repairs (checked in this order).**
+
+| Class | What failed | The repair in `on` mode |
+|---|---|---|
+| `later_story_script` | a script this story's tasks may not edit yet — a later story owns it | reset: the gate run is reset to run again; nothing is created now, the gate passes when that later story lands |
+| `docs_mirror_stale` | the built-in docs mirror was stale | run `make sync-docs` in the task's work tree, re-run the gate (the record's `after` is the `make sync-docs` output; there is no `before`) |
+| `allowed_list_rejects` | the script's own allowed-file list refused one of the files the task declares | add the file to that list in the script, re-run |
+| `tracker_id_css_hex` | a tracker id in one story matched a CSS hex-color constant in another | narrow that story's id pattern, re-run |
+| `pipe_sigpipe` | a pipe closed before the command ran, or a command missing | stop the broken pipe or call, re-run |
+| `restart_killed` | the gate itself was healthy but the daemon restarted and killed it | re-run it (it was killed, not failed) — the only re-run outside the repair budget |
+| `unknown` | a new or unclear cause | nothing: one held operator question (or a warning alert, when questions are disabled) |
+
+**The budget and the hard limits.** Each task may spend its repair budget **once per class**; the budget is spent only when a repair succeeds (a spent budget holds one operator question; a repair that fails spends nothing, raises no question, and the gate stays failed), the ledger is stored under the daemon's data directory (default `~/.datawatch/gate_repair_budget.json`) and survives restarts. Edits touch only files under the project's `.datawatch/verify/`; each record keeps its repair text (the `before`/`after` pair of the script edit, the `make sync-docs` output of the mirror rebuild — the one step outside that folder, which only refreshes the gitignored mirror). The engine never merges, ships, deletes, ends or signals, and never changes a model, backend or security workflow. `restart_killed` and `later_story_script` edit no file at all. One question per failed gate and class; while one is open it is not raised again. In `report` mode nothing is spent and nothing is edited — it classifies, records the would-be repair and raises one warning alert, "Gate repair found" (an `unknown` class is recorded the same way, with the same alert); in `on`, a spent budget, an `unknown` class or a refused repair is recorded as held, raises the held question, and raises the "Gate repair held" warning alert (that alert also fires when the question can't be raised); an applied repair raises no alert — its record and decision line are enough. With the mode `off` the engine does not run at all.
+
+Nothing here changes what a failed task means: the operator's failed-gate path, the retry budget and the verifier are untouched, and a spent budget or an `unknown` class is one held operator question, never a retry loop and never a guess.
+
+**The access methods.**
+
+| Task | YAML | CLI | Web UI | REST | Chat |
+|---|---|---|---|---|---|
+| Set the mode | `autonomous.gate_repair.mode` (`off`, `report` or `on`; default `report`) in `~/.datawatch/config.yaml` | `datawatch config set autonomous.gate_repair.mode on` | Settings → General → Automata settings → **Gate repair** (mode select); the Automation page card (housekeeping sub-tab) selects between `report` and `on` (`off` is set in Settings) | `PUT /api/config` with `{"autonomous.gate_repair.mode": "on"}` | `configure autonomous.gate_repair.mode=on` |
+| Read the mode, the records (newest first) and the budget | n/a | `datawatch autonomous gate-repair status [--json]` | Automation page (housekeeping sub-tab) → **Gate repair** card: the mode in effect, the recent findings (cause, repair, before/after) and the spent repair budget | `GET /api/autonomous/gate-repair` | `autonomous gate-repair status` |
+| Run the engine now — one pass over every failed gate, or one failed gate | n/a — the mode is what a run honors | `datawatch autonomous gate-repair run [--automaton ID --task ID] [--json]` | Automation page (housekeeping sub-tab) → **Gate repair** card → **Run now** (one pass) | `POST /api/autonomous/gate-repair/run` — empty body: one pass; both `automaton_id` and `task_id`: one gate; exactly one is refused with 400 | `autonomous gate-repair run [automaton=ID task=ID]` |
+
+A run is the same engine path as the out-of-band work after a failure: it honors the live mode (in `report` it only records what it would do and changes nothing; in `on` it applies the safe repair and re-runs the gate once), spends the same repair budget, writes the same records and decision lines, and is bound by the same hard limits. It answers with the run outcome(s) and a fresh status read, and it never changes the mode. The earlier plural read — `GET /api/autonomous/gate-repairs`, the `gate_repairs` MCP tool, `datawatch autonomous gate-repairs`, `autonomous gate-repairs` in chat — still answers the same object; the singular surfaces above are the current ones and the only ones with the run verb (operator review: whether the plural alias stays).
+
+MCP agents read with the `autonomous_gate_repair_status` tool (no arguments, read-only — reading never repairs anything, raises an alert or changes a mode), run the engine with `autonomous_gate_repair_run` (both `automaton_id` and `task_id` to repair one failed gate, neither for one pass; exactly one is refused) and change the mode with `config_set` on the key `autonomous.gate_repair.mode`. A mode other than `off`, `report` or `on` is refused on every write surface, naming the key and the valid values, and nothing is changed. The read route is GET-only (any other method is 405), the read needs the autonomous read capability when called by a federated peer, the run route needs the autonomous run capability, and both routes answer 503 until the engine is wired.
+
+**Where to see it.**
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/gate-repair` — `mode`, `budget` (one entry per spent task/class) and `records`, newest first, each with the failure class, what it would do or did, the undo (the `before`/`after` text pair when a script changed) and the held question; `POST /api/autonomous/gate-repair/run` — one pass or one gate, answering the run outcome(s) and a fresh status |
+| MCP | `autonomous_gate_repair_status` (same object, read-only, no arguments) and `autonomous_gate_repair_run` (both ids or neither) |
+| CLI | `datawatch autonomous gate-repair status`: the mode, the budget in lines, each record below it; `datawatch autonomous gate-repair run`: the run's outcomes then the fresh status; `--json` for the object |
+| Comm channel | `autonomous gate-repair status`: the same lines, budget then records; `autonomous gate-repair run [automaton=ID task=ID]`: the run's outcomes then the fresh status |
+| Web UI | Automation page → **Gate repair** card: the mode in effect (with a mode select), the recent findings (cause, repair, before/after), the spent repair budget and a **Run now** button that runs one pass |
+
 ## Model request progress (a hung request told from a slow one)
 
 A worker or verifier session can wait a long time on one model request, and a hung request looks the same from outside as a slow one. When the session's model runs on a registered compute node, the daemon watches the request and reports whether the node still shows signs of work. It is observation only: it makes no model call and never ends a worker, retries on another backend or unloads a model. The walkthrough is [howto/model-request-progress.md](howto/model-request-progress.md).

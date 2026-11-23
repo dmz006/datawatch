@@ -196,6 +196,20 @@ func (m *Manager) finishScriptGateTask(prd *PRD, t *Task, report, note, failReas
 	m.emitTaskStatus(prd, t, old, nil, nil)
 	if !passed {
 		m.emitFinalGateFailed(prd, t, failReason)
+		// The gate repair engine (report mode is the default: it records the
+		// finding and raises one alert, changing nothing; on mode applies the
+		// class's safe repair and resets the failed run) works the failure
+		// out of band — its result never changes this gate's verdict.
+		if g := m.GateRepairer(); g != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				defer cancel()
+				out := g.Run(ctx, prd.ID, t.ID)
+				if out.Err != "" {
+					log.Printf("[autonomous] %s/%s gate-repair: %s", prd.ID, t.ID, out.Err)
+				}
+			}()
+		}
 	}
 }
 

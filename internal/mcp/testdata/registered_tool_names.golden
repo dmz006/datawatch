@@ -83,6 +83,8 @@ autonomous_defect_tinyfix_check
 autonomous_event_kinds
 autonomous_event_log
 autonomous_events_pending
+autonomous_gate_repair_run
+autonomous_gate_repair_status
 autonomous_held
 autonomous_held_migrate
 autonomous_held_questions
@@ -361,6 +363,7 @@ filter_add
 filter_delete
 filter_list
 filter_toggle
+gate_repairs
 generated_artefacts_get
 get_alerts
 get_config

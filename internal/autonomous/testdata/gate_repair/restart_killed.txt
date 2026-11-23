@@ -1,0 +1,18 @@
+# gate-repair fixture — the gate process itself was killed by a signal while
+# the daemon went away (GateResult.ExitCode < 0, gateSignalKilledReason); the
+# output carries the daemon restart marker and no failing check line.
+# expect: restart_killed
+# exit-code: -1
+# signal-killed: yes
+# script: .datawatch/verify/story1-lint.sh
+# own-verify-folder: yes
+# script-story: 0
+# gate-story: 0
+# changed: internal/autonomous/gate_repair_classify.go
+# script text:
+#   set -e
+#   make lint
+---
+==> make lint
+  go vet ./internal/...
+datawatch daemon restarted; in-flight sessions are being re-adopted

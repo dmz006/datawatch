@@ -132,6 +132,7 @@ func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Ma
 	wakeRecord := supervisorloop.NewWakeRecord(supervisorLoopClock{}, 0)
 	steps.SetWakeRecord(wakeRecord)
 	wireHousekeepingRepairs(coord, amgr, aAPI, cfg, steps, autonomouspkg.HousekeepingWiring{})
+	wireGateRepair(amgr, cfg)
 	if srv != nil {
 		srv.SetSupervisorLoop(server.NewSupervisorLoopControl(steps, jobs, store))
 		srv.SetSupervisorWake(wakeRecord)
@@ -170,6 +171,21 @@ func updateSupervisorLoopMetrics(s statspkg.SystemStats) {
 	metricsPkg.SupervisorLoopRuns.WithLabelValues("error").Set(float64(s.SupervisorLoopRunsError))
 	metricsPkg.SupervisorLoopJobsEnabled.Set(float64(s.SupervisorLoopJobsEnabled))
 	metricsPkg.SupervisorLoopLastRunAge.Set(float64(s.SupervisorLoopLastRunAgeSeconds))
+}
+
+// wireGateRepair builds the gate repair engine, installs it on the Manager
+// (so the REST, MCP, CLI, chat and web reads return live data) and the
+// failed-gate repair runs the moment a script gate fails. The daemon passes
+// the zero wiring; tests pass fakes. It returns nil when nothing was wired.
+func wireGateRepair(amgr *autonomouspkg.Manager, cfg *config.Config) *autonomouspkg.GateRepairer {
+	if amgr == nil || cfg == nil {
+		return nil
+	}
+	w := autonomouspkg.GateRepairWiring{}
+	if w.BudgetPath == "" {
+		w.BudgetPath = filepath.Join(expandHome(cfg.DataDir), "gate_repair_budget.json")
+	}
+	return autonomouspkg.WireGateRepair(amgr, func() config.Config { return *cfg }, w)
 }
 
 // wireHousekeepingRepairs builds the housekeeping Repairer, installs it on the
