@@ -153,7 +153,10 @@ func TestNoNodeLeasedRetryCountUnchangedAfterNodeAppears(t *testing.T) {
 	waitNoNode(t, "worker spawn", func() bool { return r.spawnCount() == 1 })
 	waitNoNode(t, "run to finish", func() bool {
 		select {
-		case <-r.done:
+		case runErr := <-r.done:
+			if runErr != nil {
+				t.Logf("run ended with: %v", runErr)
+			}
 			return true
 		default:
 			return false
