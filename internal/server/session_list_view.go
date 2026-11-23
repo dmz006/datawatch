@@ -247,6 +247,21 @@ type sessionListRecord struct {
 	InheritedTags []string `json:"inherited_tags"`
 }
 
+// MarshalJSON keeps the legacy shape but always sends system_tags: a nil or
+// empty list is an empty array, never null and never absent. The outer field
+// shadows the embedded session's omitempty one.
+func (r sessionListRecord) MarshalJSON() ([]byte, error) {
+	type plain sessionListRecord // no methods, so no recursion
+	tags := []string{}
+	if r.Session != nil {
+		tags = append(tags, r.Session.SystemTags...)
+	}
+	return json.Marshal(struct {
+		plain
+		SystemTags []string `json:"system_tags"`
+	}{plain(r), tags})
+}
+
 // writeSessionListView encodes the session list for requests that used
 // view / since / states.
 func (s *Server) writeSessionListView(w http.ResponseWriter, sessions []*session.Session, o sessionListOptions) {
