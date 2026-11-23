@@ -520,7 +520,7 @@ nothing here blocks anything in the active order above.
 
 | Item | Status |
 |---|---|
-| BL446 Federation as a sibling-agent mail transport (external feature request, not a bug) | not started |
+| BL446 Federation as a sibling-agent mail transport (external feature request, not a bug) | not started; design pass record (documents only, nothing decided): [2026-11-07-agent-mail-design-pass.md](2026-11-07-agent-mail-design-pass.md) |
 | BL438 Research: Hermes Agent | cancelled, not started (PRD `6952fceb`) |
 | BL439 Research: datawatch as infrastructure for Hermes Agent | planning, not started (recreated as draft PRD `79890001` with no project directory; original `2712d303` cancelled because its project directory was the main checkout) |
 | [BL400](2026-10-09-alerts-conditions-and-filtering.md) Alerts: conditions, filtering, SIEM parity | deferred, open questions |
