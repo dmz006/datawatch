@@ -6092,5 +6092,7 @@
   "automation_form_decision_wait_need_question": "判断待ちには質問が必要です",
   "automation_form_decision_wait_too_long": "質問が長すぎます",
   "automation_insert_question_label": "または判断待ち: あなたへの質問",
-  "automation_insert_one_only": "オートマトンを選ぶか判断待ちの質問を書くか、どちらか一方にしてください"
+  "automation_insert_one_only": "オートマトンを選ぶか判断待ちの質問を書くか、どちらか一方にしてください",
+  "settings_rtk_write_rules_files": "セッションの指示を AGENT.md と CLAUDE.md に書き込む",
+  "settings_rtk_write_rules_files_help": "オフ (既定) の場合、デーモンは AGENT.md や CLAUDE.md に一切書き込みません。ファイルの作成、セッションヘッダーの更新、RTK・メモリ・セッション間通信の指示の追加を行わず、代わりにセッションごとの未追跡ファイルに入ります。ルールファイルは人だけが書きます。"
 }

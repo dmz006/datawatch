@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.74"
+var Version = "9.182.76"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -6688,6 +6688,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"discover_interval":     s.cfg.RTK.DiscoverInterval,
 			"auto_update":           s.cfg.RTK.AutoUpdate,
 			"update_check_interval": s.cfg.RTK.UpdateCheckInterval,
+			"write_rules_files":     s.cfg.RTK.WriteRulesFiles,
 		},
 		"pipeline": map[string]interface{}{
 			"max_parallel":    s.cfg.Pipeline.MaxParallel,
@@ -9895,6 +9896,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.RTK.UpdateCheckInterval = n
 			}
+		case "rtk.write_rules_files":
+			cfg.RTK.WriteRulesFiles = toBool(v)
 		case "pipeline.max_parallel":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Pipeline.MaxParallel = n

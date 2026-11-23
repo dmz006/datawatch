@@ -6092,5 +6092,7 @@
   "automation_form_decision_wait_need_question": "Una espera de decisión necesita una pregunta",
   "automation_form_decision_wait_too_long": "La pregunta es demasiado larga",
   "automation_insert_question_label": "O una espera de decisión: la pregunta para usted",
-  "automation_insert_one_only": "Elija un autómata o escriba una pregunta de espera de decisión, no ambas"
+  "automation_insert_one_only": "Elija un autómata o escriba una pregunta de espera de decisión, no ambas",
+  "settings_rtk_write_rules_files": "Escribir las instrucciones de sesión en AGENT.md y CLAUDE.md",
+  "settings_rtk_write_rules_files_help": "Si está desactivado (el valor predeterminado), el daemon nunca escribe en AGENT.md ni en CLAUDE.md: no los crea, no actualiza su encabezado de sesión ni añade las instrucciones de RTK, de memoria o de comunicación entre sesiones. Van a un archivo por sesión que no se versiona. Los archivos de reglas solo los escriben las personas."
 }

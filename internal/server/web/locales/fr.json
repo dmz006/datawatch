@@ -6092,5 +6092,7 @@
   "automation_form_decision_wait_need_question": "Une attente de décision a besoin d’une question",
   "automation_form_decision_wait_too_long": "La question est trop longue",
   "automation_insert_question_label": "Ou une attente de décision : la question qui vous sera posée",
-  "automation_insert_one_only": "Choisissez un automate ou écrivez une question d’attente de décision, pas les deux"
+  "automation_insert_one_only": "Choisissez un automate ou écrivez une question d’attente de décision, pas les deux",
+  "settings_rtk_write_rules_files": "Écrire les instructions de session dans AGENT.md et CLAUDE.md",
+  "settings_rtk_write_rules_files_help": "Lorsque l'option est désactivée (valeur par défaut), le daemon n'écrit jamais dans AGENT.md ni CLAUDE.md : il ne les crée pas, ne met pas à jour leur en-tête de session et n'ajoute pas les instructions RTK, mémoire ou communication inter-sessions. Elles vont dans un fichier par session non suivi par git. Les fichiers de règles ne sont écrits que par des personnes."
 }

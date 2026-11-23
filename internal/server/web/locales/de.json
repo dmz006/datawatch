@@ -6092,5 +6092,7 @@
   "automation_form_decision_wait_need_question": "Ein Entscheidungswartepunkt braucht eine Frage",
   "automation_form_decision_wait_too_long": "Die Frage ist zu lang",
   "automation_insert_question_label": "Oder ein Entscheidungswartepunkt: die Frage an Sie",
-  "automation_insert_one_only": "Wählen Sie einen Automaten oder schreiben Sie eine Frage für den Entscheidungswartepunkt, nicht beides"
+  "automation_insert_one_only": "Wählen Sie einen Automaten oder schreiben Sie eine Frage für den Entscheidungswartepunkt, nicht beides",
+  "settings_rtk_write_rules_files": "Sitzungsanweisungen in AGENT.md und CLAUDE.md schreiben",
+  "settings_rtk_write_rules_files_help": "Wenn aus (Standard), schreibt der Daemon niemals in AGENT.md oder CLAUDE.md: Er legt sie nicht an, aktualisiert ihren Sitzungskopf nicht und fügt keine RTK-, Memory- oder Cross-Session-Anweisungen hinzu. Diese gehen stattdessen in eine nicht versionierte Datei pro Sitzung. Regeldateien werden nur von Menschen geschrieben."
 }
