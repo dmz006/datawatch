@@ -217,6 +217,18 @@ holder name, so the capacity card shows it like any other holder.
 - **It applies to each attempt.** Each backend in the list gets its own run and
   its own limit, so the total time on a judge with three backends can be three
   limits plus the waits.
+- **It grows with a large change.** When the change is above
+  `autonomous.judge_size_threshold_lines`, the limit grows by
+  `autonomous.judge_timeout_per_thousand_lines_seconds` (default 600) for every
+  1,000 changed lines. It never goes above four times the base limit, and it
+  never goes below the base. At or below the threshold, or with the
+  per-thousand setting at `0`, the limit is the base limit. Example: with the
+  1800-second base and a 2,500-line change, the limit is 1800 + 600 × 2500 / 1000
+  = 3300 seconds.
+- **A split review gets a limit per group.** When a large rules review is split
+  into groups of files, each group runs its own judge with a limit scaled by
+  that group's changed lines, and each group's timed-out attempts are recorded
+  separately.
 - **A cancelled judge is not a timeout.** Only the judge's own limit counts as
   a timeout.
 
