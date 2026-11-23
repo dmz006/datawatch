@@ -6139,7 +6139,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// recorded, nothing ran: classify it as a launch failure and
 				// retry rather than verifying an untouched tree.
 				if ls, ok := mgr.GetSession(task.SessionID); ok && ls.OneShot && ls.AgentID == "" &&
-					ls.BackendFamily == "claude-code" && !mgr.TaskDelivered(ls.FullID) {
+					ls.BackendFamily == "claude-code" && !mgr.TaskDelivered(ls.FullID) &&
+					!autonomouspkg.JudgeCompletedByOutput(ls.State == session.StateComplete,
+						ls.CompletionSummary != "", ls.CommitSHA, ls.LastResponse != "") {
 					log.Printf("[autonomous] launch failure: session %s task %s/%s ended (%s) with no task delivery recorded; retrying",
 						ls.FullID, task.PRDID, task.ID, ls.State)
 					return autonomouspkg.VerificationResult{}, autonomouspkg.LaunchFailureError(ls.FullID, ls.BackendFamily, string(ls.State))

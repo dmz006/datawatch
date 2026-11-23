@@ -36,3 +36,16 @@ func LaunchFailureError(sessionID, backend, state string) error {
 	return &launchFailure{msg: fmt.Sprintf("%s (session=%s, backend=%s, state=%s): %s",
 		LaunchFailureReason, sessionID, backend, state, ErrWorkerStalled)}
 }
+
+// JudgeCompletedByOutput reports whether a one-shot worker session that ended
+// without a recorded task delivery should still be judged by what it produced
+// instead of being classified as a launch failure. It holds only when the
+// session ended in the complete state, printed the completion marker, and left
+// output: a commit sha or a stored result. Sessions with no marker, no output,
+// or any other end state keep the launch-failure path.
+func JudgeCompletedByOutput(endedComplete, hasCompletionMarker bool, commitSHA string, hasStoredResult bool) bool {
+	if !endedComplete || !hasCompletionMarker {
+		return false
+	}
+	return commitSHA != "" || hasStoredResult
+}
