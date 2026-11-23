@@ -1532,7 +1532,7 @@ type Manager struct {
 	// /api/autonomous/status, returned verbatim by the autonomous_status
 	// MCP tool). Guarded by mu. Nil = the check is not wired.
 	hostLoadStatusFn func() HostLoadStatus
-	templates        *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	templates        *TemplateStore // dedicated template store
 	decompose        DecomposeFn
 	guardrail        GuardrailFn
 	// guardrailClassify gates generative guardrail outcomes in classify mode.
@@ -5010,6 +5010,9 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 				if backend, model := resolveTaskBackendModel(tk, story, up, m.AutomationForPRD(up), executionFallbackBackend(m.cfg, up)); backend != "" {
 					m.requeueQueuedCapacity(up, tk, backend, model)
 				}
+				// Drop any fall-through left from the old admission; the
+				// next admission records its own.
+				m.setFallthrough(tk.ID, nil)
 				m.resetCapacityWait(tk.ID)
 			}
 		}

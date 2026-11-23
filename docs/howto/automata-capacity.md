@@ -489,6 +489,15 @@ gets the usual plain `autonomous_capacity_admitted` entry with
 `audit_query` for `autonomous_capacity_admitted` and look for
 `fall_through`.
 
+The Automaton's decision log gets a `capacity_fallthrough` entry too. It names
+the backend and model the task was admitted on, the pool it now holds, the
+backend, model and pool it asked for, and the reason (`requested pool full,
+alternate pool free`). The lane is chosen at the moment of each admission from
+the task's effective backend (task, then story, then Automaton), so a relaunch
+is judged afresh. A task that stays on its own pool, or keeps waiting, writes
+no entry. The capacity page lists the pool the task actually holds, so a task
+that fell through shows the alternate's pool.
+
 Set it on any surface:
 
 ```bash
@@ -566,6 +575,16 @@ live lease is left entirely alone, along with every running or finished
 task, each reported as *left alone* with its reason. The response names
 each affected task as *changed* or *left alone* and says, for the ones that
 moved, that their capacity request was retargeted (`capacity_moved`).
+
+The move does not depend on the task's stored backend changing. A task whose
+stored pair already equals the one you set can still be queued on a different
+pool, because it inherited its worker from its story or Automaton, or because
+an earlier fall-through placed it elsewhere. So a waiting task is always
+checked against the pool its resolved pair names, and moved if it is queued
+somewhere else. When the request already sits on that pool nothing changes.
+Whenever the request moves, or the task is reset, the `capacity_fallthrough`
+note recorded for its old request is dropped, since it no longer says where the
+task waits; the next admission records its own.
 
 ## Park on an external condition
 

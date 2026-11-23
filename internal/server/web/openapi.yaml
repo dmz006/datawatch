@@ -1093,7 +1093,12 @@ paths:
         false only `gpu_lanes` and `claude_lanes` set the lane counts) and
         `autonomous.lane_fill.gpu_mode` and `autonomous.lane_fill.claude_mode`
         (off | shadow | on, or empty to follow `autonomous.lane_fill.mode`; they set
-        the mode for one lane kind). A bad lane fill value rejects the whole PUT with
+        the mode for one lane kind). `autonomous.lane_fill.stalled_merge_minutes`
+        (whole number >= 0, default 30; minutes a verified task's merge into the
+        Automaton branch may stay pending with no progress before the Automaton stops
+        holding its lane and appears in the `waiting` list of the lane fill status
+        with the reason code `merge_stalled`; `0` turns the rule off and the lane is
+        kept; an unset key reads as 30). A bad lane fill value rejects the whole PUT with
         400 and nothing is written. GET returns the values in effect and the running planner picks up
         changes without a restart.
         `autonomous.failure_escalation.enabled` (true|false, default true),
@@ -1620,7 +1625,9 @@ paths:
         each lane type, the evidence from the last poll (active GPU sessions and loaded
         models), the newest planner decisions and the idle alerts. `modes` gives the
         mode in effect for each lane kind and `lane_counts` the lane counts the last
-        poll used. A decision that refused an Automaton carries `eligibility_reason`,
+        poll used. `waiting` lists each running Automaton that holds no live work, with
+        its title and the reason it waits; the lane it sat on is left idle for the next
+        eligible work. A decision that refused an Automaton carries `eligibility_reason`,
         the stable code for the refusal. `limit` caps the decision history, newest first. Needs the autonomous read capability when
         called by a federated peer.
       operationId: autonomousLaneFillStatus
@@ -6619,6 +6626,12 @@ paths:
                         current_prd_id: {type: string}
                         current_prd_title: {type: string}
                         pending_members: {type: integer}
+                        max_parallel: {type: integer, description: "The Automation's max_parallel limit; omitted when unset"}
+                        running_members: {type: integer, description: "Members running now; reported only while a limit (the Automation's or a fork's) is set"}
+                        waiting_for_slot: {type: array, items: {type: string}, description: "Member IDs that hold their cursor and wait for a free slot, in member order. Waiting is not blocked; omitted when none waits"}
+                        waiting_for_operator: {type: array, items: {type: string}, description: "decision_wait member IDs that hold their cursor and wait for the operator's answer, in member order. The Automation is waiting for you, not blocked; omitted when none waits"}
+                        stage_gate: {type: boolean, description: "The Automation holds a staged member back while an earlier stage has unfinished members; omitted when the gate is off"}
+                        waiting_for_stage: {type: array, items: {type: string}, description: "Member IDs that hold their cursor for an earlier stage, in member order. Each one's cursor names the stage. Waiting is not blocked; omitted when none waits"}
                         idle_since: {type: string, format: date-time}
                         idle_seconds: {type: integer}
                         blocked_reason: {type: string}
@@ -6630,7 +6643,10 @@ paths:
                               member_id: {type: string}
                               prd_id: {type: string}
                               automation_id: {type: string}
-                              status: {type: string}
+                              status: {type: string, description: "The member status; waiting_for_slot while the member waits under a max_parallel limit, waiting_for_stage while the stage gate holds it"}
+                              wait_reason: {type: string, description: "waiting for a free slot (status waiting_for_slot), waiting for you (status waiting_for_operator), or waiting for stage <name> (status waiting_for_stage)"}
+                              wait_stage: {type: string, description: "status waiting_for_stage: the earlier stage the member waits for"}
+                              question_id: {type: string, description: "decision_wait member: the open operator question it waits on"}
                         join_wait:
                           type: object
                           description: "Present only while a join waits on its branches"
@@ -6639,6 +6655,19 @@ paths:
                             rule: {type: string, enum: [all_must_succeed, any_one_is_enough, continue_anyway]}
                             pending_branches: {type: array, items: {type: string}}
                             failed_branches: {type: array, items: {type: string}}
+                        branch_chains:
+                          type: array
+                          description: "One entry per fork branch chain; present only when the Automation has a fork. A branch of one member has head equal to tail."
+                          items:
+                            type: object
+                            properties:
+                              fork: {type: string}
+                              join: {type: string}
+                              head: {type: string}
+                              tail: {type: string}
+                              members: {type: array, items: {type: string}}
+                              status: {type: string, enum: [running, completed, failed]}
+                              failed_member: {type: string}
                   notify:
                     type: object
                     description: "Notify-event resolution: the in-effect global default and the non-terminal Automata whose list resolves from the automaton or profile tier (sorted by Automaton ID, capped at 100). Both arrays are always lists - empty, never null."
@@ -9298,10 +9327,13 @@ paths:
     post:
       summary: Insert an Automaton member
       description: |
-        Inserts a new member: an Automaton (`member.prd_id`) or a pending item
-        (`member.pending_item_id`, or `pending_item_id` at the top level), exactly one of the two.
+        Inserts a new member: an Automaton (`member.prd_id`), a pending item
+        (`member.pending_item_id`, or `pending_item_id` at the top level) or a decision wait
+        (`member.question`, with the optional `member.kind` of `decision_wait`), exactly one of the three.
         A pending item member holds the Automation at the cursor until an Automaton is attached
-        (`POST /api/autonomous/pending-items/{id}/attach`). On a draft it lands in the graph at once; on a
+        (`POST /api/autonomous/pending-items/{id}/attach`). A decision wait member asks the operator
+        the question when the chain reaches it and holds only its own branch until it is answered.
+        On a draft it lands in the graph at once; on a
         running Automation it is held as a pending insert until an operator approves it
         (`approve_insert`). `reason` is required. Only one urgent insert may be pending
         at a time. An urgent insert takes the next slot and must leave `after` empty.
@@ -9320,11 +9352,14 @@ paths:
                 reason: {type: string, description: "Why (audit log)"}
                 member:
                   type: object
-                  description: "The member to insert: an Automaton (prd_id) or a pending item (pending_item_id), exactly one of the two"
+                  description: "The member to insert: an Automaton (prd_id), a pending item (pending_item_id) or a decision wait (question), exactly one of the three"
                   properties:
                     prd_id: {type: string, description: "The member Automaton to insert"}
                     pending_item_id: {type: string, description: "The pending item to insert (an id from GET /api/autonomous/pending-items). The item must be waiting and not a member of another Automation. The member waits at the cursor until an Automaton is attached"}
                     name: {type: string, description: "Optional display name"}
+                    stage: {type: string, description: "Optional stage label recorded on the inserted member"}
+                    kind: {type: string, enum: [decision_wait], description: "Optional; decision_wait states that the member is a decision wait and needs question"}
+                    question: {type: string, maxLength: 4096, description: "Inserts a decision_wait member that asks the operator this question and waits for the answer"}
                 pending_item_id: {type: string, description: "The top-level form of member.pending_item_id"}
                 urgent: {type: boolean, description: "Take the next slot instead of the end of the chain"}
                 after: {type: string, description: "Insert directly after this member ID; empty for the end of the chain"}
@@ -9335,7 +9370,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Automation"
-        "400": {description: "reason missing, neither or both of member.prd_id and member.pending_item_id given, or an invalid position"}
+        "400": {description: "reason missing, none or more than one of member.prd_id, member.pending_item_id and member.question given, a question over 4096 bytes, or an invalid position"}
         "404": {description: Automation not found}
         "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
         "401": {$ref: "#/components/responses/Unauthorized"}
@@ -9594,6 +9629,100 @@ paths:
                 $ref: "#/components/schemas/Automation"
         "400": {description: "Invalid setting, or nothing to set"}
         "404": {description: Automation or member not found}
+        "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/set_max_parallel:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Set an Automation's max_parallel limit
+      description: |
+        Sets the most members of the Automation that run at once; `0` clears the
+        limit (the default: no limit). A member that would start past the limit
+        is not started and not blocked: it holds its cursor, shows
+        `waiting_for_slot`, and starts, in member order, when a running member
+        finishes. With `member_id` naming a fork, it sets that fork's own
+        `max_parallel` on its branch members instead; the smaller of the
+        Automation's and the fork's limit applies. A negative limit, or a
+        `member_id` that is not a fork, is a 400.
+
+        The call changes only this field, so unlike `PUT /api/automations/{id}`
+        (which replaces the description, budget and defaults it is not given)
+        it is safe on a running Automation. It is allowed while the Automation
+        is `draft`, `active`, `paused` or `blocked`. On an `active` Automation
+        it takes effect at once: raising or clearing the limit starts waiting
+        members, and lowering it never stops a running member. `actor` and
+        `reason` are recorded in the audit log as `automation_set_max_parallel`.
+      operationId: automationsSetMaxParallel
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [max_parallel]
+              properties:
+                max_parallel: {type: integer, minimum: 0, description: "The most members that run at once; 0 clears the limit. Required"}
+                member_id: {type: string, description: "A fork member ID: set that fork's limit on its branch members instead of the Automation's"}
+                expected_version: {type: integer, description: "The Automation version the caller read; a stale positive value is a 409; omitted or 0 skips the check"}
+                actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+                reason: {type: string, description: "Why (audit log)"}
+      responses:
+        "200":
+          description: The updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "max_parallel missing or negative, or member_id is not a fork"}
+        "404": {description: Automation or member not found}
+        "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+  /api/automations/{id}/set_stage_gate:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Turn an Automation's stage gate on or off
+      description: |
+        Turns the stage gate on (`stage_gate: true`) or off. On, a staged member
+        is not started while an earlier stage (ordered by first appearance in
+        the member list) still has unfinished members, and starts when that
+        stage finishes; an unstaged member is never held. Off (the default), a
+        member's `stage` is only a label. `stage_gate` is required.
+
+        The call changes only the gate, so unlike `PUT /api/automations/{id}`
+        it is safe on a running Automation. It is allowed while the Automation
+        is `draft`, `active`, `paused` or `blocked`. On an `active` Automation
+        it takes effect at once: turning the gate off starts held members, and
+        turning it on holds members that have not started. `actor` and `reason`
+        are recorded in the audit log as `automation_set_stage_gate`.
+      operationId: automationsSetStageGate
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage_gate]
+              properties:
+                stage_gate: {type: boolean, description: "true holds a staged member until every earlier stage has finished; false makes a stage only a label. Required"}
+                expected_version: {type: integer, description: "The Automation version the caller read; a stale positive value is a 409; omitted or 0 skips the check"}
+                actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+                reason: {type: string, description: "Why (audit log)"}
+      responses:
+        "200":
+          description: The updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "stage_gate missing"}
+        "404": {description: Automation not found}
         "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
@@ -13566,6 +13695,22 @@ components:
         alerts:
           type: array
           items: {$ref: "#/components/schemas/LaneFillAlert"}
+        waiting:
+          type: array
+          description: Running Automata that hold no live work, in the order the snapshot read them. The lane each one sat on is left idle for the next eligible work, and lane fill never starts a second run of it. Empty when nothing running is idle.
+          items: {$ref: "#/components/schemas/LaneFillWaiting"}
+    LaneFillWaiting:
+      type: object
+      description: One running Automaton that holds no live work
+      properties:
+        prd_id: {type: string, description: "The Automaton's id"}
+        title: {type: string, description: "The Automaton's title"}
+        backend: {type: string, description: "The backend the Automaton runs on; left out when not known"}
+        wait_reason: {type: string, description: "Why it waits, in words"}
+        reason_code:
+          type: string
+          enum: [waiting_review_merge, merge_stalled, no_task_startable]
+          description: "The stable code behind wait_reason. waiting_review_merge: every task is completed and merged, and the Automaton waits for the completion review. merge_stalled: a verified task's merge stayed pending past autonomous.lane_fill.stalled_merge_minutes with no progress. no_task_startable: no task can start and no verified work is pending a merge."
     LaneFillLaneCounts:
       type: object
       description: The lane counts of the last poll, per lane kind
@@ -15870,6 +16015,8 @@ components:
         shipped_source: {type: string, enum: [merge_step, backfill], description: "Shipped state: where the record came from"}
         verification_effort: {type: string, description: "Verifier effort default for member runs"}
         project_dir: {type: string, description: "Working tree member runs operate in (informational)"}
+        stage_gate: {type: boolean, description: "Make member stages a gate: a staged member is not started while an earlier stage (ordered by first appearance in members) has unfinished members, and starts when that stage finishes. Unstaged members are never held. Finished means completed, failed or skipped. Default false: a stage is only a label"}
+        max_parallel: {type: integer, minimum: 0, description: "Most members of this Automation that run at once; 0 or omitted means no limit. A member that would start past the limit waits for a free slot and starts, in member order, when a running member finishes. A fork's own max_parallel narrows it for that fork's branches; the smaller limit wins"}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         started_at: {type: string, format: date-time, nullable: true}
@@ -15885,16 +16032,23 @@ components:
       description: "One member of an Automation: a member Automaton, a nested Automation, or a fork/join control node, each with an outcome edge per result. Fork/join and nested members carry the kind fields below; Automaton members carry prd_id."
       properties:
         id: {type: string, description: "Stable member ID (8-hex, or operator-supplied)"}
-        kind: {type: string, enum: [prd, automation, fork, join, pending_item], description: "Member kind; omitted means an Automaton member. pending_item waits for an Automaton to be attached"}
+        kind: {type: string, enum: [prd, automation, fork, join, pending_item, decision_wait], description: "Member kind; omitted means an Automaton member. pending_item waits for an Automaton to be attached. decision_wait asks the operator the question in question and holds only its own branch until it is answered; it carries question and on_complete only, and may sit on a fork branch chain"}
         pending_item_id: {type: string, description: "kind pending_item: the pending item this member waits on. An attached member keeps it as a note of where it came from"}
         prd_id: {type: string, description: "The member Automaton ID; Automaton members only"}
         automation_id: {type: string, description: "kind automation: the nested child Automation ID"}
         fork_members: {type: array, items: {type: string}, description: "kind fork: the branch member IDs started together (at least 2)"}
         join_members: {type: array, items: {type: string}, description: "kind join: the branch member IDs collected, equal to the paired fork's fork_members"}
         on_branch_failure: {type: string, enum: [all_must_succeed, any_one_is_enough, continue_anyway], description: "kind join only; omitted means all_must_succeed"}
+        max_parallel: {type: integer, minimum: 0, description: "kind fork only: most of the fork's branch members that run at once; 0 or omitted means no fork limit. Never wider than the Automation's max_parallel"}
+        waiting_for_slot: {type: boolean, readOnly: true, description: "Set by the daemon while the member holds its cursor and waits for a free slot under a max_parallel limit"}
+        waiting_for_stage: {type: string, readOnly: true, description: "Set by the daemon to the earlier stage's name while the member holds its cursor and the Automation's stage_gate holds it back"}
+        question: {type: string, maxLength: 4096, description: "kind decision_wait: the text the member asks the operator; required on that kind and valid on no other"}
+        question_id: {type: string, readOnly: true, description: "kind decision_wait: the open operator question the member waits on, linked by the daemon"}
+        waiting_for_operator: {type: boolean, readOnly: true, description: "Set by the daemon while a decision_wait member holds its cursor waiting for the operator's answer. Waiting is not blocked"}
         on_complete: {type: string, description: "Next member when this one completes; empty = the Automation completes"}
         on_blocked: {type: string, description: "Next member when this one is blocked; empty = the Automation is blocked"}
         on_failed: {type: string, description: "Next member when this one fails; empty = the Automation is blocked"}
+        stage: {type: string, maxLength: 64, description: "Optional operator label grouping members of one Automation (e.g. build, review); empty is unstaged. Cosmetic unless the Automation sets stage_gate: edges, advance rule and budget never read it"}
         added_at: {type: string, format: date-time}
         added_by: {type: string, description: "Who enrolled it: operator (default) or an acting session/agent"}
         added_reason: {type: string}
@@ -16045,6 +16199,8 @@ components:
         verification_backend: {type: string}
         verification_model: {type: string}
         verification_effort: {type: string}
+        max_parallel: {type: integer, minimum: 0, description: "Most members that run at once; 0 or omitted means no limit. On update, omitted keeps the stored value and 0 clears the limit"}
+        stage_gate: {type: boolean, description: "Hold a staged member until every earlier stage has finished. On update, omitted keeps the stored value and false turns the gate off"}
         actor: {type: string, description: "operator (default) or the acting session/agent; recorded in the audit log"}
         reason: {type: string, description: "Why this Automation is being created; recorded in the audit log"}
 
