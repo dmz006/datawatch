@@ -399,6 +399,21 @@ host `medium` can get the whisper process killed by the kernel (cause
 peak too, so on a tight host you can also lower `whisper.chunk_seconds`
 (for example to 60); do not set it below 30.
 
+### Transcription deadline for very long recordings
+
+Each transcription request has a deadline: 5 minutes, or twice the audio
+length when that is longer, capped at 30 minutes. That is the default and
+`whisper.timeout_seconds` is `0` (automatic). On a slow CPU a recording of an
+hour or more can need longer than the 30 minute cap; set
+`whisper.timeout_seconds` to a fixed number of seconds (for example `5400`)
+and that value replaces the automatic deadline. It must be `0` or at least
+`30`; a value from 1 to 29 sent through the API is ignored. Set it the same
+five ways as `whisper.chunk_seconds`: YAML `whisper:` → `timeout_seconds`,
+`datawatch config set whisper.timeout_seconds 5400`, the Voice Input card
+(*Transcription deadline per request*), `PUT /api/config` with
+`{"whisper.timeout_seconds": 5400}`, or `configure whisper.timeout_seconds=5400`.
+The deadline is read per request, so no reload is needed.
+
 ### The five ways to set `whisper.chunk_seconds`
 
 | Method | How |
@@ -434,7 +449,7 @@ each; the table gives what it means and what to do.
 
 | `cause` | What it means | Fix |
 |---|---|---|
-| `timeout` | The request ran past its deadline, or the client went away. The deadline is 5 minutes, or twice the audio length when that is longer, capped at 30 minutes. | Record a shorter clip, use a smaller `whisper.model`, or lower `whisper.chunk_seconds`. |
+| `timeout` | The request ran past its deadline, or the client went away. The deadline is 5 minutes, or twice the audio length when that is longer, capped at 30 minutes, unless `whisper.timeout_seconds` is set. | Record a shorter clip, use a smaller `whisper.model`, lower `whisper.chunk_seconds`, or raise `whisper.timeout_seconds`. |
 | `killed` | The whisper process ended by SIGKILL. On Linux this is almost always the kernel out-of-memory killer; `dmesg` shows `Out of memory: Killed process`. | Use `small` or `base`, lower `whisper.chunk_seconds`, or add RAM. |
 | `out_of_memory` | Whisper itself reported it ran out of memory (a Python `MemoryError`, `Cannot allocate memory`, or a GPU out-of-memory message). | Same as `killed`. |
 | `ffmpeg_missing` | `ffmpeg` is not installed or not on the daemon's PATH, and whisper needs it to read the audio. | `apt install ffmpeg` (or your package manager's equivalent), then retry. |
