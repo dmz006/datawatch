@@ -128,9 +128,16 @@ type Record struct {
 	// Release is the release the owning PRD / automation shipped in, for
 	// release groupings; blank means the work has not shipped (it falls
 	// under UnreleasedKey).
-	Release   string
-	Backend   string // backend family name, rate-table vocabulary
-	Peer      bool   // spend made by a federation peer (see SourceOptions)
+	Release string
+	Backend string // backend family name, rate-table vocabulary
+	// Model is the model name the source knows the record ran with — the
+	// session's own model selection, or the LLM registry entry name when
+	// the session predates that; finer than Backend when the source
+	// records one (session-based and spend-ledger sources do; a record
+	// predating the field does not). Blank when it does not, and the
+	// record then groups under its Backend in the by-model section.
+	Model     string
+	Peer      bool // spend made by a federation peer (see SourceOptions)
 	At        time.Time
 	TokensIn  int
 	TokensOut int
@@ -475,6 +482,27 @@ type Row struct {
 	SpendUnknownNote string `json:"spend_unknown_note,omitempty"`
 }
 
+// ModelRow is one row of Report.ModelRows: the window's usage under one
+// model name, priced at that model's own rate.
+type ModelRow struct {
+	Model         string  `json:"model"`
+	Sessions      int     `json:"sessions"`
+	TokensIn      int     `json:"tokens_in"`
+	TokensOut     int     `json:"tokens_out"`
+	CacheRead     int     `json:"cache_read"`
+	CacheCreation int     `json:"cache_creation"`
+	ToolCalls     int     `json:"tool_calls"`
+	ActiveSeconds float64 `json:"active_seconds"`
+	// APIEquivalentUSD is the model's spend priced at its own rate — the
+	// per-model cost entry when one is configured, the backend's rate
+	// otherwise. It is an equivalence (the plan is flat), never a bill;
+	// nil when the model has no rate or USD display is off.
+	APIEquivalentUSD *float64 `json:"api_equivalent_usd,omitempty"`
+	// USDLabel names what the dollar figure is: an API-equivalent
+	// estimate, never a charge. Present only with a figure.
+	USDLabel string `json:"usd_label,omitempty"`
+}
+
 // Report is the finished cost report.
 type Report struct {
 	GroupBy GroupBy `json:"group_by"`
@@ -482,6 +510,16 @@ type Report struct {
 	Until   time.Time
 	// Rows is sorted by Key for stable output.
 	Rows []Row `json:"rows"`
+	// ModelRows is the by-model breakdown of the same records, one row
+	// per model name: the record's Model when the source names one, else
+	// its backend (records with neither fall under UnattributedKey).
+	// Independent of GroupBy: the rows above group by the request's key,
+	// this section always by model. Each model is priced at its own rate
+	// (see ModelRow.APIEquivalentUSD), so the section matches a per-model
+	// price card: model, in / out / cached tokens, and the API-
+	// equivalent dollars. Sorted by model name; empty (not nil) when no
+	// record has usage in the window.
+	ModelRows []ModelRow `json:"model_rows"`
 	// TotalsByUnit is one total per billing unit across all rows; dollars
 	// are never summed with points. Present when a billing resolver was wired.
 	TotalsByUnit []UnitTotal `json:"totals_by_unit,omitempty"`
@@ -580,6 +618,9 @@ const (
 	labelAssumed  = "api_metered (assumed — no usage.billing entry)"
 	labelUSDEquiv = "API-equivalent estimate — bundled plan, not billed"
 	labelMixedUSD = "mixed billing modes — see the per-unit totals"
+	// labelAPIEquiv is the ModelRow dollar label: an equivalence at the
+	// model's own rate, never a charge.
+	labelAPIEquiv = "API-equivalent estimate, not a bill"
 )
 
 const (
@@ -860,6 +901,35 @@ func Build(
 		return a
 	}
 
+	// By-model accumulation, independent of the request's grouping: one
+	// row per model name, priced at that model's own rate.
+	type modelAcc struct {
+		sessions              int
+		tin, tout             int
+		cread, ccreate, tools int
+		active                float64
+		usd                   float64
+		allRate               bool
+	}
+	modelBuckets := map[string]*modelAcc{}
+	addModel := func(key string) *modelAcc {
+		m := modelBuckets[key]
+		if m == nil {
+			m = &modelAcc{allRate: rateFor != nil}
+			modelBuckets[key] = m
+		}
+		return m
+	}
+	modelKeyOf := func(r Record) string {
+		if r.Model != "" {
+			return r.Model
+		}
+		if r.Backend != "" {
+			return r.Backend
+		}
+		return UnattributedKey
+	}
+
 	for _, r := range res.Records {
 		if r.Peer && !peer {
 			continue
@@ -898,6 +968,34 @@ func Build(
 			a.last = hi
 		}
 		a.backends = append(a.backends, r.Backend)
+		// By-model section: the same record under its model name, priced
+		// at the model's own rate when the table carries one.
+		mkey := modelKeyOf(r)
+		m := addModel(mkey)
+		m.sessions++
+		m.tin += r.TokensIn
+		m.tout += r.TokensOut
+		m.cread += r.CacheRead
+		m.ccreate += r.CacheCreation
+		m.tools += r.ToolCalls
+		m.active += r.ActiveSeconds
+		if rateFor == nil {
+			m.allRate = false
+		} else {
+			// Price the record at the model's own rate when the table
+			// carries one (a model-named entry); otherwise fall back to
+			// the record's backend rate. A record that neither path
+			// prices turns the whole row off, not partial.
+			mrate, mok := rateFor(mkey)
+			if !mok || mkey == r.Backend {
+				mrate, mok = rateFor(r.Backend)
+			}
+			if mok {
+				m.usd += recordUSD(mrate, r)
+			} else {
+				m.allRate = false
+			}
+		}
 		var usdRec *float64
 		if rateFor != nil && !r.Local {
 			if rate, ok := rateFor(r.Backend); ok && showUSD {
@@ -954,6 +1052,19 @@ func Build(
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 
+	modelOut := make([]ModelRow, 0, len(modelBuckets))
+	for mk, m := range modelBuckets {
+		row := ModelRow{Model: mk, Sessions: m.sessions, TokensIn: m.tin, TokensOut: m.tout,
+			CacheRead: m.cread, CacheCreation: m.ccreate, ToolCalls: m.tools, ActiveSeconds: m.active}
+		if m.allRate && showUSD {
+			v := m.usd
+			row.APIEquivalentUSD = &v
+			row.USDLabel = labelAPIEquiv
+		}
+		modelOut = append(modelOut, row)
+	}
+	sort.Slice(modelOut, func(i, j int) bool { return modelOut[i].Model < modelOut[j].Model })
+
 	if req.GroupBy == GroupByRelease {
 		sres, err := shipped.ShippedUnits()
 		if err != nil {
@@ -990,6 +1101,7 @@ func Build(
 		Since:            since,
 		Until:            until,
 		Rows:             out,
+		ModelRows:        modelOut,
 		RetentionDays:    RetentionDays,
 		LifetimeFallback: lifetimeFallback,
 		RetentionNote:    retentionNote(lifetimeFallback),

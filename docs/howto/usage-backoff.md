@@ -8,10 +8,10 @@ exec_steps:
     args: {}
     read_only: true
   - tool: usage_backoff_set
-    description: Worked example, a state-changing call. Hold new Automaton dispatch to claude-code for 45 minutes. Give minutes or until, never both
+    description: Worked example, a state-changing call. Hold new Automaton dispatch to claude-code for 45 minutes. Give minutes or until, never both. With a models array (e.g. ["opus", "sonnet"]) the flag holds only those models of the backend
     args: {backend: "claude-code", minutes: 45, reason: "weekly cap"}
   - tool: usage_backoff_clear
-    description: Worked example, a state-changing call. Clear the flag for one backend (omit backend, or pass all, to clear every flag)
+    description: Worked example, a state-changing call. Clear the flag for one backend (omit backend, or pass all, to clear every flag). With a models array (e.g. ["opus"]) it removes only that model from the flag
     args: {backend: "claude-code"}
   - tool: capacity_admission
     description: Ask whether a start on the backend would be admitted now or wait (changes nothing)
@@ -47,6 +47,7 @@ A back-off must not block the work that reviews and plans the work.
 | `until` | When the flag lifts, as a time. After it passes the flag is gone |
 | `reason` | A short text shown in the wait reason and in capacity output |
 | `source` | Who set it: `rate_limit` or `operator` |
+| `models` | Optional list limiting the flag to these models of the backend. Absent or empty means the whole backend; with a list, only the listed models are held and the others keep running |
 
 There are three kinds of flag, told apart by `source` and the reason:
 
@@ -55,11 +56,15 @@ There are three kinds of flag, told apart by `source` and the reason:
   printed, or, when none can be parsed, the maximum back-off
   (`autonomous.backoff_max_wait_minutes`, default 60).
 - **Operator flag** (`source: operator`). Set by you, on any surface below, when
-  you know the limit or want a backend paused.
+  you know the limit or want a backend paused. With a `models` list it holds
+  only those models of the backend; without one it holds the whole backend.
 - **Burn-guard flag.** Set by a rung of the [burn guard](burn-guard.md) (for
-  example `hold_claude`). It carries the rung name, shown as
+  example `hold_entry`; the legacy first-version names `route_pi_prompt` and
+  `hold_claude` normalize to `route_entry` and `hold_entry`, so either can
+  appear in a saved config). It carries the rung name, shown as
   `burn guard rung <rung>: <reason>` in capacity output, and the guard clears it
-  itself when it steps back.
+  itself when it steps back. The `route_cheaper_model` rung carries its model
+  and keeps the backend — the flag holds nothing.
 
 The automatic path is switched by `autonomous.usage_backoff` (`pause_backend`,
 the default, or `off`). A manual set always works, even with the mode `off`.
@@ -126,18 +131,96 @@ Details worth knowing:
 
 | Surface | Status | Set | Clear |
 |---|---|---|---|
-| MCP | `usage_backoff_status` | `usage_backoff_set` with `backend`, and `minutes` or `until`, and optional `reason` | `usage_backoff_clear` with `backend` (omit or `all` for every flag) |
-| REST | `GET /api/usage-backoff` | `POST /api/usage-backoff` with `{"backend": "claude-code", "minutes": 45, "reason": "weekly cap"}` (`until`, an RFC3339 time in the future, replaces `minutes`) | `DELETE /api/usage-backoff` with `{"backend": "claude-code"}` |
-| CLI | `datawatch usage-backoff status` | `datawatch usage-backoff set <backend> <minutes\|until> [--reason text]` | `datawatch usage-backoff clear [backend\|all]` |
-| Comm channel | `usage_backoff status` | `usage_backoff set <backend> <minutes\|until> [reason]` | `usage_backoff clear [backend\|all]` |
+| MCP | `usage_backoff_status` | `usage_backoff_set` with `backend`, and `minutes` or `until`, and optional `reason`, and optional `models` (an array) | `usage_backoff_clear` with `backend` (omit or `all` for every flag), and optional `models` (an array, requires a named backend) |
+| REST | `GET /api/usage-backoff` | `POST /api/usage-backoff` with `{"backend": "claude-code", "minutes": 45, "reason": "weekly cap"}` (`until`, an RFC3339 time in the future, replaces `minutes`; `"models": ["opus", "sonnet"]` holds only those models) | `DELETE /api/usage-backoff` with `{"backend": "claude-code"}` (add `"models": ["opus"]` to remove only that model from the flag) |
+| CLI | `datawatch usage-backoff status` | `datawatch usage-backoff set <backend> <minutes\|until> [--reason text] [--models opus,sonnet]` | `datawatch usage-backoff clear [backend\|all] [--models opus,sonnet]` |
+| Comm channel | `usage_backoff status` | `usage_backoff set <backend> <minutes> [reason] [models=a,b]` | `usage_backoff clear [backend\|all] [models=a,b]` |
 
 With neither `minutes` nor `until`, a set holds the backend for 30 minutes.
 `minutes` must be 1 or more and `until` must be in the future.
+
+### Holding only certain models
+
+A set or clear can carry a `models` list (an array on MCP and REST, a
+comma-separated list on the CLI and the comm channel). Model names are compared
+lower-cased, so `Opus` and `opus` are the same model.
+
+- **Set with models** holds only the named models of the backend. Work on other
+  models of that backend keeps running, and a check that names the backend with
+  no model (for example the capacity queue's plain check) is admitted.
+- **Clear with models** removes only the named models from the flag's list. The
+  flag is dropped when that empties the list; models not named stay held.
+- **A clear-all is never model-scoped.** Clearing with models requires a named
+  backend; the daemon refuses `clear all` with a models list.
+- **A models clear never touches a whole-backend flag.** Only flags that already
+  carry a model list are narrowed.
+
+A backend carries a **single** back-off flag, so a set of any kind replaces the
+backend's existing flag: a model-scoped set on a whole-backend holding narrows it
+to the named models (and takes the new deadline, reason and source), and a
+whole-backend set on a model-scoped holding widens it back to the whole backend.
+A clear with models only narrows a flag that already carries a model list.
+
+A `models` list with no usable names is an operator error on every surface, not
+a fall-back to the whole backend.
+
+A task held by a model-limited flag names the models in its wait reason, for
+example `backend claude-code backed off for models opus, sonnet until 14:30 UTC
+(resets in 42m)`. A whole-backend flag reads as before, with no `for models`
+part.
+
+The status call (`GET /api/usage-backoff`, `usage_backoff_status`,
+`datawatch usage-backoff status`) lists each flag with its `models`, and a
+`holds` list that says per backend whether the whole backend is held
+(`whole_backend`), which models are held (`held_models`), and which models stay
+open (`open_models`, or `other_models_open` when the open models are not
+listed).
+
+### In the web app
+
+The **Usage back-off** card on the Automata **Usage** page sets, shows and clears
+flags. It has a Backend, Minutes, Reason and **Models (optional, comma
+separated)** field. Leave Models empty to hold or clear the whole backend; fill
+it to hold or clear only those models. Clearing some models needs a backend. Each
+active flag shows **All models held**, or **Held models: ...** with **Open
+models: ...** (or **Other models stay open**). The capacity card shows the same
+held and open models under each back-off row.
 
 To confirm the effect, run `datawatch capacity` (or the comm verb `capacity`, or
 the capacity card in the web app). Each active flag prints as
 `claude-code: resets <time> (<reason>)`. An Automaton task held by the flag shows
 a wait reason starting `backoff:` and starts by itself when the flag clears.
+
+### Admission: confirm a start against the flag
+
+The admission check takes a model, so you can confirm how a model-limited flag
+applies to a start before anything starts:
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch capacity admission <backend> [node] [model]` |
+| Comm channel | `capacity admission <backend> [node] [model]` |
+| MCP | `capacity_admission` with `backend` and `model` |
+| REST | `GET /api/capacity/admission?backend=claude-code&model=opus` |
+
+The daemon applies the flag to the model the check names: a check on a held
+model is queued with a `backoff:` wait reason (or offered an alternate), and
+the same check with no model, or with a model not held, is admitted. It is a
+dry run: nothing starts, queues or changes.
+
+### Audit of a model-scoped set or clear
+
+Every set and clear is written to the operator audit log, and a model-scoped
+operation carries its model list:
+
+- `autonomous_usage_backoff_set` — the actor, backend, `until`, `source`, and
+  `models` (lowercased) when the set named models; a whole-backend set has no
+  `models` key.
+- `autonomous_usage_backoff_cleared` — the actor and backend, and `models`
+  when the clear was model-scoped.
+
+Read them with the `audit_query` MCP tool (`action: autonomous_usage_backoff_set`)
+or `GET /api/audit?action=autonomous_usage_backoff_set`.
 
 ## Flags survive a daemon restart
 
@@ -152,6 +235,10 @@ file is normal. An unreadable one is logged and the registry starts empty.
 
 Clearing a flag by hand removes it from the file, so a cleared flag does not come
 back after the next restart.
+
+Each flag in the file keeps its model list. A file written before model lists
+existed has no `models` field; its flags load as whole-backend flags, so an
+upgrade changes nothing.
 
 ## What boot-time resume does with a backed-off backend
 
@@ -206,6 +293,23 @@ A restored flag is the daemon's saved state, not a fresh reading, so check it:
   Check the reserve's audit entries (`autonomous_usage_backoff_reserve_refused`
   via `audit_query`) for the slot and token figures; the wait ends when the
   flag clears.
+
+## Parity
+
+The held-model list works on every surface, and this page documents each of
+them:
+
+| Surface | Status | Set | Clear | Admission | Audit |
+|---|---|---|---|---|---|
+| **MCP** | `usage_backoff_status` | `usage_backoff_set` (`models`) | `usage_backoff_clear` (`models`) | `capacity_admission` (`model`) | `audit_query` |
+| **REST** | `GET /api/usage-backoff` (`holds`) | `POST /api/usage-backoff` (`models`) | `DELETE /api/usage-backoff` (`models`) | `GET /api/capacity/admission?model=` | `GET /api/audit?action=` |
+| **CLI** | `datawatch usage-backoff status` | `--models a,b` | `--models a,b` | `datawatch capacity admission <backend> [node] [model]` | via the REST audit routes |
+| **Comm channel** | `usage_backoff` | `usage_backoff set <backend> <minutes> [reason …] [models=a,b]` | `usage_backoff clear [backend|all] [models=a,b]` | `capacity admission <backend> [node] [model]` | via the REST audit routes |
+| **Web app** | the usage and capacity cards | the **Models** field | the **Models** field | — | — |
+
+The **wait reason** (`backoff: ... for models opus, sonnet until ...`) and the
+**restart file** (`backoff.json`, which keeps each flag's model list) behave the
+same on every surface, because every surface writes to the same registry.
 
 ## See also
 

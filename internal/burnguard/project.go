@@ -138,7 +138,7 @@ func Project(in ProjectInput) Projection {
 		p.TokenPointsPerHour = cal.TokenRate
 	}
 	since := tokensBetween(in.Buckets, readAt, in.Now, through)
-	p.PointsSinceReading = (since.cw/1e6*in.Coef.CacheWritePerM + since.cr/1e6*in.Coef.CacheReadPerM) * cal.Ratio
+	p.PointsSinceReading = price(since, in.Coef) * cal.Ratio
 	p.EstimatedNow = p.PercentAtReading + p.PointsSinceReading
 
 	last, _ := in.Reset.LastReset(in.Now)
@@ -181,8 +181,7 @@ func splitPoints(buckets []Bucket, from, to, through time.Time, c Coefficients) 
 		os[i] = Bucket{Hour: b.Hour, Other: b.Other}
 	}
 	price := func(bs []Bucket) float64 {
-		s := tokensBetween(bs, from, to, through)
-		return s.cw/1e6*c.CacheWritePerM + s.cr/1e6*c.CacheReadPerM
+		return price(tokensBetween(bs, from, to, through), c)
 	}
 	return price(ws), price(os)
 }
