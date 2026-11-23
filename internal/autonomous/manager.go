@@ -5010,6 +5010,9 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 				if backend, model := resolveTaskBackendModel(tk, story, up, m.AutomationForPRD(up), executionFallbackBackend(m.cfg, up)); backend != "" {
 					m.requeueQueuedCapacity(up, tk, backend, model)
 				}
+				// Drop any fall-through left from the old admission; the
+				// next admission records its own.
+				m.setFallthrough(tk.ID, nil)
 				m.resetCapacityWait(tk.ID)
 			}
 		}

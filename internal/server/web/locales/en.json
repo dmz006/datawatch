@@ -6063,5 +6063,7 @@
   "cost_charts_col_local_tokens": "Local-model tokens",
   "cost_charts_col_active": "Active time",
   "cost_charts_not_reported_marker": "not reported (%1$s)",
-  "cost_report_not_reported": "not reported (%1$s)"
+  "cost_report_not_reported": "not reported (%1$s)",
+  "settings_rtk_write_rules_files": "Write session instructions into AGENT.md and CLAUDE.md",
+  "settings_rtk_write_rules_files_help": "When off (the default), the daemon never writes into AGENT.md or CLAUDE.md: it does not create them, refresh their session header, or add the RTK, memory or cross-session instructions. Those go to an untracked per-session file instead. Rules files are written by people only."
 }

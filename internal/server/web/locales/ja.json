@@ -6063,5 +6063,7 @@
   "cost_charts_col_local_tokens": "ローカルモデルのトークン",
   "cost_charts_col_active": "稼働時間",
   "cost_charts_not_reported_marker": "未報告(%1$s)",
-  "cost_report_not_reported": "未報告(%1$s)"
+  "cost_report_not_reported": "未報告(%1$s)",
+  "settings_rtk_write_rules_files": "セッションの指示を AGENT.md と CLAUDE.md に書き込む",
+  "settings_rtk_write_rules_files_help": "オフ (既定) の場合、デーモンは AGENT.md や CLAUDE.md に一切書き込みません。ファイルの作成、セッションヘッダーの更新、RTK・メモリ・セッション間通信の指示の追加を行わず、代わりにセッションごとの未追跡ファイルに入ります。ルールファイルは人だけが書きます。"
 }
