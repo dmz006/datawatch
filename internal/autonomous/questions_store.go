@@ -664,6 +664,12 @@ func (s *QuestionStore) Withdraw(id, actor, reason string) (Question, error) {
 	if err != nil {
 		return Question{}, err
 	}
+	// Remember who withdrew it and why, as a replay does, so a reader that
+	// resolves the question later (an Automation member waiting on it) can name
+	// the reason without having seen the change event.
+	s.mu.Lock()
+	s.withdrawMeta[id] = questionWithdrawMeta{actor: actor, reason: reason}
+	s.mu.Unlock()
 	s.emitAudit(audit.ActionQuestionWithdrawn, map[string]any{
 		"question_id": id,
 		"actor":       actor,

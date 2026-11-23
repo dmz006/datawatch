@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.73"
+var Version = "9.182.77"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2365,6 +2365,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		alertStore.AddSystem(lv, title, body)
 	})
+	// Startup cleanup: remove an RTK block that an older daemon appended to a
+	// tracked AGENT.md / CLAUDE.md, only when that restores the committed file
+	// byte for byte; otherwise one alert per worktree, file untouched.
+	go mgr.CleanupRTKRulesFiles()
 
 	// Create filter store
 	filterStore, err := newFilterStore(filepath.Join(expandHome(cfg.DataDir), "filters.json"))

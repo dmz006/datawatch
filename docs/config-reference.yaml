@@ -1008,6 +1008,13 @@ rtk:
   auto_update: false
   # Seconds between version checks against GitHub releases (default: 86400 = daily, 0 = disabled)
   update_check_interval: 86400
+  # The one gate for everything the daemon writes into the project's tracked
+  # AGENT.md / CLAUDE.md at session start (legacy behaviour): creating the file,
+  # refreshing its "# Session Guardrails" header, and appending the RTK, memory and
+  # cross-session sections. Default false: the daemon never writes those files and the
+  # three sections are delivered through the untracked CLAUDE.local.md instead,
+  # leaving no change in git status.
+  write_rules_files: false
 
 # ── Pipelines (Session Chaining) ──
 # Chain tasks in a DAG with parallel execution and dependency tracking.
