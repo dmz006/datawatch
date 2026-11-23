@@ -2771,6 +2771,50 @@ body {
 .prd-task-review-badge { font-size: 10px; margin-left: 6px; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--warning,#f59e0b); color: var(--warning,#f59e0b); white-space: nowrap; }
 .prd-held-badge, .automation-held-badge { font-size: 10px; margin-left: 6px; padding: 1px 6px; border-radius: 8px; background: var(--warning,#f59e0b); color: #111; white-space: nowrap; }
 .automation-held-strip { font-size: 11px; color: var(--warning,#f59e0b); padding: 2px 0 6px; }
+/* Waits and run shape on the Automation strip: a member that waits for the
+   operator, a free slot or an earlier stage is waiting, never blocked. */
+.automation-wait-strip { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 2px 0 6px; font-size: 11px; }
+.automation-wait-chip,
+.automation-limit-chip {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.automation-wait-chip-operator { border-color: var(--warning,#f59e0b); color: var(--warning,#f59e0b); }
+.automation-wait-chip-slot,
+.automation-wait-chip-stage { border-color: var(--accent2,#60a5fa); color: var(--accent2,#60a5fa); }
+.automation-member-waiting-operator { border-color: var(--warning,#f59e0b); }
+.automation-member-waiting-operator .automation-dot { background: var(--warning,#f59e0b); animation: none; }
+.automation-member-waiting-slot .automation-dot,
+.automation-member-waiting-stage .automation-dot { background: var(--accent2,#60a5fa); animation: none; }
+.automation-decision-question {
+  min-width: 0;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text2);
+}
+.automation-wait-note { font-size: 10px; color: var(--text2); }
+.automation-wait-answer-btn {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--warning,#f59e0b);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--warning,#f59e0b);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.automation-wait-answer-btn:hover { background: rgba(245, 158, 11, 0.12); }
+.automation-lane[data-chain="true"] { border-style: solid; }
+.automation-form-member-limit,
+.automation-form-member-question { margin-top: 4px; }
+.automation-form-check { display: flex; flex-direction: row; align-items: center; gap: 6px; }
 .prd-task-wait-reason { font-size: 11px; color: var(--warning,#f59e0b); margin: 4px 0; }
 /* Decision line card on the Automaton detail. */
 .decision-line-card .decision-quote { color: var(--text); font-size: 12px; }
@@ -8105,8 +8149,9 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
    The tile + compact variants are the shared .work-tile-grid (drawn by the
    same renderWorkTile as the Automata/Automation cards); these rules only
    wrap the per-state summary bar and the Show-more page control that the
-   sessions view adds around the grid. (The view-mode control itself is the
-   native select in the one-line toolbar — .sessions-view-select below.) */
+   sessions view adds around the grid. (The view-mode control itself is a
+   role=group of three icon buttons in the one-line toolbar —
+   .sessions-view-buttons below.) */
 .sessions-show-more { text-align: center; padding: 10px 0 14px; }
 .session-tile-grid { margin: 4px 0; --session-tile-pad: 10px; }
 .session-tile-grid .work-tile { padding: var(--session-tile-pad); }
@@ -8340,14 +8385,20 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .sessions-topbar .sessions-fold-all { flex: 0 0 auto; font-size: 14px; line-height: 1; padding: 2px 7px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text2); cursor: pointer; }
 .sessions-topbar .sessions-fold-all:hover { color: var(--text); border-color: var(--accent2); }
 .sessions-topbar .sessions-fold-all[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-.sessions-topbar .sessions-view-select { flex: 0 0 auto; max-width: 34%; font-size: 12px; }
+.sessions-topbar .sessions-view-buttons { flex: 0 0 auto; display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; max-width: 34%; }
+.sessions-topbar .sessions-view-btn { flex: 0 0 auto; width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text2); cursor: pointer; }
+.sessions-topbar .sessions-view-btn:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-topbar .sessions-view-btn:focus-visible { outline: 2px solid var(--accent2); outline-offset: 1px; color: var(--text); border-color: var(--accent2); }
+.sessions-topbar .sessions-view-btn.active,
+.sessions-topbar .sessions-view-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sessions-view-tip { position: fixed; z-index: 1200; display: none; pointer-events: none; white-space: nowrap; padding: 3px 8px; font-size: 11px; background: var(--bg2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); }
 .session-filter-clear[hidden] { display: none; }
 .sessions-filters-slot:empty { display: none; }
 .sessions-search-count { padding: 4px 12px 6px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 640px) {
   .sessions-topbar { gap: 4px; padding: 4px 8px; }
-  .sessions-topbar .sessions-view-select { max-width: 30%; }
+  .sessions-topbar .sessions-view-buttons { max-width: 30%; }
 }
 
 .sessions-group-header, .automaton-header, .story-header { min-height: 40px; box-sizing: border-box; }

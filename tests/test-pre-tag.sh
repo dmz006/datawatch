@@ -145,6 +145,7 @@ for f in docker/dockerfiles/Dockerfile.agent-base .github/workflows/containers.y
   ( cd "$R" && git checkout -q -- "$f" )
 done
 
+cp "$ROOT/scripts/trivy-scan-image.sh" "$R/scripts/trivy-scan-image.sh"
 # 9b. trivy scan: isolated mktemp cache dir, removed on success AND on a failing scan
 ( cd "$R" && git tag -d v1.0.0 >/dev/null 2>&1; true )   # no tag -> build+scan always runs
 stub trivy "echo trivy-cache \"\${TRIVY_CACHE_DIR:-unset}\" >> \"$LOG\"; exit 0"
@@ -167,6 +168,19 @@ check "trap removed cache dir when scan failed" '[ -n "$cdir2" ] && [ ! -e "$cdi
 rm -f "$BIN/trivy"
 o="$(dab)"
 check "trivy absent: scan skipped with message" 'echo "$o" | grep -qx "SKIP \[docker-agent-base\] trivy scan: trivy not found"'
+
+# 9c. scan goes through scripts/trivy-scan-image.sh (archive scan)
+stub trivy 'exit ${STUB_TRIVY_RC:-0}'
+o="$(dab)"
+check "step invokes the trivy-scan-image helper (docker save)" 'grep -Eq "^docker save -o .*/image\.tar datawatch-agent-base:pre-tag$" "$LOG"'
+check "step invokes the trivy-scan-image helper (trivy --input)" 'grep -Eq "^trivy image --input .*/image\.tar --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1 --format table$" "$LOG"'
+check "step no longer calls trivy against the daemon image" '! grep -q "^trivy image .*datawatch-agent-base:pre-tag" "$LOG"'
+check "clean scan: docker-agent-base ok" 'echo "$o" | grep -q "^\[docker-agent-base\] ok"'
+o="$(STUB_TRIVY_RC=1 dab)"
+check "trivy finding fails docker-agent-base" 'echo "$o" | grep -q "^\[docker-agent-base\] FAIL"'
+check "pre-tag.sh calls the helper" 'grep -q "bash scripts/trivy-scan-image.sh datawatch-agent-base:pre-tag" "$SCRIPT"'
+rm -f "$BIN/trivy"
+
 
 # 4. .gitignore covers the record
 check "record is git-ignored" '(cd "$ROOT" && git check-ignore -q .datawatch/pre-tag-record)'

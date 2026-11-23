@@ -43,6 +43,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "kill_sessions_on_exit", cfg.Session.KillSessionsOnExit, "Kill all sessions when daemon stops")
 	fieldi(&b, "mcp_max_retries", cfg.Session.MCPMaxRetries, "Max MCP channel restart attempts per session")
 	fieldi(&b, "schedule_settle_ms", cfg.Session.ScheduleSettleMs, "B30: ms to wait between text and Enter for scheduled commands (0 = legacy single send-keys; 200 default fixes the 2nd-Enter bug for TUIs like claude-code)")
+	fieldi(&b, "finalise_interval_minutes", cfg.Session.FinaliseIntervalMinutes, "How often, in minutes, the daemon finalises session records whose process is gone (default 10, 0 = no scheduled runs; the start-up run always happens; a negative value falls back to 10)")
 	fieldi(&b, "log_level", cfg.Session.LogLevel, "Log verbosity: info, debug, warn, error")
 	fieldi(&b, "console_cols", cfg.Session.ConsoleCols, "Default terminal width (cols) for new sessions (0 = 80)")
 	fieldi(&b, "console_rows", cfg.Session.ConsoleRows, "Default terminal height (rows) for new sessions (0 = 24)")
@@ -88,7 +89,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	tr := cfg.Tracing.WithDefaults()
 	fieldi(&b, "mode", tr.Mode, "Trace detail: off (no tracing), summary (default) or full")
 	fieldi(&b, "arg_cap_bytes", tr.ArgCapBytes, "Maximum bytes of a tool-call argument summary stored per event (default 512)")
-	fieldi(&b, "retention_days", tr.RetentionDays, "Days trace events are kept (default 14)")
+	fieldi(&b, "retention_days", tr.RetentionDays, "Days trace events are kept (0 = keep forever; the default; max 3650)")
 	b.WriteString("  # Per-backend switches, e.g. {pi: false}; a backend not listed is traced.\n")
 	if len(tr.Backends) > 0 {
 		b.WriteString("  backends:\n")

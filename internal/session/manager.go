@@ -358,6 +358,12 @@ type Manager struct {
 	// default.
 	platformContextFirstPromptOff bool
 
+	// finaliseMu guards lastFinalise and finaliseRan, the summary of the most
+	// recent combined finalise run (finalise_report.go). Own mutex, never m.mu.
+	finaliseMu   sync.Mutex
+	lastFinalise FinaliseSummary
+	finaliseRan  bool
+
 	hostname       string
 	dataDir        string
 	llmBin         string      // fallback binary path (legacy; prefer launchFn)
@@ -542,6 +548,11 @@ type Manager struct {
 	// timeline (see trace_ingest.go). nil until wired; observe only.
 	traceIngest *TraceIngestor
 
+	// traceDeleter drops the session's trace when the session is deleted
+	// (see TraceDeleter in trace_ingest.go). nil until wired; a failure
+	// there is logged and never fails the delete.
+	traceDeleter TraceDeleter
+
 	// sessionTempRelease releases the session's own temporary files (task
 	// capture files, per-session worker config directories for the pi,
 	// claude-code, opencode, aider and goose backends) using the created-path
@@ -725,6 +736,12 @@ type Manager struct {
 	sendQueuesMu sync.Mutex
 	sendQueues   map[string]*sessionSendQueue
 
+	// runners holds the full IDs of sessions the daemon itself drives with
+	// a goroutine or process because they have no terminal pane. Access is
+	// protected by runnersMu. See runner_registry.go.
+	runnersMu sync.Mutex
+	runners   map[string]struct{}
+
 	// dualSummarizeFn, when non-nil, generates both a short and long summary
 	// from session output. prevShort is the previous short summary (used to
 	// avoid repeating information). Replaces the old single-string summarizeFn.
@@ -791,6 +808,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		uiPromptState:     make(map[string]*uiPromptRecord),
 		selfUpdateNotedAt: make(map[string]time.Time),
 		inputSentAt:       make(map[string]time.Time),
+		runners:           make(map[string]struct{}),
 		encKey:            key,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
@@ -1275,6 +1293,12 @@ func (m *Manager) SetPreCommitScan(fn func(*Session)) {
 // is told when a session starts and when it ends, and receives the
 // timeline lines through AppendTimeline. Pass nil to detach.
 func (m *Manager) SetTraceIngestor(t *TraceIngestor) { m.traceIngest = t }
+
+// SetTraceDeleter wires the trace deleter used by Manager.Delete: when a
+// session is deleted, its trace is dropped for the session's exact FullID
+// (sessions sharing only a name prefix keep their trace). A deleter error
+// is logged and never fails the delete. Pass nil to detach.
+func (m *Manager) SetTraceDeleter(d TraceDeleter) { m.traceDeleter = d }
 
 // notifySessionStart tells the trace ingestor, then fires onSessionStart.
 func (m *Manager) notifySessionStart(sess *Session) {
@@ -2743,6 +2767,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		// no effect. Respect both.
 		guardrailOpts.MemoryEnabled = m.cfg.Memory.Enabled && m.cfg.Memory.IsSessionAwareness()
 		guardrailOpts.RTKEnabled = m.cfg.RTK.Enabled
+		guardrailOpts.WriteRulesFiles = m.cfg.RTK.WriteRulesFiles
 		guardrailOpts.CrossSessionEnabled = m.cfg.CrossSession.IsEnabled()
 	}
 	_ = tracker.WriteSessionGuardrails(templatePath, sess, guardrailOpts)
@@ -2758,6 +2783,10 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			return nil, fmt.Errorf("save subprocess session: %w", err)
 		}
 		m.notifySessionCreated(sess)
+		// Hold the session as a live runner before its goroutine starts, so
+		// there is no window where it runs but is not registered.
+		// runSubprocess releases it when it returns.
+		m.RegisterRunner(sess.FullID)
 		go m.runSubprocess(sess)
 		m.notifySessionStart(sess)
 		m.runPlacementStartHook(sess)
@@ -4226,6 +4255,9 @@ func (m *Manager) subprocessEnv(sess *Session) []string {
 }
 
 func (m *Manager) runSubprocess(sess *Session) {
+	// The caller registered the runner before starting this goroutine; it is
+	// held for exactly as long as this function runs.
+	defer m.ReleaseRunner(sess.FullID)
 	f, err := os.OpenFile(sess.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		m.subprocessFinish(sess, fmt.Errorf("open log: %w", err))
@@ -5018,6 +5050,15 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 	// Delete from store
 	if err := m.store.Delete(fullID); err != nil {
 		return fmt.Errorf("delete from store: %w", err)
+	}
+
+	// Drop the session's trace (best-effort): the deleter matches the exact
+	// session id, so a session that only shares a name prefix keeps its
+	// trace. A trace failure is logged and never fails the delete.
+	if m.traceDeleter != nil {
+		if err := m.traceDeleter.DeleteSession(fullID); err != nil {
+			fmt.Printf("[warn] remove trace for deleted session %s: %v\n", fullID, err)
+		}
 	}
 
 	// v5.26.26 — reap daemon-owned workspaces. When handleStartSession

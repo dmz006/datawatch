@@ -41,7 +41,8 @@ func newAutonomousLintCmd() *cobra.Command {
 		Short: "Decompose-lint config, dry-run, and the findings one automation stored",
 		Long: `Decompose lint: the quality check the decomposer runs over each new
 decomposition — the rule pack (bare verbs, missing test mention, ...),
-enforced in enforce mode with a retry budget, or recorded only in shadow.
+enforced in enforce mode (the default when unset) with a retry
+budget, or recorded only in shadow.
 
 config
     Read the live decompose-lint config: the mode, the enforce retry
@@ -51,7 +52,7 @@ config-set key=value ...
     Set decompose-lint keys, preserving the rest of the block (notably
     the active rule pack) — the daemon's PUT is the gate and returns the
     new config. Allowed:
-        mode            off | shadow | enforce
+        mode            off | shadow | enforce (enforce is the default when unset)
         max_retries     whole number >= 0 (the enforce retry budget)
         disabled_rules  comma list of rule ids (empty value clears it)
 
@@ -133,7 +134,7 @@ active rule pack) — the daemon's PUT on
 new config, which is printed.
 
 Allowed keys:
-    mode            off | shadow | enforce
+    mode            off | shadow | enforce (enforce is the default when unset)
     max_retries     whole number >= 0 (the enforce retry budget)
     disabled_rules  comma list of rule ids (an empty value clears it)
 

@@ -47,6 +47,7 @@ func StripDaemonSections(content string) string {
 	content = RemoveSection(content)
 	content = removeMarkerBlock(content, rtkBegin, rtkEnd)
 	content = removeMarkerBlock(content, crossBegin, crossEnd)
+	content = removeMarkerBlock(content, memoryBegin, memoryEnd)
 	content = removeHeaderSection(content, memoryHeader)
 	content = removeHeaderSection(content, guardrailsHeader)
 	return normalizeBlankLines(content)

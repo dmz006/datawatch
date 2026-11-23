@@ -65,9 +65,27 @@ const planReadOnlyFlagRuleBullet = `- "read_only" (optional boolean): set it to 
   changes no files (a gate, smoke test, suite run, eval, install or
   investigation), and give such a task an empty "files" list. A task that
   writes, edits, creates, moves or removes any file must omit "read_only"
-  or set it false. When unsure, omit it. A read-only task whose only
-  output is a report declares that one path in "report_path" under
-  .datawatch/reports/ and keeps "files" empty.
+  or set it false. When unsure, omit it. A read-only task is never planned
+  with a file to write: if its only output is a report, it declares that
+  one path in "report_path" under .datawatch/reports/ and keeps "files" empty.
+`
+
+// planProjectPathRuleBullet is the Rules bullet, shared by both planning
+// prompts, that keeps every path a spec names inside the project directory.
+// No percent sign: PlanningPrompt goes through fmt.Sprintf.
+const planProjectPathRuleBullet = `- No spec line names a path outside the project directory: write every path
+  repo-relative (no absolute path, no home folder, no "..").
+`
+
+// planReleaseVersionRuleBullet is the Rules bullet, shared by both planning
+// prompts, that limits the release-version rewrite to the release itself.
+// No percent sign: PlanningPrompt goes through fmt.Sprintf.
+const planReleaseVersionRuleBullet = `- Release tasks never contain a fixed version number. The release version is
+  taken at merge time as the next patch above main; write 'next patch above
+  main' in task titles, specs and descriptions for the release version only,
+  and do not repeat a number even if a revision note or earlier plan used one.
+  Keep the version numbers of other things (Python, libraries, tools) exactly
+  as written; 'the next patch above main' never replaces them.
 `
 
 // planRulesAppliedRuleBullet is the Rules bullet, shared by both planning
@@ -129,7 +147,7 @@ Rules:
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
   invent paths that obviously can't exist.
-` + planWriteFilesRuleBullet + planFullFilePathRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planFullFilePathRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + planProjectPathRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -146,11 +164,7 @@ Rules:
   runtime via "command -v <name>" / $PATH, with a graceful fallback if
   unavailable. Any literal absolute path in a spec must be one the task
   will actually read or write under the PRD's allowed directories.
-- Release tasks never contain a fixed version number. The release version is
-  taken at merge time as the next patch above main; write 'next patch above
-  main' in task titles, specs and descriptions instead of a number, and do not
-  repeat a number even if a revision note or earlier plan used one.
-- Do not include markdown fences. Return raw JSON only.
+` + planReleaseVersionRuleBullet + `- Do not include markdown fences. Return raw JSON only.
 
 Feature request:
 %s
@@ -228,7 +242,7 @@ Rules:
   verification_script is only correct for a unit with no applicable
   check (e.g. a pure-research story producing no files); every unit that
   touches real files should have one.
-` + planWriteFilesRuleBullet + planFullFilePathRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planFullFilePathRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + planProjectPathRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -245,11 +259,7 @@ Rules:
   runtime via "command -v <name>" / $PATH, with a graceful fallback if
   unavailable. Any literal absolute path in a spec must be one the task
   will actually read or write under the directories above.
-- Release tasks never contain a fixed version number. The release version is
-  taken at merge time as the next patch above main; write 'next patch above
-  main' in task titles, specs and descriptions instead of a number, and do not
-  repeat a number even if a revision note or earlier plan used one.
-- Write ONLY raw JSON to the file — no markdown fences, no explanatory prose.
+` + planReleaseVersionRuleBullet + `- Write ONLY raw JSON to the file — no markdown fences, no explanatory prose.
 
 Feature request:
 %s
@@ -497,7 +507,54 @@ func ParsePlanning(raw string) (title string, stories []Story, err error) {
 		}
 	}
 	applyWorkerProfileLines(doc.Stories)
+	applyBackendLines(doc.Stories)
 	return doc.Title, doc.Stories, nil
+}
+
+// backendLinePrefix is the key a task spec uses to name the worker backend it
+// must run on. The key is case-sensitive.
+const backendLinePrefix = "backend:"
+
+// ParseBackendLine returns the backend name from the first line of spec that
+// is exactly 'backend: <name>' once surrounding whitespace is trimmed. It
+// reports false when no such line exists, or when the name is empty or holds
+// internal whitespace.
+func ParseBackendLine(spec string) (string, bool) {
+	for _, line := range strings.Split(spec, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, backendLinePrefix) {
+			continue
+		}
+		rest := line[len(backendLinePrefix):]
+		if !strings.HasPrefix(rest, " ") {
+			continue
+		}
+		name := strings.TrimSpace(rest)
+		if name == "" || strings.ContainsAny(name, " \t") {
+			continue
+		}
+		return name, true
+	}
+	return "", false
+}
+
+// applyBackendLines copies each task's backend line into its Backend field,
+// the only way a planned task gets a backend of its own besides a "backend"
+// key in the task JSON. A field that is already set keeps its value. A task
+// that names no backend is left empty and inherits the story, then the
+// Automaton setting, at run time.
+func applyBackendLines(stories []Story) {
+	for si := range stories {
+		for ti := range stories[si].Tasks {
+			t := &stories[si].Tasks[ti]
+			if t.Backend != "" {
+				continue
+			}
+			if name, ok := ParseBackendLine(t.Spec); ok {
+				t.Backend = name
+			}
+		}
+	}
 }
 
 // workerProfileLinePrefix is the key a task spec uses to name its worker

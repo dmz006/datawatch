@@ -378,6 +378,12 @@ type Session struct {
 	// caller can fall back to another delivery channel.
 	PlatformContextLocalFile bool `json:"platform_context_local_file,omitempty"`
 
+	// RTKInstructionsDelivered — true when the RTK instructions block was put
+	// in place for this session: in the untracked CLAUDE.local.md by default,
+	// or in the tracked rules file when rtk.write_rules_files is on. False when
+	// RTK is disabled or the write failed. Persisted like PlatformContextLocalFile.
+	RTKInstructionsDelivered bool `json:"rtk_instructions_delivered,omitempty"`
+
 	// PRDID, TaskID, and StoryID link this session to the autonomous executor
 	// that spawned it. Set by the autonomousSpawn function in main.go so the
 	// PWA detail view can filter sessions by PRD and display the active task.
@@ -491,6 +497,15 @@ type Session struct {
 	// DATAWATCH_PI_FAILED marker; the terminal state plus this code carry
 	// the exit status per the store's design (0 = complete, non-zero = failed).
 	FailureExitCode int `json:"failure_exit_code,omitempty"`
+
+	// EndedAt is the time a record was finalised because its process was
+	// gone. Nil for every session that has no such end time, so the field
+	// stays out of the JSON of those records.
+	EndedAt *time.Time `json:"ended_at,omitempty"`
+
+	// EndNote is the short note kept with EndedAt when a record is finalised
+	// because its process was gone. Empty when there is no note.
+	EndNote string `json:"end_note,omitempty"`
 }
 
 // UnmarshalJSON accepts both the v7.0.0-alpha.27 field name

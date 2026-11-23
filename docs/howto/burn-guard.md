@@ -67,6 +67,169 @@ restart is needed. The effort ceiling and the Claude retry limit are published
 from the `enabled` setting as before, so the billing mode does not switch them
 off.
 
+## What the guard reads per LLM entry
+
+The guard takes two inputs, both about the LLM entry it guards:
+
+- **Your readings** in the [usage calculator](usage-calculator.md) — the
+  percent of the weekly allowance used against its reset. They give the pace
+  line and the advice projection the guard compares against.
+- **The session transcripts** it parses each interval — input, output,
+  cache-write and cache-read tokens per hour, split worker and verifier
+  sessions from everything else, priced into weekly points with the two cache
+  prices (refit at each new reading when `refit_on_reading` is on).
+
+So the guard needs no billing feed of its own: it prices the same tokens the
+[usage calculator](usage-calculator.md) and the [cost
+report](cost-report.md) price, and the readings are the same ones you type.
+
+The entry's **plan type** does not change the guard's math — it always works
+in allowance points and pace lines on the `claude-code` entry — but it sets
+the limits the guard's rungs move:
+
+- `billing_mode` (`allowance`, `api`, `local`) decides whether the guard acts
+  at all (see [Which LLMs it guards](#which-llms-it-guards)). An `api` or
+  `local` entry with a dollar budget is guarded like an allowance entry; the
+  budget itself is enforced at admission by the capacity ledger's budget
+  backpressure, not by the guard.
+- `plan_tier` (`pro`, `max_5x`, `max_20x`, `api`) sets the entry's inflight cap
+  through `autonomous.plan_tier_max_inflight` and its share of a shared dollar
+  ceiling through `autonomous.plan_tier_allocation_usd` (see
+  [Automata capacity](automata-capacity.md)). An explicit `max_inflight` on
+  the entry wins over the table; the `lower_inflight` rung lowers whatever cap
+  is in force.
+
+## Per-model cost rates and their fallback
+
+An LLM entry's `models` list can carry its own USD rates per 1K tokens —
+`in_per_k`, `out_per_k`, `cache_read_per_k` and `cache_write_per_k`. Each of
+the four fields resolves on its own against the backend's `cost_rates`
+entry: a field set on the model wins, a field left unset takes the
+backend's value, and the cache read and write fields have no per-backend
+value so they resolve to zero when unset. The resolved rate carries a source
+of `model`, `backend` or none, so a surprising figure is traceable to where
+it came from.
+
+The **by-model cost report** prices each model from that model's own rate
+when one is configured, else the backend's rate. It prices cache reads
+and writes from the input rate (a tenth of it for a read, 1.25 times it for
+a write), and labels every dollar figure it emits as an **API-equivalent
+estimate, never a bill** (`api_equivalent_usd` alongside a `usd_label` to
+that effect). A rate that is absent is read as the backend's, never as zero
+as a price.
+
+Set a model's rates from any of these surfaces:
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch llm models add <llm> --model <name> [--in-per-k .. --out-per-k .. --cache-read-per-k .. --cache-write-per-k ..]` |
+| Comm channel | `llm models add <name> model=<m> [in_per_k=<usd> out_per_k=<usd> cache_read_per_k=<usd> cache_write_per_k=<usd>]` |
+| MCP | `llm_add_model` with the four `*_per_k` fields |
+| REST | `PUT /api/llms/{name}` with the model under `models`; the per-backend map with `PUT /api/cost/rates` |
+| Web app | the LLM edit form's per-model rate fields (blank leaves the fallback) |
+| YAML config | `in_per_k` and friends on each element of the LLM's `models` list; `cost_rates` for the per-backend map |
+
+Leaving a rate unset is what falls back; an absent rate is read as the
+backend's, never as zero.
+
+> **Operator review.** The `models`-list rates above and the `cost_rates`
+> table are distinct configuration surfaces. Confirm which one the by-model
+> cost report is expected to read a model's rate from — the entry's
+> `models[]` fields, or a `cost_rates` entry named for the model — so the
+> docs and the report agree on where a model's rate comes from. The report
+> labels its dollars as an API-equivalent estimate rather than a per-row
+> "rate source", so the source of a figure is a configuration concern, not a
+> reported field.
+
+## The by-model reports
+
+The cost report carries a **by-model section** (`model_rows`) alongside its
+rows: one row per model name with its input, output and cached tokens and its
+API-equivalent dollars, priced at that model's own rate — the per-model cost
+entry when one is configured, else the backend's rate. It is an equivalence,
+not a bill, and it is absent when the report has no model rows. Read it from
+any surface:
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch cost report` — the by-model section renders under the rows |
+| Comm channel | `cost report [group_by=<g>] [since=<t>] [until=<t>]` |
+| MCP | `cost_report` — `model_rows` in the body |
+| REST | `GET /api/cost/report` — `model_rows` in the body |
+| Web app | the **Cost report** card's **By model** section |
+| Script | `scripts/claude-burn.py` reads `model_rows` and prints the by-model breakdown, falling back to the rows when the section is absent |
+
+## Adding a second paid LLM by configuration
+
+Registering another paid LLM is configuration only — nothing to restart, and
+the guard keeps doing its job on the `claude-code` entry. Every surface takes
+the same entry fields:
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch llm add <name> --kind <kind> --billing-mode api --plan-tier <tier>` and, for a dollar limit, `--budget-ceiling-usd <n> --budget-hours <n>` (or `--budget-weekday <day> [--budget-time HH:MM] [--budget-zone <IANA>]`) |
+| MCP | `llm_add` with `billing_mode`, `plan_tier` and the `budget` object |
+| REST | `POST /api/llms` or `PUT /api/llms/{name}` with the same fields |
+| Web app | Settings → Compute → LLM, the **Billing mode** and budget fields on the edit form |
+| Comm channel | `llm add <name> billing_mode=<mode>` (budget through the other surfaces) |
+| YAML config | a `llms:` entry with `billing_mode`, `plan_tier` and `budget`; see the [configuration reference](../config-reference.yaml) |
+
+What each field does to the new entry:
+
+- `billing_mode api` puts its spend on metered dollars in the
+  [cost report](cost-report.md) — never added to the allowance entry's points.
+- `plan_tier` gives it its inflight cap (`autonomous.plan_tier_max_inflight`)
+  and its share of a shared dollar ceiling
+  (`autonomous.plan_tier_allocation_usd`) — see
+  [Automata capacity](automata-capacity.md).
+- A `budget` enforces its ceiling at admission: while the window is full,
+  autonomous work for that LLM waits with a `budget window full:` reason and
+  resumes by itself when the window rolls over; operator-started sessions are
+  never held. See [the per-LLM dollar
+  budget](automata-capacity.md#per-llm-dollar-budget).
+- The [usage calculator](usage-calculator.md) reads the entry's spend into its
+  projections, so the new LLM's pace shows up in the advice.
+
+The burn guard itself still watches only the `claude-code` entry: the second
+LLM is bounded by its own budget, its plan-tier caps and the usage calculator,
+not by the guard's ladder.
+
+### Guarding several paid LLM entries (`entries`)
+
+The guard evaluates **once per paid LLM entry**. With `usage.burn_guard.entries`
+unset it guards one entry, `claude-code`, with the default ladder — the behaviour
+above. Set `entries` to guard more than one; each entry has its own readings,
+projection, pace line, ladder and held models:
+
+| Field | Meaning |
+|---|---|
+| `llm` | The LLM entry name (required, unique). |
+| `usage_source` | `readings` (the readings that name this entry) or `none`. **An entry with no usage source is never held**; anything it had in force is released. |
+| `plan` | `flat` (a weekly percentage) or `metered` (a spend figure in dollars). |
+| `period_target` | The ceiling: a percentage for `flat` (0 means 100), dollars for `metered` (required). |
+| `model` | The model whose own cost rate (the per-model `in/out/cache_read/cache_write_per_k` on the LLM entry) prices the entry's tokens; empty is the entry's first model. |
+| `ladder` | This entry's rungs; empty uses the guard-wide `ladder`. The route rung sends new work to `route_to`, the cheaper rung switches the entry's model, and the hold rung holds the entry. |
+| `held_models` | Limit the hold rung to these models of the entry; empty holds the whole entry. |
+| `route_to` | Where the route rung sends new work; empty makes the route rung change nothing. |
+| `route_cheaper_model` | The model the `route_cheaper_model` rung sends this entry's new work to, on the same backend: for a Claude entry, Haiku. Empty auto-resolves the entry's own cheapest other priced model from its per-model cost rates (Haiku on a price tie for a Claude entry); when the entry has no other priced model the rung changes nothing. |
+| `points_per_usd` | For a `flat` entry, converts its dollar-priced tokens to points; 0 keeps the fitted cache coefficients. |
+
+A metered entry projects from its newest spend reading of the period, adds its
+tokens priced at its model's rate, and carries the burn (priced tokens over the
+trailing window, or the spend between readings) to the reset. Its margin is
+`margin_points` percent of the target.
+
+A reading names its entry with `llm` (REST body, `usage_reading_add` `llm`,
+`datawatch usage reading add --llm NAME`, comm `usage reading 72 llm=NAME`, the
+web reading form's LLM entry field). A reading that names no entry is the
+**first** entry's, so today's single reading series keeps working. Set the list
+with `datawatch config set usage.burn_guard.entries '[{"llm":"...","usage_source":"readings","plan":"metered","period_target":200}]'`
+(or the same key through `PUT /api/usage/burn-guard/config`, MCP
+`burn_guard_config_set`, or the comm `configure` verb). The status
+(`GET /api/usage/burn-guard`) carries one `entries[]` block per entry with its
+plan, usage source, rungs in force, `held_models`, `route_to` and the
+resolved `cheaper_model`; the top-level fields repeat the first entry's.
+
 ## What it does each interval
 
 1. Reads the session transcripts and counts input, output, cache-write and
@@ -160,19 +323,26 @@ The alert names both projections and which one was used, for example
 
 ## The ladder
 
-The ladder is an ordered list of rungs. Each rung is a change to admission.
+The ladder is an ordered list of rungs. Each rung is a change to admission of the ladder's **entry** (the paid LLM it
+watches), not of any fixed backend. The rung names are entry-generic: a guard
+with several entries applies the same ladder under each entry's own admission.
 
 | Rung | What it does |
 |---|---|
-| `lower_inflight` | Lowers the cap on how many Claude sessions may run at once. The original cap is remembered and restored when the rung is released |
-| `route_pi_prompt` | Sends new Claude work to the `pi-prompt` backend instead |
-| `hold_claude` | Holds new Claude work. Work already running continues; held work starts again when the rung is released |
+| `lower_inflight` | Lowers how many sessions the entry may have running at once. The original cap is remembered and restored when the rung is released |
+| `route_entry` | Sends the entry's new work to the entry's `route_to` backend instead, when one is set (the legacy first-version name for this rung is `route_pi_prompt`) |
+| `route_cheaper_model` | Keeps the backend and sends the entry's new work to its own **cheaper model** (the entry's `route_cheaper_model` field, or its cheapest other priced model by its per-model cost rates when the field is empty). While the entry resolves to no cheaper model the rung changes nothing. Work already running continues; releasing the rung restores the entry's original model routing |
+| `hold_entry` | Holds the entry's new work, optionally limited to its `held_models`. Work already running continues; held work starts again when the rung is released (the legacy first-version name is `hold_claude`) |
 
-The default ladder is `lower_inflight`, `route_pi_prompt`, `hold_claude`, in
-that order. You can reorder it or leave a rung out (for example
-`lower_inflight`, `hold_claude`). An unknown or repeated rung is dropped, and an
-empty list means the default.
-
+The default ladder is `lower_inflight`, `route_entry`, `hold_entry`, in that
+order. `route_cheaper_model` is the fourth rung and is **not in the default**: it
+is a no-op until the entry resolves a cheaper model, so you opt in by naming it
+where it sits, before the hold rung (for example
+`lower_inflight, route_entry, route_cheaper_model, hold_entry`). You can reorder
+the rungs or leave a rung out (for example `lower_inflight`, `hold_entry`). An
+unknown or repeated rung is dropped, and an empty list means the default. The
+legacy first-version names `route_pi_prompt` and `hold_claude` are still
+accepted in saved configs and normalize to `route_entry` and `hold_entry`.
 **Climbing.** When the projection is more than `margin_points` above the target,
 the guard applies the next rung. **Holding.** Inside the margin it changes
 nothing. **Stepping back.** When the projection is more than `margin_points`
@@ -242,7 +412,7 @@ is unchanged, so a script or config file that used the old keys keeps working.
 | `interval_minutes` | Minutes between evaluations, 1 to 1440 | `60` |
 | `margin_points` | How far the projection may run over the pace line before the guard acts, 0 to 50 | `2.0` |
 | `max_projection_gap_points` | Largest allowed gap between the guard projection and the advice projection. Above it the tick decides on the lower of the two. `0` never compares, so the guard projection alone decides. 0 to 100; a value outside that range is refused | `25` |
-| `ladder` | Ordered rungs applied while over the line | `lower_inflight, route_pi_prompt, hold_claude` |
+| `ladder` | Ordered rungs applied while over the line | `lower_inflight, route_entry, hold_entry` (allowed rungs: `lower_inflight`, `route_entry`, `route_cheaper_model`, `hold_entry`, plus the legacy `route_pi_prompt` and `hold_claude`) |
 | `step_back` | Release rungs in reverse once back under the line | `true` |
 | `ask_on_change` | When false (default) one alert per change and no question; when true the per-change alert still goes out and at most one open question per change is kept | `false` |
 | `cache_write_points_per_million` | Weekly points per million cache-write tokens, above 0 and at most 1000 | `0.373` |
@@ -291,7 +461,7 @@ change.
 A step raises a question only when it changed a setting. A hold (changed
 nothing), a `lower_inflight` rung whose cap was already at one, a release that
 would restore a cap that was never lowered, a step that only releases the
-hold (a `hold_claude` release), and turning the guard off all alert but ask
+hold (a `hold_entry` release), and turning the guard off all alert but ask
 nothing. Two more withdrawals keep you from ever answering
 a question that no longer stands: if you turn `ask_on_change` off again, the
 next change withdraws the last open question (reason: *ask_on_change is off,
@@ -351,8 +521,8 @@ To step back yourself:
 - **Run now.** `burn_guard_run` (or **Run now** in the card) evaluates at once; it
   still moves at most one rung.
 - **Raise the margin or reorder the ladder** if the guard acts too early or on a
-  rung you do not want. Take `hold_claude` out of the ladder to keep it from
-  ever pausing new Claude work.
+  rung you do not want. Take `hold_entry` out of the ladder to keep it from
+  ever pausing new work on the entry it guards.
 - **Turn it off.** `enabled: false` releases every rung immediately.
 - **Type a fresh reading** in the usage calculator. The pace line and the fit
   both move with it, and a reading that shows the week is lower than projected
@@ -394,6 +564,12 @@ effort set takes its ceiling. Most specific wins: the task's own ceiling, then
 the Automaton's per-kind map, then the daemon-wide map under
 `usage.burn_guard.effort_ceiling`. With the guard disabled every ceiling is a
 no-op.
+
+The `cheaper_backend` ceiling does not lower the effort level; it routes the
+task to the cheaper backend — **`pi-prompt`** — instead, so the work still
+runs, on the cheap model. The same routing is what the Claude retry limit
+applies to a task it gives up on, so the cheaper rung of the guard is always
+the same destination.
 
 **`final_gate` is inert today.** The built-in final gate no longer runs as a
 session — the daemon's
@@ -459,6 +635,24 @@ The guard still never ends a running session, whichever projection it uses.
 - It does not change a lane count you set; the lane count stays yours (see the
   [usage calculator](usage-calculator.md)).
 - It does not run without readings; type one to give it a pace line.
+
+## Parity
+
+The surfaces this page added or documented in this change:
+
+| Surface | What it now carries |
+|---|---|
+| **YAML / config** | `llms.<name>` entries: `billing_mode`, `plan_tier`, `models[].in_per_k` / `out_per_k` / `cache_read_per_k` / `cache_write_per_k`, `cost_rates`, `budget` |
+| **REST** | `POST /api/llms`, `PUT /api/llms/{name}` (entry fields); `PUT /api/cost/rates` (per-backend map); `GET /api/cost/report` (`model_rows`); `GET /api/budget`, `GET /api/llm-roles` for reading |
+| **MCP** | `llm_add`, `llm_update`, `llm_get`, `llm_list` (entry fields); `llm_add_model` (per-model rates); `cost_report` (`model_rows`); `budget_status` |
+| **CLI** | `datawatch llm add\|update` (`--billing-mode`, `--plan-tier`, `--budget-*`); `datawatch llm models add` (per-model rate flags); `datawatch cost report` (by-model section); `datawatch budget status` |
+| **Comm channel** | `llm add \| update <name> billing_mode=<mode>`, `llm models add` (rate keys), `cost report`, `budget` |
+| **Web app** | Settings → Compute → LLM: **Billing mode**, plan tier, per-model rate fields, budget; the **Cost report** card's **By model** section |
+
+Untouched: the guard's own settings (all still under `usage.burn_guard`, same
+key names), the ladder, the status/alert/question behaviour, and the
+Android/iPhone apps, which track parity separately in the `datawatch-app`
+repository.
 
 ## See also
 
