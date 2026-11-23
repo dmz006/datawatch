@@ -33,10 +33,20 @@ type mergeStateCacheEntry struct {
 // field only surfaces work, it never hides a record). Read-only git queries,
 // cached per record for a short window.
 func (m *Manager) AutomatonMergeState(p *PRD) string {
-	if m == nil || p == nil || (p.Status != PRDCompleted && p.Status != PRDArchived) || p.Git.Branch == "" {
+	if p == nil {
 		return ""
 	}
-	key := p.ID + "\x00" + string(p.Status) + "\x00" + p.Git.Branch
+	return m.AutomatonMergeStateOf(p.ID, p.Status, p.Git.Branch, p.Git.BaseBranch)
+}
+
+// AutomatonMergeStateOf is AutomatonMergeState from the fields it needs, so
+// the list, roll-up and Gantt can derive it from a summary-index entry without
+// reading the full record. An empty base resolves from the repository.
+func (m *Manager) AutomatonMergeStateOf(id string, status PRDStatus, branch, base string) string {
+	if m == nil || (status != PRDCompleted && status != PRDArchived) || branch == "" {
+		return ""
+	}
+	key := id + "\x00" + string(status) + "\x00" + branch
 	m.mu.Lock()
 	window := m.mergeStateCacheWindow
 	if window <= 0 {
@@ -54,7 +64,7 @@ func (m *Manager) AutomatonMergeState(p *PRD) string {
 
 	ctx, cancel := context.WithTimeout(context.Background(), mergePendingGitTimeout)
 	defer cancel()
-	state, _, _ := checkBranchAhead(ctx, m.archivedUnmergedGitRunner(), repo, p.Git.Branch, p.Git.BaseBranch)
+	state, _, _ := checkBranchAhead(ctx, m.archivedUnmergedGitRunner(), repo, branch, base)
 	value := ""
 	if state == branchCheckAhead {
 		value = MergeStateFinishedNotMerged

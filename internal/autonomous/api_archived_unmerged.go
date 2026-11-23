@@ -19,3 +19,9 @@ func (a *API) CarryForwardArchivedForced(id, actor string, force bool) (*PRD, er
 func (a *API) AutomatonMergeState(p *PRD) string {
 	return a.M.AutomatonMergeState(p)
 }
+
+// AutomatonMergeStateOf forwards the field-based reader used by index-backed
+// views.
+func (a *API) AutomatonMergeStateOf(id string, status PRDStatus, branch, base string) string {
+	return a.M.AutomatonMergeStateOf(id, status, branch, base)
+}

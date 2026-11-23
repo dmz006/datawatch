@@ -300,19 +300,14 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 					set := idx.NotifyEffectiveForEntry(e)
 					row.NotifyEventsEffective = &set
 					fillRow(&row, project)
-					finished := e.Status == autonomous.PRDCompleted || e.Status == autonomous.PRDArchived
-					if e.HasPlanningFailure || finished {
+					if e.HasPlanningFailure {
 						if raw, ok := s.autonomousMgr.GetPRD(e.ID); ok {
 							if prd, err := toPRD(raw); err == nil {
-								if e.HasPlanningFailure {
-									row.PlanningFailure = s.planningFailureOf(prd)
-								}
-								if finished {
-									row.MergeState = s.mergeStateOf(prd)
-								}
+								row.PlanningFailure = s.planningFailureOf(prd)
 							}
 						}
 					}
+					row.MergeState = s.mergeStateOfEntry(e)
 					return row
 				}})
 		}

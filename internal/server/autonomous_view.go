@@ -301,15 +301,23 @@ func (s *Server) mergeStateOf(prd *autonomous.PRD) string {
 // resolved through its full record, so the value matches the list and detail.
 func (s *Server) mergeStateOfEntryFn(mgr *autonomous.Manager) func(e autonomous.SummaryEntry) string {
 	return func(e autonomous.SummaryEntry) string {
-		if e.GitBranch == "" || (e.Status != autonomous.PRDCompleted && e.Status != autonomous.PRDArchived) {
-			return ""
-		}
-		p, _ := mgr.Store().SnapshotPRD(e.ID)
-		if p == nil {
-			return ""
-		}
-		return mgr.AutomatonMergeState(p)
+		return mgr.AutomatonMergeStateOf(e.ID, e.Status, e.GitBranch, "")
 	}
+}
+
+// mergeStateOfEntry is mergeStateOf for a summary-index entry: no full record
+// is read, so the list keeps answering from the index alone.
+func (s *Server) mergeStateOfEntry(e autonomous.SummaryEntry) string {
+	if s.autonomousMgr == nil {
+		return ""
+	}
+	v, ok := s.autonomousMgr.(interface {
+		AutomatonMergeStateOf(id string, status autonomous.PRDStatus, branch, base string) string
+	})
+	if !ok {
+		return ""
+	}
+	return v.AutomatonMergeStateOf(e.ID, e.Status, e.GitBranch, "")
 }
 
 // withMergeState adds the derived merge_state to a full Automaton body.
