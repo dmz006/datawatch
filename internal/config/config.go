@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -5208,6 +5209,10 @@ const (
 	// DefaultLaneFillHostDownAfterMinutes is how long a pool host may stay
 	// unreachable before lane fill treats it as down (0 = never).
 	DefaultLaneFillHostDownAfterMinutes = 10
+	// DefaultLaneFillStalledMergeMinutes is how long a task-branch merge may
+	// stay pending without progress before the Automaton stops holding its
+	// lane (0 = rule off).
+	DefaultLaneFillStalledMergeMinutes = 30
 )
 
 // AutonomousLaneFillConfig — autonomous.lane_fill sub-config: automatic lane
@@ -5246,6 +5251,11 @@ type AutonomousLaneFillConfig struct {
 	// (absent) means 10; an explicit 0 never treats an unreachable host as
 	// down, so every failed read blocks the lane builder.
 	HostDownAfterMinutes *int `yaml:"host_down_after_minutes,omitempty" json:"host_down_after_minutes,omitempty"`
+	// StalledMergeMinutes: whole minutes a task-branch merge may stay pending
+	// without progress before the Automaton stops holding its lane and the
+	// merge is alerted and retried. Nil (absent) means 30; an explicit 0
+	// turns the rule off; a negative value is rejected by validation.
+	StalledMergeMinutes *int `yaml:"stalled_merge_minutes,omitempty" json:"stalled_merge_minutes,omitempty"`
 	// RequireConfirmedProposal: when true (the default, nil) an Automaton
 	// created from a proposal is eligible only once the operator has confirmed
 	// that proposal.
@@ -5334,6 +5344,53 @@ func ValidateLaneFillKindMode(key, mode string) error {
 	default:
 		return fmt.Errorf("autonomous.lane_fill.%s: %q is not a valid value (must be \"off\", \"shadow\" or \"on\")", key, mode)
 	}
+}
+
+// LaneFillStalledMergeMinutesKey is the dotted key of the stalled-merge
+// threshold, the one name every surface uses for it.
+const LaneFillStalledMergeMinutesKey = "autonomous.lane_fill.stalled_merge_minutes"
+
+// ValidateLaneFillStalledMergeMinutes checks a decoded autonomous.lane_fill
+// .stalled_merge_minutes value: a whole number >= 0 (0 turns the rule off,
+// default 30). REST, MCP, the CLI and the comm channel all refuse anything
+// else with this one message.
+func ValidateLaneFillStalledMergeMinutes(v any) error {
+	var f float64
+	switch n := v.(type) {
+	case float64:
+		f = n
+	case int:
+		f = float64(n)
+	case int64:
+		f = float64(n)
+	default:
+		return errLaneFillStalledMergeMinutes()
+	}
+	if math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) || f < 0 {
+		return errLaneFillStalledMergeMinutes()
+	}
+	return nil
+}
+
+func errLaneFillStalledMergeMinutes() error {
+	return fmt.Errorf("%s: must be a whole number >= 0 (0 turns the stalled-merge rule off, default 30)", LaneFillStalledMergeMinutesKey)
+}
+
+// ParseLaneFillStalledMergeMinutes reads the typed text of the setting (a
+// command line or a chat message) and applies ValidateLaneFillStalledMergeMinutes
+// to it, so the text "30" and the JSON number 30 are judged alike and text that
+// is not a whole number >= 0 is refused with the same message.
+func ParseLaneFillStalledMergeMinutes(text string) (int, error) {
+	var v any
+	trimmed := strings.TrimSpace(text)
+	if err := json.Unmarshal([]byte(trimmed), &v); err != nil {
+		v = trimmed
+	}
+	if err := ValidateLaneFillStalledMergeMinutes(v); err != nil {
+		return 0, err
+	}
+	f, _ := v.(float64)
+	return int(f), nil
 }
 
 // EffectiveMode returns the mode in effect, normalized: an empty value means
@@ -5457,6 +5514,15 @@ func (c AutonomousLaneFillConfig) EffectiveHostDownAfterMinutes() int {
 	return *c.HostDownAfterMinutes
 }
 
+// EffectiveStalledMergeMinutes returns the stalled-merge threshold in effect:
+// nil means 30 and an explicit 0 turns the rule off.
+func (c AutonomousLaneFillConfig) EffectiveStalledMergeMinutes() int {
+	if c.StalledMergeMinutes == nil || *c.StalledMergeMinutes < 0 {
+		return DefaultLaneFillStalledMergeMinutes
+	}
+	return *c.StalledMergeMinutes
+}
+
 // laneFillBoolDefaultTrue reads a tri-state boolean: nil means true.
 func laneFillBoolDefaultTrue(b *bool) bool { return b == nil || *b }
 
@@ -5500,6 +5566,9 @@ func (c AutonomousLaneFillConfig) validate() error {
 	}
 	if c.HostDownAfterMinutes != nil && *c.HostDownAfterMinutes < 0 {
 		return fmt.Errorf("autonomous.lane_fill.host_down_after_minutes: %d must be >= 0", *c.HostDownAfterMinutes)
+	}
+	if c.StalledMergeMinutes != nil && *c.StalledMergeMinutes < 0 {
+		return fmt.Errorf("autonomous.lane_fill.stalled_merge_minutes: %d must be >= 0", *c.StalledMergeMinutes)
 	}
 	for k, v := range map[string]int{
 		"gpu_lanes":           c.GPULanes,
