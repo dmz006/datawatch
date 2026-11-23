@@ -7556,6 +7556,29 @@ A real migration run is refused while a final gate is running and skips, with a 
 
 The full how-to — what a hold records, operations, expiry, the held group, what stays away, and the hold migration's three rules — is [howto/automaton-hold.md](howto/automaton-hold.md).
 
+## Automation parallelism, decision waits and stage gating
+
+Four optional Automation features shape how branches run. All are off or unlimited by default and need no restart; an update that omits a field keeps its stored value.
+
+| Feature | Field | Status shows | Operator action |
+|---|---|---|---|
+| Branch chain | members between a fork and join, `on_complete` only | `branch_chains` | A failed chain member fails its branch; the join's `on_branch_failure` decides |
+| Max parallel | `max_parallel` on the Automation or a fork (0 = no limit) | `waiting_for_slot` | None; waiting members start in member order as slots free |
+| Decision wait | member `kind` `decision_wait` with a `question` | `waiting_for_operator` | Answer the question in the Inbox or with `datawatch question answer` |
+| Stage gate | `stage_gate` on the Automation | `waiting_for_stage` | Finish or skip the earlier stage's members |
+
+Set the Automation limit and the gate on create or update (`max_parallel`, `stage_gate`), or change either on a running Automation with its own call, which changes only that field and takes effect at once (raising the limit or turning the gate off starts waiting members; lowering the limit never stops a running one):
+
+| Action | REST | MCP | CLI | Chat |
+|---|---|---|---|---|
+| Limit members running at once | `POST /api/automations/{id}/set_max_parallel` | `automation_set_max_parallel` | `datawatch automation set-max-parallel <id> --max-parallel <n>` | `automation set-max-parallel <id> <n>` |
+| Stage gate on or off | `POST /api/automations/{id}/set_stage_gate` | `automation_set_stage_gate` | `datawatch automation set-stage-gate <id> --stage-gate=<true\|false>` | `automation set-stage-gate <id> on\|off` |
+| Add a decision wait | `POST /api/automations/{id}/insert_member` with `member.question` | `automation_insert_member` with `question` | `datawatch automation insert <id> --kind decision-wait --question <text> --reason <why>` | `automation insert <id> decision-wait <question> \| <reason>` |
+
+A daemon restart keeps waiting, held and decision-wait members in place and re-links the one open question to its member. A decision wait needs `autonomous.questions.enabled`; without it the question cannot be raised. A blocked member of an earlier stage keeps holding the later stage until it is resumed or skipped. See [howto/automation-chains.md](howto/automation-chains.md) and the glossary entries in [datawatch-definitions.md](datawatch-definitions.md).
+
+Reading the status: `waiting_for_slot`, `waiting_for_stage` and `waiting_for_operator` are waits, not failures, and raise no failure alert; only a decision wait raises the "Automation waiting for you" alert. Setting `max_parallel` to 0 or omitting it removes the limit; turning `stage_gate` off releases held members at once.
+
 ## Merge-pending check (finished Automata whose branch is not on main)
 
 When an Automaton finishes, its work lives on its own branch (`automaton/<id>`) in the worktree base repository (`worktree_base_repo`). Nothing about finishing puts that work on `main`, so a completed Automaton can look done while its commits are still only on the branch. The merge-pending check compares each finished Automaton's branch with `main` — completed Automata always, and archived, `needs_review`, `blocked` and `failed` Automata too while `merge_pending_include_terminal` is on (the default) — so an operator can see which finished Automata are waiting to be merged, from every surface at once. The check is a **read**: it never merges, deletes or pushes anything, and it is **off by default**.
