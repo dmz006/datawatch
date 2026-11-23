@@ -50,7 +50,7 @@ func getHousekeepingSettings(t *testing.T, s *Server) map[string]interface{} {
 func TestHousekeepingSettings_DefaultsOnGet(t *testing.T) {
 	s, _ := newHousekeepingSettingsServer(t)
 	want := map[string]interface{}{
-		"task_chain": "report", "advance_judge": "report", "lane_fill": "report", "leftovers": "report", "planning": "report",
+		"task_chain": "report", "advance_judge": "report", "lane_fill": "report", "leftovers": "report", "planning": "report", "unarchive": "report",
 		"grace_seconds": float64(300),
 	}
 	if got := getHousekeepingSettings(t, s); !reflect.DeepEqual(got, want) {
@@ -65,6 +65,7 @@ func TestHousekeepingSettings_PutThenGetEachGroup(t *testing.T) {
 		`{"autonomous.housekeeping_repairs.advance_judge":"off"}`,
 		`{"autonomous.housekeeping_repairs.lane_fill":"ON"}`, // comm sends text as typed
 		`{"autonomous.housekeeping_repairs.leftovers":"report"}`,
+		`{"autonomous.housekeeping_repairs.unarchive":"on"}`,
 		`{"autonomous.housekeeping_repairs.grace_seconds":"45"}`,
 	} {
 		if rr := putHousekeepingBody(t, s, body); rr.Code != http.StatusOK {
@@ -73,7 +74,7 @@ func TestHousekeepingSettings_PutThenGetEachGroup(t *testing.T) {
 	}
 	got := getHousekeepingSettings(t, s)
 	want := map[string]interface{}{
-		"task_chain": "on", "advance_judge": "off", "lane_fill": "on", "leftovers": "report", "planning": "report",
+		"task_chain": "on", "advance_judge": "off", "lane_fill": "on", "leftovers": "report", "planning": "report", "unarchive": "on",
 		"grace_seconds": float64(45),
 	}
 	if !reflect.DeepEqual(got, want) {

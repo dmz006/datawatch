@@ -156,3 +156,30 @@ func TestMergeStateViewCacheDoesNotStaleAcrossStatus(t *testing.T) {
 		t.Errorf("cached value leaked across a status change: %q, want empty", got)
 	}
 }
+
+// The one-time un-archive repair judges "unmerged" with the same git check as
+// the archive guard: an archived record (archived by the supervisor loop) whose
+// branch is ahead is a candidate, one whose work is on the base is not.
+func TestUnarchiveCandidatesUseBranchCheck(t *testing.T) {
+	base := amgBaseRepo(t)
+	amgBranchAhead(t, base)
+	m, p := amgRig(t, base, PRDArchived)
+	p.Decisions = append(p.Decisions, Decision{Kind: "archive", Actor: "supervisor_loop"})
+	if err := m.store.SavePRD(p); err != nil {
+		t.Fatal(err)
+	}
+	got := ManagerUnarchiveOps{M: m}.Candidates(t.Context())
+	if len(got) != 1 || got[0].ID != p.ID || got[0].Unsafe || got[0].Commits != 1 || got[0].RestoreTo != PRDCompleted {
+		t.Fatalf("unmerged archived record: candidates = %+v, want one restorable to completed with 1 commit", got)
+	}
+
+	amgGit(t, base, "merge", "-q", amgBranch)
+	m2, p2 := amgRig(t, base, PRDArchived)
+	p2.Decisions = append(p2.Decisions, Decision{Kind: "archive", Actor: "supervisor_loop"})
+	if err := m2.store.SavePRD(p2); err != nil {
+		t.Fatal(err)
+	}
+	if got := (ManagerUnarchiveOps{M: m2}).Candidates(t.Context()); len(got) != 0 {
+		t.Fatalf("merged archived record: candidates = %+v, want none", got)
+	}
+}
