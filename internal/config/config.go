@@ -876,6 +876,11 @@ type Config struct {
 	// its default while an explicit value sticks through saves and YAML
 	// round trips. See the cost_report block in docs/config-reference.yaml.
 	CostReport CostReportConfig `yaml:"cost_report,omitempty" json:"cost_report,omitempty"`
+
+	// Packs holds the standard-task pack block (packs.*): the enabled switch
+	// (default false) and the active pack names (default ["builtin"]). See
+	// PacksConfig in packs_config.go.
+	Packs PacksConfig `yaml:"packs" json:"packs"`
 }
 
 // CostReport defaults. Every one of them is read from the config struct:
@@ -2706,6 +2711,13 @@ type SessionConfig struct {
 	// `GET /api/sessions/stale`. Default 1800 (30 min). 0 disables.
 	StaleTimeoutSeconds int `yaml:"stale_timeout_seconds,omitempty"`
 
+	// FinaliseIntervalMinutes is how often the daemon finalises session
+	// records whose process is gone. Default 10. 0 turns the scheduled runs
+	// off (the start-up run always happens). A negative value falls back to
+	// 10. There is deliberately no omitempty so an explicit 0 survives a
+	// save and reload.
+	FinaliseIntervalMinutes int `yaml:"finalise_interval_minutes"`
+
 	// RateLimitGlobalPause (BL30) — when true, hitting a rate limit
 	// on any backend pauses new session creation across all backends
 	// until the cooldown elapses or the operator clears it.
@@ -4203,6 +4215,10 @@ type AutonomousConfig struct {
 	// (task_chain, advance_judge, lane_fill, leftovers, planning; default report) and
 	// the grace seconds. See housekeeping_repairs.go.
 	HousekeepingRepairs HousekeepingRepairsConfig `yaml:"housekeeping_repairs" json:"housekeeping_repairs"`
+
+	// GateRepair — the gate repair engine mode (report default, or on) for
+	// the housekeeping group gate_repair. See gate_repair.go.
+	GateRepair GateRepairConfig `yaml:"gate_repair" json:"gate_repair"`
 
 	// Shipped — shipped-state surface for Automata (PRDs) and Automation:
 	// master switch, chip display, default browser filter, separate shipped
@@ -8316,24 +8332,26 @@ func DefaultConfig() *Config {
 			Peers: ObserverPeersConfig{SilentAlertMinutes: 5},
 			Pull:  DefaultObserverPullConfig(),
 		},
+		Packs: DefaultPacksConfig(),
 		Signal: SignalConfig{
 			ConfigDir:  filepath.Join(home, ".local", "share", "signal-cli"),
 			DeviceName: hostname,
 		},
 		Session: SessionConfig{
-			MaxSessions:         10,
-			InputIdleTimeout:    10,
-			TailLines:           20,
-			AlertContextLines:   10,
-			LLMBackend:          "claude-code",
-			DefaultProjectDir:   home,
-			AutoGitCommit:       true,
-			AutoGitInit:         false,
-			GitDefault:          false,
-			ClaudeEnabled:       true,
-			MCPMaxRetries:       5,
-			ScheduleSettleMs:    200,
-			StaleTimeoutSeconds: 1800,
+			MaxSessions:             10,
+			InputIdleTimeout:        10,
+			TailLines:               20,
+			AlertContextLines:       10,
+			LLMBackend:              "claude-code",
+			DefaultProjectDir:       home,
+			AutoGitCommit:           true,
+			AutoGitInit:             false,
+			GitDefault:              false,
+			ClaudeEnabled:           true,
+			MCPMaxRetries:           5,
+			ScheduleSettleMs:        200,
+			StaleTimeoutSeconds:     1800,
+			FinaliseIntervalMinutes: 10,
 			// BL219 — tooling lifecycle defaults.
 			GitignoreCheckOnStart: true,
 			GitignoreArtifacts:    []string{"aider", "goose", "gemini"},
@@ -8795,6 +8813,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Session.StaleTimeoutSeconds == 0 {
 		cfg.Session.StaleTimeoutSeconds = 1800
+	}
+	if cfg.Session.FinaliseIntervalMinutes < 0 {
+		cfg.Session.FinaliseIntervalMinutes = 10
 	}
 	if cfg.Session.LLMBackend == "" {
 		cfg.Session.LLMBackend = "claude-code"
@@ -9468,6 +9489,9 @@ func Load(path string) (*Config, error) {
 	if err := loadHousekeepingRepairs(cfg); err != nil {
 		return nil, err
 	}
+	if err := loadGateRepair(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -9530,6 +9554,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := loadHousekeepingRepairs(cfg); err != nil {
+		return nil, err
+	}
+	if err := loadGateRepair(cfg); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)

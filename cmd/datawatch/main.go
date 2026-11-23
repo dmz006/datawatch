@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.87"
+var Version = "9.182.92"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -375,6 +375,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newProjectSummaryCmd(), // BL35
 		newTemplateCmd(),       // BL5
 		newAcmeCmd(),           // BL397
+		newPacksCmd(),          // packs
 		newProjectsCmd(),       // BL27
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30
@@ -2196,6 +2197,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Resume monitors for sessions that survived a previous daemon restart
 	mgr.ResumeMonitors(ctx)
+	// Finalise session records whose process is gone. Started after the
+	// resume so the start-up run sees recovered and resumed sessions first.
+	// The interval is read from the live config on every cycle.
+	startSessionFinaliser(ctx, mgr, func() int { return cfg.Session.FinaliseIntervalMinutes })
 	mgr.StartOneShotReaper(ctx)
 
 	// v5.26.27 — sweep orphan project_profile clones under

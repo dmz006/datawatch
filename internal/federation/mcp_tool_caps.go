@@ -265,6 +265,9 @@ var MCPToolCap = map[string]string{
 	"supervisor_watch_list":                CapAutonomousRead,
 	"supervisor_watch_stats":               CapAutonomousRead,
 	"housekeeping_repairs":                 CapAutonomousRead,
+	"gate_repairs":                         CapAutonomousRead,
+	"autonomous_gate_repair_status":        CapAutonomousRead,
+	"autonomous_gate_repair_run":           CapAutonomousRun,
 	"supervisor_loop_jobs":                 CapAutonomousRead,
 	"supervisor_loop_runs":                 CapAutonomousRead,
 	"supervisor_loop_run_job":              CapAutonomousRun,
@@ -312,6 +315,14 @@ var MCPToolCap = map[string]string{
 	"autonomous_protected_paths":           CapAutonomousRead,
 	"autonomous_standard_tasks":            CapAutonomousRead,
 	"autonomous_pending_items":             CapAutonomousRead,
+	"packs_list":                           CapConfigRead,
+	"packs_setting_get":                    CapConfigRead,
+	"packs_inputs_get":                     CapConfigRead,
+	"packs_setting_set":                    CapConfigWrite,
+	"packs_inputs_set":                     CapConfigWrite,
+	"packs_install":                        CapConfigWrite,
+	"packs_accept":                         CapConfigWrite,
+	"packs_remove":                         CapConfigWrite,
 	// Usage calculator (design docs/plans/2026-10-23-usage-calculator-design.md):
 	// reads of the shared series and its advice; writes to the series and the
 	// extra-credit / remaining-work settings.
@@ -794,6 +805,7 @@ func RequiredCapForMCPTool(tool string) (string, bool) {
 // device/plugin/skill/dashboard/filter/alert-rule surfaces, plus all
 // read-only tools.
 var configWriteTools = map[string]bool{
+	"packs_setting_set": true, "packs_inputs_set": true, "packs_install": true, "packs_accept": true, "packs_remove": true,
 	"autonomous_config_set": true, "autonomous_scan_config_set": true, "burn_guard_config_set": true, "channel_routing_config_set": true,
 	"compute_node_add": true, "compute_node_attach_observer": true, "compute_node_delete": true, "compute_node_detach_observer": true,
 	"compute_node_pull_model": true, "compute_node_remove_model": true, "compute_node_update": true, "compute_pin_settings": true,
@@ -829,6 +841,7 @@ var sensitiveWriteTools = map[string]bool{
 }
 
 var nonConfigWriteTools = map[string]bool{
+	"packs_list": true, "packs_setting_get": true, "packs_inputs_get": true,
 	"acme_issuer_log": true, "acme_status": true, "agent_audit": true,
 	"agent_get": true, "agent_list": true, "agent_logs": true, "agent_spawn": true,
 	"agent_terminate": true, "alert_rule_create": true, "alert_rule_delete": true, "alert_rule_disable": true,
@@ -844,7 +857,7 @@ var nonConfigWriteTools = map[string]bool{
 	"automation_set_max_parallel": true, "automation_set_stage_gate": true,
 	"automation_set_verification_llm": true, "automation_skip_member": true, "automation_update": true, "autonomous_attention_list": true,
 	"autonomous_cleanup_status": true, "autonomous_config_get": true, "autonomous_decisions": true, "autonomous_events_pending": true,
-	"autonomous_held_questions": true, "autonomous_infra_retries": true, "autonomous_lane_fill_status": true, "autonomous_landing_drop": true, "autonomous_landing_keep": true, "autonomous_lane_utilization": true, "autonomous_learnings": true,
+	"autonomous_gate_repair_status": true, "autonomous_gate_repair_run": true, "autonomous_held_questions": true, "autonomous_infra_retries": true, "autonomous_lane_fill_status": true, "autonomous_landing_drop": true, "autonomous_landing_keep": true, "autonomous_lane_utilization": true, "autonomous_learnings": true,
 	"autonomous_merge": true, "autonomous_merge_pipeline_get": true, "autonomous_merge_pipeline_set_record": true, "autonomous_merge_pipeline_validate": true,
 	"autonomous_branch_reap": true, "autonomous_branch_reap_run": true, "autonomous_branch_reap_restore": true,
 	"autonomous_remote_reap": true, "autonomous_remote_reap_run": true, "autonomous_remote_reap_restore": true,
@@ -898,7 +911,7 @@ var nonConfigWriteTools = map[string]bool{
 	"federation_peer_get": true, "federation_peer_list": true, "federation_peer_test": true, "federation_peer_update": true,
 	"federation_sessions": true, "files_delete": true, "files_list": true, "files_meta": true,
 	"files_upload": true, "filter_add": true, "filter_delete": true, "filter_list": true,
-	"filter_toggle": true, "get_alerts": true, "get_config": true, "get_identity": true,
+	"filter_toggle": true, "gate_repairs": true, "get_alerts": true, "get_config": true, "get_identity": true,
 	"get_my_scope": true, "get_my_session_id": true, "get_stats": true, "get_version": true,
 	"guardrail_library_list": true, "guardrail_profile_create": true, "guardrail_profile_delete": true, "guardrail_profile_get": true,
 	"guardrail_profile_list": true, "guardrail_profile_update": true, "identity_backups": true, "kill_session": true,

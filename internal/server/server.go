@@ -401,6 +401,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/secrets", api.handleSecrets)                                             // BL242 (list + create)
 	apiMux.HandleFunc("/api/docs/", api.handleDocs)                                                  // BL274 (v6.16.0)
 	apiMux.HandleFunc("/api/docs", api.handleDocs)                                                   // BL274
+	apiMux.HandleFunc("/api/packs", api.handlePacks)                                                 // installable packs
+	apiMux.HandleFunc("/api/packs/", api.handlePacks)                                                // installable packs (sub-paths)
 	apiMux.HandleFunc("/api/skills/registries", api.handleSkillsRegistries)                          // BL255
 	apiMux.HandleFunc("/api/skills/registries/", api.handleSkillsRegistries)                         // BL255
 	apiMux.HandleFunc("/api/skills", api.handleSkills)                                               // BL255 (synced list)
@@ -684,6 +686,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/security-failures", api.handleSecurityFailures)                     // stored security failure reports with their run identity, newest first
 	apiMux.HandleFunc("/api/autonomous/supervisor-watch", api.handleSupervisorWatch)                       // supervisor watch state: mode, last poll, findings, comparison
 	apiMux.HandleFunc("/api/autonomous/housekeeping-repairs", api.handleHousekeepingRepairs)               // housekeeping repairs: per group mode, would-do and did
+	apiMux.HandleFunc("/api/autonomous/gate-repairs", api.handleGateRepairs)                               // gate repair engine: mode and repair records, newest first
+	apiMux.HandleFunc("/api/autonomous/gate-repair", api.handleGateRepair)                                 // gate repair: mode, records and budget split per class per task
+	apiMux.HandleFunc("/api/autonomous/gate-repair/run", api.handleGateRepairRun)                          // gate repair run: one gate (automaton_id+task_id) or one pass (no body)
 	apiMux.HandleFunc("/api/autonomous/supervisor-watch/stats", api.handleSupervisorWatchStats)            // supervisor watch numbers: mode, poll age, finding counts, agreed days
 	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)                              // read-only admission query
 

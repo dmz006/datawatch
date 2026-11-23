@@ -10867,23 +10867,98 @@ window.SESSIONS_SAVED_VIEWS_KEY = SESSIONS_SAVED_VIEWS_KEY;
 window.SESSIONS_GROUP_AXES = SESSIONS_GROUP_AXES;
 window.SESSIONS_GROUP_UNGROUPED = SESSIONS_GROUP_UNGROUPED;
 
-// One-line toolbar view-mode control: a native <select> (accessible, keyboard-
-// operable, and it can never wrap the row). _sessionsSetViewMode remains the
-// sole mutator — the select is just its trigger, exactly like the three
-// buttons it replaces. No new storage key: the stored mode (or computed
-// default) is simply the selected option.
+// One-line toolbar view-mode control: a role=group of three native buttons
+// (List / Tiles / Compact) — keyboard operable (Tab to the group's buttons,
+// Enter or Space activates), and their combined width never wraps the row.
+// _sessionsSetViewMode remains the sole mutator — the buttons are just its
+// trigger. No new storage key: the stored mode (or computed default) simply
+// marks the active button. On touch, holding a button (~500 ms) shows its
+// label in a small tooltip next to it instead of changing the mode: the
+// synthetic click is cancelled by preventing the touchend's default action.
 function _sessionsViewSelectHTML(mode) {
   const m = (SESSIONS_VIEW_MODES.indexOf(mode) >= 0) ? mode : _sessionsViewMode();
   const label = _stx('sessions_view_dropdown', _stx('sessions_view_toggle', 'Sessions view mode'));
   const defs = [
-    { key: 'list', label: _stx('sessions_view_list', 'List') },
-    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles') },
-    { key: 'compact', label: _stx('sessions_view_compact', 'Compact') },
+    { key: 'list', glyph: '&#9776;', label: _stx('sessions_view_list', 'List') },
+    { key: 'tiles', glyph: '&#8862;', label: _stx('sessions_view_tiles', 'Tiles') },
+    { key: 'compact', glyph: '&#9636;', label: _stx('sessions_view_compact', 'Compact') },
   ];
-  const opts = defs.map(d => `<option value="${d.key}"${d.key === m ? ' selected' : ''}>${escHtml(d.label)}</option>`).join('');
-  return `<select id="sessionsViewSelect" class="sessions-view-select" aria-label="${escHtml(label)}" title="${escHtml(label)}" onchange="_sessionsSetViewMode(this.value)">${opts}</select>`;
+  const btns = defs.map(d => {
+    const on = d.key === m;
+    return `<button type="button" class="sessions-view-btn${on ? ' active' : ''}" data-mode="${d.key}" aria-pressed="${on ? 'true' : 'false'}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')" ontouchstart="_svbPressStart(this)" ontouchend="_svbPressEnd(event,this)" ontouchcancel="_svbPressEnd(event,this)"><span aria-hidden="true">${d.glyph}</span></button>`;
+  }).join('');
+  return `<div class="sessions-view-buttons" role="group" aria-label="${escHtml(label)}">${btns}</div>`;
 }
 window._sessionsViewSelectHTML = _sessionsViewSelectHTML;
+
+// Long-press (touch) label hint for the view-mode buttons: a short tap
+// fires the normal click (mode change); holding for ~500 ms shows the
+// button's label in a tooltip and cancels the synthetic click so the
+// long press never changes the mode. Both paths hide the tooltip when the
+// finger lifts (touchend or touchcancel).
+const SESSIONS_VIEW_BTN_LONG_PRESS_MS = 500;
+function _svbPressStart(btn) {
+  if (!btn) return; // no DOM (tests) — nothing to arm
+  clearTimeout(btn._svbTimer);
+  btn._svbTimer = setTimeout(function () {
+    btn._svbTimer = null;
+    btn._svbLong = true;
+    _svbShowTip(btn);
+  }, SESSIONS_VIEW_BTN_LONG_PRESS_MS);
+}
+function _svbPressEnd(ev, btn) {
+  if (btn && btn._svbTimer) {
+    clearTimeout(btn._svbTimer);
+    btn._svbTimer = null;
+    return; // brief touch: let the synthetic click run the normal mode change
+  }
+  if (btn) btn._svbLong = false;
+  _svbHideTip();
+  if (ev) {
+    // The long press already fired: cancel the synthetic click so lifting
+    // the finger does not switch the mode.
+    try { if (ev.preventDefault) ev.preventDefault(); } catch (_) { /* stub */ }
+  }
+}
+function _svbTipEl() {
+  try {
+    if (typeof document === 'undefined' || !document.body) return null;
+    let el = document.getElementById('sessionsViewTip');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'sessionsViewTip';
+      el.className = 'sessions-view-tip';
+      el.style.display = 'none';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+    }
+    return el;
+  } catch (_) { return null; }
+}
+function _svbShowTip(btn) {
+  const el = _svbTipEl();
+  if (!el || !btn) return;
+  const label = btn.getAttribute ? btn.getAttribute('aria-label') : '';
+  el.textContent = label || '';
+  try {
+    const r = btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
+    if (r) {
+      el.style.left = (r.left + r.width / 2) + 'px';
+      el.style.top = (r.top - 6) + 'px';
+    }
+    el.style.transform = 'translate(-50%, -100%)';
+  } catch (_) { /* positioning is cosmetic only */ }
+  el.style.display = 'block';
+}
+function _svbHideTip() {
+  const el = _svbTipEl();
+  if (el) el.style.display = 'none';
+}
+window.SESSIONS_VIEW_BTN_LONG_PRESS_MS = SESSIONS_VIEW_BTN_LONG_PRESS_MS;
+window._svbPressStart = _svbPressStart;
+window._svbPressEnd = _svbPressEnd;
+window._svbShowTip = _svbShowTip;
+window._svbHideTip = _svbHideTip;
 
 window.renderSessionsViewsBar = renderSessionsViewsBar;
 window._savedViewsRead = _savedViewsRead;
@@ -11361,7 +11436,7 @@ function _sessionsFiltersButtonHTML() {
   const label = _stx('sessions_filters_btn', 'Filters');
   const badge = n > 0 ? `<span class="sessions-filters-badge" id="sessionsFiltersBadge">${n}</span>` : '';
   const tip = _stx('sessions_filters_tip', 'Group, saved views and status filters');
-  return `<button type="button" class="sessions-filters-btn${n > 0 ? ' active' : ''}" id="sessionsFiltersBtn" onclick="sessionsFiltersOpen()" title="${escHtml(tip)}" aria-label="${escHtml(label)}" aria-haspopup="dialog" aria-expanded="${state._sessionsSheetOpen ? 'true' : 'false'}"><span aria-hidden="true">&#9776;</span><span class="sessions-filters-label">${escHtml(label)}</span>${badge}</button>`;
+  return `<button type="button" class="sessions-filters-btn${n > 0 ? ' active' : ''}" id="sessionsFiltersBtn" onclick="sessionsFiltersToggle()" title="${escHtml(tip)}" aria-label="${escHtml(label)}" aria-haspopup="dialog" aria-expanded="${state._sessionsSheetOpen ? 'true' : 'false'}"><span aria-hidden="true">&#9776;</span><span class="sessions-filters-label">${escHtml(label)}</span>${badge}</button>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11433,13 +11508,33 @@ function _sessionsSheetKeydown(e) {
   if (e && (e.key === 'Escape' || e.key === 'Esc')) sessionsFiltersClose();
 }
 
+// Outside-click close, bound to `document` so it works for the phone sheet
+// and the desktop panel alike (both render the same `.sessions-sheet` node
+// under the same backdrop). Clicks on the Filters button itself are its own
+// toggle's job — the click that opens it is the same one that closes it, no
+// close-then-reopen. Clicks inside the live sheet node must not close it,
+// including the sheet kit's in-place re-patches, which never dispatch
+// document-level clicks.
+function _sessionsSheetClickOutside(e) {
+  if (!state._sessionsSheetOpen) return;
+  const tgt = e && e.target;
+  try {
+    if (tgt && typeof tgt.closest === 'function' && tgt.closest('#sessionsFiltersBtn')) return;
+    const sheet = (typeof document.querySelector === 'function') ? document.querySelector('.sessions-sheet') : null;
+    if (sheet && typeof sheet.contains === 'function' && sheet.contains(tgt)) return;
+  } catch (_) { /* no DOM */ }
+  sessionsFiltersClose();
+}
+
 function _sessionsSheetListen(on) {
   try {
     if (on && !state._sessionsSheetListening) {
       document.addEventListener('keydown', _sessionsSheetKeydown);
+      document.addEventListener('click', _sessionsSheetClickOutside);
       state._sessionsSheetListening = true;
     } else if (!on && state._sessionsSheetListening) {
       document.removeEventListener('keydown', _sessionsSheetKeydown);
+      document.removeEventListener('click', _sessionsSheetClickOutside);
       state._sessionsSheetListening = false;
     }
   } catch (_) { /* no DOM */ }
@@ -11448,6 +11543,11 @@ function _sessionsSheetListen(on) {
 // Called on every render: the listener follows the open state.
 function _sessionsSheetSyncKey() {
   _sessionsSheetListen(!!state._sessionsSheetOpen && state.activeView === 'sessions');
+}
+
+function sessionsFiltersToggle() {
+  if (state._sessionsSheetOpen) sessionsFiltersClose();
+  else sessionsFiltersOpen();
 }
 
 function sessionsFiltersOpen() {
@@ -11470,6 +11570,7 @@ window._sessionsActiveFilterCount = _sessionsActiveFilterCount;
 window.sessionsFiltersOpen = sessionsFiltersOpen;
 window.sessionsFiltersClose = sessionsFiltersClose;
 window.sessionsFiltersBackdrop = sessionsFiltersBackdrop;
+window.sessionsFiltersToggle = sessionsFiltersToggle;
 window.sessionsFiltersBadgeCount = _sessionsActiveFilterCount;
 
 // Sessions carry no task counts, so progress is lifecycle based: a finished
@@ -26860,6 +26961,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'resource_limits.memory_floor_mb', label: '', labelKey: 'settings_resource_limits_memory_floor_mb', helpKey: 'settings_resource_limits_memory_floor_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '2048', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_floor_mb', this)" },
     { key: 'resource_limits.memory_cap_mb', label: '', labelKey: 'settings_resource_limits_memory_cap_mb', helpKey: 'settings_resource_limits_memory_cap_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '16384', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_cap_mb', this)" },
   ]},
+  // Standard task packs: the enabled switch, the active order list and the
+  // pack inputs. The fields live in app-packs-settings-fields.js, loaded first.
+  { id: 'packs', sectionKey: 'settings_packs', section: 'Standard task packs', docs: 'howto/automata-standard-tasks.md', fields: (typeof PACKS_SETTINGS_FIELDS !== 'undefined' ? PACKS_SETTINGS_FIELDS : []) },
   { id: 'costreport', sectionKey: 'settings_cost_report', section: 'Cost Report', docs: 'datawatch-definitions.md', fields: [
     { key: 'cost_report.default_group_by', label: 'Default group by', labelKey: 'settings_cost_report_default_group_by', type: 'select', options: ['automaton','automation','backend','week'] },
     { key: 'cost_report.default_window_days', label: 'Default window (days)', labelKey: 'settings_cost_report_default_window_days', type: 'number', placeholder: '7', min: 1, step: 1 },
@@ -26894,6 +26998,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.capacity_wait_seconds', label: 'Interactive session capacity wait (sec)', labelKey: 'settings_session_capacity_wait', type: 'number', placeholder: '8' },
     { key: 'session.task_delivery_window_seconds', label: 'Task delivery wait per attempt (sec)', labelKey: 'settings_session_task_delivery_window', type: 'number', placeholder: '60' },
     { key: 'session.task_delivery_attempts', label: 'Task delivery attempts', labelKey: 'settings_session_task_delivery_attempts', type: 'number', placeholder: '3' },
+    { key: 'session.finalise_interval_minutes', label: 'Session finalise interval (min)', labelKey: 'settings_finalise_interval', helpKey: 'settings_finalise_interval_help', type: 'number', placeholder: '10' },
     { key: 'session.store_flush_interval', label: 'Session store write delay (ms; 0 = write through)', labelKey: 'settings_session_store_flush_interval', helpKey: 'settings_session_store_flush_interval_help', type: 'number', placeholder: '1000' },
     { key: 'session.store_archive_after_days', label: 'Archive finished sessions after (days; 0 = never)', labelKey: 'settings_session_store_archive_after_days', helpKey: 'settings_session_store_archive_after_days_help', type: 'number', placeholder: '14' },
     { key: 'session.store_field_cap_kb', label: 'Session store inline field cap (KB)', labelKey: 'settings_session_store_field_cap_kb', helpKey: 'settings_session_store_field_cap_kb_help', type: 'number', placeholder: '256' },
@@ -27384,6 +27489,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.housekeeping_repairs.lane_fill', label: 'Lane fill repairs', labelKey: 'settings_housekeeping_lane_fill', helpKey: 'settings_housekeeping_lane_fill_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.planning', label: 'Planning repairs', labelKey: 'settings_housekeeping_planning', helpKey: 'settings_housekeeping_planning_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.leftovers', label: 'Leftover repairs', labelKey: 'settings_housekeeping_leftovers', helpKey: 'settings_housekeeping_leftovers_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    // Gate repair — the gate failure repair engine, one mode (off, report or on;
+    // default report).
+    { label: 'Gate repair', labelKey: 'settings_gate_repairs', hintKey: 'settings_gate_repairs_hint', type: 'group' },
+    { key: 'autonomous.gate_repair.mode', label: 'Mode (off, report or on; default report)', labelKey: 'settings_gate_repairs_mode', helpKey: 'settings_gate_repairs_mode_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     // Platform context — the toggle and the project note. Reads GET /api/config and writes
     // through PUT /api/config (platform_context.enabled, platform_context.note).
     { label: 'Platform context', labelKey: 'settings_platform_context_title', docsKey: 'settings_platform_context_title', type: 'group' },
@@ -28628,10 +28737,11 @@ function loadGeneralConfig() {
           } else if (f.type === 'toggle') {
             const checked = !!val;
             const _togHint = _fieldHintHTML(f);
+            const _togOnchange = f.onchange || `saveGeneralField('${f.key}', this.checked)`;
             html += `<div class="settings-row" style="justify-content:space-between;${(_togHint || f.helpDocs) ? 'flex-wrap:wrap;gap:6px;' : ''}">
               <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.docsKey ? defsLink(f.docsKey) : ''}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
               <label class="toggle-switch">
-                <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
+                <input type="checkbox" ${checked ? 'checked' : ''} onchange="${_togOnchange}" />
                 <span class="toggle-slider"></span>
               </label>
               ${f.helpDocs ? _settingsHelpTextHTML(f) : ''}${_togHint}
@@ -36039,6 +36149,13 @@ const _AUTOMATA_TEMPLATE_SUBTABS = [
     load: () => _automataStandardTasksLoad(),
     render: () => _automataStandardTasksRender(),
   },
+  {
+    key: 'packs',
+    titleKey: 'packs_subtab_title',
+    // Packs: a shell from app-packs-subtab.js; it keeps no pack list.
+    load: () => packsSubtabLoad(),
+    render: () => packsSubtabRender(),
+  },
 ];
 
 // The selected sub-tab key, persisted under its own localStorage key and
@@ -42693,6 +42810,107 @@ function _automationHousekeepingRepairsLoader() {
   });
 }
 
+// Gate repair: the gate failure repair engine, shown next to the
+// Housekeeping repairs card in the Housekeeping view. The mode select writes
+// autonomous.gate_repair.mode through PUT /api/config and the Run-now button
+// runs one pass through POST /api/autonomous/gate-repair/run; both refresh
+// through the same listLoader (the shared polling pattern), and every label
+// goes through t() and escHtml().
+function _gateRepairModeLabel(mode) {
+  const s = t('gate_repair_mode_' + mode);
+  return (s && s !== 'gate_repair_mode_' + mode) ? s : String(mode || '');
+}
+function _gateRepairKindLabel(kind) {
+  const key = 'gate_repair_kind_' + kind;
+  const s = t(key);
+  return (s && s !== key) ? s : String(kind || '');
+}
+function _gateRepairToast(msg) {
+  if (typeof showToast === 'function') showToast(msg, 'error');
+}
+function _gateRepairRefresh() {
+  const c = window._listLoaders && window._listLoaders['automation_gate_repair'];
+  if (c && c.load) c.load();
+}
+window.gateRepairCardHtml = function(data) {
+  data = data || {};
+  const mode = String(data.mode || '');
+  const records = Array.isArray(data.records) ? data.records : [];
+  const findings = records.slice(-5).reverse().map(r => {
+    r = r || {};
+    let rec = '<div class="gate-repair-finding" style="margin:6px 0;padding:6px 8px;border:1px solid var(--border,#333);border-radius:6px;">' +
+      `<div class="gate-repair-finding-head" style="font-weight:600;">${escHtml(r.subject || '')} · ${escHtml(_gateRepairKindLabel(r.kind))}</div>` +
+      `<div class="gate-repair-finding-cause" style="color:var(--text2);">${escHtml(t('gate_repair_finding_cause'))}: ${escHtml(r.found || '')}</div>` +
+      `<div class="gate-repair-finding-repair" style="color:var(--text2);">${escHtml(t('gate_repair_finding_repair'))}: ${escHtml(r.done || r.undo || '')}</div>`;
+    if (r.before) rec += `<div class="gate-repair-finding-before" style="color:var(--text2);">${escHtml(t('gate_repair_finding_before'))}: <code>${escHtml(r.before)}</code></div>`;
+    if (r.after) rec += `<div class="gate-repair-finding-after" style="color:var(--text2);">${escHtml(t('gate_repair_finding_after'))}: <code>${escHtml(r.after)}</code></div>`;
+    return rec + '</div>';
+  });
+  const empty = findings.length
+    ? ''
+    : `<div class="gate-repair-nothing" style="color:var(--text2);">${escHtml(t('gate_repair_nothing'))}</div>`;
+  const budgetKeys = (Array.isArray(data.budget) ? data.budget : []).map(k => String(k));
+  const budgetLines = budgetKeys.slice(-8).map(k => {
+    const parts = k.split('\x00');
+    const task = parts[0] || k;
+    const cls = parts.length > 1 ? parts[1] : '';
+    return `<div class="gate-repair-budget-line" style="color:var(--text2);">${escHtml(t('gate_repair_budget_spent', [task, cls]))}</div>`;
+  });
+  const budgetEmpty = budgetLines.length
+    ? ''
+    : `<div class="gate-repair-budget-empty" style="color:var(--text2);">${escHtml(t('gate_repair_budget_empty'))}</div>`;
+  const selVal = (mode === 'on') ? 'on' : 'report';
+  return '<div class="prd-capacity-card gate-repair-card" style="min-width:0;margin:6px 8px 0;">' +
+    `<div class="prd-capacity-card-title" style="margin:0 12px 6px;font-weight:700;">${escHtml(t('gate_repair_card_title'))}</div>` +
+    `<div class="gate-repair-purpose" style="margin:0 12px 8px;color:var(--text2);">${escHtml(t('gate_repair_purpose'))}</div>` +
+    '<div class="gate-repair-mode-row" style="margin:0 12px 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      `<span class="gate-repair-mode-current" style="font-weight:600;">${escHtml(t('gate_repair_mode_label'))}: ${escHtml(_gateRepairModeLabel(mode))}</span>` +
+      `<select id="gateRepairModeSelect" class="gate-repair-mode-select" onchange="window.setGateRepairMode(this)" aria-label="${escHtml(t('gate_repair_mode_label'))}">` +
+        `<option value="report" ${selVal === 'report' ? 'selected' : ''}>${escHtml(t('gate_repair_mode_report'))}</option>` +
+        `<option value="on" ${selVal === 'on' ? 'selected' : ''}>${escHtml(t('gate_repair_mode_on'))}</option>` +
+      '</select>' +
+      `<button type="button" class="gate-repair-run-now" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border,#333);background:transparent;color:var(--text);cursor:pointer;" onclick="window.runGateRepairNow(this)">${escHtml(t('gate_repair_run_now'))}</button>` +
+    '</div>' +
+    `<div class="gate-repair-findings-label" style="margin:0 12px 4px;font-weight:600;color:var(--text2);">${escHtml(t('gate_repair_findings_label'))}</div>` +
+    `<div class="gate-repair-findings" style="margin:0 12px 8px;max-height:220px;overflow-y:auto;">${findings.join('') || empty}</div>` +
+    `<div class="gate-repair-budget-label" style="margin:0 12px 4px;font-weight:600;color:var(--text2);">${escHtml(t('gate_repair_budget_label'))}</div>` +
+    `<div class="gate-repair-budget" style="margin:0 12px 12px;">${budgetLines.join('') || budgetEmpty}</div>` +
+  '</div>';
+};
+window.setGateRepairMode = function(sel) {
+  const v = String((sel && sel.value) || '').trim();
+  if (v !== 'report' && v !== 'on') return;
+  if (sel) sel.disabled = true;
+  apiFetch('/api/config', {
+    method: 'PUT',
+    body: JSON.stringify({ 'autonomous.gate_repair.mode': v }),
+  }).then(() => _gateRepairRefresh())
+    .catch(err => {
+      if (sel) sel.disabled = false;
+      _gateRepairToast(t('gate_repair_mode_save_failed', [String((err && err.message) || err)]));
+    });
+};
+window.runGateRepairNow = function(btn) {
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.textContent = t('gate_repair_run_running'); }
+  apiFetch('/api/autonomous/gate-repair/run', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }).then(() => _gateRepairRefresh())
+    .catch(err => {
+      if (btn) { btn.disabled = false; btn.textContent = t('gate_repair_run_now'); }
+      _gateRepairToast(t('gate_repair_run_failed', [String((err && err.message) || err)]));
+    });
+};
+function _automationGateRepairLoader() {
+  return window._listLoaders.automation_gate_repair || listLoader({
+    key: 'automation_gate_repair', el: 'automationGateRepairCard', url: '/api/autonomous/gate-repair', pollMs: 30000,
+    failedText: msg => t('gate_repair_failed', [msg]),
+    active: () => !!document.getElementById('automationGateRepairCard'),
+    render: data => window.gateRepairCardHtml(data),
+  });
+}
+
 // _cleanupSkipReasonText names a skip reason in the operator's language and
 // falls back to the raw reason name when no label exists for it.
 function _cleanupSkipReasonText(reason) {
@@ -47447,6 +47665,15 @@ registerAutomationCardSlot('housekeeping', {
   html: _automationPlaceholderHTML('automationHousekeepingRepairsCard'),
   mount: () => listLoaderAll([_automationHousekeepingRepairsLoader()]),
   stop: () => _automationStopLoaders(['automation_housekeeping_repairs']),
+});
+// The Gate repair card sits next to the Housekeeping repairs card and, like
+// it, is polled only while the Housekeeping sub-tab is shown.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationGateRepairCard',
+  order: 95,
+  html: _automationPlaceholderHTML('automationGateRepairCard'),
+  mount: () => listLoaderAll([_automationGateRepairLoader()]),
+  stop: () => _automationStopLoaders(['automation_gate_repair']),
 });
 // The Unlanded work card fills the Housekeeping slot: hidden until the list
 // has a row, and polled only while the Housekeeping sub-tab is shown.

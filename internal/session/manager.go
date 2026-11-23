@@ -358,6 +358,12 @@ type Manager struct {
 	// default.
 	platformContextFirstPromptOff bool
 
+	// finaliseMu guards lastFinalise and finaliseRan, the summary of the most
+	// recent combined finalise run (finalise_report.go). Own mutex, never m.mu.
+	finaliseMu   sync.Mutex
+	lastFinalise FinaliseSummary
+	finaliseRan  bool
+
 	hostname       string
 	dataDir        string
 	llmBin         string      // fallback binary path (legacy; prefer launchFn)
@@ -730,6 +736,12 @@ type Manager struct {
 	sendQueuesMu sync.Mutex
 	sendQueues   map[string]*sessionSendQueue
 
+	// runners holds the full IDs of sessions the daemon itself drives with
+	// a goroutine or process because they have no terminal pane. Access is
+	// protected by runnersMu. See runner_registry.go.
+	runnersMu sync.Mutex
+	runners   map[string]struct{}
+
 	// dualSummarizeFn, when non-nil, generates both a short and long summary
 	// from session output. prevShort is the previous short summary (used to
 	// avoid repeating information). Replaces the old single-string summarizeFn.
@@ -796,6 +808,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		uiPromptState:     make(map[string]*uiPromptRecord),
 		selfUpdateNotedAt: make(map[string]time.Time),
 		inputSentAt:       make(map[string]time.Time),
+		runners:           make(map[string]struct{}),
 		encKey:            key,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
@@ -2770,6 +2783,10 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			return nil, fmt.Errorf("save subprocess session: %w", err)
 		}
 		m.notifySessionCreated(sess)
+		// Hold the session as a live runner before its goroutine starts, so
+		// there is no window where it runs but is not registered.
+		// runSubprocess releases it when it returns.
+		m.RegisterRunner(sess.FullID)
 		go m.runSubprocess(sess)
 		m.notifySessionStart(sess)
 		m.runPlacementStartHook(sess)
@@ -4238,6 +4255,9 @@ func (m *Manager) subprocessEnv(sess *Session) []string {
 }
 
 func (m *Manager) runSubprocess(sess *Session) {
+	// The caller registered the runner before starting this goroutine; it is
+	// held for exactly as long as this function runs.
+	defer m.ReleaseRunner(sess.FullID)
 	f, err := os.OpenFile(sess.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		m.subprocessFinish(sess, fmt.Errorf("open log: %w", err))

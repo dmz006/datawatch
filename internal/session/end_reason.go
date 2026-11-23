@@ -2,8 +2,10 @@
 //
 // Every path that ends a session, or closes its tmux pane, records who did it
 // and why. The record goes to the daemon journal and to the session's
-// timeline.md, and nowhere else: no session field, config key or endpoint
-// carries it.
+// timeline.md, and those two still hold who ended a session. The only session
+// fields about an end are EndedAt and EndNote, set when a record is finalised
+// because its process is gone; no other session field, config key or endpoint
+// carries end attribution.
 //
 // A terminal state is sticky. Once a session is complete, failed or killed,
 // a later end keeps that state and is recorded in the journal only, so the

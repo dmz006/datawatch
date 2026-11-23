@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.87"
+var Version = "9.182.92"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -6431,6 +6431,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"reserved_interactive":            s.cfg.Session.EffectiveReservedInteractive(),
 				"input_idle_timeout":              s.cfg.Session.InputIdleTimeout,
 				"liveness_window_seconds":         s.cfg.Session.LivenessWindowSeconds,
+				"finalise_interval_minutes":       s.cfg.Session.FinaliseIntervalMinutes,
 				"liveness_idle_timeout_overrides": livenessOverridesForDisplay(s.cfg.Session.LivenessIdleTimeoutOverrides),
 				"tail_lines":                      s.cfg.Session.TailLines,
 				"alert_context_lines":             s.cfg.Session.AlertContextLines,
@@ -6799,6 +6800,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Housekeeping repairs (autonomous.housekeeping_repairs) — the effective
 			// mode per group (off|report|on) and the grace seconds.
 			"housekeeping_repairs": housekeepingRepairsSettingsForDisplay(s.cfg.Autonomous.HousekeepingRepairs),
+			// Gate repair engine (autonomous.gate_repair) — the effective mode
+			// (off|report|on).
+			"gate_repair": gateRepairSettingsForDisplay(s.cfg.Autonomous.GateRepair),
 			// Defect queue (autonomous.defect_queue) — effective block values and
 			// per-project overrides. Validated by ValidateDefectQueueSetting.
 			"defect_queue": defectQueueSettingsForDisplay(s.cfg.Autonomous.DefectQueue),
@@ -7301,6 +7305,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// validator, so a bad mode rejects the whole PUT with one message on every
 	// surface and nothing is written.
 	if verr := firstHousekeepingRepairsSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Gate repair engine (autonomous.gate_repair.*): same shared validator,
+	// so a bad mode rejects the whole PUT with one message on every surface
+	// and nothing is written.
+	if verr := firstGateRepairSettingError(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9089,6 +9100,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := wholeNumber(v); ok {
 				cfg.Session.LivenessWindowSeconds = n
 			}
+		case "session.finalise_interval_minutes":
+			// Read live by the finaliser each cycle; a negative value is
+			// ignored and zero switches scheduled runs off.
+			if n, ok := wholeNumber(v); ok && n >= 0 {
+				cfg.Session.FinaliseIntervalMinutes = n
+			}
 		case "session.liveness_idle_timeout_overrides":
 			if m, ok := livenessOverridesFromValue(v); ok {
 				if len(m) == 0 {
@@ -10142,6 +10159,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig before this runs. The Repairer reads
 			// the block live through its Settings hook, so no restart is needed.
 			applyHousekeepingRepairsKey(cfg, k, v)
+		case "autonomous.gate_repair.mode":
+			// Validated in handlePutConfig by firstGateRepairSettingError above.
+			// The engine reads the block live through its Settings hook, so no
+			// restart is needed.
+			applyGateRepairKey(cfg, k, v)
 		case "autonomous.auto_tags.enabled", "autonomous.auto_tags.automation_template",
 			"autonomous.auto_tags.stage_template", "autonomous.auto_tags.kind_template",
 			"autonomous.auto_tags.kind_labels":

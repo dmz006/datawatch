@@ -242,7 +242,38 @@ This section is for the operator: what happens to an Automaton's running tasks w
 
 **KillMode.** The shipped systemd unit (`install/systemd/datawatch.service`) sets `KillMode=process`, so a stop or restart ends only the daemon and leaves the rest of the unit's control group running — a final gate or verification script keeps going and is re-attached at boot from its durable record (see above). Workers, verifiers and planners live in a multiplexer server outside the daemon's tree and are not affected either way. Before this change the unit used the default `KillMode=control-group`, which sent TERM to every process in the group; a unit file installed earlier, or written by hand, still does until it gets the `KillMode=process` line (reinstall the unit and run `systemctl daemon-reload`). Under `control-group`, a process the daemon starts directly (a git command, for example) is ended, so its work starts again, and a gate that the group TERM reaches takes the signal-kill path (one rerun within five minutes of the daemon starting). With a restart that signals only the daemon process (`datawatch restart`, a `KillMode=process` unit), a still-running direct child is orphaned; where that child is a recorded live verification script run (its record's pid and start time still match), the daemon waits on it rather than re-running, so the script still runs once. The matrix simulates the control-group case by sending TERM to the daemon and to its direct children by pid (`RM_KILL_MODE`); it is a stand-in, not the service manager, and covers TERM only (not a crash, a kill signal, an out-of-memory kill or a reboot).
 
-**Subprocess sessions** (`subprocess: true`, no tmux pane). A subprocess session records its process ID and exit status in its session directory. At boot, the daemon re-attaches to a subprocess that is still running and keeps the session `running` until the process exits, then records the exit status. If the process ended while the daemon was down, the recorded status is used. The session is marked `failed` only when the process is gone and no exit status was recorded. This restart behaviour is fixed but not yet confirmed by the live test. With the shipped unit's `KillMode=process` a systemd stop or restart signals the daemon alone; under the older default `KillMode=control-group` it kills the daemon's child processes too, so a subprocess survives only a restart that signals the daemon process alone.
+**Subprocess sessions** (`subprocess: true`, no tmux pane). A subprocess session records its process ID and exit status in its session directory. At boot, the daemon re-attaches to a subprocess that is still running and keeps the session `running` until the process exits, then records the exit status. If the process ended while the daemon was down, the recorded status is used. The session is marked `failed` only when the process is gone and no exit status was recorded. This restart behaviour is fixed but not yet confirmed by the live test. With the shipped unit's `KillMode=process` a systemd stop or restart signals the daemon alone; under the older default `KillMode=control-group` it kills the daemon's child processes too, so a subprocess survives only a restart that signals the daemon process alone. While the daemon drives a subprocess session, from the moment it starts until its process returns, the daemon holds that session in its in-memory **runner registry**, and a session it re-attaches at boot is held there again until the watcher finishes. The registry is not persisted, so after a restart it holds only the sessions this daemon is driving now. See **Gone session records and the shared live judgement**, below.
+
+**Gone session records and the shared live judgement.** A session record is judged by one shared rule, not by whichever single signal a caller happens to check. The rule gives one of four answers:
+
+| Judgement | Meaning |
+|---|---|
+| `ended` | The record is already in a final state (`complete`, `failed` or `killed`). Nothing more is done to it. |
+| `foreign` | The record belongs to another host. This daemon cannot judge it, so it never finalises or re-labels it. |
+| `live` | Something still drives the session: its terminal pane exists, its backend launch is still running, the daemon holds a runner for it (the runner registry above), its recorded subprocess still runs the session's task, or it is a session the daemon's own report path ends (a virtual backend, or a session bound to an agent). Any one of these is enough. |
+| `gone` | The record is not in a final state and none of the signs above is present. |
+
+A terminal pane list that fails for any reason other than the plain "no server running" answer is never read as every pane being gone: the caller is told the listing failed and judges nothing from it.
+
+A `gone` record is finalised from the tail of its own output log, after terminal escape sequences are stripped. If the last non-empty line begins with `DATAWATCH_COMPLETE:`, the session finished its work and the record becomes `complete`. Anything else, including an empty or missing log, or a completion line followed by more output, means the process vanished before finishing and the record becomes `killed`. Either way the record also gets `ended_at` (the time it was finalised) and `end_note` (`process gone, finalised`). Those two fields are written only for a record finalised this way: every other session leaves them out of its JSON, and a final state set by any other path keeps its state and gets no `ended_at` or `end_note`. A final state is sticky, so a record finalised this way is never re-judged. Who or what ended a session is still recorded in the daemon journal and the session's `timeline.md`, as before.
+
+**The finaliser.** The pass that applies this rule runs in two parts, records first and saved folders second:
+
+- **Records.** Each record the daemon holds in `running`, `waiting_input`, `stalled` or `rate_limited` is judged. A `gone` record is re-checked against the terminal client immediately before it is written, then saved as a copy with its new state, `ended_at` and `end_note`; its `claude_alive` flag is cleared, its monitor is stopped, and the usual state-change handling runs as for any other state change. The record, its `output.log` and its project folder are kept. `live`, `foreign` and already final records are left alone.
+- **Folders.** Each `<data_dir>/sessions/<id>/session.json` still saying one of those four states is judged. When the daemon holds a record for the id, the record decides: a live, foreign or still-gone record leaves the folder alone, and a final record has its state, `ended_at` and `end_note` copied in. When the daemon holds no record (never stored, or archived), the folder is judged by its own saved fields: it is left alone while its terminal pane exists or its recorded subprocess still runs the task, and a folder from another host is never judged; otherwise it is finalised from the tail of its own `output.log` by the rule above. Only `session.json` is rewritten, through a temporary file and a rename; every other file in the folder stays as it was. A `session.json` that cannot be read or parsed is skipped and counted, and never stops the pass.
+
+Both parts take one terminal listing. When it fails for any reason other than "no server running", that part finalises nothing. A run keeps one summary in memory, replaced by the next run: the time, the number of records and folders finalised, the number left as they were, and whether the listing worked for both parts. A run that finalises anything writes one `[finalise]` line to the daemon journal with the two counts and nothing else; a run that finalises nothing is silent. The finaliser loop runs once as soon as the daemon has resumed its sessions, then after every interval. The interval is the setting `session.finalise_interval_minutes` (whole minutes, default 10). It is read again on each cycle, so a change applies without a restart; zero turns scheduled runs off (the loop re-reads it once a minute) and the start-up run still happens. A negative value in the config file falls back to 10, and a negative value sent to the config API is ignored. The loop ends when the daemon shuts down.
+
+Set the interval from the Settings page (General, **Sessions**, *Session finalise interval (min)*), with `datawatch config set session.finalise_interval_minutes <minutes>`, with the `config_set` MCP tool (it needs `mcp.allow_self_config`, which is on by default), with a PUT to `/api/config` (`{"session.finalise_interval_minutes": 5}`), from chat with `configure session.finalise_interval_minutes=5`, or in the `session:` block of `config.yaml` (see `config-reference.yaml`). `GET /api/config` returns the current value under `session.finalise_interval_minutes`.
+
+> **Operator review.** The daemon now starts the finaliser, so gone records and folders are finalised and carry `ended_at` and `end_note`. One thing is not finished and three need a look from you:
+>
+> - **Nothing shows the last run (not finished).** The summary of the last run is kept in memory only. No REST endpoint, MCP tool, CLI command, chat command or part of the PWA returns it, and the PWA does not yet show `end_note` on a session (the string `Process gone, finalised` is in all five language files but nothing uses it yet). The only trace of a run is the `[finalise]` line in the daemon journal, written when a run finalises something.
+> - **Check that a session you are still using is never finalised.** Chat-mode and other non-pane sessions are not registered as runners yet, so only subprocess sessions count as held by a runner. Watch the journal for `[finalise]` lines after the first scheduled run on a busy daemon, and look at any session you attached to by hand.
+> - **Check the notifications.** A finalised record goes through the usual state-change handling, so a `killed` or `complete` record from the finaliser alerts as any session ending does. Confirm that is what you want; setting the interval to 0 stops the scheduled runs but not the start-up run.
+> - **Check the first run after a restart.** It runs right after the daemon resumes its sessions, so a session whose pane is only slow to come back could be finalised as `killed` (its output has no completion line). If you see that, tell the maintainers; there is no setting for a start-up delay.
+>
+> The restart check in [Sessions not resuming after restart](#sessions-not-resuming-after-restart-tmux-sessions-gone) still runs first and still marks a missing pane `failed`. The finaliser never changes a record already in a final state, so it acts on records that check does not reach: a record still `running` after its pane or process went away while the daemon stayed up, and a saved folder the daemon holds no record for.
 
 **Encrypted sessions** (`--secure`). Not covered by this guarantee. At boot the daemon does not re-attach the output pipe for encrypted sessions, so their output may stop after a restart. After restarting a `--secure` daemon, check that each session that matters is still producing output, and restart any session whose output has stopped.
 
@@ -1750,7 +1781,7 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 **Symptom:** After `systemctl restart datawatch`, all sessions show as `failed`
 
-**Explanation:** This is expected behavior. When the daemon restarts, it checks whether the tmux session for each `running`/`waiting_input` session still exists. If the machine was rebooted or tmux was killed, those sessions are gone and are marked `failed`.
+**Explanation:** This is expected behavior. When the daemon restarts, it checks whether the tmux session for each `running`/`waiting_input` session still exists. If the machine was rebooted or tmux was killed, those sessions are gone and are marked `failed`. The restart check is separate from the finaliser: it runs first, and a restart still marks these sessions `failed`. The finaliser, which the daemon starts right after that check and then re-runs every `session.finalise_interval_minutes`, never changes a record already in a final state. It finalises other gone records as `complete` (its output ends with `DATAWATCH_COMPLETE:`) or `killed` (anything else), with `ended_at` and `end_note`. See [Gone session records and the shared live judgement](#restart-safety).
 
 **Prevention:**
 - Use tmux server persistence plugins (e.g. `tmux-resurrect`) to restore tmux sessions across reboots
@@ -5085,7 +5116,7 @@ are not in `GET /api/config`. To reset them, clear the site data for the PWA
 (keys `dw_list_mode_<scope>`, `dw_list_group_<scope>`, `dw_list_collapsed_<scope>`).
 See [howto/automata-tags.md](howto/automata-tags.md#display-mode-and-group-by-automata-and-automation-lists).
 
-The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, the lineage-tree flag `cs_session_tree_view`, the **Status** chip set under `cs_session_state_chips` and the **Backend** chip set under `cs_session_backend_sel`; a single status pick stored by an older build under `cs_session_state_chip` is read in as that one chip; `cs_sessions_collapsed_groups` for folded groups): no daemon setting. A stale or malformed saved value (left over from an older version or hand-edited local storage) never breaks the page: each saved Sessions setting is validated when read, and an unrecognized value is dropped and the default applies, so no site-data reset is needed. With no grouping, a saved tree flag applies to **List** only and choosing any mode in the view-mode select clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
+The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, the lineage-tree flag `cs_session_tree_view`, the **Status** chip set under `cs_session_state_chips` and the **Backend** chip set under `cs_session_backend_sel`; a single status pick stored by an older build under `cs_session_state_chip` is read in as that one chip; `cs_sessions_collapsed_groups` for folded groups): no daemon setting. A stale or malformed saved value (left over from an older version or hand-edited local storage) never breaks the page: each saved Sessions setting is validated when read, and an unrecognized value is dropped and the default applies, so no site-data reset is needed. With no grouping, a saved tree flag applies to **List** only and choosing any mode from the **List / Tiles / Compact** view mode buttons clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
 
 The Automata list has two views. The **attention view** shows the Automata that
 need an operator now; the **tag browser** shows the tag tree, with a count per
@@ -7957,6 +7988,48 @@ of that category.
 
 Details and the question's wording: [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#6a-planning-failures-what-you-see-what-the-daemon-fixes-what-it-asks).
 
+## Gate repair (`autonomous.gate_repair.mode`)
+
+When the script gate of an Automaton final gate fails for a cause the daemon owns, the gate repair engine works it out **of band, after the verdict is in**: it classifies the failure, and in `on` mode applies the safe repair and re-runs the gate once. Its result never changes the gate's verdict — the gate still ended failed in every case — and it never guesses. The mode is read live from the config on each failed gate, so a `configure` change applies to the next failure with no restart. The walkthrough is [howto/automaton-gate-repair.md](howto/automaton-gate-repair.md); the terms are in [datawatch-definitions.md](datawatch-definitions.md#gate-repair).
+
+**The failure classes and their repairs (checked in this order).**
+
+| Class | What failed | The repair in `on` mode |
+|---|---|---|
+| `later_story_script` | a script this story's tasks may not edit yet — a later story owns it | reset: the gate run is reset to run again; nothing is created now, the gate passes when that later story lands |
+| `docs_mirror_stale` | the built-in docs mirror was stale | run `make sync-docs` in the task's work tree, re-run the gate (the record's `after` is the `make sync-docs` output; there is no `before`) |
+| `allowed_list_rejects` | the script's own allowed-file list refused one of the files the task declares | add the file to that list in the script, re-run |
+| `tracker_id_css_hex` | a tracker id in one story matched a CSS hex-color constant in another | narrow that story's id pattern, re-run |
+| `pipe_sigpipe` | a pipe closed before the command ran, or a command missing | stop the broken pipe or call, re-run |
+| `restart_killed` | the gate itself was healthy but the daemon restarted and killed it | re-run it (it was killed, not failed) — the only re-run outside the repair budget |
+| `unknown` | a new or unclear cause | nothing: one held operator question (or a warning alert, when questions are disabled) |
+
+**The budget and the hard limits.** Each task may spend its repair budget **once per class**; the budget is spent only when a repair succeeds (a spent budget holds one operator question; a repair that fails spends nothing, raises no question, and the gate stays failed), the ledger is stored under the daemon's data directory (default `~/.datawatch/gate_repair_budget.json`) and survives restarts. Edits touch only files under the project's `.datawatch/verify/`; each record keeps its repair text (the `before`/`after` pair of the script edit, the `make sync-docs` output of the mirror rebuild — the one step outside that folder, which only refreshes the gitignored mirror). The engine never merges, ships, deletes, ends or signals, and never changes a model, backend or security workflow. `restart_killed` and `later_story_script` edit no file at all. One question per failed gate and class; while one is open it is not raised again. In `report` mode nothing is spent and nothing is edited — it classifies, records the would-be repair and raises one warning alert, "Gate repair found" (an `unknown` class is recorded the same way, with the same alert); in `on`, a spent budget, an `unknown` class or a refused repair is recorded as held, raises the held question, and raises the "Gate repair held" warning alert (that alert also fires when the question can't be raised); an applied repair raises no alert — its record and decision line are enough. With the mode `off` the engine does not run at all.
+
+Nothing here changes what a failed task means: the operator's failed-gate path, the retry budget and the verifier are untouched, and a spent budget or an `unknown` class is one held operator question, never a retry loop and never a guess.
+
+**The access methods.**
+
+| Task | YAML | CLI | Web UI | REST | Chat |
+|---|---|---|---|---|---|
+| Set the mode | `autonomous.gate_repair.mode` (`off`, `report` or `on`; default `report`) in `~/.datawatch/config.yaml` | `datawatch config set autonomous.gate_repair.mode on` | Settings → General → Automata settings → **Gate repair** (mode select); the Automation page card (housekeeping sub-tab) selects between `report` and `on` (`off` is set in Settings) | `PUT /api/config` with `{"autonomous.gate_repair.mode": "on"}` | `configure autonomous.gate_repair.mode=on` |
+| Read the mode, the records (newest first) and the budget | n/a | `datawatch autonomous gate-repair status [--json]` | Automation page (housekeeping sub-tab) → **Gate repair** card: the mode in effect, the recent findings (cause, repair, before/after) and the spent repair budget | `GET /api/autonomous/gate-repair` | `autonomous gate-repair status` |
+| Run the engine now — one pass over every failed gate, or one failed gate | n/a — the mode is what a run honors | `datawatch autonomous gate-repair run [--automaton ID --task ID] [--json]` | Automation page (housekeeping sub-tab) → **Gate repair** card → **Run now** (one pass) | `POST /api/autonomous/gate-repair/run` — empty body: one pass; both `automaton_id` and `task_id`: one gate; exactly one is refused with 400 | `autonomous gate-repair run [automaton=ID task=ID]` |
+
+A run is the same engine path as the out-of-band work after a failure: it honors the live mode (in `report` it only records what it would do and changes nothing; in `on` it applies the safe repair and re-runs the gate once), spends the same repair budget, writes the same records and decision lines, and is bound by the same hard limits. It answers with the run outcome(s) and a fresh status read, and it never changes the mode. The earlier plural read — `GET /api/autonomous/gate-repairs`, the `gate_repairs` MCP tool, `datawatch autonomous gate-repairs`, `autonomous gate-repairs` in chat — still answers the same object; the singular surfaces above are the current ones and the only ones with the run verb (operator review: whether the plural alias stays).
+
+MCP agents read with the `autonomous_gate_repair_status` tool (no arguments, read-only — reading never repairs anything, raises an alert or changes a mode), run the engine with `autonomous_gate_repair_run` (both `automaton_id` and `task_id` to repair one failed gate, neither for one pass; exactly one is refused) and change the mode with `config_set` on the key `autonomous.gate_repair.mode`. A mode other than `off`, `report` or `on` is refused on every write surface, naming the key and the valid values, and nothing is changed. The read route is GET-only (any other method is 405), the read needs the autonomous read capability when called by a federated peer, the run route needs the autonomous run capability, and both routes answer 503 until the engine is wired.
+
+**Where to see it.**
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/gate-repair` — `mode`, `budget` (one entry per spent task/class) and `records`, newest first, each with the failure class, what it would do or did, the undo (the `before`/`after` text pair when a script changed) and the held question; `POST /api/autonomous/gate-repair/run` — one pass or one gate, answering the run outcome(s) and a fresh status |
+| MCP | `autonomous_gate_repair_status` (same object, read-only, no arguments) and `autonomous_gate_repair_run` (both ids or neither) |
+| CLI | `datawatch autonomous gate-repair status`: the mode, the budget in lines, each record below it; `datawatch autonomous gate-repair run`: the run's outcomes then the fresh status; `--json` for the object |
+| Comm channel | `autonomous gate-repair status`: the same lines, budget then records; `autonomous gate-repair run [automaton=ID task=ID]`: the run's outcomes then the fresh status |
+| Web UI | Automation page → **Gate repair** card: the mode in effect (with a mode select), the recent findings (cause, repair, before/after), the spent repair budget and a **Run now** button that runs one pass |
+
 ## Model request progress (a hung request told from a slow one)
 
 A worker or verifier session can wait a long time on one model request, and a hung request looks the same from outside as a slow one. When the session's model runs on a registered compute node, the daemon watches the request and reports whether the node still shows signs of work. It is observation only: it makes no model call and never ends a worker, retries on another backend or unloads a model. The walkthrough is [howto/model-request-progress.md](howto/model-request-progress.md).
@@ -9145,3 +9218,113 @@ schedule. Review after changes: the named model (Sonnet or Haiku only), promoted
 `standing_rule` commits, filed `product_defect` Automata, and any
 `correction.repeated` finding. See
 [howto/supervisor-fresh-sessions](howto/supervisor-fresh-sessions.md).
+---
+
+## Standard-task packs: what is wired and what is not
+
+Packs are installable, versioned folders of standard tasks and Automaton templates. The
+rules are described in [howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#managing-packs-on-each-surface);
+this section is the operator checklist for the state of the code today.
+
+**Config (`packs`).** `packs.enabled` (default `false`) and `packs.active` (default
+`["builtin"]`) are read from the config file and are settable through
+`PUT /api/packs/config`, the `packs_setting_set` MCP tool, `datawatch packs enable|disable`,
+the `packs setting` chat command and the web Settings > General > Standard task packs
+card. Every write is validated: `packs.active` is refused (400) when it holds an empty
+name, a repeat or a name that is neither `builtin` nor installed, and switching `enabled`
+from off to on is refused (409) when no skills registry source is connected and enabled
+("packs need at least one connected skills registry source; connect one in the skills
+registry settings"). A hand edit of the config file skips both checks. Turning packs on
+changes no task by itself yet (see "Not wired yet").
+
+**Which list applies (`packs.ActivePacks`).** With `packs.enabled: false` the answer is
+`["builtin"]`. With it on, the first non-empty list of Automaton, project, global
+(`packs.active`) is used, never merged; all empty gives `["builtin"]`. An Automaton's
+own list is the `packs` field, set through `SetPacks` (trimmed, unique, order kept). No
+surface sets it yet, and the project config entry has no `packs` key, so a per-project
+list is not available.
+
+**Install root and trust file.** The install root is `<data dir>/packs`. Packs install
+to `<name>/<version>/` inside it, and `trust.json` (acceptance records) and `inputs.json`
+(saved pack inputs) sit beside them. A missing trust file means no records. A corrupt file
+is an error, not an empty store, so it is never silently ignored. **Include the install
+root in any backup you take of the data folder.** Removing a pack deletes that version's
+folder and trust record only; it leaves `packs.active`, Automata, tasks and traces alone.
+
+**Registry flags.** Two flags on a skills registry source matter to packs, and both are
+in the registry store: `first_party` (set on the community registry by default) and
+`auto_accept_packs` (off by default). Auto-accept only ever records a version whose diff
+adds no tool, script or file scope; a widening version waits for an operator acceptance.
+
+**Working now:** list, install, accept and remove, the setting (with its checks) and
+inputs, on REST, MCP, CLI and chat; the web has the setting and inputs fields, plus the
+Packs sub-tab shell (enabled state, Enable link, registry link). Every
+write needs the config-write permission (also over federation).
+
+**Not wired yet (flag before relying on packs):**
+
+1. The resolver is not given `packs.ActivePacks`, so `packs.active` and installed packs do
+   not yet change the standard-task list, and the Automaton `packs` field is stored but
+   nothing reads it when tasks are resolved.
+2. The first-party acceptance, version-diff and auto-accept functions have no daemon
+   caller. A first-party source is never accepted in practice until a caller registers it.
+3. The web shows no installed-pack list, install, accept or remove, and its inputs form has
+   no Automaton level. The Packs sub-tab has install/accept, change-summary, auto-accept
+   switch and usage-table scripts, but its shell renders none of them, and the usage script
+   is not loaded by the page.
+4. Remove does not drop the pack from `packs.active`; the next write of the list is
+   refused until the name is taken out.
+5. The datawatch app (Android and iPhone) does not show packs.
+6. The pack attribution read side is partly wired, and no writer is wired. Trace
+   roll-ups group by `pack_name` and `pack_version`, and the audit query accepts a
+   `pack_name` filter. The trace `pack` parameter that the MCP tools send is ignored by
+   the REST routes. The per-pack usage summary (`packs.UsageByPack`) and the cost
+   report's pack breakdown are not called by any surface. `GET /api/packs/usage`, which
+   the Packs sub-tab's usage script reads, is not a registered route.
+
+**Pack inputs.** `packs.ResolveInputs` resolves each declared input in the order
+Automaton, project, global, then the declared default; a required input with no value is
+an error. A secret input accepts only a `${secret:NAME}` vault reference
+(`packs.CheckSecretInput`), and `packs.RedactInputs` masks any other secret value as
+`***`. A daemon-run standard task stores its redacted inputs as `pack_inputs` when it is
+created and keeps them for life. Inputs can now be saved at the global, project and
+Automaton levels (replacing that scope; names must be declared by the pack; a secret input
+accepts only `${secret:NAME}`), but task creation passes no stored values, the built-in
+pack declares none, so `pack_inputs` is empty today and a saved value changes nothing yet.
+No secret value is ever stored on a task. Flag before relying on it. See
+[howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#pack-inputs-how-values-resolve-secrets-and-what-a-task-records).
+
+**Pack attribution on a running daemon.** Nothing writes the pack name yet. The
+`builtin` stamp helpers (`autonomous.StampBuiltinPack` and
+`autonomous.BuiltinStandardTaskTraceEvent`) have no production caller, and no
+production code writes a `pack_name` detail on an audit entry. So the audit `pack_name`
+filter returns nothing, and trace roll-ups by `pack_name` show only unattributed events,
+until a writer ships. Do not expect filtered audit results from it. Every existing event
+and entry has no pack name and groups as unattributed. Query them with the trace
+roll-up (`GET /api/trace/rollup?dimension=pack_name`) and the audit query
+(`pack_name=<name>`) once a writer is wired. See
+[howto/agent-tracing.md](howto/agent-tracing.md) and
+[howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#pack-attribution-traces-audit-and-cost).
+
+**The `builtin` name and the fixture folders.** `builtin` means the task and template
+definitions embedded in the binary from `internal/packs/builtinpacks/builtin/`. They are
+embedded as data files and written out and loaded on first use, not read from an
+install folder. The built-in standard-task list is produced by the pack resolver
+(`packs.ResolveTaskList`) for the `feature` kind only; the apply step does not filter by
+kind, so every Automaton kind receives the same list.
+
+Two pack folders under `internal/packs/testdata/` are test data only and are not
+embedded: `standard-tasks-pack/` (a copy of the standard tasks) and `fixture-one-kind/`
+(one extra task for the `feature` kind, used to check the resolver's kind filter).
+Nothing on a running daemon reads either folder, and the real standard-tasks pack comes
+from the community registry, not from this repository.
+
+**Review owed by the operator:** decide whether the per-project pack list is wanted and
+where it lives (the config key was dropped); decide where the installed-pack list and the
+install, accept and remove actions live in the web UI, and whether they need a parity
+issue for the app; decide whether removing an active pack should refuse or update
+`packs.active`; decide when task creation reads `inputs.json`; and confirm that a
+first-party source's acceptance is taken at enable time (the planned behaviour). Also
+decide whether the code comment on `PacksBuiltinName` (`internal/config/packs_config.go`),
+which says the builtin pack "ships inside the binary", should name the compiled-in
+task-template defaults explicitly; this docs set does not edit Go source.

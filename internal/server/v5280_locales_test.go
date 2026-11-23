@@ -133,6 +133,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"automaton_project_save",
 		"projects_page_without_project",
 		"projects_page_without_project_hint",
+		"settings_finalise_interval",
 		// b4220001 — PWA splash dwell settings and the previous-version line.
 		"splash_version_previous",
 		"settings_splash_min_seconds",

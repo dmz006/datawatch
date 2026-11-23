@@ -1,0 +1,226 @@
+{
+  "bug": [
+    {
+      "id": "changelog_entry",
+      "title": "Changelog entry for {{feature}}",
+      "spec": "Write a concise changelog entry that describes '{{feature}}' in terms of the result the operator sees: what changed, how it shows up, and any migration step. Keep the entry factual and short; do not create or rename files outside the changelog. Story files involved: {{files_list}}.",
+      "files": "CHANGELOG.md",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Always offered: every feature slice that lands needs a changelog entry so the changelog and the work stay in step."
+    },
+    {
+      "id": "parity_issue_draft",
+      "title": "Parity issue draft for {{feature}}",
+      "spec": "Write an issue-draft file under docs/plans/parity-issues/ that captures the parity gaps this work leaves or closes for '{{feature}}': the affected area, the current behavior, the expected behavior, and the suggested next step as plain prose. This is a file write only. It never runs any hosting CLI (no gh, no issue creation on a tracker) and creates nothing on any host. Story files involved: {{files_list}}.",
+      "files": "docs/plans/parity-issues/{{feature}}-parity-draft.md",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Offered when the slice touches behavior whose gaps are worth tracking as an issue draft without touching a tracker."
+    },
+    {
+      "id": "docs_set",
+      "title": "Docs set for {{feature}}",
+      "spec": "Bring the docs of '{{feature}}' into shape with the change: update the affected howto, operations and glossary entries so they describe the post-change behavior, keep existing links reachable, and flag anything the operator must still review. Work only on the story's docs: {{files_list}}.",
+      "files": "{{files}}",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Offered whenever the slice changes operator-visible behavior that the docs already describe."
+    },
+    {
+      "id": "bounded_load_step",
+      "title": "Bounded load-step rule for {{feature}}",
+      "spec": "Record the bounded-load-step posture for '{{feature}}': Any CPU-load or stress step a task asks for — a busy loop, a stress test, a load or soak test, or any other command that pins the CPU — must be bounded before it runs: run it niced (nice -n 19) so it yields to the system's other work; use at most a quarter of the cores (cap the worker count at nproc/4, minimum one); give it its own hard timeout (a bounded \"timeout \u003cduration\u003e ...\" wrapper) so it always dies on its own; clean up its children with a trap on EXIT INT TERM so no orphaned load survives; and it must never outlive its owning task — when the task ends, the load ends with it. Automaton plans tasks to leave the host as it found it, so an unbounded load step is a defect in the plan. This is a note, not a change: it writes no files and touches nothing else (no files).",
+      "kind": "note",
+      "read_only": false,
+      "verification_script_reason": "note task: changes no files by design, so there is nothing for a script to verify",
+      "applies_when": "Always offered as a posture note: any story that could carry a CPU-load or stress step must say its bounds up front (nice, a quarter of the cores, a hard timeout, a trap-cleanup, and never outlive the owning task)."
+    },
+    {
+      "id": "final_gate",
+      "title": "Final gate for {{feature}}",
+      "spec": "Read-only final gate for '{{feature}}'. Verify, with read and check only, that the slice is complete: the build is clean, the tests of the touched packages pass, and the touched files hang together ({{files_list}}). Write the verdict and the evidence to one report file, .datawatch/reports/{{feature}}-final-gate.txt (the feature slugged into the file name); that report is the only file this task writes. It makes no other edits and never runs a hosting CLI.",
+      "kind": "final_gate",
+      "read_only": true,
+      "report_path": ".datawatch/reports/{{feature}}-final-gate.txt",
+      "applies_when": "Always offered as the closing task: a cheap, read-only verdict before the story is considered done."
+    },
+    {
+      "id": "version_bump_left_to_merge",
+      "title": "Release version note for {{feature}}",
+      "spec": "Record a plain note, for the operator's records only: the release version of '{{feature}}' is the next patch above main, resolved at merge time. It is never a fixed number written into the tree. This is a note, not an edit: it never writes a file and leaves version fields exactly as they are.",
+      "kind": "note",
+      "read_only": false,
+      "verification_script_reason": "note task: changes no files by design, so there is nothing for a script to verify",
+      "applies_when": "Offered to make the versioning posture explicit in the story without any task touching versioning itself."
+    }
+  ],
+  "feature": [
+    {
+      "id": "changelog_entry",
+      "title": "Changelog entry for {{feature}}",
+      "spec": "Write a concise changelog entry that describes '{{feature}}' in terms of the result the operator sees: what changed, how it shows up, and any migration step. Keep the entry factual and short; do not create or rename files outside the changelog. Story files involved: {{files_list}}.",
+      "files": "CHANGELOG.md",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Always offered: every feature slice that lands needs a changelog entry so the changelog and the work stay in step."
+    },
+    {
+      "id": "parity_issue_draft",
+      "title": "Parity issue draft for {{feature}}",
+      "spec": "Write an issue-draft file under docs/plans/parity-issues/ that captures the parity gaps this work leaves or closes for '{{feature}}': the affected area, the current behavior, the expected behavior, and the suggested next step as plain prose. This is a file write only. It never runs any hosting CLI (no gh, no issue creation on a tracker) and creates nothing on any host. Story files involved: {{files_list}}.",
+      "files": "docs/plans/parity-issues/{{feature}}-parity-draft.md",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Offered when the slice touches behavior whose gaps are worth tracking as an issue draft without touching a tracker."
+    },
+    {
+      "id": "docs_set",
+      "title": "Docs set for {{feature}}",
+      "spec": "Bring the docs of '{{feature}}' into shape with the change: update the affected howto, operations and glossary entries so they describe the post-change behavior, keep existing links reachable, and flag anything the operator must still review. Work only on the story's docs: {{files_list}}.",
+      "files": "{{files}}",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Offered whenever the slice changes operator-visible behavior that the docs already describe."
+    },
+    {
+      "id": "bounded_load_step",
+      "title": "Bounded load-step rule for {{feature}}",
+      "spec": "Record the bounded-load-step posture for '{{feature}}': Any CPU-load or stress step a task asks for — a busy loop, a stress test, a load or soak test, or any other command that pins the CPU — must be bounded before it runs: run it niced (nice -n 19) so it yields to the system's other work; use at most a quarter of the cores (cap the worker count at nproc/4, minimum one); give it its own hard timeout (a bounded \"timeout \u003cduration\u003e ...\" wrapper) so it always dies on its own; clean up its children with a trap on EXIT INT TERM so no orphaned load survives; and it must never outlive its owning task — when the task ends, the load ends with it. Automaton plans tasks to leave the host as it found it, so an unbounded load step is a defect in the plan. This is a note, not a change: it writes no files and touches nothing else (no files).",
+      "kind": "note",
+      "read_only": false,
+      "verification_script_reason": "note task: changes no files by design, so there is nothing for a script to verify",
+      "applies_when": "Always offered as a posture note: any story that could carry a CPU-load or stress step must say its bounds up front (nice, a quarter of the cores, a hard timeout, a trap-cleanup, and never outlive the owning task)."
+    },
+    {
+      "id": "final_gate",
+      "title": "Final gate for {{feature}}",
+      "spec": "Read-only final gate for '{{feature}}'. Verify, with read and check only, that the slice is complete: the build is clean, the tests of the touched packages pass, and the touched files hang together ({{files_list}}). Write the verdict and the evidence to one report file, .datawatch/reports/{{feature}}-final-gate.txt (the feature slugged into the file name); that report is the only file this task writes. It makes no other edits and never runs a hosting CLI.",
+      "kind": "final_gate",
+      "read_only": true,
+      "report_path": ".datawatch/reports/{{feature}}-final-gate.txt",
+      "applies_when": "Always offered as the closing task: a cheap, read-only verdict before the story is considered done."
+    },
+    {
+      "id": "version_bump_left_to_merge",
+      "title": "Release version note for {{feature}}",
+      "spec": "Record a plain note, for the operator's records only: the release version of '{{feature}}' is the next patch above main, resolved at merge time. It is never a fixed number written into the tree. This is a note, not an edit: it never writes a file and leaves version fields exactly as they are.",
+      "kind": "note",
+      "read_only": false,
+      "verification_script_reason": "note task: changes no files by design, so there is nothing for a script to verify",
+      "applies_when": "Offered to make the versioning posture explicit in the story without any task touching versioning itself."
+    }
+  ],
+  "maintenance": [
+    {
+      "id": "changelog_entry",
+      "title": "Changelog entry for {{feature}}",
+      "spec": "Write a concise changelog entry that describes '{{feature}}' in terms of the result the operator sees: what changed, how it shows up, and any migration step. Keep the entry factual and short; do not create or rename files outside the changelog. Story files involved: {{files_list}}.",
+      "files": "CHANGELOG.md",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Always offered: every feature slice that lands needs a changelog entry so the changelog and the work stay in step."
+    },
+    {
+      "id": "parity_issue_draft",
+      "title": "Parity issue draft for {{feature}}",
+      "spec": "Write an issue-draft file under docs/plans/parity-issues/ that captures the parity gaps this work leaves or closes for '{{feature}}': the affected area, the current behavior, the expected behavior, and the suggested next step as plain prose. This is a file write only. It never runs any hosting CLI (no gh, no issue creation on a tracker) and creates nothing on any host. Story files involved: {{files_list}}.",
+      "files": "docs/plans/parity-issues/{{feature}}-parity-draft.md",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Offered when the slice touches behavior whose gaps are worth tracking as an issue draft without touching a tracker."
+    },
+    {
+      "id": "docs_set",
+      "title": "Docs set for {{feature}}",
+      "spec": "Bring the docs of '{{feature}}' into shape with the change: update the affected howto, operations and glossary entries so they describe the post-change behavior, keep existing links reachable, and flag anything the operator must still review. Work only on the story's docs: {{files_list}}.",
+      "files": "{{files}}",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Offered whenever the slice changes operator-visible behavior that the docs already describe."
+    },
+    {
+      "id": "bounded_load_step",
+      "title": "Bounded load-step rule for {{feature}}",
+      "spec": "Record the bounded-load-step posture for '{{feature}}': Any CPU-load or stress step a task asks for — a busy loop, a stress test, a load or soak test, or any other command that pins the CPU — must be bounded before it runs: run it niced (nice -n 19) so it yields to the system's other work; use at most a quarter of the cores (cap the worker count at nproc/4, minimum one); give it its own hard timeout (a bounded \"timeout \u003cduration\u003e ...\" wrapper) so it always dies on its own; clean up its children with a trap on EXIT INT TERM so no orphaned load survives; and it must never outlive its owning task — when the task ends, the load ends with it. Automaton plans tasks to leave the host as it found it, so an unbounded load step is a defect in the plan. This is a note, not a change: it writes no files and touches nothing else (no files).",
+      "kind": "note",
+      "read_only": false,
+      "verification_script_reason": "note task: changes no files by design, so there is nothing for a script to verify",
+      "applies_when": "Always offered as a posture note: any story that could carry a CPU-load or stress step must say its bounds up front (nice, a quarter of the cores, a hard timeout, a trap-cleanup, and never outlive the owning task)."
+    },
+    {
+      "id": "final_gate",
+      "title": "Final gate for {{feature}}",
+      "spec": "Read-only final gate for '{{feature}}'. Verify, with read and check only, that the slice is complete: the build is clean, the tests of the touched packages pass, and the touched files hang together ({{files_list}}). Write the verdict and the evidence to one report file, .datawatch/reports/{{feature}}-final-gate.txt (the feature slugged into the file name); that report is the only file this task writes. It makes no other edits and never runs a hosting CLI.",
+      "kind": "final_gate",
+      "read_only": true,
+      "report_path": ".datawatch/reports/{{feature}}-final-gate.txt",
+      "applies_when": "Always offered as the closing task: a cheap, read-only verdict before the story is considered done."
+    },
+    {
+      "id": "version_bump_left_to_merge",
+      "title": "Release version note for {{feature}}",
+      "spec": "Record a plain note, for the operator's records only: the release version of '{{feature}}' is the next patch above main, resolved at merge time. It is never a fixed number written into the tree. This is a note, not an edit: it never writes a file and leaves version fields exactly as they are.",
+      "kind": "note",
+      "read_only": false,
+      "verification_script_reason": "note task: changes no files by design, so there is nothing for a script to verify",
+      "applies_when": "Offered to make the versioning posture explicit in the story without any task touching versioning itself."
+    }
+  ],
+  "other": [
+    {
+      "id": "changelog_entry",
+      "title": "Changelog entry for {{feature}}",
+      "spec": "Write a concise changelog entry that describes '{{feature}}' in terms of the result the operator sees: what changed, how it shows up, and any migration step. Keep the entry factual and short; do not create or rename files outside the changelog. Story files involved: {{files_list}}.",
+      "files": "CHANGELOG.md",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Always offered: every feature slice that lands needs a changelog entry so the changelog and the work stay in step."
+    },
+    {
+      "id": "parity_issue_draft",
+      "title": "Parity issue draft for {{feature}}",
+      "spec": "Write an issue-draft file under docs/plans/parity-issues/ that captures the parity gaps this work leaves or closes for '{{feature}}': the affected area, the current behavior, the expected behavior, and the suggested next step as plain prose. This is a file write only. It never runs any hosting CLI (no gh, no issue creation on a tracker) and creates nothing on any host. Story files involved: {{files_list}}.",
+      "files": "docs/plans/parity-issues/{{feature}}-parity-draft.md",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Offered when the slice touches behavior whose gaps are worth tracking as an issue draft without touching a tracker."
+    },
+    {
+      "id": "docs_set",
+      "title": "Docs set for {{feature}}",
+      "spec": "Bring the docs of '{{feature}}' into shape with the change: update the affected howto, operations and glossary entries so they describe the post-change behavior, keep existing links reachable, and flag anything the operator must still review. Work only on the story's docs: {{files_list}}.",
+      "files": "{{files}}",
+      "kind": "docs",
+      "read_only": false,
+      "applies_when": "Offered whenever the slice changes operator-visible behavior that the docs already describe."
+    },
+    {
+      "id": "bounded_load_step",
+      "title": "Bounded load-step rule for {{feature}}",
+      "spec": "Record the bounded-load-step posture for '{{feature}}': Any CPU-load or stress step a task asks for — a busy loop, a stress test, a load or soak test, or any other command that pins the CPU — must be bounded before it runs: run it niced (nice -n 19) so it yields to the system's other work; use at most a quarter of the cores (cap the worker count at nproc/4, minimum one); give it its own hard timeout (a bounded \"timeout \u003cduration\u003e ...\" wrapper) so it always dies on its own; clean up its children with a trap on EXIT INT TERM so no orphaned load survives; and it must never outlive its owning task — when the task ends, the load ends with it. Automaton plans tasks to leave the host as it found it, so an unbounded load step is a defect in the plan. This is a note, not a change: it writes no files and touches nothing else (no files).",
+      "kind": "note",
+      "read_only": false,
+      "verification_script_reason": "note task: changes no files by design, so there is nothing for a script to verify",
+      "applies_when": "Always offered as a posture note: any story that could carry a CPU-load or stress step must say its bounds up front (nice, a quarter of the cores, a hard timeout, a trap-cleanup, and never outlive the owning task)."
+    },
+    {
+      "id": "final_gate",
+      "title": "Final gate for {{feature}}",
+      "spec": "Read-only final gate for '{{feature}}'. Verify, with read and check only, that the slice is complete: the build is clean, the tests of the touched packages pass, and the touched files hang together ({{files_list}}). Write the verdict and the evidence to one report file, .datawatch/reports/{{feature}}-final-gate.txt (the feature slugged into the file name); that report is the only file this task writes. It makes no other edits and never runs a hosting CLI.",
+      "kind": "final_gate",
+      "read_only": true,
+      "report_path": ".datawatch/reports/{{feature}}-final-gate.txt",
+      "applies_when": "Always offered as the closing task: a cheap, read-only verdict before the story is considered done."
+    },
+    {
+      "id": "version_bump_left_to_merge",
+      "title": "Release version note for {{feature}}",
+      "spec": "Record a plain note, for the operator's records only: the release version of '{{feature}}' is the next patch above main, resolved at merge time. It is never a fixed number written into the tree. This is a note, not an edit: it never writes a file and leaves version fields exactly as they are.",
+      "kind": "note",
+      "read_only": false,
+      "verification_script_reason": "note task: changes no files by design, so there is nothing for a script to verify",
+      "applies_when": "Offered to make the versioning posture explicit in the story without any task touching versioning itself."
+    }
+  ]
+}
