@@ -2483,7 +2483,7 @@ Five keys, one block, daemon-wide (there is no per-record override): every one i
 
 ### The dashboard card
 
-The dashboard carries a **Shipped** system card — it is in the factory layout and is re-added if removed, not deletable. `GET /api/dashboard/cards/shipped` (and the `data` field of the `shipped` entry in `GET /api/dashboard/cards`) returns the live per-status count plus the in-force settings, computed at read time. The PWA renders no shipped card, selection or chip yet; that client-side gap, and the Android/iOS build, are the parity item in [plans/2026-11-01-shipped-status-parity-issue.md](plans/2026-11-01-shipped-status-parity-issue.md).
+The dashboard carries a **Shipped** system card — it is in the factory layout and is re-added if removed, not deletable. `GET /api/dashboard/cards/shipped` (and the `data` field of the `shipped` entry in `GET /api/dashboard/cards`) returns the live per-status count plus the in-force settings, computed at read time. The PWA renders no shipped card, selection or chip yet; that client-side gap, and the Android/iOS build, are the parity item in [plans/2026-11-01-shipped-status-parity-issue.md](../plans/2026-11-01-shipped-status-parity-issue.md).
 
 ### The merge step
 
@@ -2496,7 +2496,7 @@ The dashboard carries a **Shipped** system card — it is in the factory layout 
 - It is not a per-record override; the settings are daemon-wide.
 - It never fails a merge; the merge step's record is best-effort.
 
-See also: the operator walk-through [howto/automata-shipped-status.md](../howto/automata-shipped-status.md), the [Shipped section of implementation.md](../implementation.md#shipped-state-autonomousshipped), the [Shipped entry of datawatch-definitions.md](../datawatch-definitions.md#shipped), the plan [plans/2026-11-01-shipped-status.md](plans/2026-11-01-shipped-status.md), and the companion-app parity issue [plans/2026-11-01-shipped-status-parity-issue.md](plans/2026-11-01-shipped-status-parity-issue.md).
+See also: the operator walk-through [howto/automata-shipped-status.md](../howto/automata-shipped-status.md), the [Shipped section of implementation.md](../implementation.md#shipped-state-autonomousshipped), the [Shipped entry of datawatch-definitions.md](../datawatch-definitions.md#shipped), the plan [plans/2026-11-01-shipped-status.md](../plans/2026-11-01-shipped-status.md), and the companion-app parity issue [plans/2026-11-01-shipped-status-parity-issue.md](../plans/2026-11-01-shipped-status-parity-issue.md).
 
 ## Configuration
 
