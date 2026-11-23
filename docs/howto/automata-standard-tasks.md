@@ -291,8 +291,7 @@ for that task to describe and it would only end with an empty change. The plan s
 skip, so the story simply has no docs set task and nothing is hidden.
 
 For any other Automaton the docs set task still runs. If its attempts all end with an empty
-diff while every other task of its story completed, the task is finished as **nothing to document**. The verifier summary is recorded on the task as a note, and the task is not held
-after three tries. Any other failure of the docs set task is still held for operator review.
+diff while every other task of its story completed, the task is finished as **nothing to document**. The verifier summary is recorded on the task as a note, and the task is not held after three tries. Any other failure of the docs set task is still held for operator review.
 
 ## Troubleshooting
 
