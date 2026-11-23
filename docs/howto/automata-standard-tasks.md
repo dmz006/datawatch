@@ -105,7 +105,8 @@ in an existing branch: merging, rebasing, resolving conflicts on, or landing a f
 branch, with no new work. Such an Automaton changes no behavior the docs describe, so
 the `docs_set` standard task is **not** appended to any of its stories. Every other
 standard task, including `final_gate`, is applied as usual. The decomposer's guidance
-states the same rule, so a plan from the planner does not carry a docs task either.
+asks the planner for the same thing, so it should not write a docs task either. The
+guidance is advice only: a `docs_set` task the planner writes itself is not removed.
 
 The check is conservative. The spec must carry a merge signal (merge, rebase, land,
 conflict, or a finished-branch phrase) and none of the work verbs (add, implement,
@@ -301,7 +302,9 @@ yet:
   spec words, so a merge spec that names a work verb (for example "fix conflicts") keeps
   its `docs_set` task, and a spec that merges and also adds work is never skipped. Check
   the decompose log for `docs set task skipped: merge-only Automaton` on a merge-only
-  Automaton, and reword the spec if it should skip the task and does not.
+  Automaton, and reword the spec if it should skip the task and does not. A `docs_set`
+  task the planner wrote into the plan itself is not removed by this rule; check the
+  plan for one.
 - **The datawatch app does not show this tab yet, and does not yet use the new
   wording.** Two parity drafts are tracked under `docs/plans/parity-issues/`
   (the Templates-tab surface, and the standard-tasks rename on Android/iPhone).
