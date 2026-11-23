@@ -1050,6 +1050,8 @@ Every part of this is live now: the Automaton's own launches (worker, verifier a
 
 ### Infrastructure retry
 
+**Stalled pi worker (pi-prompt sessions).** A `DATAWATCH_PI_FAILED` line in a session's output log fails the attempt at once, without waiting for the silence limit, and raises a "Task session failed" error alert with the runner evidence on the task. If the line also says `Request timed out`, the failure is classed `model_unresponsive`: the task is requeued after the back-off without using an attempt, at most 3 times in a row (`model_unresponsive_retries` on the task; `infra_retry_count` is untouched; `autonomous.infra_retry.categories` and `exhausted_action` do not apply). Three consecutive such failures on one compute node raise one error alert, "Compute node model unresponsive", naming the node and model; a success on the node resets the count, and a daemon restart clears it. Before a pi worker starts on a compute node, the daemon probes the node's model with a one-token chat request (20-second limit); a failed probe means no session is started, the node is marked unhealthy with the probe error (shown as `unhealthy` / `unhealthy_reason` on its pool in `GET /api/capacity`, and skipped by placement), and the launch is deferred through the same `model_unresponsive` requeue. A passing probe clears the mark; a daemon restart also clears it. The threshold, the cap and the probe are fixed, not settings. See [howto/infrastructure-retry.md](howto/infrastructure-retry.md).
+
 A task that fails because the machinery around it failed, not because of its own work, is retried on a back-off schedule and the failure is not counted against the task. Four failure classes qualify: `spawn_error` (the worker could not be started), `storage_write` (the device is full, the quota is used up or the file system is read-only), `session_killed_before_delivery` (the worker session ended before the task reached it) and `daemon_restart` (the daemon restarted while the task ran). A session that never started keeps its own start budget and is never classified here, and a throttle from the model provider is never retried by this feature. By default a task gets 3 tries with delays of 1, 5 and 9 minutes (15 minutes in all). While it waits, the task shows `infrastructure retry n of max at <time> (<class>)`, and the retry is recorded on the task (`infra_retries`) and as an `infra_retry` decision on the Automaton.
 
 When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold` (the default) parks the task in `review_needed` with the cause on it, raises one error-level alert titled "Automaton task held after infrastructure retries" and, when `autonomous.infra_retry.raise_question` and `autonomous.questions.enabled` are both on, one operator question that offers retry or cancel; answering it, or resolving the task review, retries with a fresh set of tries or cancels. `count` books one ordinary failed attempt and the task follows the failure escalation path. Dependents that failed behind an infrastructure failure are marked with the chain's root and return to pending on their own once the root is no longer failed, cancelled or held (`autonomous.infra_retry.retry_dependents`); the general rule is wider — any dependent that failed only behind its dependency is requeued by the executor in the same step that the dependency reaches `completed`, whether that failure was an infrastructure one or a content or scope one, so dependents are never reset by hand when a retried dependency completes. A retry caused by a daemon restart waits no longer than the first delay. The operator guide is [howto/infrastructure-retry.md](howto/infrastructure-retry.md).
@@ -5433,6 +5435,16 @@ when it finishes, so the mtime gate would report false stalls; the other
 signals still apply. `autonomous.session_idle_timeout_seconds` (above)
 covers a different case — a session that went idle instead of dying.
 
+**Stall evidence.** When a stalled pi worker is stopped, the stop is
+recorded with the runner's evidence and the task error carries a summary
+tail, for example `(pi exited with status 1; node gpu-box; model qwen3.8:27b;
+last: ...)`, capped at 300 characters. The evidence is taken from the pane;
+when the pane is empty (a one-shot `pi` run's pane is gone once it exits) it
+is taken from the session `output.log` (last 40 non-empty lines, control
+sequences removed). The task still matches the stalled error, so retries use
+the same budget. See
+[howto/autonomous-recovery.md](howto/autonomous-recovery.md#reading-why-a-worker-stalled).
+
 **Loop detection and rescue.** A worker that repeats one action over and
 over is caught at two levels, both from the same log:
 
@@ -7852,6 +7864,27 @@ MCP agents use `rules_context_status` (read-only) and `rules_context_set`. A fil
 
 ---
 
+## Decompose lint mode and rules (`autonomous.decompose_lint`)
+
+Every fresh decomposition is linted before the plan is stored. The mode
+(`autonomous.decompose_lint.mode`) is **`shadow` unless you set it**: the
+thirty-rule built-in pack (twenty-four `block`, six `warn`) runs and the
+findings are recorded, but the plan is never sent back. Set `mode: enforce` and,
+while a `block` finding remains, the planner is re-run with the findings fed
+back, up to `autonomous.decompose_lint.max_retries` (default 2, cap 5). `off`
+runs no lint and records nothing. Read the stored findings of an Automaton
+(`datawatch autonomous lint findings <id>`).
+
+Each finding names the task, the rule id and the offending line; a
+verification-script rule also names the script. To stop one rule blocking, set
+it to `warn` with a same-id operator rule or list it in `disabled_rules`; to
+stop the whole lint blocking, leave `mode: shadow`. The rule list and fixes are in
+[howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#3-the-rule-pack-that-ships)
+and
+[howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5-how-the-lint-reports-a-finding-and-how-to-fix-each-rule).
+
+---
+
 ## Standard task modes (`autonomous.task_templates.mode`)
 
 Every decomposed story gets the built-in pack's closing tasks appended, and `autonomous.task_templates.mode` — a global map of **template id → mode**, not per-project — decides who performs each appended task: **`llm`** — a worker session runs it, verifier included, like any other task (the default for `docs_set`; also the default for `final_gate`, though the daemon's script gate performs it — see below); **`daemon`** — the daemon performs the task itself and completes it, spending no model session and running no verifier (the default for `changelog_entry`, `parity_issue_draft`, `bounded_load_step` and `version_bump_left_to_merge`); **`off`** — the standard task is not appended to the story at all. In daemon mode, `changelog_entry` and `parity_issue_draft` write their generated artefact with the same edit-protection rules as the generated-artefacts feature: a file already edited, or a kind switched off in the generated-artefact settings, is skipped with the reason recorded in the task's decision note, and the task still completes; a write it cannot make (for example no project directory) marks the task failed. `bounded_load_step` and `version_bump_left_to_merge` write nothing — their spec text is recorded as the story's decision note. A daemon-run task shows in the story record as completed with its decision note, and has **no worker session** in the session list; the structural checks (decompose lint, per-task verification script, report, file tokens) skip it, because a handler performs it, not a judge.
@@ -7886,7 +7919,10 @@ of that category.
   "the release" or "the next patch above main" and logs one `auto_correct`
   decision line (`old -> new`, with story and task) instead of failing.
   It does so only when every other plan check passes on the corrected
-  plan.
+  plan. Only the Automaton's own release version is rewritten; a Python,
+  Go or library version, a pin, a path or an image tag stays as written.
+  Operator review: an Automaton that really must name such a version in a
+  release task is no longer flagged, so check those specs by hand.
 - **A non-retryable failure raises one warning alert**, "Automaton could
   not be planned: <title>", once per recorded failure, and survives a
   restart without repeating. A retryable failure raises nothing until its

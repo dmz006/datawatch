@@ -29,28 +29,41 @@ var decomposeLintRO = true
 // trackerIDPattern is the tracker-id shape the names_tracker_id rule
 // matches; the spec lint (spec_lint.go) compiles the same string so the
 // two never drift.
-const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|\\b#\\d{3,}\\b"
+//
+// A bare #123 is a tracker id only after a tracker word ("issue #123",
+// "fixes #4521"). A bare #\d{3,} on its own is also a CSS hex colour
+// (#123456, #abc123), so it never matches without that context; the
+// trailing \b keeps a digit run that continues into hex letters
+// (#123abc) from matching.
+const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b" +
+	"|\\b(?:issues?|pr|pull request|tickets?|bugs?|fix(?:es|ed)?|close[sd]?|resolve[sd]?|refs?)\\s+#\\d{3,}\\b"
+
+// versionNumberPattern is a dotted version that belongs to a tool or
+// library (a Python, Go or Node version, a library pin) rather than to
+// the release; the version_number_in_spec rule matches it in a spec or
+// title.
+const versionNumberPattern = `(?i)\b(?:python3?|py|node(?:\.?js)?|golang|ruby|java|jdk|rust|rustc|php|perl|django|flask|fastapi|numpy|pandas|scipy|pytorch|torch|tensorflow|react|vue|angular|rails|postgres(?:ql)?|mysql|redis|kubernetes|docker|ollama|cuda|npm|pip|library|package|module|dependency|sdk|runtime|interpreter|compiler)\s*(?:version\s*|v)?\d+\.\d+(?:\.\d+)?\b` +
+	`|\bgo\s*(?:version\s*|v)?1\.\d{1,2}(?:\.\d+)?\b` +
+	`|\b[A-Za-z][A-Za-z0-9_-]*==\d+\.\d+(?:\.\d+)?\b`
 
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Twenty-two rules: seventeen block-severity rules (tasks that cross a hard
-// boundary, plus the verification-script stability rules that follow
-// read_only_unverifiable) and five warn-severity hygiene rules
-// (fixed_calendar_date_in_test sits among the stability rules; the
-// other four close the pack).
+// Twenty-seven rules, in the order findings should surface them: the
+// block-severity rules (tasks that cross a hard boundary, including the two
+// spec-line rules that follow read_only_unverifiable, plus the
+// verification-script stability and script-content rules) first, then the
+// warn-severity hygiene rules (fixed_calendar_date_in_test sits among the
+// stability rules).
 //
-// The two newest stability rules read the script against ground truth
-// at lint time: verify_script_unknown_flag checks each invoked
-// command's own `--help` for the long flags the script passes, and
-// verify_script_text_not_in_spec requires every checked markdown
-// heading or output phrase to appear verbatim in the task spec or in
-// equivalent wording (every content word present after stopword
-// removal and simple inflection folding). Both
-// stay out of the way by design — commands the environment cannot
-// find, and help output that cannot be read, are skipped silently —
-// and, like every rule here, an operator keeps them off by listing
-// their ids in autonomous.decompose_lint.disabled_rules.
+// verify_script_unknown_flag checks each invoked command's own `--help` for
+// the long flags the script passes, and verify_script_text_not_in_spec
+// requires every checked markdown heading or output phrase to appear in
+// the task spec or in equivalent wording. Both stay out of the way by
+// design: commands the environment cannot find, and help output that
+// cannot be read, are skipped silently. Like every rule here, an operator
+// keeps them off by listing their ids in
+// autonomous.decompose_lint.disabled_rules.
 func DefaultDecomposeLintRules() []Rule {
 	return []Rule{
 		{
@@ -113,6 +126,24 @@ func DefaultDecomposeLintRules() []Rule {
 			},
 		},
 		{
+			ID:       "read_only_task_writes_file",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "read_only_task_writes_file: a read-only task's spec tells it to write a file other than its report path; give it a report path under .datawatch/reports instead.",
+			// Needs the task's report_path and the READ-ONLY: marker, so it
+			// is a predicate rather than a regex.
+			Match: config.DecomposeLintMatch{
+				ReadOnlyWritesOutsideReport: true,
+			},
+		},
+		{
+			ID:       "spec_path_outside_allowed_dirs",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "spec_path_outside_allowed_dirs: the spec names an absolute path outside the project directory; use a repo-relative path or drop the line.",
+			Match: config.DecomposeLintMatch{
+				SpecAbsolutePathOutsideProject: true,
+			},
+		},
+		{
 			ID:       "verify_script_task_files_only",
 			Severity: config.DecomposeLintSeverityBlock,
 			Message:  "verify_script_task_files_only: the task's verification script compares only against the task's own files (a literal allowed-file list or a diff of HEAD, the working tree or main) and never against the merge base, so it fails once earlier tasks land; compare against `git merge-base` (directly or via a sourced helper) so the check is cumulative.",
@@ -166,6 +197,46 @@ func DefaultDecomposeLintRules() []Rule {
 			Message:  "fixed_calendar_date_in_test: the task asks the worker to write a test with a fixed calendar date; that date passes and the gate fails later; take times from the current time instead, for example time.Now with a fixed offset, or an injected clock.",
 			Match: config.DecomposeLintMatch{
 				FixedCalendarDateInTest: true,
+			},
+		},
+		{
+			ID:       "verify_script_rejects_own_files",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "the task's verification script builds its allowed-file list from literals that omit the task's own files or the standard set (changelog, README, docs, locales, tests); include them or source the shared allowed list.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptRejectsOwnFiles: true,
+			},
+		},
+		{
+			ID:       "verify_script_needs_later_task_output",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "the task's verification script needs a file or phrase that only a task it does not depend on creates; add the depends_on edge or move the check to that task's script.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptNeedsLaterTaskOutput: true,
+			},
+		},
+		{
+			ID:       "verify_script_sh_for_bash",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "the task's verification script uses bash-only syntax ([[ ]], arrays, process substitution, pipefail) under an sh shebang or a line runs it with sh; use a bash shebang and run it with bash.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptShForBash: true,
+			},
+		},
+		{
+			ID:       "verify_script_pipe_grep_q",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "the task's verification script pipes into grep -q, which exits at the first match and SIGPIPEs the producer under pipefail; capture the output first or drop -q.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptPipeGrepQ: true,
+			},
+		},
+		{
+			ID:       "verify_script_hex_pattern",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "a grep pattern in the task's verification script matches a bare #<digits> run, which also matches CSS hex colours as tracker ids; put a tracker word (issue, fixes, closes) before the #.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptHexPattern: true,
 			},
 		},
 		{
@@ -240,6 +311,17 @@ func DefaultDecomposeLintRules() []Rule {
 				AnyOf: []config.DecomposeLintMatch{
 					{SpecRegex: trackerIDPattern},
 					{TitleRegex: trackerIDPattern},
+				},
+			},
+		},
+		{
+			ID:       "version_number_in_spec",
+			Severity: config.DecomposeLintSeverityWarning,
+			Message:  "Spec or title names a dotted version of a tool or library (not the release); keep it unambiguous: name the tool, never write it as the release number.",
+			Match: config.DecomposeLintMatch{
+				AnyOf: []config.DecomposeLintMatch{
+					{SpecRegex: versionNumberPattern},
+					{TitleRegex: versionNumberPattern},
 				},
 			},
 		},
