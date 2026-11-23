@@ -5624,6 +5624,29 @@ cost_report:
   # Default false: peer spend is excluded from the report.
   include_peer_spend: false
 
+# ── Standard-task packs ──
+# The standard-task pack feature: installable, named, versioned folders that
+# ship Automaton task prompts, verification scripts and Automaton templates.
+# Off by default, so a daemon that never sets packs.* behaves as before.
+packs:
+  # Turn the pack feature on. Default false.
+  # Turning it on should need at least one enabled skills registry source (the
+  # community registry by default). Turning it on through a surface is refused
+  # (HTTP 409) by that check (packs.CheckEnable); a hand edit of this file
+  # skips it. With this key false, only "builtin" applies.
+  # Install, accept, remove, the inputs and the settings are on REST, MCP,
+  # CLI, the comm channel and the web Settings card; see docs/howto/packs.md.
+  enabled: false
+  # The packs in use, in order. Each name is "builtin" (the standard tasks and
+  # Automaton templates compiled into the binary, always valid; the repository's
+  # test fixture folder is not read) or the name of an installed pack. A name that is
+  # neither, an empty name or a repeated name is rejected by validation.
+  # This is the global list: an Automaton's own list wins over it when set, and
+  # lists are never merged (packs.ActivePacks). There is no per-project list key.
+  # Default: [builtin].
+  active:
+    - builtin
+
 # ── Onboarding report ──
 # The Automation onboarding report: what is configured, what is missing and
 # what to try next. Read from the PWA card, `datawatch automation

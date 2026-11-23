@@ -1,0 +1,1 @@
+datawatch trivy fixture: clean image with no packages.

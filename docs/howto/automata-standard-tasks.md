@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [standard tasks, standard task, automaton templates, automaton template, formerly task templates, decomposer, story tasks, per-project override, templates tab]
+  topics: [standard tasks, standard task, automaton templates, automaton template, formerly task templates, decomposer, story tasks, per-project override, templates tab, standard-task packs, pack, pack inputs, secret input, pack_inputs, pack trust, auto-accept, first-party pack source]
 exec_params:
   - {name: project, required: false, description: "Project directory or alias: shows the standard-task list as that project sees it (its override applied)"}
 exec_steps:
@@ -37,7 +37,8 @@ see [Decompose lint, standard tasks and guidance](automaton-decompose-lint.md).
 When a story is decomposed:
 
 1. The planner writes the story's tasks.
-2. The decomposer checks the story against the standard-task pack.
+2. The decomposer checks the story against the standard-task list. That list is built from the
+   active packs by the pack resolver (see [How the list is resolved](#how-the-list-is-resolved)).
 3. Each standard task the planner did not already produce is appended to the story as a
    new task. Its **mode** decides who carries it out: `llm` (a model session, like any
    other task), `daemon` (the daemon completes it with no model session) or `off` (it is
@@ -62,6 +63,27 @@ decompose-lint findings and to have no side effects on the hosting CLI.
 | `bounded_load_step` | The bounded load-step rule for a load step the plan names. The rule itself is in [Orphan reaping and host load](automata-orphan-reaping.md) | `note` | `daemon` |
 | `final_gate` | A **read-only** closing task: the build is clean, tests pass and the files hang together. The daemon's script gate runs it and writes the gate report to `.datawatch/reports/` | `final_gate` | `llm` |
 | `version_bump_left_to_merge` | A plain note that the version is the next patch above main, resolved at merge. It never edits a file | `note` | `daemon` |
+
+## How the list is resolved
+
+The standard-task list is produced by the pack resolver (`packs.ResolveTaskList`, in
+`internal/packs/resolve.go`). The resolver takes an Automaton kind and the ordered list of
+active packs, and it returns the tasks of every pack whose `kinds` include that kind:
+
+- **Order.** Packs are walked in the order they are given. Each pack's tasks are appended
+  after the tasks already collected, so the list keeps manifest order within a pack.
+- **Kind filter.** A pack that does not list the kind contributes nothing to that list.
+- **Duplicate titles are refused.** Two tasks with the same title are an error, and the
+  error names both packs that contributed them. A list is never built with a silent
+  duplicate.
+- **Provenance.** Each resolved task records the pack name and pack version it came from,
+  so any row on any surface can be traced to its source pack.
+
+Today the built-in list is resolved **for the `feature` kind only**, from the built-in pack
+alone. The built-in pack declares all four kinds (`feature`, `bug`, `other`, `maintenance`),
+but the resolved list is not filtered by kind again when it is applied, so the same six
+standard tasks are appended to a story whatever its Automaton kind. An operator who wants a
+different list per kind should review this; see [Open items to check](#open-items-to-check).
 
 Each standard task has an `id`, a `title`, a `kind`, a `summary`, an `offered_when`
 condition, an effective `enabled` flag, a `mode` and a `runner`. Standard tasks take slots: `{{feature}}`,
@@ -265,6 +287,263 @@ leave the other five in place:
    project, not its modes. To bring it back, set the mode to `daemon` again — the
    shipped default for that task.
 
+<a id="installable-packs-backend-only-not-yet-wired"></a>
+
+## Installable packs (manage them on every surface; not yet applied to tasks)
+
+A **pack** is a named, versioned folder that ships standard tasks and Automaton
+templates together: the task prompts, their verification scripts and the template
+definitions. The folder holds a `pack.yaml` manifest at its root. The built-in
+standard tasks are the first pack, named `builtin`. Its task and template definitions
+are embedded in the binary from the pack folder `internal/packs/builtinpacks/builtin/`
+(`go:embed`, as data files, not Go literals). On first use (the result is then cached) `packs.LoadBuiltin` writes that
+folder out and loads it through the same path an installed pack takes, and
+`internal/autonomous/task_templates_defaults.go` resolves it with the pack resolver. So
+`builtin` is not a folder the operator installs or edits, and it needs no install. Packs
+from the community registry use the same path.
+
+**The repository's pack folders are test fixtures.** Two folders under
+`internal/packs/testdata/` are used only by the tests and are not embedded in the binary:
+
+- `internal/packs/testdata/standard-tasks-pack/` holds a loadable copy of the standard
+  tasks in the pack folder format: a `pack.yaml`, six prompts, five verification scripts
+  and a `templates/README.md` that lists the Automaton templates.
+- `internal/packs/testdata/fixture-one-kind/` is a one-task fixture. Its `pack.yaml` names
+  only the `feature` kind and adds one extra task, "Extra check". The tests use it to
+  confirm that the resolver adds a task for the kind a pack names and leaves the other
+  kinds unchanged.
+
+The real standard-tasks pack is published in the community registry repository
+(operator decision, 2026-11-09); the fixtures do not replace it, and installing either
+fixture is not a way to get the standard tasks on a daemon.
+
+**Status: you can manage packs on every surface, but the active list does not yet change the
+tasks an Automaton gets.** Installing, accepting, removing, enabling and setting inputs all
+work (see [Managing packs](#managing-packs-on-each-surface)). What is **not** wired yet:
+the resolver is not given the result of `packs.ActivePacks`, so `packs.active` and an
+installed pack do not yet change the standard-task list, and stored pack inputs are not
+read when a task is created. The open items are listed in
+[Open items to check](#open-items-to-check) and in
+[operations](../operations.md#standard-task-packs-what-is-wired-and-what-is-not).
+
+### Managing packs on each surface
+
+All surfaces call the same REST routes (`/api/packs`), so they behave alike. Reads need the
+config-read permission and writes the config-write permission, including over federation.
+
+| Action | REST | MCP tool | CLI (`datawatch packs ...`) | Chat command | Web |
+|---|---|---|---|---|---|
+| List installed packs and trust state | `GET /api/packs` | `packs_list` | `list` | `packs` | not in Settings; Packs sub-tab list not rendered yet |
+| Read the setting | `GET /api/packs/config` | `packs_setting_get` | not a verb; use `list` | `packs setting` | Settings > General > Standard task packs |
+| Set `enabled` / `active` | `PUT /api/packs/config` | `packs_setting_set` | `enable`, `disable` | `packs setting enabled=true active=a,b` | the two fields in that card |
+| Install a folder | `POST /api/packs/install` | `packs_install` | `install <source-dir>` | `packs install <source_dir>` | Packs sub-tab install button (built, not shown yet) |
+| Accept a pack | `POST /api/packs/accept` | `packs_accept` | `accept <name> <version>` | `packs accept <name> <version>` | Packs sub-tab accept button (built, not shown yet) |
+| Remove a pack | `DELETE /api/packs/{name}/{version}` | `packs_remove` | `remove <name> <version>` | `packs remove <name> <version>` | none |
+| Read / replace inputs | `GET` / `PUT /api/packs/inputs` | `packs_inputs_get`, `packs_inputs_set` | `inputs get`, `inputs set` | `packs inputs get` / `set` | the four input fields |
+
+#### The Packs sub-tab (Automata > Templates > Packs)
+
+The Packs sub-tab is built from three web scripts. What each does, and whether the page
+shows it today:
+
+| Script | What it provides | Shown today? |
+|---|---|---|
+| `app-packs-subtab.js` | The shell. Reads `GET /api/packs/config`. With packs off it explains that packs add installable standard tasks and Automaton templates from a connected skills registry and shows an **Enable** button (opens Settings > General > Standard task packs). In both states it links to the skills registry settings. | Yes |
+| `app-packs-subtab-install.js` | An **Install** button (`POST /api/packs/install`), a "This pack adds" summary (tasks, verification scripts, tools, file scopes), a "Changes in this version" list (new tools, scripts and file scopes are highlighted as widening access), and an **Accept** button (`POST /api/packs/accept`, hidden once accepted). | Loaded by the page, but the shell does not call it, so no button or panel appears |
+| `app-packs-subtab-usage.js` | A per-source **auto-accept** switch (off by default; `PUT /api/skills/registries/{name}` with `auto_accept_packs`, with the note that a version adding tools, scripts or file scopes still waits for you) and a per-pack usage table (pack, version, runs, cost, last used; `GET /api/packs/usage`). | No: the script is not loaded by the page |
+
+Until the shell calls these pieces, use the REST, MCP, CLI or chat rows in the table above to
+install and accept. The usage table has **no server route behind it**: `GET /api/packs/usage`
+is not registered, so the table would show an error line, and `packs.UsageByPack` is still
+called by nothing. The auto-accept switch writes the registry field, but nothing in the
+daemon reads it yet (see [Version diff and auto-accept](#version-diff-and-auto-accept)).
+
+- **Install root.** Packs install to `<data dir>/packs/<name>/<version>/`, beside
+  `trust.json` and `inputs.json`.
+- **Setting writes are checked.** `packs.active` is refused (HTTP 400) when it holds an
+  empty name, a repeat, or a name that is neither `builtin` nor an installed pack.
+  Turning `enabled` from off to on is refused (HTTP 409) with "packs need at least one
+  connected skills registry source" when no registry source is connected and enabled. The
+  web switch is put back to off and shows the refusal.
+- **Accept** records the operator's acceptance of the installed digest as accepted by
+  `operator`. A pack that is not installed gives HTTP 404.
+- **Remove** deletes one installed version and its trust record. It does not touch
+  Automata, their tasks or trace records: an Automaton keeps the tasks it was created with.
+  The trust record goes first, so a failed delete leaves a pack that is on disk but no
+  longer runnable. Removing does **not** edit `packs.active`; a removed name stays in the
+  list until you change it, and the next write of that list is then refused.
+- **Inputs** are stored per pack at the `global`, `project` (key is the project
+  directory) or `automaton` (key is the Automaton id) level. A save **replaces** that
+  scope. Every name must be an input the pack declares, and a secret input accepts only a
+  `${secret:NAME}` reference. Reads show secrets as references or `***`.
+- **Web inputs** take the `global` or `project` level only; the web form has no Automaton
+  level. Use REST, MCP, CLI or chat for Automaton-level inputs.
+- **Not on the web yet:** install, accept, remove and list. Use the CLI, chat command,
+  MCP or REST for those.
+
+### Turning packs on
+
+The `packs` config block has two keys: `packs.enabled`, off by default, and
+`packs.active`, the ordered list of packs in use, which defaults to `["builtin"]`.
+An entry is `builtin` or the name of an installed pack. The packs library has a check
+that packs may be enabled only when at least one skills registry source is connected
+and enabled; the community registry is that source by default. The check is
+`packs.CheckEnable` (`internal/packs/enable_gate.go`): it looks only at the list of
+registry sources it is given and refuses with "packs need at least one connected skills
+registry source; connect one in the skills registry settings" when none is enabled. The
+daemon calls it when `packs.enabled` is changed from off to on through REST, MCP, CLI,
+chat or the web switch, so the switch is refused when no source is connected. Editing the
+config file by hand skips the check.
+
+### Which packs apply to an Automaton
+
+`packs.ActivePacks` (`internal/packs/order.go`) returns the ordered pack list for one
+Automaton:
+
+- **Packs off.** When `packs.enabled` is `false` the answer is always `["builtin"]`,
+  whatever any list says.
+- **First defined list wins.** When packs are on, the Automaton's own list is used if it
+  has entries; otherwise the project's list; otherwise the global `packs.active`. The
+  lists are **not merged**.
+- **Nothing defined.** When all three are empty the answer is the global default,
+  `["builtin"]`.
+
+An Automaton's own list is the `packs` field on the Automaton (JSON `packs`, omitted
+when empty). It is assigned with `Automation.SetPacks`, which trims each name, drops
+empty names and later repeats, and keeps the order given (it is a priority order and is
+never sorted). **Not wired yet:** no REST, MCP, CLI, chat or web call sets the field, and
+the resolver is not yet given the result of `ActivePacks`. A per-project pack list was
+planned and is **not** in the config today: the project entry has no `packs` key, so
+`ActivePacks` has no project list to read until one is added. Operator review needed:
+confirm that the project list belongs on the project entry in config.
+
+### What a pack needs to pass
+
+- **Install checks every task first.** Each task is checked against the same
+  standard-task rules as the built-in tasks. The first task that fails refuses the
+  whole install, names the rule, and nothing is copied.
+- **Names are single folder names.** An unsafe pack name is refused.
+- **A version is never overwritten.** Installing a name and version that already exists
+  is refused. Install a new version under a new `version` in `pack.yaml`.
+- **Links stay inside the pack.** A symbolic link is followed only when it resolves to a
+  regular file inside the pack folder. Any other link refuses the install.
+
+An installed pack is copied to `<install root>/<name>/<version>/`.
+
+### Trust: who accepted a pack, and what changed
+
+A pack from a **first-party source** runs without a per-pack record. A first-party source
+is a registry flagged `first_party`, and the community registry
+(`dmz006/datawatch-community`) is flagged so. Its packs are read from the registry's
+git clone; they are never copied into the binary.
+
+Every other pack runs only when the install root's `trust.json` holds a record of an
+operator's acceptance for that pack's **name, version and exact content digest**. A
+record names the pack, the version, the digest, who accepted it and when. If a single
+file in the pack changes, the digest changes and the old record no longer applies. A
+pack that has not been accepted is refused with `pack not accepted: accept it first`.
+
+For a first-party source, acceptance covers the versions that are current when the
+operator accepts the source. That call writes one record per current pack, and it
+refuses the whole source if any pack is missing its digest or belongs to another source.
+A later version has no record and goes through the version-diff rules below.
+
+### Version diff and auto-accept
+
+When a new version of a pack appears, the difference from the accepted version is
+listed as **new tasks, new tools, new scripts and new file scopes**. Only a new tool,
+script or file scope **widens access**. New tasks alone do not.
+
+A registry source can opt in to **auto-accept** with `auto_accept_packs`. It is off by
+default. When it is on, a new version is accepted automatically, recorded as accepted by
+`auto:<source name>`, **only** when the diff adds no tool, script or file scope. A version
+that widens access is never auto-accepted; the operator accepts it by hand.
+
+### Summary of a pack
+
+A pack summary lists the task titles in manifest order, the names of the verification
+script files (never their full paths), and the tools and file scopes the pack's tasks
+ask for. Use it to read what a pack would allow before you accept it.
+
+### Pack inputs: how values resolve, secrets, and what a task records
+
+A pack can declare **inputs** in `pack.yaml` (`name`, `type`, `default`, `required`,
+`secret`). The resolver (`packs.ResolveInputs`, `internal/packs/inputs.go`) gives each
+declared input one value:
+
+- **Override order.** The first level that defines the input wins: the Automaton, then
+  the project, then the global level. A level defines an input when its map holds the
+  input's name, so an empty string set at a level still wins over a lower level.
+- **Default.** When no level defines it, the declared `default` is used. An input that is
+  not required and has no default resolves to an empty string.
+- **Required.** A required input with no value at any level and no default is an error:
+  `pack input <name> is required and has no value; set it at the automaton, project or global level`.
+
+**Secret inputs** (`secret: true`) never hold a literal value. `packs.CheckSecretInput`
+refuses any value that is not a vault reference of the form `${secret:NAME}` (`NAME` is
+letters, digits, `_`, `.` and `-`). Non-secret inputs accept any value. `packs.RedactInputs`
+returns the copy that is safe to show: a secret input keeps its `${secret:NAME}` reference,
+and a secret input whose value is not a reference is masked as `***`.
+
+**What a created task records.** When the daemon creates a daemon-run standard task it
+resolves the built-in pack's inputs, redacts them, and stores the result on the task as
+`pack_inputs` (JSON, omitted when empty). The map is a private copy: a later change to an
+input does not alter a task that already exists, because a task keeps the values it was
+created with. If resolving fails, the error is logged and the task is created without
+`pack_inputs`.
+
+Limits today, flagged for review:
+
+- **Inputs can be saved but are not read.** REST, MCP, CLI, chat and the web settings
+  fields write inputs to `inputs.json` at any level (the web at global and project
+  level), but the daemon still creates tasks with no Automaton, project or global values
+  (`RecordPackTaskInputs` is called with empty maps), so only declared defaults apply
+  and a saved value changes nothing yet.
+- **The built-in pack declares no inputs**, so saving an input for `builtin` is refused
+  (the pack declares no input of that name) and `pack_inputs` is empty on every task the
+  daemon creates today.
+- **Secrets are checked at write time.** The save refuses a literal value for a secret
+  input; only `${secret:NAME}` is accepted.
+- **Only daemon-run tasks record inputs.** Tasks that run as a model session do not.
+
+### Pack attribution: traces, audit and cost
+
+Pack attribution is the read side of a pack's name and version on trace events and
+audit entries. **Today nothing writes it on a running daemon**, so the filters and
+roll-ups below return no pack-attributed rows yet. The pieces are:
+
+- **Trace events** have `pack_name` and `pack_version` fields. The trace roll-up can
+  group by them: `dimension=pack_name` or `dimension=pack_version` (REST
+  `GET /api/trace/rollup`, and the `trace_rollup` MCP tool). See
+  [agent tracing](agent-tracing.md). The helper that stamps the `builtin` pack onto a
+  trace event (`autonomous.StampBuiltinPack`) exists, and
+  `autonomous.BuiltinStandardTaskTraceEvent` builds an event for one built-in standard task
+  (its `task_id` and name come from the task, `pack_name` is `builtin`). No production
+  code calls either, so the standard tasks' events are not stamped yet.
+- **Audit entries are read-only for `pack_name`.** The audit query accepts a `pack_name`
+  filter, an exact match, on REST, MCP, CLI and the comm channel, and it reads the
+  `pack_name` detail. No production code writes a `pack_name` detail on an audit entry,
+  so a `pack_name` filter returns nothing until a writer ships. Do not expect filtered
+  audit results from it yet.
+- **Cost report** rows can be broken down by pack name and version (`costreport`'s pack
+  breakdown: one row per pack and version, with events, tokens and cost). Events with no
+  pack name fall into one `unattributed` row. No surface calls the breakdown yet.
+
+Events and entries written before attribution have no pack name and show as
+unattributed. Once a writer is wired, the `builtin` pack will record `pack_name: builtin`
+on the trace events of its standard tasks.
+
+The MCP tools `trace_session` and `trace_rollup` accept an optional `pack` argument. The
+MCP tool forwards it as `?pack=`, but **the REST trace routes do not read that parameter
+yet**, so over REST and through the MCP tools the argument currently has no effect.
+Filter by `dimension=pack_name` and `key=<pack>` on the roll-up instead until it is
+wired.
+
+A per-pack usage summary (runs, cost and last use per pack name and version, counted per
+session, task or Automaton) is computed by `packs.UsageByPack`. **No daemon surface calls
+it yet**, and there is no `/api/packs/usage` route, so the usage table in the Packs
+sub-tab's script has nothing to read (see [The Packs sub-tab](#the-packs-sub-tab-automata--templates--packs)).
+
 ## Open items to check
 
 Flagged here so an operator looking at the web tab knows what it does **not** have
@@ -277,6 +556,53 @@ yet:
   per-project resolved read (the `?project=` parameter) is on REST, MCP and CLI. The
   comm channel reads the global setting only. If you rely on a project override, read
   the list with `--project` (CLI) or `project` (MCP or REST) to see the resolved state.
+- **The built-in list ignores the Automaton kind when applied.** The built-in list is
+  resolved for the `feature` kind only, and the apply step does not filter by kind, so
+  bug, other and maintenance Automata receive the same standard tasks. Operator review
+  needed: decide whether the list should be resolved and applied per kind.
+- **Mode wording to review.** The **Mode setting** bullet above says every standard task
+  runs as a model session. The glossary's **Standard task** entries describe per-template
+  modes (`llm`, `daemon`, `off`) with notes and changelog defaulting to `daemon`. Confirm
+  which describes the running daemon before relying on either.
+- **Per-project pack list is missing.** `packs.ActivePacks` takes a project list, but the
+  project config entry has no `packs` key (it was removed from the change as out of
+  scope). Only the Automaton's own list and the global `packs.active` can exist today.
+  Operator review needed: decide whether to add the project key and where it is edited.
+- **Packs are managed but not applied.** Install, accept, remove, the enable check, the
+  `packs.active` validation and inputs work on every surface except as listed in
+  [Managing packs](#managing-packs-on-each-surface). The resolver is still not given
+  `packs.active`, so an installed pack does not yet add tasks, and nothing calls the
+  auto-accept or first-party acceptance rules from the daemon. See the
+  [Installable packs](#installable-packs-manage-them-on-every-surface-not-yet-applied-to-tasks)
+  section and [operations](../operations.md#standard-task-packs-what-is-wired-and-what-is-not).
+- **The Packs sub-tab shows only its shell.** The install, accept, change-summary,
+  auto-accept and usage pieces exist as scripts, but the shell does not render them, and
+  `app-packs-subtab-usage.js` is not loaded by `index.html` or listed in the service
+  worker's no-cache list (only `app-packs-subtab.js` is). Operator review needed: decide
+  where the installed-pack list lives in the sub-tab, wire the pieces in, and whether the
+  web inputs form needs an Automaton level.
+- **The usage table has no route.** `GET /api/packs/usage` is not registered in
+  `internal/server/api_packs.go`. Operator review needed: add the route over
+  `packs.UsageByPack`, or drop the table.
+- **Confirm the auto-accept switch saves.** The switch sends `auto_accept_packs` to
+  `PUT /api/skills/registries/{name}`; the registry store has the field, but this change
+  did not check that the registry update route keeps it. Operator review needed.
+- **Removing a pack does not update `packs.active`.** A removed name stays in the list
+  until edited. Operator review needed: decide whether remove should refuse while the
+  pack is active, or drop it from the list.
+- **The trace `pack` filter is not honoured over REST.** The MCP `trace_session` and
+  `trace_rollup` tools send `?pack=`, and the REST trace routes ignore it. Operator review
+  needed: wire the parameter on the REST routes, or drop it from the MCP tools.
+- **Saved pack inputs are not read.** Inputs can be set at the Automaton, project and
+  global levels, but task creation passes empty maps, and the built-in pack declares none.
+  Operator review needed: decide when the daemon reads `inputs.json` when it creates a
+  task, and whether `pack_inputs` should be shown on the task in the web UI and the REST
+  task read.
+- **The per-pack usage summary and the pack cost breakdown have no surface.**
+  `packs.UsageByPack` and the cost report's pack breakdown are library functions only.
+  The Packs sub-tab has a usage table script, but it is not loaded and its route does not
+  exist. The cost breakdown has no surface at all. Decide where they show (the Packs
+  sub-tab, the cost report or both) before they are documented as user-facing.
 - **The datawatch app does not show this tab yet, and does not yet use the new
   wording.** Two parity drafts are tracked under `docs/plans/parity-issues/`
   (the Templates-tab surface, and the standard-tasks rename on Android/iPhone).

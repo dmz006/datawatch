@@ -1557,6 +1557,8 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		r.handleDashboardArc()
 	case CmdDashboardData:
 		r.handleDashboardData(cmd)
+	case CmdPacks:
+		r.handlePacks(cmd)
 	// BL220 — Configuration Accessibility Rule gap closures.
 	case CmdOrchestrator:
 		r.handleOrchestrator(cmd)

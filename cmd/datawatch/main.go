@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.86"
+var Version = "9.182.89"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -375,6 +375,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newProjectSummaryCmd(), // BL35
 		newTemplateCmd(),       // BL5
 		newAcmeCmd(),           // BL397
+		newPacksCmd(),          // packs
 		newProjectsCmd(),       // BL27
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30

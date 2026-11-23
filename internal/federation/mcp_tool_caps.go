@@ -310,6 +310,14 @@ var MCPToolCap = map[string]string{
 	"autonomous_protected_paths":           CapAutonomousRead,
 	"autonomous_standard_tasks":            CapAutonomousRead,
 	"autonomous_pending_items":             CapAutonomousRead,
+	"packs_list":                           CapConfigRead,
+	"packs_setting_get":                    CapConfigRead,
+	"packs_inputs_get":                     CapConfigRead,
+	"packs_setting_set":                    CapConfigWrite,
+	"packs_inputs_set":                     CapConfigWrite,
+	"packs_install":                        CapConfigWrite,
+	"packs_accept":                         CapConfigWrite,
+	"packs_remove":                         CapConfigWrite,
 	// Usage calculator (design docs/plans/2026-10-23-usage-calculator-design.md):
 	// reads of the shared series and its advice; writes to the series and the
 	// extra-credit / remaining-work settings.
@@ -792,6 +800,7 @@ func RequiredCapForMCPTool(tool string) (string, bool) {
 // device/plugin/skill/dashboard/filter/alert-rule surfaces, plus all
 // read-only tools.
 var configWriteTools = map[string]bool{
+	"packs_setting_set": true, "packs_inputs_set": true, "packs_install": true, "packs_accept": true, "packs_remove": true,
 	"autonomous_config_set": true, "autonomous_scan_config_set": true, "burn_guard_config_set": true, "channel_routing_config_set": true,
 	"compute_node_add": true, "compute_node_attach_observer": true, "compute_node_delete": true, "compute_node_detach_observer": true,
 	"compute_node_pull_model": true, "compute_node_remove_model": true, "compute_node_update": true, "compute_pin_settings": true,
@@ -827,6 +836,7 @@ var sensitiveWriteTools = map[string]bool{
 }
 
 var nonConfigWriteTools = map[string]bool{
+	"packs_list": true, "packs_setting_get": true, "packs_inputs_get": true,
 	"acme_issuer_log": true, "acme_status": true, "agent_audit": true,
 	"agent_get": true, "agent_list": true, "agent_logs": true, "agent_spawn": true,
 	"agent_terminate": true, "alert_rule_create": true, "alert_rule_delete": true, "alert_rule_disable": true,

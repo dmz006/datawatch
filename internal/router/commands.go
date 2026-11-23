@@ -120,6 +120,9 @@ const (
 	CmdDashboardArc     CommandType = "dashboard arc"
 	// Dashboard data over chat — work map, lane pulse and the six series.
 	CmdDashboardData CommandType = "dashboard data"
+	// Installable task and Automaton template packs: setting, list, install,
+	// accept, remove and inputs, mirroring /api/packs.
+	CmdPacks CommandType = "packs"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -1421,6 +1424,8 @@ func Parse(text string) Command {
 	case isDashboardDataVerb(lower):
 		c, _ := parseDashboardData(lower)
 		return c
+	case lower == "packs" || strings.HasPrefix(lower, "packs "):
+		return Command{Type: CmdPacks, Text: strings.TrimSpace(text[len("packs"):])}
 
 	case lower == "peers" || strings.HasPrefix(lower, "peers "):
 		// BL172 (S11) — federated observer peers over chat. Forms:
@@ -2060,6 +2065,7 @@ autonomous hold <id> <reason words> [until=<value>] [condition=<words>]   put an
 autonomous release-hold <id> [note]   release a hold; the Automaton returns to the status it had
 autonomous held   the Held group: Automata on hold, with reason, condition and look-again line
 autonomous held-migrate [dry_run=true] [id=<id>]... [reason=<words>]   list blocked or failed look-alikes, or hold the chosen ids (a real run needs id= and reason=)
+packs [setting|install|accept|remove|inputs]  task and Automaton template packs; "packs" lists them
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —

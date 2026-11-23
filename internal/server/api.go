@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.86"
+var Version = "9.182.89"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -6942,6 +6942,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// BL369 — prompt injection guard.
 			"injection_guard":    s.cfg.Autonomous.InjectionGuard,
 			"block_on_injection": s.cfg.Autonomous.BlockOnInjection,
+			// autonomous.tmux_kill_guard — effective bool; default ON when unset.
+			"tmux_kill_guard": s.cfg.Autonomous.TmuxKillGuardEnabled(),
 			// BL406 — project-rules enforcement config. "scan" is
 			// read-only here (richer write path is the dedicated
 			// GET/PUT /api/autonomous/scan/config, same split as
@@ -11295,6 +11297,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.InjectionGuard = toBool(v)
 		case "autonomous.block_on_injection":
 			cfg.Autonomous.BlockOnInjection = toBool(v)
+		// autonomous.tmux_kill_guard — pointer bool; unset means ON.
+		case "autonomous.tmux_kill_guard":
+			b := toBool(v)
+			cfg.Autonomous.TmuxKillGuard = &b
 		case "plugins.enabled":
 			cfg.Plugins.Enabled = toBool(v)
 		case "plugins.dir":
