@@ -6,7 +6,7 @@
 //
 //	usage_advice            → GET    /api/usage/advice            (query: variant, policy, lanes, cost)
 //	usage_readings          → GET    /api/usage/readings
-//	usage_reading_add       → POST   /api/usage/readings          (exactly one figure; source defaults to typed; lanes ignored)
+//	usage_reading_add       → POST   /api/usage/readings          (exactly one figure; optional llm names the entry; source defaults to typed; lanes ignored)
 //	usage_reading_delete    → DELETE /api/usage/readings/<id>
 //	usage_extra_credit_set  → PUT    /api/usage/extra-credit      ({"points": n}, n >= 0)
 //	usage_remaining_work_set→ PUT    /api/usage/remaining-work    ({"points": n} to set, {"points": null} to clear)
@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -84,6 +85,7 @@ func (s *Server) toolUsageReadingAdd() mcpsdk.Tool {
 		mcpsdk.WithString("at", mcpsdk.Description("Reading time, RFC3339 (default: now)")),
 		mcpsdk.WithNumber("session_percent", mcpsdk.Description("Session percentage, 0-100 (optional secondary)")),
 		mcpsdk.WithNumber("lanes", mcpsdk.Description("Deprecated, ignored: the daemon stamps each reading with the Claude lanes running in the ledger. Kept so older callers still work")),
+		mcpsdk.WithString("llm", mcpsdk.Description("The paid LLM entry the reading measures (the burn guard evaluates each entry on its own readings). Omit for the first entry, the account reading readings have always been")),
 	)
 }
 
@@ -119,6 +121,9 @@ func (s *Server) handleUsageReadingAdd(_ context.Context, req mcpsdk.CallToolReq
 	}
 	if args["session_percent"] != nil {
 		body["session_percent"] = req.GetFloat("session_percent", 0)
+	}
+	if llm := strings.TrimSpace(req.GetString("llm", "")); llm != "" {
+		body["llm"] = llm
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/usage/readings", body)
 	if err != nil {

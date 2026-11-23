@@ -74,7 +74,8 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task. "+
 			"model_routing (autonomous.model_routing) holds the six model routing keys — refusal_mode, served_models_cache_seconds, verifier_follows_worker_node, unknown_node_policy, probe_timeout_seconds, alert_on_refusal; this call does not return them — read them under autonomous.model_routing with get_config — and set them with the model_routing_* arguments of autonomous_config_set. "+
 			"inherited_tags_cache_seconds (autonomous.inherited_tags_cache_seconds) is the lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (0 = the 15-second default, negative = cache off); it lives in the daemon config and is included in this response — set it with the inherited_tags_cache_seconds argument of autonomous_config_set. "+
-			"The attempt-cost keys are included too: first_attempt (object: task kind implementation, docs, note or final_gate → {backend, model}; an empty entry keeps today's choice), first_attempt_escalate_after_failures (whole number 0 to 20, default 1) and retry_resume_max_context_tokens (whole number 0 to 2000000, default 150000; 0 = every retry starts a fresh session). Set them with the same-named arguments of autonomous_config_set."+
+			"The attempt-cost keys are included too: first_attempt (object: task kind implementation, docs, note or final_gate → {backend, model}; an empty entry keeps today's choice), first_attempt_escalate_after_failures (whole number 0 to 20, default 1) and retry_resume_max_context_tokens (whole number 0 to 2000000, default 150000; 0 = every retry starts a fresh session). Set them with the same-named arguments of autonomous_config_set. "+
+			"lane_fill holds the lane fill settings; stalled_merge_minutes (whole minutes, default 30, 0 = rule off) is how long a verified task's merge may stay pending before the Automaton stops holding its lane. It is left out of lane_fill until it is set, so read the value in effect, with the default filled in, under autonomous.lane_fill with get_config; set it with lane_fill_stalled_merge_minutes on autonomous_config_set. How-to: docs/howto/automation-lane-fill.md. "+
 			daemonTaskKeysGetDescription),
 	)
 }
@@ -212,6 +213,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("lane_fill_claude_backend", mcpsdk.Description("LLM backend the Claude lanes run (default claude-code).")),
 		mcpsdk.WithNumber("lane_fill_stale_after_hours", mcpsdk.Description("Hours an Automaton may sit queued before lane fill treats it as stale and does not start it. Whole number >= 0; 0 turns the stale rule off, unset keeps the 72-hour default.")),
 		mcpsdk.WithNumber("lane_fill_host_down_after_minutes", mcpsdk.Description("Minutes a pool host may stay unreachable before lane fill treats it as down and judges the lanes from the readable hosts. Whole number >= 0, default 10; 0 = never treat an unreachable host as down.")),
+		mcpsdk.WithNumber("lane_fill_stalled_merge_minutes", mcpsdk.Description("Whole minutes a verified task's merge into the Automaton branch may stay pending with no progress before the Automaton stops holding its lane; it then appears in the lane fill status waiting list with the reason merge_stalled and an alert is raised. Whole number >= 0, default 30; 0 turns the rule off (the lane is kept). Read the current value with autonomous_config_get (lane_fill.stalled_merge_minutes) or GET /api/config. How-to: docs/howto/automation-lane-fill.md.")),
 		mcpsdk.WithBoolean("lane_fill_require_confirmed_proposal", mcpsdk.Description("Lane fill starts an Automaton made from a proposal only after the operator has confirmed that proposal (default true).")),
 		mcpsdk.WithBoolean("lane_fill_check_main_carries", mcpsdk.Description("Lane fill checks whether the default branch already carries an Automaton's work before counting it as eligible (default true).")),
 		mcpsdk.WithBoolean("lane_fill_require_worktree", mcpsdk.Description("Lane fill counts an Automaton as eligible only when it has its own worktree (default true).")),
@@ -314,6 +316,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 		mcpsdk.WithString("planning_restart_policy", mcpsdk.Enum("reattach", "restart", "draft"), mcpsdk.Description("autonomous.planning_restart_policy — what a daemon restart does to an Automaton that is still in planning (decompose running): reattach (the default) keeps planning running and re-attaches it to the restarted daemon; restart restarts planning once after the restart and records a decision saying so; draft resets the Automaton to draft, as the daemon did before this setting existed. Any other value is refused. It is sent on PUT /api/config. See docs/howto/restart-with-work-running.md.")),
+		mcpsdk.WithString("gate_repair_mode", mcpsdk.Enum("off", "report", "on"), mcpsdk.Description("autonomous.gate_repair.mode — the gate repair engine's mode: off (no detection, nothing recorded), report (detect and record the finding as a gate_repair repair record but repair nothing; the shipped default), on (apply the safe repair for the failed class, once per class per task; a spent budget or an unknown class raises a held operator question). Any other value is refused. It is sent on PUT /api/config.")),
 		mcpsdk.WithNumber("inherited_tags_cache_seconds", mcpsdk.Description("autonomous.inherited_tags_cache_seconds — lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (default 15); 0 = the default, negative = cache off. Not an autonomous-manager key: it is sent on PUT /api/config and takes effect on the next tag read.")),
 	}, append(append(append(append(append(append(append(daemonTaskKeysSetOptions(), verifierPolicyConfigTools()...), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...), pendingItemConfigOptions()...)...)...)
 }
@@ -332,6 +335,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		return mcpsdk.NewToolResultError(planningErr.Error()), nil
 	}
 	for k, v := range planningPatch {
+		promptPatch[k] = v
+	}
+	// gate_repair_mode is a daemon-config key (PUT /api/config), so it joins
+	// the same validated patch. An invalid value is refused here, before
+	// anything is sent.
+	gateRepairPatch, gateRepairErr := gateRepairModePatch(req)
+	if gateRepairErr != nil {
+		return mcpsdk.NewToolResultError(gateRepairErr.Error()), nil
+	}
+	for k, v := range gateRepairPatch {
 		promptPatch[k] = v
 	}
 	// Attempt-cost keys go to the same /api/config PUT as the judge prompt keys,

@@ -67,6 +67,10 @@ type FakeTmux struct {
 	// verification can see it; a test sets NoEcho to model input that is
 	// swallowed.
 	NoEcho bool
+
+	// ListSessionsErr, when set, is returned by ListSessions in place of the
+	// session list, so a test can make the terminal listing fail.
+	ListSessionsErr error
 }
 
 // echo appends typed text to the seeded pane unless NoEcho is set.
@@ -306,6 +310,9 @@ func (f *FakeTmux) PaneCommand(session string) string {
 func (f *FakeTmux) ListSessions(prefix string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.ListSessionsErr != nil {
+		return nil, f.ListSessionsErr
+	}
 	var names []string
 	for name := range f.sessions {
 		if prefix == "" || len(name) >= len(prefix) && name[:len(prefix)] == prefix {

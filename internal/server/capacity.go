@@ -340,7 +340,7 @@ type capacityWaiterJSON struct {
 // capacityBackoffJSON is one active usage back-off flag in the capacity
 // response. ResetKnown is false when Until is only the maximum back-off
 // applied because the rate-limit message named no reset time. Rung names
-// the ladder rung that set the flag (burn guard hold_claude hold) and is
+// the ladder rung that set the flag (burn guard hold_entry hold) and is
 // omitted on rate-limit and operator entries.
 type capacityBackoffJSON struct {
 	Backend    string    `json:"backend"`
@@ -348,6 +348,11 @@ type capacityBackoffJSON struct {
 	Reason     string    `json:"reason"`
 	ResetKnown bool      `json:"reset_known"`
 	Rung       string    `json:"rung,omitempty"`
+	// HeldModels lists the models the flag holds (empty = whole backend);
+	// OpenModels names known models of the backend that are not held.
+	WholeBackend bool     `json:"whole_backend"`
+	HeldModels   []string `json:"held_models"`
+	OpenModels   []string `json:"open_models"`
 }
 
 // taskVisibilityProvider is the optional autonomous-manager capability that
@@ -455,7 +460,13 @@ func (s *Server) capacityBackoff() []capacityBackoffJSON {
 		// The deadline is shown in the daemon's own zone: the flag may have
 		// been set from a reset in another zone, and the surfaces show local time.
 		local := e.Until.In(time.Local)
-		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: local, Reason: e.Reason, ResetKnown: e.ResetKnown, Rung: e.Rung})
+		var known []string
+		if s.usageBackoff.KnownModels != nil {
+			known = s.usageBackoff.KnownModels(e.Backend)
+		}
+		h := autonomous.HoldFor(e, known)
+		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: local, Reason: e.Reason, ResetKnown: e.ResetKnown, Rung: e.Rung,
+			WholeBackend: h.WholeBackend, HeldModels: h.HeldModels, OpenModels: h.OpenModels})
 	}
 	return out
 }

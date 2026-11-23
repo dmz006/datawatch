@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.75"
+var Version = "9.182.91"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -630,8 +630,12 @@ type Server struct {
 	questionRaiseNotifier QuestionRaiseNotifier
 	// questionNotifies — counts the raise fan-out goroutines in flight
 	// (see WaitQuestionNotifies) so a caller can block until the latest
-	// raise's alert-write side effect has completed.
-	questionNotifies sync.WaitGroup
+	// raise's alert-write side effect has completed. Serialized (a mutex
+	// guards the WaitGroup, see questionNotifyGate) so a new raise's Add
+	// can never run concurrently with a Wait on a zero counter — the
+	// "WaitGroup misuse" panic that was reachable on the daemon-exit
+	// path.
+	questionNotifies questionNotifyGate
 	// questionAnswerReturnPath — the per-question opt-in session line on
 	// answer (one line of DATAWATCH_ANSWER: into the asking session); wired
 	// by main.go via SetQuestionAnswerReturnPath; nil (default) = no
@@ -6427,6 +6431,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"reserved_interactive":            s.cfg.Session.EffectiveReservedInteractive(),
 				"input_idle_timeout":              s.cfg.Session.InputIdleTimeout,
 				"liveness_window_seconds":         s.cfg.Session.LivenessWindowSeconds,
+				"finalise_interval_minutes":       s.cfg.Session.FinaliseIntervalMinutes,
 				"liveness_idle_timeout_overrides": livenessOverridesForDisplay(s.cfg.Session.LivenessIdleTimeoutOverrides),
 				"tail_lines":                      s.cfg.Session.TailLines,
 				"alert_context_lines":             s.cfg.Session.AlertContextLines,
@@ -6795,6 +6800,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Housekeeping repairs (autonomous.housekeeping_repairs) — the effective
 			// mode per group (off|report|on) and the grace seconds.
 			"housekeeping_repairs": housekeepingRepairsSettingsForDisplay(s.cfg.Autonomous.HousekeepingRepairs),
+			// Gate repair engine (autonomous.gate_repair) — the effective mode
+			// (off|report|on).
+			"gate_repair": gateRepairSettingsForDisplay(s.cfg.Autonomous.GateRepair),
 			// Defect queue (autonomous.defect_queue) — effective block values and
 			// per-project overrides. Validated by ValidateDefectQueueSetting.
 			"defect_queue": defectQueueSettingsForDisplay(s.cfg.Autonomous.DefectQueue),
@@ -6937,6 +6945,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// BL369 — prompt injection guard.
 			"injection_guard":    s.cfg.Autonomous.InjectionGuard,
 			"block_on_injection": s.cfg.Autonomous.BlockOnInjection,
+			// autonomous.tmux_kill_guard — effective bool; default ON when unset.
+			"tmux_kill_guard": s.cfg.Autonomous.TmuxKillGuardEnabled(),
 			// BL406 — project-rules enforcement config. "scan" is
 			// read-only here (richer write path is the dedicated
 			// GET/PUT /api/autonomous/scan/config, same split as
@@ -7293,6 +7303,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// validator, so a bad mode rejects the whole PUT with one message on every
 	// surface and nothing is written.
 	if verr := firstHousekeepingRepairsSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Gate repair engine (autonomous.gate_repair.*): same shared validator,
+	// so a bad mode rejects the whole PUT with one message on every surface
+	// and nothing is written.
+	if verr := firstGateRepairSettingError(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9076,6 +9093,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := wholeNumber(v); ok {
 				cfg.Session.LivenessWindowSeconds = n
 			}
+		case "session.finalise_interval_minutes":
+			// Read live by the finaliser each cycle; a negative value is
+			// ignored and zero switches scheduled runs off.
+			if n, ok := wholeNumber(v); ok && n >= 0 {
+				cfg.Session.FinaliseIntervalMinutes = n
+			}
 		case "session.liveness_idle_timeout_overrides":
 			if m, ok := livenessOverridesFromValue(v); ok {
 				if len(m) == 0 {
@@ -10129,6 +10152,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig before this runs. The Repairer reads
 			// the block live through its Settings hook, so no restart is needed.
 			applyHousekeepingRepairsKey(cfg, k, v)
+		case "autonomous.gate_repair.mode":
+			// Validated in handlePutConfig by firstGateRepairSettingError above.
+			// The engine reads the block live through its Settings hook, so no
+			// restart is needed.
+			applyGateRepairKey(cfg, k, v)
 		case "autonomous.auto_tags.enabled", "autonomous.auto_tags.automation_template",
 			"autonomous.auto_tags.stage_template", "autonomous.auto_tags.kind_template",
 			"autonomous.auto_tags.kind_labels":
@@ -10226,7 +10254,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "classifier.timeout_seconds", "classifier.top_logprobs", "classifier.abstain_margin", "classifier.min_probability", "classifier.min_option_mass", "classifier.rotate_options", "classifier.thinking_off_models", "classifier.probe_ttl_seconds", "classifier.probe_timeout_seconds", "classifier.calibration.test_fraction", "classifier.calibration.split_seed", "classifier.calibration.min_fit_samples", "classifier.calibration.false_pass_weight", "classifier.calibration.rotation_bias_threshold", "classifier.calibration.rotation_flip_threshold":
 			// Validated in handlePutConfig; stored normalized.
 			applyClassifierPatchKey(&cfg.Classifier, k, v)
-		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change", "usage.burn_guard.max_projection_gap_points", "usage.burn_guard.mode", "usage.burn_guard.week_tolerance", "usage.burn_guard.points_to_week_factor", "usage.burn_guard.window_percent_per_point", "usage.burn_guard.window_stop_percent", "usage.burn_guard.reading_freshness_minutes":
+		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change", "usage.burn_guard.max_projection_gap_points", "usage.burn_guard.mode", "usage.burn_guard.week_tolerance", "usage.burn_guard.points_to_week_factor", "usage.burn_guard.window_percent_per_point", "usage.burn_guard.window_stop_percent", "usage.burn_guard.reading_freshness_minutes", "usage.burn_guard.entries":
 			// Validated in handlePutConfig; stored normalized.
 			applyBurnGuardPatchKey(&cfg.Usage.BurnGuard, k, v)
 		case "autonomous.backoff_max_wait_minutes":
@@ -10425,7 +10453,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			laneFillKeyPrefix + "poll_seconds", laneFillKeyPrefix + "gpu_backend",
 			laneFillKeyPrefix + "gpu_model", laneFillKeyPrefix + "claude_backend",
 			laneFillKeyPrefix + "count_verifier_wait", laneFillKeyPrefix + "stale_after_hours",
-			laneFillKeyPrefix + "host_down_after_minutes",
+			laneFillKeyPrefix + "host_down_after_minutes", laneFillKeyPrefix + "stalled_merge_minutes",
 			laneFillKeyPrefix + "require_confirmed_proposal", laneFillKeyPrefix + "check_main_carries",
 			laneFillKeyPrefix + "require_worktree", laneFillKeyPrefix + "lane_counts_from_caps",
 			laneFillKeyPrefix + "gpu_mode", laneFillKeyPrefix + "claude_mode":
@@ -11284,6 +11312,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.InjectionGuard = toBool(v)
 		case "autonomous.block_on_injection":
 			cfg.Autonomous.BlockOnInjection = toBool(v)
+		// autonomous.tmux_kill_guard — pointer bool; unset means ON.
+		case "autonomous.tmux_kill_guard":
+			b := toBool(v)
+			cfg.Autonomous.TmuxKillGuard = &b
 		case "plugins.enabled":
 			cfg.Plugins.Enabled = toBool(v)
 		case "plugins.dir":

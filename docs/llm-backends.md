@@ -188,6 +188,12 @@ When you see `DATAWATCH_PI_FAILED`, check these two things:
 
 Fix the cause, then run the task again.
 
+On a compute node, pi-prompt is also probed before it starts: a one-token chat
+request to the node's model. If the node does not answer, no session is
+launched, the node is marked unhealthy and the task is requeued without using
+an attempt (see
+[howto/infrastructure-retry.md](howto/infrastructure-retry.md#a-stalled-pi-worker-and-an-unresponsive-model)).
+
 ## Judge and planning model resolution (Automata)
 
 Every guardrail **judge** session and every decompose (planning) session

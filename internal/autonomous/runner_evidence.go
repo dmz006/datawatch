@@ -35,6 +35,10 @@ type RunnerEvidence struct {
 	LastOutput []string `json:"last_output,omitempty"`
 	// Processes describes the runner's processes at the time of the stall.
 	Processes []string `json:"processes,omitempty"`
+	// Node is the compute node the runner ran on.
+	Node string `json:"node,omitempty"`
+	// Model is the model the runner used.
+	Model string `json:"model,omitempty"`
 }
 
 // ParsePiPromptExitStatus returns the exit status from the last pane line that

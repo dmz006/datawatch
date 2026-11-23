@@ -420,6 +420,31 @@ landed in 1.4.2, four sessions' worth of work is still ahead of any ship
 (the `unreleased` row has no `units` key at all), and the bundle reads
 “API-equivalent, not billed” because the profiles say so.
 
+## Reading by model (`model_rows`)
+
+Independent of the groupings, the report body also carries **`model_rows`**:
+one row per model that ran in the window (falling back to the backend name
+when a session has no model name). Each row has the model's name (`model`),
+its tokens in and out and its cache-read and cache-creation tokens (always,
+tokens first), and — where a rate is configured — an **API-equivalent USD
+(`api_equivalent_usd`)** at **the model's own rate**: the per-model cost rate
+on that model's LLM entry when one is set, otherwise the entry's per-backend
+rate. A row without a configured rate shows tokens only.
+
+A by-model figure is an **equivalence, never a bill** — on a bundled plan the
+same reading as the group rows' `api_equivalent_usd`, and on a metered plan
+the amount the same tokens *would* cost per token. Every surface titles the
+section **By model** with the note “API-equivalent at each model's own rate —
+an equivalence, not a bill” (the CLI prints it as **By model** / **API
+equivalent**); a body with no `model_rows` (an older daemon) shows no section
+at all.
+
+The per-model rates these rows price with are the same [per-LLM per-model
+cost rates](burn-guard.md#per-model-cost-rates-and-their-fallback) the burn
+guard's per-entry projection and cheaper-model rung read. The CLI's plain
+output carries the rows as a table whose final column is `api_equiv_usd` —
+an equivalent, not a charge.
+
 ## The window
 
 `since` and `until` are optional and accept an RFC3339 timestamp or a bare
@@ -586,7 +611,7 @@ attempt record, is in [Failure categories](failed-attempt-cost.md#failure-catego
 |---|---|
 | **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml`; see `docs/config-reference.yaml` |
 | **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|release\|week] [--since <t>] [--until <t>] [--format json]`, a table by default (with a `totals by unit` block under it), JSON the raw body |
-| **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown); the four chart cards on the Automata page (see above); the **Overview** of an Automaton's detail view shows its cost; Settings → Cost Report for the five keys |
+| **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown, and the **By model** section under the table when the daemon carries `model_rows`); the four chart cards on the Automata page (see above); the **Overview** of an Automaton's detail view shows its cost; Settings → Cost Report for the five keys |
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; settings via `PUT /api/config` with `cost_report.<key>` and read back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only), `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; settings with `configure cost_report.<key>=<value>` |
