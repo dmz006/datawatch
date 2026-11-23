@@ -878,7 +878,6 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
 	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork))       // autonomous_unlanded_work: archived branches with work not on the default branch
 	mcpSrv.AddTool(s.toolAutonomousDormantFeatures(), tracked(s.handleAutonomousDormantFeatures)) // autonomous_dormant_features: shipped features that are dormant
-	mcpSrv.AddTool(s.toolAutonomousDormantFeatures(), tracked(s.handleAutonomousDormantFeatures)) // autonomous_dormant_features: shipped features that are off or unused
 	mcpSrv.AddTool(s.toolAutonomousLandingKeep(), tracked(s.handleAutonomousLandingKeep))         // autonomous_landing_keep: keep the branch unmerged on purpose
 	mcpSrv.AddTool(s.toolAutonomousLandingDrop(), tracked(s.handleAutonomousLandingDrop))         // autonomous_landing_drop: record that the work will not be merged
 	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations
