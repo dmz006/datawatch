@@ -6065,5 +6065,20 @@
   "cost_charts_not_reported_marker": "未報告(%1$s)",
   "cost_report_not_reported": "未報告(%1$s)",
   "settings_rtk_write_rules_files": "セッションの指示を AGENT.md と CLAUDE.md に書き込む",
-  "settings_rtk_write_rules_files_help": "オフ (既定) の場合、デーモンは AGENT.md や CLAUDE.md に一切書き込みません。ファイルの作成、セッションヘッダーの更新、RTK・メモリ・セッション間通信の指示の追加を行わず、代わりにセッションごとの未追跡ファイルに入ります。ルールファイルは人だけが書きます。"
+  "settings_rtk_write_rules_files_help": "オフ (既定) の場合、デーモンは AGENT.md や CLAUDE.md に一切書き込みません。ファイルの作成、セッションヘッダーの更新、RTK・メモリ・セッション間通信の指示の追加を行わず、代わりにセッションごとの未追跡ファイルに入ります。ルールファイルは人だけが書きます。",
+  "plans_browser_by_hand": "手動で設定",
+  "plans_browser_by_hand_hint": "このステータスは手動で設定されたため、プランのオートマタからの集計では変更されません。",
+  "plans_edit_status_label": "ステータス",
+  "plans_edit_rename": "名前を変更",
+  "plans_edit_goal": "目標を編集",
+  "plans_edit_rename_label": "このプランの新しいタイトル",
+  "plans_edit_goal_label": "このプランの目標",
+  "plans_edit_save": "保存",
+  "plans_edit_saving": "保存中…",
+  "plans_edit_cancel": "キャンセル",
+  "plans_edit_counter": "%1$s / %2$s 文字",
+  "plans_edit_title_required": "プランにはタイトルが必要です。",
+  "plans_edit_title_one_line": "プランのタイトルは1行です。",
+  "plans_edit_title_too_long": "プランのタイトルは最大%1$s文字です。",
+  "plans_edit_goal_too_long": "目標は最大%1$s文字です。"
 }

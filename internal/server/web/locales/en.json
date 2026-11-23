@@ -6065,5 +6065,20 @@
   "cost_charts_not_reported_marker": "not reported (%1$s)",
   "cost_report_not_reported": "not reported (%1$s)",
   "settings_rtk_write_rules_files": "Write session instructions into AGENT.md and CLAUDE.md",
-  "settings_rtk_write_rules_files_help": "When off (the default), the daemon never writes into AGENT.md or CLAUDE.md: it does not create them, refresh their session header, or add the RTK, memory or cross-session instructions. Those go to an untracked per-session file instead. Rules files are written by people only."
+  "settings_rtk_write_rules_files_help": "When off (the default), the daemon never writes into AGENT.md or CLAUDE.md: it does not create them, refresh their session header, or add the RTK, memory or cross-session instructions. Those go to an untracked per-session file instead. Rules files are written by people only.",
+  "plans_browser_by_hand": "set by hand",
+  "plans_browser_by_hand_hint": "This status was set by hand, so the roll-up from the plan's Automata keeps it.",
+  "plans_edit_status_label": "Status",
+  "plans_edit_rename": "Rename",
+  "plans_edit_goal": "Edit goal",
+  "plans_edit_rename_label": "New title for this plan",
+  "plans_edit_goal_label": "Goal of this plan",
+  "plans_edit_save": "Save",
+  "plans_edit_saving": "Saving…",
+  "plans_edit_cancel": "Cancel",
+  "plans_edit_counter": "%1$s of %2$s characters",
+  "plans_edit_title_required": "A plan needs a title.",
+  "plans_edit_title_one_line": "A plan title is one line.",
+  "plans_edit_title_too_long": "A plan title is at most %1$s characters.",
+  "plans_edit_goal_too_long": "A goal is at most %1$s characters."
 }

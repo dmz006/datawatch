@@ -6065,5 +6065,20 @@
   "cost_charts_not_reported_marker": "non communiqué (%1$s)",
   "cost_report_not_reported": "non communiqué (%1$s)",
   "settings_rtk_write_rules_files": "Écrire les instructions de session dans AGENT.md et CLAUDE.md",
-  "settings_rtk_write_rules_files_help": "Lorsque l'option est désactivée (valeur par défaut), le daemon n'écrit jamais dans AGENT.md ni CLAUDE.md : il ne les crée pas, ne met pas à jour leur en-tête de session et n'ajoute pas les instructions RTK, mémoire ou communication inter-sessions. Elles vont dans un fichier par session non suivi par git. Les fichiers de règles ne sont écrits que par des personnes."
+  "settings_rtk_write_rules_files_help": "Lorsque l'option est désactivée (valeur par défaut), le daemon n'écrit jamais dans AGENT.md ni CLAUDE.md : il ne les crée pas, ne met pas à jour leur en-tête de session et n'ajoute pas les instructions RTK, mémoire ou communication inter-sessions. Elles vont dans un fichier par session non suivi par git. Les fichiers de règles ne sont écrits que par des personnes.",
+  "plans_browser_by_hand": "défini à la main",
+  "plans_browser_by_hand_hint": "Ce statut a été défini à la main ; le cumul à partir des automates du plan le conserve donc.",
+  "plans_edit_status_label": "Statut",
+  "plans_edit_rename": "Renommer",
+  "plans_edit_goal": "Modifier l'objectif",
+  "plans_edit_rename_label": "Nouveau titre de ce plan",
+  "plans_edit_goal_label": "Objectif de ce plan",
+  "plans_edit_save": "Enregistrer",
+  "plans_edit_saving": "Enregistrement…",
+  "plans_edit_cancel": "Annuler",
+  "plans_edit_counter": "%1$s sur %2$s caractères",
+  "plans_edit_title_required": "Un plan a besoin d'un titre.",
+  "plans_edit_title_one_line": "Le titre d'un plan tient sur une seule ligne.",
+  "plans_edit_title_too_long": "Le titre d'un plan compte au plus %1$s caractères.",
+  "plans_edit_goal_too_long": "Un objectif compte au plus %1$s caractères."
 }

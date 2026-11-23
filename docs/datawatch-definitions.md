@@ -3515,6 +3515,10 @@ The **Registry and findings** section, under the Records page sub-tab, filters i
 
 A **plan record** of kind `plan` is the registry record of what you are working on. It has a title, a goal, a state and an `order`, and it links down to Automations and Automata and holds the findings attached to it. A plan with no Automaton yet is in the *backlog*. See [howto/plan-records.md](howto/plan-records.md#plans-links-and-order).
 
+### Plan rename and goal edit
+
+A plan can be **renamed** and its **goal edited** with `PATCH /api/plans/{ref}` (MCP `plan_rename` and `plan_edit`, CLI `datawatch plans rename` and `edit --goal`, chat `autonomous plan rename` and `plan edit <plan> goal`, and **Rename** / **Edit goal** in the Plans browser). A title is one line of at most 100 characters and unique in the project (a clash is a 409 naming the other record); the old title stays as an alias and the plan's title is then kept as written, so a later plans migration does not overwrite it. A goal is at most 2000 characters and an empty goal clears it (not from chat). Neither changes the plan's status or `set_by_hand`. Each writes a `plan_renamed` or `plan_goal_edited` audit event. See [howto/plan-records.md](howto/plan-records.md#renaming-a-plan-and-editing-its-goal).
+
 ### Plan links
 
 **Plan links** are the ids a plan keeps in `automations`, `automata` and `findings`. A link is never overwritten: attaching an Automaton or Automation that another plan already holds, or a finding attached elsewhere, is refused and names the holder. Detach it first.
@@ -3582,7 +3586,11 @@ The **plans migration** (`datawatch plans migrate [--apply]`, `POST /api/plans/m
 
 ### Plans write API
 
-The **plans write API** creates, orders and links plans: `POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach`, with MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and `plan_detach`, CLI `datawatch plans`, and chat `autonomous plan`. A link held by another plan is refused with a 409 that names the holder. See [howto/plan-records.md](howto/plan-records.md#ordering-and-linking-plans).
+The **plans write API** creates, renames, orders and links plans: `POST /api/plans`, `PATCH /api/plans/{ref}` (rename a plan and/or edit its goal), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach`, with MCP `plan_create`, `plan_rename`, `plan_edit`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and `plan_detach`, CLI `datawatch plans`, and chat `autonomous plan`. A link held by another plan is refused with a 409 that names the holder. See [howto/plan-records.md](howto/plan-records.md#ordering-and-linking-plans).
+
+The **plan roll-up** derives a plan's status from the Automata and Automations linked to it (any failed or blocked item makes it blocked, any running item keeps it open, all shipped makes it shipped, all finished makes it done) and never changes a status that was set by hand (`set_by_hand`). It previews with `GET /api/plans/rollup?project=&dry_run=true` and applies with `POST /api/plans/rollup`; MCP `plan_rollup` (`dry_run`), CLI `datawatch plans rollup [--project P] [--dry-run]`, and chat `autonomous plan rollup [dry-run]` do the same, and `plans list` marks a hand-set status `(by hand)`. See [howto/plan-records.md](howto/plan-records.md#rolling-plan-status-up-from-the-work).
+
+A plan's **status** is the `state` of its plan record: one of `open`, `planned`, `in_progress`, `blocked`, `shipped`, `done`, `deferred` or `cancelled`. The roll-up writes only `open`, `blocked`, `done` and `shipped`. It reads the **link state** kept on the plan for each linked Automaton or Automation (the state seen when it was attached, and `shipped` when the merge pipeline records it as shipped), not the live Automaton, so attaching an item to the same plan again refreshes it. **Set by hand** (`set_by_hand`) marks a plan whose status was written by hand: the roll-up keeps that status and lists the plan with `set_by_hand_kept` and the status it would have had. The roll-up runs when you ask for it, once a day from daemon start, and when an Automaton is recorded as shipped through write-through. A plan's title and goal can be edited; no surface edits its status or clears `set_by_hand` yet. See the open points in [howto/plan-records.md](howto/plan-records.md#still-for-the-operator-to-review) and [operations.md](operations.md#plan-records-store-and-import).
 
 ### Plans read API
 
