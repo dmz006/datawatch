@@ -254,7 +254,7 @@ func (r sessionListRecord) MarshalJSON() ([]byte, error) {
 	type plain sessionListRecord // no methods, so no recursion
 	tags := []string{}
 	if r.Session != nil {
-		tags = append(tags, r.Session.SystemTags...)
+		tags = append(tags, r.SystemTags...)
 	}
 	return json.Marshal(struct {
 		plain
