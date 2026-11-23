@@ -308,7 +308,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// rather than registering a pseudo-entry in BackendArtifacts (which
 	// QueryAllStatus assumes is exclusively real backends).
 	if isFirstRun && prd.ProjectDir != "" {
-		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, automatonScratchIgnorePatterns); err != nil {
+		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, runScratchIgnorePatterns()); err != nil {
 			log.Printf("[autonomous] EnsureIgnoredPatterns for %s: %v", prd.ProjectDir, err)
 		}
 		// 2026-10-15 — BL449 incident: a task with its own ProjectDir
@@ -324,7 +324,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					continue
 				}
 				seen[dir] = true
-				if _, err := tooling.EnsureIgnoredPatterns(dir, automatonScratchIgnorePatterns); err != nil {
+				if _, err := tooling.EnsureIgnoredPatterns(dir, runScratchIgnorePatterns()); err != nil {
 					log.Printf("[autonomous] EnsureIgnoredPatterns for task dir %s: %v", dir, err)
 				}
 			}
@@ -3661,6 +3661,9 @@ func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev i
 			return true
 		})
 		if err == nil {
+			if prd.ProjectDir != "" {
+				m.finishRunArtifacts(prd.ID, prd.ProjectDir)
+			}
 			return old, true
 		}
 		if !errors.Is(err, ErrPRDStale) {
@@ -3703,6 +3706,56 @@ func (m *Manager) recordGateDisagreementDecision(prdID, taskID, policy, note str
 	})
 	if err := m.store.SavePRD(p); err != nil {
 		log.Printf("[autonomous] prd=%s save gate_disagreement decision: %v", prdID, err)
+	}
+}
+
+// runScratchIgnorePatterns is the ignore set added to a project the first
+// time an Automaton runs there: the runner scratch files plus the common
+// Python compile caches, so they never show up as untracked debris.
+func runScratchIgnorePatterns() []string {
+	out := append([]string{}, automatonScratchIgnorePatterns...)
+	return append(out, tooling.DefaultPythonArtifactPatterns...)
+}
+
+// finishRunArtifacts performs end-of-run cleanup of harness scratch files
+// in the PRD's project directory once the PRD has reached a terminal
+// outcome (success or failure). Files that could not be removed — tracked
+// scratch files and unexpected untracked files — are appended to the
+// PRD's LeftoverWarnings and persisted via the store. Never blocks the
+// outcome itself; failures are logged.
+func (m *Manager) finishRunArtifacts(prdID, projectDir string) {
+	removed, leftover := tooling.CleanupRunArtifacts(projectDir)
+	for _, p := range removed {
+		log.Printf("[autonomous] prd=%s cleaned run artifact: %s", prdID, p)
+	}
+	if len(leftover) == 0 {
+		return
+	}
+	p, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	added := false
+	for _, l := range leftover {
+		w := "leftover file: " + l
+		dup := false
+		for _, e := range p.LeftoverWarnings {
+			if e == w {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			p.LeftoverWarnings = append(p.LeftoverWarnings, w)
+			added = true
+		}
+	}
+	if !added {
+		return
+	}
+	p.UpdatedAt = time.Now()
+	if err := m.store.SavePRD(p); err != nil {
+		log.Printf("[autonomous] prd=%s leftover warnings save: %v", prdID, err)
 	}
 }
 

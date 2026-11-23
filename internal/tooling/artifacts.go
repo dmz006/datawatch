@@ -26,15 +26,24 @@ var BackendArtifacts = map[string][]string{
 	"gemini": {".gemini/"},
 }
 
-// EnsureIgnored appends backend artifact patterns to .gitignore (and, when
-// already present, .cfignore and .dockerignore) in projectDir. Idempotent —
-// patterns already present are not duplicated. Returns the total number of
-// patterns appended across all ignore files.
+// DefaultPythonArtifactPatterns is the named set of common Python compile
+// caches that datawatch always folds into the ignore files it manages for a
+// project, so __pycache__/ and *.pyc never show up as untracked debris.
+var DefaultPythonArtifactPatterns = []string{"__pycache__/", "*.pyc"}
+
+// EnsureIgnored appends backend artifact patterns (plus
+// DefaultPythonArtifactPatterns) to .gitignore (and, when already present,
+// .cfignore and .dockerignore) in projectDir. Idempotent — patterns already
+// present are not duplicated. Returns the total number of patterns appended
+// across all ignore files.
 func EnsureIgnored(projectDir, backend string) (int, error) {
-	patterns, ok := BackendArtifacts[backend]
-	if !ok || len(patterns) == 0 {
+	backendPatterns, ok := BackendArtifacts[backend]
+	if !ok || len(backendPatterns) == 0 {
 		return 0, nil
 	}
+	patterns := make([]string, 0, len(backendPatterns)+len(DefaultPythonArtifactPatterns))
+	patterns = append(patterns, backendPatterns...)
+	patterns = append(patterns, DefaultPythonArtifactPatterns...)
 	return EnsureIgnoredPatterns(projectDir, patterns)
 }
 

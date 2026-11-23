@@ -758,6 +758,13 @@ type PRD struct {
 	// default detail GET returns (see CapPRDText), where it is derived
 	// by ReviewStateOf. Never stored.
 	ReviewState *ReviewResult `json:"review_state,omitempty"`
+
+	// LeftoverWarnings surfaces files left behind in the project
+	// directory when the PRD reaches a terminal outcome: known harness
+	// scratch files that were tracked (and therefore not deletable) and
+	// unexpected untracked files. Populated at end-of-run cleanup, plain
+	// language, one warning per file.
+	LeftoverWarnings []string `json:"leftover_warnings,omitempty"`
 }
 
 // DecomposeLintRecord captures one decompose-lint pass (all modes
