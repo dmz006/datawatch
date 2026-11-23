@@ -26904,6 +26904,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.planning_routing.enabled', label: 'Route Automata planning by rules', labelKey: 'planning_routing_field_enabled', type: 'toggle' },
     { key: 'autonomous.planning_routing.shadow', label: 'Record planning routing without applying it (shadow)', labelKey: 'planning_routing_field_shadow', type: 'toggle' },
+    { key: 'autonomous.tmux_kill_guard', label: 'Worker tmux kill guard', labelKey: 'settings_tmux_kill_guard', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
     // Verifier headroom gates: a verifier cap above 1 and a verifier_slots write above 1

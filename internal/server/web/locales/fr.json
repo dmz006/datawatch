@@ -1877,6 +1877,7 @@
   "settings_tab_monitor": "Moniteur",
   "settings_tab_secrets": "Secrets",
   "settings_tab_tailscale": "Tailscale",
+  "settings_tmux_kill_guard": "Lorsqu'il est activé, les sessions worker/verifier/judge lancées par le démon sont bloquées pour empêcher la fermeture du serveur tmux de l'opérateur. Désactivé = aucune protection.",
   "settings_this_server": "Ce serveur",
   "settings_title": "Paramètres",
   "settings_update": "Mise à jour",
