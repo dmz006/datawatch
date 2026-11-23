@@ -2835,7 +2835,7 @@ With the checks passing, the mode decides: `auto` lets the leaving steps run; `a
 
 ### Merge shadow
 
-The four settings that tune the [shadow merge plan](#shadow-merge-plan), under `autonomous.merge_shadow`. All three are single values — there is no per-project override for this block — and a value they refuse is refused with the problem named and nothing written on every surface: a 400 on `PUT /api/config`, an error line on `datawatch config set`, on comm `configure`, and the same message on the Settings card.
+The four settings that tune the [shadow merge plan](#shadow-merge-plan), under `autonomous.merge_shadow`. All four are single values — there is no per-project override for this block — and a value they refuse is refused with the problem named and nothing written on every surface: a 400 on `PUT /api/config`, an error line on `datawatch config set`, on comm `configure`, and the same message on the Settings card.
 
 **Merge shadow enabled** (`autonomous.merge_shadow.enabled`, on by default) — the master switch for the plan. Absent or `true` keeps it on; `false` is the only spelling that turns it off, from then on the plan is no longer written when an Automaton's finish is handled.
 
