@@ -145,3 +145,75 @@ test('the capacity card translates the reserve back-off reason and leaves other 
   assert.ok(!otherCard.includes('capacity_backoff_reason_review_reserve'),
     'non-reserve reasons are untouched', otherCard);
 });
+
+// Models control on the usage back-off card: the optional models field limits a
+// set or clear to those models of the backend; empty means the whole backend.
+function loadApp() {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  return sandbox;
+}
+function run(sandbox, expr) {
+  return JSON.parse(vm.runInContext('JSON.stringify(' + expr + ')', sandbox));
+}
+
+test('models field parses commas and spaces, drops blanks and repeats', () => {
+  const sb = loadApp();
+  assert.deepEqual(run(sb, "usageBackoffParseModels(' opus, sonnet  opus,,haiku ')"), ['opus', 'sonnet', 'haiku']);
+  assert.deepEqual(run(sb, "usageBackoffParseModels('')"), []);
+  assert.deepEqual(run(sb, 'usageBackoffParseModels(undefined)'), []);
+});
+
+test('set body carries models only when named; empty models holds the whole backend', () => {
+  const sb = loadApp();
+  const scoped = run(sb, "usageBackoffBuildSetBody({backend:'claude-code', minutes:'30', models:'opus, sonnet', reason:'r'})");
+  assert.deepEqual(scoped.body, { backend: 'claude-code', minutes: 30, reason: 'r', models: ['opus', 'sonnet'] });
+  const whole = run(sb, "usageBackoffBuildSetBody({backend:'claude-code', models:'  '})");
+  assert.deepEqual(whole.body, { backend: 'claude-code' });
+  assert.ok(!('models' in whole.body), 'no empty models array is sent');
+});
+
+test('set body refuses a missing backend and bad minutes', () => {
+  const sb = loadApp();
+  assert.ok(run(sb, "usageBackoffBuildSetBody({backend:'', models:'opus'})").error);
+  assert.ok(run(sb, "usageBackoffBuildSetBody({backend:'x', minutes:'0'})").error);
+  assert.ok(run(sb, "usageBackoffBuildSetBody({backend:'x', minutes:'1.5'})").error);
+});
+
+test('card renders the models input and the held/open models of each hold', () => {
+  const sb = loadApp();
+  vm.runInContext("window._usageBackoff = {status:{active:[{backend:'claude-code',until:'2026-11-15T10:00:00Z',reason:'limit',models:['opus']}],holds:[{backend:'claude-code',whole_backend:false,held_models:['opus'],open_models:['sonnet','haiku'],other_models_open:true}]}, error:'', message:''}", sb);
+  const html = run(sb, 'usageBackoffCardHtml()');
+  assert.match(html, /id="usageBackoffModels"/);
+  assert.match(html, /backoff-held-models">[^<]*: opus</);
+  assert.match(html, /backoff-open-models">[^<]*: sonnet, haiku</);
+  assert.ok(!/\bBL\d+\b/.test(html), 'no tracker IDs in the card');
+});
+
+test('whole-backend hold says all models are held; capacity card shows models too', () => {
+  const sb = loadApp();
+  const whole = run(sb, "usageBackoffModelsHtml({whole_backend:true, held_models:[], open_models:[]})");
+  assert.match(whole, /backoff-held-all/);
+  const cap = run(sb, "capacityCardHtml({backoff:[{backend:'claude-code',until:'2026-11-15T10:00:00Z',reset_known:true,whole_backend:false,held_models:['opus'],open_models:['sonnet']}]})");
+  assert.match(cap, /backoff-held-models">[^<]*: opus</);
+  assert.match(cap, /backoff-open-models">[^<]*: sonnet</);
+});
+
+test('polling uses a window-level interval, never a DOM-stored timer', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  assert.match(src, /window\._usageBackoffInterval = setInterval/);
+});
+
+const MODEL_KEYS = ['usage_backoff_card_title', 'usage_backoff_models', 'usage_backoff_models_hint', 'usage_backoff_set', 'usage_backoff_clear',
+  'usage_backoff_held_models', 'usage_backoff_open_models', 'usage_backoff_whole_backend', 'usage_backoff_models_need_backend'];
+for (const locale of LOCALES) {
+  test(`locales: ${locale} defines the back-off models control keys`, () => {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const k of MODEL_KEYS) {
+      const v = bundle[k];
+      assert.ok(typeof v === 'string' && v.trim().length > 0, `${locale} key ${k} present and non-empty`);
+      assert.ok(!/\bBL\d+\b/.test(v), 'no tracker IDs in the string');
+    }
+  });
+}

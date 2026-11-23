@@ -31,7 +31,7 @@ func releaseMux(s *Server) *http.ServeMux {
 	mux.HandleFunc("POST /api/plans/{ref}/restore", s.handlePlanRestore)
 	mux.HandleFunc("GET /api/plans/unattributed", s.handlePlansUnattributed)
 	mux.HandleFunc("/api/plans/migrate/row-plans", s.handlePlansRowPlans)
-	mux.HandleFunc("/api/plans/migrate", s.handlePlansMigrate)
+	mux.HandleFunc("POST /api/plans/migrate", s.handlePlansMigrate)
 	return mux
 }
 

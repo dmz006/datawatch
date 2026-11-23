@@ -64,7 +64,7 @@ func (s *Server) toolBurnGuardConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Turn the guard on or off")),
 		mcpsdk.WithNumber("interval_minutes", mcpsdk.Description("Minutes between evaluations, a whole number from 1 to 1440")),
 		mcpsdk.WithNumber("margin_points", mcpsdk.Description("Points the projection may run over the pace line before the guard acts, 0 to 50")),
-		mcpsdk.WithArray("ladder", mcpsdk.Description("Ordered rungs applied while over the line: lower_inflight, route_pi_prompt, hold_claude"), mcpsdk.WithStringItems()),
+		mcpsdk.WithArray("ladder", mcpsdk.Description("Ordered rungs applied while over the pace line: lower_inflight, route_entry, route_cheaper_model, hold_entry (the legacy first-version names route_pi_prompt and hold_claude are accepted and normalize to route_entry and hold_entry). route_cheaper_model keeps the backend and sends new work to a cheaper model on it. Each rung acts on the ladder's entry, not on any fixed backend"), mcpsdk.WithStringItems()),
 		mcpsdk.WithBoolean("step_back", mcpsdk.Description("Undo rungs in reverse once the projection is back under the line")),
 		mcpsdk.WithNumber("cache_write_points_per_million", mcpsdk.Description("Weekly points per million cache-write tokens, above 0 and at most 1000")),
 		mcpsdk.WithNumber("cache_read_points_per_million", mcpsdk.Description("Weekly points per million cache-read tokens, above 0 and at most 1000")),
@@ -78,6 +78,7 @@ func (s *Server) toolBurnGuardConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("window_percent_per_point", mcpsdk.Description("Number from 1 to 25, default 4: one point burned is this percent of the current window")),
 		mcpsdk.WithNumber("window_stop_percent", mcpsdk.Description("Number from 50 to 95, default 85: a window is over at this percent used")),
 		mcpsdk.WithNumber("reading_freshness_minutes", mcpsdk.Description("Whole number from 1 to 1440, default 60: a reading older than this is stale and the guard asks the operator for a fresh one")),
+		mcpsdk.WithString("entries", mcpsdk.Description("The paid LLM entries the guard evaluates, as a JSON list: each {llm, usage_source: readings|none, plan: flat|metered, period_target (percent for flat, dollars for metered), model, ladder, held_models, route_to, route_cheaper_model, points_per_usd}. route_cheaper_model names the cheaper model the route_cheaper_model rung sends that entry's new work to (empty = resolved per model rates, Haiku for Claude). An entry with no usage source is never held. An empty list returns to the single default entry")),
 	)
 }
 
@@ -85,7 +86,7 @@ var burnGuardConfigArgs = []string{
 	"enabled", "interval_minutes", "margin_points", "ladder", "step_back",
 	"cache_write_points_per_million", "cache_read_points_per_million",
 	"refit_on_reading", "retry_limit_claude", "ask_on_change",
-	"max_projection_gap_points",
+	"max_projection_gap_points", "entries",
 	"mode", "week_tolerance", "points_to_week_factor",
 	"window_percent_per_point", "window_stop_percent", "reading_freshness_minutes",
 }

@@ -100,6 +100,13 @@ Tool: `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-cod
 Scan date: 2026-05-19 against `local/datawatch:dev` (same base as v8.0.0)
 Result: 23 findings — 4 fixed by `apt-get upgrade` in Dockerfile, 19 accepted below.
 
+Locally built images are scanned by archive: under docker 29.1.x `trivy image`
+cannot read image layers from the daemon ("failed to analyze layer"), so
+the `docker-agent-base` step of the local pre-tag gate runs
+`scripts/trivy-scan-image.sh`, which exports the image with `docker save`
+and scans the tar with `trivy image --input <tar>`. Severity, ignore file
+and exit code are exactly the tool line above — only the input changes.
+
 ### Fixable CVEs resolved in Dockerfile.agent-base
 
 Added `apt-get upgrade` layer (Layer 2b) to pull current bookworm security patches:
@@ -140,7 +147,7 @@ longer apply to aider. See
 
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**107 suppressed container CVEs across 8 images, 40 independently traced.**
+**110 suppressed container CVEs across 8 images, 40 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
@@ -152,6 +159,8 @@ longer apply to aider. See
 | CVE-2025-69720 | `ncurses (libncursesw6, libtinfo6, ncurses-base)` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-7458 | `libsqlite3-0` | critical | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-105437 | `git` | high | agent-base | no | 2026-12-13 | The Trivy scan of agent-base in the Release workflow lists CVE-2026-105437 (HIGH... |
+| CVE-2026-105802 | `git-lfs` | high | agent-base | no | 2026-12-22 | The blocking Trivy scan of the agent-base staging image in the image-refresh wor... |
+| CVE-2026-105803 | `git-lfs` | high | agent-base | no | 2026-12-22 | The blocking Trivy scan of the agent-base staging image in the image-refresh wor... |
 | CVE-2026-106553 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
 | CVE-2026-106555 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
 | CVE-2026-106583 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
@@ -221,6 +230,7 @@ longer apply to aider. See
 | CVE-2026-60000 | `openssh-client` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-60002 | `openssh-client` | critical | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-6276 | `curl, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-69260 | `git-lfs` | high | agent-base | no | 2026-12-22 | The blocking Trivy scan of the agent-base staging image in the image-refresh wor... |
 | CVE-2026-70452 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
 | CVE-2026-70455 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
 | CVE-2026-70456 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
@@ -342,7 +352,7 @@ Whether to dismiss or keep any code scanning alert for these sites is the operat
 ## Procedural changes
 
 - Run `gosec -severity high -confidence medium ./...` and `govulncheck ./...` before every patch. The audit doc is updated only when triage changes (new findings or new mitigations).
-- Run `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1` on the agent-base image before every release. CI enforces this automatically.
+- Run `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1` on the agent-base image before every release. CI enforces this automatically. The local pre-tag gate's `docker-agent-base` step does the same: it builds the image and scans it through `scripts/trivy-scan-image.sh`, which exports it with `docker save` and runs the identical `trivy image --input <tar> --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1`. The archive form exists because under docker 29.1.x trivy cannot read image layers from the daemon ("failed to analyze layer").
 - New `//#nosec` annotations must include the rule ID *and* a one-line reason. PRs adding bare `//#nosec` get rejected by review.
 - New `InsecureSkipVerify=true` sites must be paired with pinning (`VerifyPeerCertificate` + a fingerprint check) or get an entry in the G402 table above with an "accept (documented)" verdict and a config gate.
 - New `.trivyignore` entries require a one-line rationale in this document. PRs adding bare CVE IDs without rationale get rejected.

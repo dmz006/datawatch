@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -206,5 +207,80 @@ func TestCostReportWithoutAManagerIsAFlaggedError(t *testing.T) {
 	}
 	if text := costReportText(res); !strings.Contains(text, errCostReportUnavailable.Error()) {
 		t.Errorf("error text = %q, want the missing-manager sentinel", text)
+	}
+}
+
+// costReportModelSession is costReportSession with a model name, so the
+// by-model section has a finer key than the backend family.
+func costReportModelSession(t *testing.T, s *Server, id, backend, model string, tin, tout int, at time.Time) {
+	t.Helper()
+	sess := &session.Session{
+		ID:            id,
+		FullID:        "testhost-" + id,
+		Hostname:      "testhost",
+		BackendFamily: backend,
+		Model:         model,
+		UpdatedAt:     at,
+		TokensIn:      tin,
+		TokensOut:     tout,
+	}
+	if err := s.manager.Store().Save(sess); err != nil {
+		t.Fatalf("Store().Save: %v", err)
+	}
+}
+
+// TestCostReportModelRowsTwoRates — the tool's by-model section reports
+// each model at its own rate from the daemon's rate table (two models,
+// two different rates), each row labelled API-equivalent; the model
+// rows carry the same tokens as the backend rows they refine.
+func TestCostReportModelRowsTwoRates(t *testing.T) {
+	s := bl91Server(t)
+	now := time.Now().UTC().Truncate(time.Minute)
+	// Two sessions, two models, each with its own entry in the rate
+	// table and a different one from the other's.
+	costReportModelSession(t, s, "mm01", "claude-code", "claude-sonnet-4", 20_000, 4_000, now.Add(-24*time.Hour))
+	costReportModelSession(t, s, "mm02", "gpt", "gpt-5", 10_000, 2_000, now.Add(-24*time.Hour))
+	s.manager.SetCostRates(map[string]session.CostRate{
+		"claude-code":     {InPerK: 0.003, OutPerK: 0.015}, // backend fallback
+		"gpt":             {InPerK: 0.0025, OutPerK: 0.01}, // backend fallback
+		"claude-sonnet-4": {InPerK: 0.003, OutPerK: 0.015}, // the model's own rate
+		"gpt-5":           {InPerK: 0.005, OutPerK: 0.02},  // a different one
+	})
+
+	rep := costReportReport(t, s, map[string]any{"group_by": "backend"})
+	if len(rep.ModelRows) != 2 {
+		t.Fatalf("model_rows = %+v, want two rows (one per model)", rep.ModelRows)
+	}
+	byModel := map[string]*costreport.ModelRow{}
+	for i := range rep.ModelRows {
+		byModel[rep.ModelRows[i].Model] = &rep.ModelRows[i]
+	}
+	sonnet := byModel["claude-sonnet-4"]
+	if sonnet == nil || sonnet.TokensIn != 20_000 || sonnet.TokensOut != 4_000 {
+		t.Fatalf("claude-sonnet-4 row = %+v, want the mm01 session's tokens", sonnet)
+	}
+	if sonnet.APIEquivalentUSD == nil {
+		t.Fatal("claude-sonnet-4: want USD (rate table has a model-named entry)")
+	}
+	if want := 20_000/1000*0.003 + 4_000/1000*0.015; math.Abs(*sonnet.APIEquivalentUSD-want) > 1e-9 {
+		t.Errorf("claude-sonnet-4 usd = %v, want %v (its own rate)", *sonnet.APIEquivalentUSD, want)
+	}
+	if sonnet.USDLabel == "" {
+		t.Error("claude-sonnet-4: priced rows must carry the API-equivalent label")
+	}
+
+	gpt := byModel["gpt-5"]
+	if gpt == nil || gpt.TokensIn != 10_000 || gpt.TokensOut != 2_000 {
+		t.Fatalf("gpt-5 row = %+v, want the mm02 session's tokens", gpt)
+	}
+	if gpt.APIEquivalentUSD == nil {
+		t.Fatal("gpt-5: want USD (rate table has a model-named entry)")
+	}
+	if want := 10_000/1000*0.005 + 2_000/1000*0.02; math.Abs(*gpt.APIEquivalentUSD-want) > 1e-9 {
+		t.Errorf("gpt-5 usd = %v, want %v (its own rate)", *gpt.APIEquivalentUSD, want)
+	}
+	// Different rates must give different figures, not a shared one.
+	if *sonnet.APIEquivalentUSD == *gpt.APIEquivalentUSD {
+		t.Fatal("the two models share a USD figure; per-model rates were not applied")
 	}
 }

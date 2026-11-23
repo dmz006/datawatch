@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -318,15 +319,38 @@ func newLLMModelsCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			node, _ := cmd.Flags().GetString("node")
 			model, _ := cmd.Flags().GetString("model")
-			body := map[string]any{"model": model}
-			if node != "" {
-				body["node"] = node
+			// GET the entry, append the model (with any per-model rates),
+			// PUT it back — the same path the MCP llm_add_model tool uses.
+			raw, err := daemonGetBody("/api/llms/" + args[0])
+			if err != nil {
+				return err
 			}
-			return daemonJSON(http.MethodPost, "/api/llms/"+args[0]+"/models", body)
+			body := map[string]any{}
+			if err := json.Unmarshal(raw, &body); err != nil {
+				return err
+			}
+			entry := map[string]any{"model": model}
+			if node != "" {
+				entry["node"] = node
+			}
+			for _, k := range []string{"in_per_k", "out_per_k", "cache_read_per_k", "cache_write_per_k"} {
+				flag := strings.ReplaceAll(k, "_", "-")
+				if cmd.Flags().Changed(flag) {
+					v, _ := cmd.Flags().GetFloat64(flag)
+					entry[k] = v
+				}
+			}
+			models, _ := body["models"].([]any)
+			body["models"] = append(models, entry)
+			return daemonJSON(http.MethodPut, "/api/llms/"+args[0], body)
 		},
 	}
 	addCmd.Flags().String("node", "", "compute node name (leave empty for SaaS kinds)")
 	addCmd.Flags().String("model", "", "model name (required)")
+	addCmd.Flags().Float64("in-per-k", 0, "optional USD per 1K input tokens for this model (unset = per-backend cost_rates)")
+	addCmd.Flags().Float64("out-per-k", 0, "optional USD per 1K output tokens for this model")
+	addCmd.Flags().Float64("cache-read-per-k", 0, "optional USD per 1K cache-read tokens (provider-dependent)")
+	addCmd.Flags().Float64("cache-write-per-k", 0, "optional USD per 1K cache-write tokens (provider-dependent)")
 	_ = addCmd.MarkFlagRequired("model")
 	cmd.AddCommand(addCmd)
 	// models remove <llm-name> --node <cn> --model <m>

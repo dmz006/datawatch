@@ -204,13 +204,21 @@ session:
   # BL40: running sessions older than this are reported as stale via
   # GET /api/sessions/stale. 0 disables. Default 1800 (30 min).
   stale_timeout_seconds: 1800
+  # How often, in minutes, the daemon finalises session records whose
+  # process is gone. Default 10. 0 turns the scheduled runs off (the
+  # start-up run always happens). A negative value falls back to 10.
+  finalise_interval_minutes: 10
   # BL30: when true, hitting a rate limit on any backend pauses new
   # session creation until the cooldown elapses or the operator clears
   # it via DELETE /api/cooldown. Default false.
   rate_limit_global_pause: false
   # BL6 (v3.7.1): per-backend USD rates (per 1K tokens). Empty entries
   # fall through to built-in defaults. Override here when your account
-  # plan differs from the public price card.
+  # plan differs from the public price card. Any model in an LLM entry's
+  # models list may carry its own per-model rates (in_per_k, out_per_k,
+  # cache_read_per_k, cache_write_per_k) that win for that model — see the
+  # LLM registry note below this block; this block is the per-model
+  # fallback and the only place in/out rates are set per backend.
   cost_rates:
     claude-code:
       in_per_k:  0.003
@@ -358,8 +366,10 @@ tracing:
   # Maximum bytes of a tool-call argument summary stored per event.
   # 0 or unset reads 512; allowed range 0..1048576.
   arg_cap_bytes: 512
-  # Days trace events are kept. 0 or unset reads 14; allowed range 0..3650.
-  retention_days: 14
+  # Days trace events are kept. 0 = keep forever (the default);
+  # a positive number of days prunes by age (the daemon runs a prune pass
+  # once a day). Allowed range 0..3650.
+  retention_days: 0
   # Per-backend switches, e.g. {pi: false}. A backend not listed is traced.
   backends: {}
 
@@ -1006,6 +1016,13 @@ rtk:
   auto_update: false
   # Seconds between version checks against GitHub releases (default: 86400 = daily, 0 = disabled)
   update_check_interval: 86400
+  # The one gate for everything the daemon writes into the project's tracked
+  # AGENT.md / CLAUDE.md at session start (legacy behaviour): creating the file,
+  # refreshing its "# Session Guardrails" header, and appending the RTK, memory and
+  # cross-session sections. Default false: the daemon never writes those files and the
+  # three sections are delivered through the untracked CLAUDE.local.md instead,
+  # leaving no change in git status.
+  write_rules_files: false
 
 # ── Pipelines (Session Chaining) ──
 # Chain tasks in a DAG with parallel execution and dependency tracking.
@@ -1236,6 +1253,17 @@ profiles:
 #   llm_update, PUT on the LLM entry, or the Verification mode selector in
 #   the web app LLM settings. (The `llms:` block above is a documentation
 #   example, kept commented so this file is not a live registry entry.)
+#
+# Per-model cost rates (LLM registry entry, not a config.yaml key): any
+# model in an entry's models list may carry in_per_k, out_per_k,
+# cache_read_per_k and cache_write_per_k (USD per 1K tokens, any subset).
+# They price that model's tokens in the cost report's by-model rows and the
+# burn guard's per-entry projection, and they are what the guard's
+# route_cheaper_model rung compares when it picks the entry's cheapest other
+# model. A field left unset falls back to the entry's per-backend
+# cost_rates (cache read/write prices have no per-backend value and resolve
+# to 0 when unset). Set them with `datawatch llm update <name>`'s rate flags,
+# MCP llm_update, PUT /api/llms/{name}, or the web app LLM edit.
 
 classifier:
   # Publishers a classify-mode judge model may come from. Default empty: no
@@ -2123,6 +2151,11 @@ autonomous:
   #   judges the lanes from the readable hosts. An absent key reads 10; an
   #   explicit 0 never treats an unreachable host as down and survives a round
   #   trip. Negative or non-integer values are refused.
+  # stalled_merge_minutes: whole number >= 0, default 30. How many whole
+  #   minutes a task-branch merge may stay pending without progress before the
+  #   Automaton stops holding its lane; the stalled merge is alerted and
+  #   retried. An absent key reads 30; an explicit 0 turns the rule off and
+  #   survives a round trip. Negative or non-integer values are refused.
   # require_confirmed_proposal: bool, default true (an absent key reads true).
   #   An implementation Automaton is taken only when a proposal file it names
   #   (docs/plans/<name>.md, read from the base repository) has a line starting
@@ -2172,6 +2205,7 @@ autonomous:
     count_verifier_wait: true
     stale_after_hours: 72
     host_down_after_minutes: 10
+    stalled_merge_minutes: 30
     require_confirmed_proposal: true
     check_main_carries: true
     require_worktree: true
@@ -2777,6 +2811,50 @@ autonomous:
     # Seconds a stuck state must persist before it is reported or repaired.
     # Whole number, 0 or more; 0 means no grace. Default: 300.
     grace_seconds: 300
+
+
+  # Gate repair: the engine behind a failed final gate script. After a gate
+  # fails it classifies the failure (a gate that still points at a later
+  # story's script, a stale docs mirror, an allowed-list that now rejects a
+  # required file, a tracker id or CSS hex the gate misflags, a piped command
+  # killed by SIGPIPE, a run killed by a restart - or unknown). In `on` it
+  # applies the safe repair for the class once per class per task (the repair
+  # budget persists), then resets the failed task and its dependents so the
+  # gate runs again. A spent budget, an unknown class or a refused repair is
+  # one held operator question (options `retry` - retry the gate now, the
+  # question's default - or `cancel` - the task stays failed), never a guess,
+  # and a failed repair spends nothing, raises no question and leaves the
+  # gate failed. Read with `GET /api/autonomous/gate-repair`: each record
+  # says what it found, what it would do or did, and the undo (the
+  # `before`/`after` pair when the script was edited; for the docs-mirror
+  # repair the `after` is the `make sync-docs` output). A repair never
+  # merges, ships, deletes, ends or
+  # signals a session, changes a model or backend setting, or touches a
+  # security workflow; script edits are limited to the task's own
+  # .datawatch/verify folder. The key is settable on every configuration
+  # channel: PUT /api/config {"autonomous.gate_repair.mode": <value>} (GET
+  # /api/config shows the effective value under autonomous.gate_repair),
+  # CLI `datawatch config set autonomous.gate_repair.mode <value>`, MCP
+  # `config_set` with key autonomous.gate_repair.mode (requires
+  # mcp.allow_self_config=true), comm `configure autonomous.gate_repair.mode=<value>`,
+  # and the web app Settings (Automata, Gate repair). An invalid value is
+  # refused on every surface with the same message and nothing is written.
+  # Read what it found and did with GET /api/autonomous/gate-repair, the
+  # MCP tool autonomous_gate_repair_status, `datawatch autonomous gate-repair
+  # status` and the chat verb `autonomous gate-repair status`; run the engine
+  # now — one pass over every failed gate, or one failed gate with both ids —
+  # with POST /api/autonomous/gate-repair/run, the MCP tool
+  # autonomous_gate_repair_run, `datawatch autonomous gate-repair run` and
+  # `autonomous gate-repair run` in chat (a run honors the mode in effect and
+  # changes nothing else). The earlier plural reads (GET
+  # /api/autonomous/gate-repairs, the gate_repairs MCP tool, `datawatch
+  # autonomous gate-repairs`) still answer the same object. A change takes
+  # effect on the next pass without a restart. See docs/howto/automaton-gate-repair.md
+  # for the walkthrough: the classes, report versus on, the budget and the held question.
+  gate_repair:
+    # The engine mode: off (does nothing), report (records what it would do
+    # and changes nothing) or on (repairs and reruns the gate). Default: report.
+    mode: report
 
   # The LLM registry entry's `billing_group` field (set in PWA Settings →
   # Compute → LLM edit, comm `llm add|update ... billing_group=<label>`, REST
@@ -4624,7 +4702,7 @@ autonomous:
     max_retries: 2
     # Operator rules: additions, same-id replacements and disables of the
     # built-in default pack (internal/autonomous/decompose_lint_rules.go —
-    # twenty-two rules: seventeen block, five warn; the pack is the floor, your
+    # thirty rules: twenty-four block, six warn; the pack is the floor, your
     # rules the ceiling over it). Empty (below) = the built-in pack, unmodified.
     # A same-id entry replaces the built-in at its original position; a new
     # id is appended. Severity: block | warn (empty normalizes to warn;
@@ -4656,6 +4734,17 @@ autonomous:
     # --help output does not list), verification_script_text_not_in_spec (a
     # checked heading or multi-word phrase that does not appear verbatim in the
     # task spec),
+    # verification_script_rejects_own_files (the script's literal allowed-file
+    # list omits the task's own files or the standard allowed set),
+    # verification_script_needs_later_task_output (script requires a file or
+    # phrase only a task it does not depend on creates),
+    # verification_script_sh_for_bash (bash-only syntax under an sh shebang, or
+    # a bash script run with sh), verification_script_pipe_grep_q (a pipe into
+    # grep -q), verification_script_hex_pattern (a grep pattern that matches
+    # CSS hex colours as tracker ids), read_only_writes_outside_report (a
+    # read-only task's spec writes a file other than its report path),
+    # spec_absolute_path_outside_project (a spec line names an absolute system
+    # path outside the project directory),
     # kind (task kind, e.g. final_gate), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
@@ -5323,8 +5412,14 @@ usage:
     # 0 means never compare. 0 to 100, default 25.
     max_projection_gap_points: 25
     # Ordered rungs applied while over the line. Allowed: lower_inflight,
-    # route_pi_prompt, hold_claude. Default is all three in that order.
-    ladder: [lower_inflight, route_pi_prompt, hold_claude]
+    # route_entry, route_cheaper_model, hold_entry (the legacy first-version
+    # names route_pi_prompt and hold_claude are still accepted and normalize
+    # to route_entry and hold_claude). Default: lower_inflight, route_entry,
+    # hold_entry. route_cheaper_model is the fourth, opt-in rung: it keeps
+    # the backend and sends the entry's new work to its cheaper model
+    # (Haiku for a Claude entry) — a no-op for an entry that resolves no
+    # cheaper model.
+    ladder: [lower_inflight, route_entry, hold_entry]
     # Undo rungs in reverse once the projection is back under the line.
     # Default true.
     step_back: true
@@ -5370,6 +5465,35 @@ usage:
     # A reading older than this is stale and the guard asks for a fresh one.
     # Whole number 1 to 1440, default 60.
     reading_freshness_minutes: 60
+    # Per-LLM entries the guard evaluates. Unset guards one entry,
+    # claude-code (the behaviour above); set it to guard any number of paid
+    # LLM entries, each with its own readings, plan and ladder:
+    #   entries:
+    #     # LLM entry name (required, unique).
+    #     - llm: claude-code
+    #       # readings (the readings that name this entry) | none; none is never held.
+    #       usage_source: readings
+    #       # flat (a weekly percentage) | metered (a spend figure in dollars).
+    #       plan: flat
+    #       # flat: a percent (0 means 100); metered: dollars (required).
+    #       period_target: 100
+    #       # Model whose own per-model cost rate prices this entry's tokens;
+    #       # empty is the entry's first model.
+    #       model: ""
+    #       # This entry's rungs; empty uses the guard-wide ladder above.
+    #       ladder: []
+    #       # Limit the hold rung to these models of the entry; empty holds the
+    #       # whole entry.
+    #       held_models: []
+    #       # Where the route rung sends new work; empty makes it a no-op.
+    #       route_to: ""
+    #       # Model the route_cheaper_model rung sends new work to, on the
+    #       # same backend (Haiku for a Claude entry); empty auto-resolves the
+    #       # entry's own cheapest other priced model.
+    #       route_cheaper_model: ""
+    #       # flat entries only: converts dollar-priced tokens to points of the
+    #       # weekly allowance; 0 keeps the fitted cache coefficients.
+    #       points_per_usd: 0
   # Billing profiles: per-provider pricing model. Open map keyed by provider
   # (claude-code, openai, gemini, or any other operator-chosen key). A
   # provider with no profile reads the assumed default (api_metered, unit
@@ -5543,6 +5667,29 @@ cost_report:
   # federation peers that opted into reporting it to this daemon.
   # Default false: peer spend is excluded from the report.
   include_peer_spend: false
+
+# ── Standard-task packs ──
+# The standard-task pack feature: installable, named, versioned folders that
+# ship Automaton task prompts, verification scripts and Automaton templates.
+# Off by default, so a daemon that never sets packs.* behaves as before.
+packs:
+  # Turn the pack feature on. Default false.
+  # Turning it on should need at least one enabled skills registry source (the
+  # community registry by default). Turning it on through a surface is refused
+  # (HTTP 409) by that check (packs.CheckEnable); a hand edit of this file
+  # skips it. With this key false, only "builtin" applies.
+  # Install, accept, remove, the inputs and the settings are on REST, MCP,
+  # CLI, the comm channel and the web Settings card; see docs/howto/packs.md.
+  enabled: false
+  # The packs in use, in order. Each name is "builtin" (the standard tasks and
+  # Automaton templates compiled into the binary, always valid; the repository's
+  # test fixture folder is not read) or the name of an installed pack. A name that is
+  # neither, an empty name or a repeated name is rejected by validation.
+  # This is the global list: an Automaton's own list wins over it when set, and
+  # lists are never merged (packs.ActivePacks). There is no per-project list key.
+  # Default: [builtin].
+  active:
+    - builtin
 
 # ── Onboarding report ──
 # The Automation onboarding report: what is configured, what is missing and
