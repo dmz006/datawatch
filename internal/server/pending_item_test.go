@@ -873,6 +873,12 @@ func (i *insertSpy) SetAutomationBudgetPolicy(string, autonomous.BudgetSetReques
 func (i *insertSpy) SetAutomationDecisionAssistant(string, string, string, *autonomous.DecisionAssistant, int64) (any, error) {
 	return nil, nil
 }
+func (i *insertSpy) SetAutomationMaxParallel(string, string, int, string, int64) (any, error) {
+	return nil, nil
+}
+func (i *insertSpy) SetAutomationStageGate(string, bool, string, int64) (any, error) {
+	return nil, nil
+}
 
 func TestPendingItemInsertMemberAcceptsItemID(t *testing.T) {
 	spy := &insertSpy{}
