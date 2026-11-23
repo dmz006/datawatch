@@ -32,9 +32,13 @@ type HousekeepingWiring struct {
 	LaneFill  LaneFillOps
 	Leftovers LeftoverReleaseOps
 	Planning  PlanningRepairOps
+	// Unarchive overrides the one-time "unarchive unmerged work" repair.
+	Unarchive UnarchiveRepairOps
+	// Manager backs the default production ops of the unarchive group.
+	Manager *Manager
 }
 
-// NewHousekeepingRepairer builds the Repairer with the repairs of all five
+// NewHousekeepingRepairer builds the Repairer with the repairs of all six
 // groups from the wiring.
 func NewHousekeepingRepairer(w HousekeepingWiring) *Repairer {
 	var repairs []Repair
@@ -59,6 +63,13 @@ func NewHousekeepingRepairer(w HousekeepingWiring) *Repairer {
 		planning = ManagerPlanningOps{API: w.API}
 	}
 	repairs = append(repairs, NewPlanningRepairs(planning)...)
+	unarchive := w.Unarchive
+	if unarchive == nil && w.Manager != nil {
+		unarchive = ManagerUnarchiveOps{M: w.Manager}
+	}
+	if unarchive != nil {
+		repairs = append(repairs, NewUnarchiveRepairs(unarchive)...)
+	}
 	for _, r := range NewSupervisorStepRepairs(w.Steps) {
 		switch r.Group() {
 		case RepairGroupLaneFill:

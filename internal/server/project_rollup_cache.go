@@ -270,6 +270,7 @@ func (s *Server) projectRollupBody(mgr *autonomous.Manager, name string, entry c
 			Projects:        rollupProjectDirs(s.cfg.Projects),
 			ArcHeld:         rollupArcHeld(s.cfg.Projects),
 			Merged:          s.rollupMergedFn(mgr),
+			MergeState:      s.mergeStateOfEntryFn(mgr),
 			ShippedEnabled:  key.shipped,
 			ReleaseHeld:     releaseHeld,
 		})

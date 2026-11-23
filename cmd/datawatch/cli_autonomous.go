@@ -189,6 +189,7 @@ Subcommands:
   prd-edit <id>                   Edit PRD title + spec
   prd-approve <id>                Approve planned PRD
   prd-plan-review <id>            Re-run the plan reviewer for a PRD (alias: plan-review)
+  prd-rejudge <id>                Re-run the completion review of an Automaton (re-judge); a pass clears a stale block (alias: rejudge)
   prd-resume <id> [--note ...]    Resume a paused or boot-parked PRD (alias: resume)
   prd-reject <id>                 Reject a PRD plan
   prd-coverage <id> [--json]      Show the Automaton's stored plan-coverage report, its ack, findings and the suppressed counts
@@ -282,6 +283,7 @@ Subcommands:
 		newAutonomousPRDCoverageCmd(),
 		newAutonomousPRDAckCoverageCmd(),
 		newAutonomousPRDPlanReviewCmd(),
+		newAutonomousRejudgeCmd(),
 		newAutonomousPRDResumeCmd(),
 		newAutonomousPRDRequestRevisionCmd(),
 		newAutonomousPRDEditTaskCmd(),
@@ -1027,6 +1029,9 @@ autonomous.shipped.filter_default view applies (all / shipped / unshipped).`,
 			for _, line := range autonomous.PlanningFailureListLines(body) {
 				_, _ = fmt.Fprintln(note, "planning failed: "+line)
 			}
+			for _, line := range autonomous.MergeStateListLines(body) {
+				_, _ = fmt.Fprintln(note, "branch not merged: "+line)
+			}
 			return nil
 		},
 	}
@@ -1229,6 +1234,9 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 				_, _ = fmt.Fprint(out, block)
 			}
 			for _, line := range autonomous.PlanningFailureLines(body) {
+				_, _ = fmt.Fprintln(out, line)
+			}
+			if line := autonomous.MergeStateGetLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}
 			if line := prdPushLine(body); line != "" {

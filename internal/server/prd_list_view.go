@@ -307,6 +307,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 							}
 						}
 					}
+					row.MergeState = s.mergeStateOfEntry(e)
 					return row
 				}})
 		}
@@ -323,6 +324,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 			}
 			fillRow(&row, project)
 			row.PlanningFailure = s.planningFailureOf(prd)
+			row.MergeState = s.mergeStateOf(prd)
 			items = append(items, prdListItem{ID: row.ID, UpdatedAt: row.UpdatedAt, Status: row.Status,
 				row: func() autonomous.SummaryRow { return row }})
 		}

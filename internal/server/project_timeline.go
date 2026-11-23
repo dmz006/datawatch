@@ -79,6 +79,9 @@ type timelineRow struct {
 	Status    string     `json:"status"`
 	Release   string     `json:"release,omitempty"`
 	DependsOn []string   `json:"depends_on,omitempty"`
+	// MergeState is the derived, read-only merge state of an Automaton row
+	// (finished_not_merged). Omitted when the record has none.
+	MergeState string `json:"merge_state,omitempty"`
 }
 
 // timelineEdge is one dependency between two Automata of an arc: From finishes
@@ -136,9 +139,11 @@ type timelineInput struct {
 	// ReleaseHeld says whether a release plan holds an Automaton. One that no
 	// arc holds but a release plan does is attributed, so it is not unassigned.
 	ReleaseHeld func(automatonID string) bool
-	Limit       int
-	Cursor      *historyCursor
-	Now         time.Time
+	// MergeState returns the derived merge_state of one Automaton. Nil hides it.
+	MergeState func(e autonomous.SummaryEntry) string
+	Limit      int
+	Cursor     *historyCursor
+	Now        time.Time
 }
 
 // timelineError says which client mistake or missing record stopped a build.
@@ -332,14 +337,18 @@ func timelineAutomatonSpan(p *autonomous.SummaryEntry) timelineSpan {
 	return s
 }
 
-func timelineAutomatonRow(p *autonomous.SummaryEntry) timelineRow {
+func timelineAutomatonRow(p *autonomous.SummaryEntry, mergeState func(e autonomous.SummaryEntry) string) timelineRow {
 	sp := timelineAutomatonSpan(p)
 	first, last := sp.done()
 	n := p.TaskCount
-	return timelineRow{Kind: timelineKindAutomaton, ID: p.ID, Title: p.Title, State: string(p.Status),
+	row := timelineRow{Kind: timelineKindAutomaton, ID: p.ID, Title: p.Title, State: string(p.Status),
 		First: first, Last: last, Running: sp.running,
 		HasChildren: n > 0, ChildrenCount: n,
 		Start: first, End: last, Status: timelineAutomatonStatus(p), Release: p.MergedInRelease}
+	if mergeState != nil {
+		row.MergeState = mergeState(*p)
+	}
+	return row
 }
 
 // timelineArcStatus derives an arc or group status from its members.
@@ -596,11 +605,11 @@ func timelineTaskRowsOf(load func(string) *autonomous.PRD, id string) []timeline
 
 // timelineOrderedAutomata returns the rows of list ordered inside the arc, and
 // the chain edges among them drawn from the given Automations.
-func timelineOrderedAutomata(list []*autonomous.SummaryEntry, autos []*autonomous.Automation) ([]timelineRow, []timelineEdge) {
+func timelineOrderedAutomata(list []*autonomous.SummaryEntry, autos []*autonomous.Automation, mergeState func(e autonomous.SummaryEntry) string) ([]timelineRow, []timelineEdge) {
 	rows := make([]timelineRow, 0, len(list))
 	ids := map[string]bool{}
 	for _, p := range list {
-		rows = append(rows, timelineAutomatonRow(p))
+		rows = append(rows, timelineAutomatonRow(p, mergeState))
 		ids[p.ID] = true
 	}
 	edges := timelineEdgesAmong(autos, ids)
@@ -671,7 +680,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		} else {
 			return out, &timelineError{http.StatusNotFound, "plan not found"}
 		}
-		autoRows, edges := timelineOrderedAutomata(list, timelineAutomationsFor(in.Focus, mem.arcs, in.Automations))
+		autoRows, edges := timelineOrderedAutomata(list, timelineAutomationsFor(in.Focus, mem.arcs, in.Automations), in.MergeState)
 		out.Edges = edges
 		for _, ar := range autoRows {
 			rows = append(rows, ar)
@@ -734,7 +743,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		default:
 			return out, &timelineError{http.StatusNotFound, "plan not found"}
 		}
-		rows, out.Edges = timelineOrderedAutomata(list, timelineAutomationsFor(in.Parent, mem.arcs, in.Automations))
+		rows, out.Edges = timelineOrderedAutomata(list, timelineAutomationsFor(in.Parent, mem.arcs, in.Automations), in.MergeState)
 	case level == timelineLevelTasks:
 		out.Parent = in.Automaton
 		if in.Automaton == "" {
@@ -840,6 +849,7 @@ func (s *Server) handleProjectTimeline(w http.ResponseWriter, r *http.Request) {
 		Automaton:   q.Get("automaton"),
 		Focus:       q.Get("focus"),
 		ReleaseHeld: s.releaseHeldFunc(),
+		MergeState:  s.mergeStateOfEntryFn(mgr),
 		Limit:       limit,
 		Cursor:      cursor,
 		Now:         time.Now(),

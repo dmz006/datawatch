@@ -2045,6 +2045,10 @@ type Manager struct {
 	// archivedUnmergedGit is the read-only git runner of the archived-unmerged
 	// finder and carry-forward (archived_unmerged.go); nil uses git. Guarded by mu.
 	archivedUnmergedGit MergeGitRunner
+	// mergeStateCache short-caches the derived merge_state per record
+	// (merge_state_view.go); mergeStateCacheWindow is the lifetime. Guarded by mu.
+	mergeStateCache       map[string]mergeStateCacheEntry
+	mergeStateCacheWindow time.Duration
 
 	// mergedFinishGit is the read-only git runner of the merged-branch finish
 	// check (merged_branch_finish.go); nil uses NewMergeGitRunner.

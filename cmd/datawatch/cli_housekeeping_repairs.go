@@ -21,7 +21,7 @@ func newAutonomousHousekeepingRepairsCmd() *cobra.Command {
 		Use:   "housekeeping-repairs",
 		Short: "Read the housekeeping repairs: per group the mode, what it would do and what it did",
 		Long: "Show the housekeeping repairs the daemon makes on stuck Automata and tasks: per " +
-			"group (task_chain, advance_judge, lane_fill, leftovers, planning) the mode in effect (off, " +
+			"group (task_chain, advance_judge, lane_fill, leftovers, planning, unarchive) the mode in effect (off, " +
 			"report or on), what a report-mode pass would do, what an on-mode pass did, and " +
 			"the cases that failed or were skipped as unsafe, then the intermittent test " +
 			"failures (tests that failed on the first run of an Automaton's merge check and " +
