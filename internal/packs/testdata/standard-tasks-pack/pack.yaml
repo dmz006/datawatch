@@ -1,0 +1,50 @@
+# Fixture pack of the standard tasks and Automaton templates — test data only.
+#
+# Operator decision, 2026-11-09: the real standard-tasks pack is published
+# in the community registry repository and there is no pinned copy inside
+# the binary or this repository. This folder exists only as a loadable
+# fixture in the pack folder's manifest format; nothing under it is
+# embedded.
+name: standard-tasks-pack
+version: 0.1.0
+description: Fixture pack of the standard tasks and Automaton templates, for tests only.
+kinds:
+  - feature
+  - bug
+  - other
+  - maintenance
+tasks:
+  - title: Changelog entry
+    prompt: prompts/changelog-entry.md
+    verification_script: verify/changelog-entry.sh
+    default_tier: small
+    read_only: false
+    file_scopes: [CHANGELOG.md]
+  - title: Parity issue draft
+    prompt: prompts/parity-issue-draft.md
+    verification_script: verify/parity-issue-draft.sh
+    default_tier: small
+    read_only: false
+    file_scopes: [docs/plans/parity-issues/**]
+  - title: Docs set
+    prompt: prompts/docs-set.md
+    verification_script: verify/docs-set.sh
+    default_tier: small
+    read_only: false
+    file_scopes: [docs/**]
+  - title: Bounded load-step rule
+    prompt: prompts/bounded-load-step.md
+    verification_script: verify/bounded-load-step.sh
+    default_tier: small
+    read_only: false
+  - title: Release version note
+    prompt: prompts/version-note.md
+    verification_script: verify/version-note.sh
+    default_tier: small
+    read_only: false
+  - title: Final gate
+    prompt: prompts/final-gate.md
+    read_only: true
+    report_path: .datawatch/reports/{{feature}}-final-gate.txt
+templates:
+  - templates/README.md

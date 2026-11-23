@@ -1431,6 +1431,9 @@ type Manager struct {
 	mu                      sync.Mutex
 	// housekeepingRepairer feeds the housekeeping repairs read view. Guarded by mu.
 	housekeepingRepairer *Repairer
+	// gateRepairer is the gate repair engine (report/on) for failed gates.
+	// Guarded by mu.
+	gateRepairer *GateRepairer
 	// laneUtilUsage supplies plan usage to LaneUtilization (lane_utilization.go).
 	// Guarded by mu; nil means no usage is reported.
 	laneUtilUsage LaneUtilizationUsageSource
@@ -1997,6 +2000,9 @@ type Manager struct {
 	// the alert it recorded ("" when it cannot name one) so an emitter
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
+
+	// nodeUnresponsive counts consecutive model-unresponsive failures per node.
+	nodeUnresponsive *nodeUnresponsiveCounter
 
 	// releaseSizeModes holds per-project release size approval overrides
 	// written by the release CI fall-back (release_ci_fallback.go), keyed

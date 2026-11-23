@@ -41,6 +41,13 @@ func (m *Manager) upsertLedger(sess *Session) {
 	if role == "" {
 		role = spendledger.RoleOther
 	}
+	// By-model attribution for the cost report: the session's own model
+	// selection (v8.7+), falling back to the LLM registry entry name the
+	// session was launched against; legacy sessions leave both empty.
+	model := snap.Model
+	if model == "" {
+		model = snap.LLMRef
+	}
 	e := spendledger.Entry{
 		SessionID:   snap.FullID,
 		AutomatonID: snap.AutomatonID,
@@ -48,6 +55,7 @@ func (m *Manager) upsertLedger(sess *Session) {
 		Project:     snap.SpendProject,
 		Role:        role,
 		Backend:     snap.BackendFamily,
+		Model:       model,
 		StartedAt:   snap.CreatedAt,
 		TokensIn:    int64(snap.TokensIn),
 		TokensOut:   int64(snap.TokensOut),

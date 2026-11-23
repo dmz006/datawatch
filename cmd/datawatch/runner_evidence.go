@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // formatRunnerProcessLine renders one process for the runner evidence: the pid,
@@ -57,18 +58,64 @@ func runnerProcessLines(tmuxSession string) []string {
 }
 
 // newRunnerEvidence builds the evidence for a pane capture and the processes
-// under tmuxSession.
-func newRunnerEvidence(pane, tmuxSession string) *autonomouspkg.RunnerEvidence {
-	ev := autonomouspkg.RunnerEvidenceFrom(pane, runnerProcessLines(tmuxSession))
+// under tmuxSession. The pane stays preferred when it has content. When it is
+// empty (the pane is gone once the wrapper exited), the evidence comes from the
+// session output log at logPath, carrying node and model; the process list is
+// still attached either way.
+func newRunnerEvidence(pane, tmuxSession, logPath, node, model string) *autonomouspkg.RunnerEvidence {
+	procs := runnerProcessLines(tmuxSession)
+	if strings.TrimSpace(pane) == "" {
+		ev := autonomouspkg.RunnerEvidenceFromLog(logPath, node, model)
+		ev.Processes = procs
+		return &ev
+	}
+	ev := autonomouspkg.RunnerEvidenceFrom(pane, procs)
 	return &ev
 }
 
-// withRunnerExitStatus appends the runner's exit status to a stall error when
-// the evidence carries one. The original error stays wrapped, so
-// errors.Is(err, ErrWorkerStalled) keeps holding.
+// runnerStallDetailCap bounds the text appended to a stall error.
+const runnerStallDetailCap = 300
+
+// withRunnerExitStatus appends the runner's evidence to a stall error: the
+// exit status, the compute node, the model and the last output line, each only
+// when present, e.g. "(pi exited with status 1; node X; model Y; last: ...)".
+// The appended text is capped at a few hundred characters. The original error
+// stays wrapped, so errors.Is(err, ErrWorkerStalled) keeps holding.
 func withRunnerExitStatus(err error, ev *autonomouspkg.RunnerEvidence) error {
-	if err == nil || ev == nil || ev.ExitStatus == nil {
+	if err == nil || ev == nil {
 		return err
 	}
-	return fmt.Errorf("%w (pi exited with status %d)", err, *ev.ExitStatus)
+	var parts []string
+	if ev.ExitStatus != nil {
+		parts = append(parts, fmt.Sprintf("pi exited with status %d", *ev.ExitStatus))
+	}
+	if ev.Node != "" {
+		parts = append(parts, "node "+ev.Node)
+	}
+	if ev.Model != "" {
+		parts = append(parts, "model "+ev.Model)
+	}
+	for i := len(ev.LastOutput) - 1; i >= 0; i-- {
+		if l := strings.TrimSpace(ev.LastOutput[i]); l != "" {
+			parts = append(parts, "last: "+l)
+			break
+		}
+	}
+	if len(parts) == 0 {
+		return err
+	}
+	detail := strings.Join(parts, "; ")
+	if r := []rune(detail); len(r) > runnerStallDetailCap {
+		detail = string(r[:runnerStallDetailCap]) + "..."
+	}
+	return fmt.Errorf("%w (%s)", err, detail)
+}
+
+// sessionEvidenceNode names the node a session ran on: its compute node when
+// one is set, otherwise the host.
+func sessionEvidenceNode(s *session.Session) string {
+	if s.ComputeNodeRef != "" {
+		return s.ComputeNodeRef
+	}
+	return s.Hostname
 }

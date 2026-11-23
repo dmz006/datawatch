@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/mergepipeline"
 )
 
 // mergeRunSpy is a Manager double for the run route: it records the runs the
@@ -137,5 +139,20 @@ func TestNewMergeRunnerRefusesWhenLockStoreIsBroken(t *testing.T) {
 func TestNewMergeRunnerWithoutLockSourceTakesNoLock(t *testing.T) {
 	if r := newMergeRunner(&mergeRunSpy{}, config.MergePipelineConfig{}, t.TempDir(), "demo", t.TempDir(), nil); r.Locks != nil {
 		t.Fatal("a Manager without a lock store runs with no lock")
+	}
+}
+
+func TestMergeRunnerDeployNotConfiguredIsSkipped(t *testing.T) {
+	res, err := deployShipRunner(t.TempDir(), config.DeployConfig{}, nil).Deploy(context.Background(), t.TempDir())
+	if err != nil || res.Status != mergepipeline.ShipSkipped {
+		t.Fatalf("deploy = %+v, %v; want skipped", res, err)
+	}
+}
+
+func TestMergeRunnerDeployConfiguredUsesDeploySequence(t *testing.T) {
+	cfg := config.DeployConfig{BuildCommand: "false"}
+	res, err := deployShipRunner(t.TempDir(), cfg, nil).Deploy(context.Background(), t.TempDir())
+	if err != nil || res.Status != mergepipeline.ShipFailed || !strings.Contains(res.Note, "deploy failed") {
+		t.Fatalf("deploy = %+v, %v; want a failed deploy with its note", res, err)
 	}
 }

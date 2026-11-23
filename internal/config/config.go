@@ -876,6 +876,11 @@ type Config struct {
 	// its default while an explicit value sticks through saves and YAML
 	// round trips. See the cost_report block in docs/config-reference.yaml.
 	CostReport CostReportConfig `yaml:"cost_report,omitempty" json:"cost_report,omitempty"`
+
+	// Packs holds the standard-task pack block (packs.*): the enabled switch
+	// (default false) and the active pack names (default ["builtin"]). See
+	// PacksConfig in packs_config.go.
+	Packs PacksConfig `yaml:"packs" json:"packs"`
 }
 
 // CostReport defaults. Every one of them is read from the config struct:
@@ -2706,6 +2711,13 @@ type SessionConfig struct {
 	// `GET /api/sessions/stale`. Default 1800 (30 min). 0 disables.
 	StaleTimeoutSeconds int `yaml:"stale_timeout_seconds,omitempty"`
 
+	// FinaliseIntervalMinutes is how often the daemon finalises session
+	// records whose process is gone. Default 10. 0 turns the scheduled runs
+	// off (the start-up run always happens). A negative value falls back to
+	// 10. There is deliberately no omitempty so an explicit 0 survives a
+	// save and reload.
+	FinaliseIntervalMinutes int `yaml:"finalise_interval_minutes"`
+
 	// RateLimitGlobalPause (BL30) — when true, hitting a rate limit
 	// on any backend pauses new session creation across all backends
 	// until the cooldown elapses or the operator clears it.
@@ -3131,6 +3143,49 @@ type CostRateConfig struct {
 	OutPerK float64 `yaml:"out_per_k" json:"out_per_k"`
 }
 
+// ModelCostRate is the resolved USD-per-1K-token rate for one model of one
+// LLM entry. Each field comes from the model's own rate when set on the
+// LLM entry's models list, otherwise from the per-backend cost_rates entry
+// (cache read/write have no per-backend value and resolve to 0 when unset).
+// Source is "model" when any field came from the model, else "backend",
+// or "" when neither supplied a rate.
+type ModelCostRate struct {
+	InPerK         float64 `json:"in_per_k"`
+	OutPerK        float64 `json:"out_per_k"`
+	CacheReadPerK  float64 `json:"cache_read_per_k"`
+	CacheWritePerK float64 `json:"cache_write_per_k"`
+	Source         string  `json:"source"`
+}
+
+// ResolveModelCostRate returns the rate for model on LLM entry l, falling
+// back field by field to backendRates[backend] (the cost_rates map, merged
+// with built-in defaults by the caller). An empty model matches the entry's
+// first model. No provider-specific code: rates are configuration only.
+func ResolveModelCostRate(l inference.LLM, model, backend string, backendRates map[string]CostRateConfig) ModelCostRate {
+	var out ModelCostRate
+	if br, ok := backendRates[backend]; ok {
+		out.InPerK, out.OutPerK, out.Source = br.InPerK, br.OutPerK, "backend"
+	}
+	for i := range l.Models {
+		em := l.Models[i]
+		if model != "" && em.Model != model {
+			continue
+		}
+		set := func(dst *float64, v *float64) {
+			if v != nil {
+				*dst = *v
+				out.Source = "model"
+			}
+		}
+		set(&out.InPerK, em.InPerK)
+		set(&out.OutPerK, em.OutPerK)
+		set(&out.CacheReadPerK, em.CacheReadPerK)
+		set(&out.CacheWritePerK, em.CacheWritePerK)
+		break
+	}
+	return out
+}
+
 // DefaultSnapshotNeverStage — the path patterns the autonomous snapshot
 // and automatic-staging paths must never stage by default (applied when
 // snapshot_never_stage is unset): scratch and temp directories plus local
@@ -3551,6 +3606,13 @@ type AutonomousConfig struct {
 	// strictly above). *int: nil = unset → 3; 0 = alert on any pending
 	// branch. Negative values are rejected — see unlanded_alert.go.
 	UnlandedAlertThreshold *int `yaml:"unlanded_alert_threshold,omitempty" json:"unlanded_alert_threshold,omitempty"`
+	// TmuxKillGuard turns the tmux kill guard on (default ON): a tmux
+	// session/pane kill only proceeds after its guard checks pass.
+	// nil = unset = enabled; an explicit false is an operator opt-out
+	// and is distinguishable from the default. The yaml tag has no
+	// omitempty (B124 no-omitempty pattern) so an explicit opt-out
+	// survives a Save/Load round trip; the pointer carries it.
+	TmuxKillGuard *bool `yaml:"tmux_kill_guard" json:"tmux_kill_guard,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
@@ -3906,6 +3968,9 @@ type AutonomousConfig struct {
 	// branch; pull_request opens a pull request instead and waits for it to
 	// merge.
 	ReleasePath string `yaml:"release_path" json:"release_path"`
+	// Deploy — how a shipped build becomes a running daemon: build, install,
+	// restart, health check. The zero value does nothing. See DeployConfig.
+	Deploy DeployConfig `yaml:"deploy,omitempty" json:"deploy,omitempty"`
 	// RequestWatch — observation of the in-flight model request of a worker
 	// or verifier whose model runs on a registered compute node, so a hung
 	// request can be told from a slow one. Observation only: it never ends a
@@ -4150,6 +4215,10 @@ type AutonomousConfig struct {
 	// (task_chain, advance_judge, lane_fill, leftovers, planning; default report) and
 	// the grace seconds. See housekeeping_repairs.go.
 	HousekeepingRepairs HousekeepingRepairsConfig `yaml:"housekeeping_repairs" json:"housekeeping_repairs"`
+
+	// GateRepair — the gate repair engine mode (report default, or on) for
+	// the housekeeping group gate_repair. See gate_repair.go.
+	GateRepair GateRepairConfig `yaml:"gate_repair" json:"gate_repair"`
 
 	// Shipped — shipped-state surface for Automata (PRDs) and Automation:
 	// master switch, chip display, default browser filter, separate shipped
@@ -6414,6 +6483,13 @@ func (c AutonomousAutomationConfig) EffectiveMergePendingAlertMinutes() int {
 	return *c.MergePendingAlertMinutes
 }
 
+// TmuxKillGuardEnabled reports whether the tmux kill guard is on for
+// this autonomous config: ON by default (field unset / nil receiver),
+// OFF only when TmuxKillGuard was explicitly set to false.
+func (a *AutonomousConfig) TmuxKillGuardEnabled() bool {
+	return a == nil || a.TmuxKillGuard == nil || *a.TmuxKillGuard
+}
+
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
 // is the global default set of lifecycle event kinds (see
 // internal/autonomous/lifecycle_event.go: KindPRDUpdated
@@ -8256,24 +8332,26 @@ func DefaultConfig() *Config {
 			Peers: ObserverPeersConfig{SilentAlertMinutes: 5},
 			Pull:  DefaultObserverPullConfig(),
 		},
+		Packs: DefaultPacksConfig(),
 		Signal: SignalConfig{
 			ConfigDir:  filepath.Join(home, ".local", "share", "signal-cli"),
 			DeviceName: hostname,
 		},
 		Session: SessionConfig{
-			MaxSessions:         10,
-			InputIdleTimeout:    10,
-			TailLines:           20,
-			AlertContextLines:   10,
-			LLMBackend:          "claude-code",
-			DefaultProjectDir:   home,
-			AutoGitCommit:       true,
-			AutoGitInit:         false,
-			GitDefault:          false,
-			ClaudeEnabled:       true,
-			MCPMaxRetries:       5,
-			ScheduleSettleMs:    200,
-			StaleTimeoutSeconds: 1800,
+			MaxSessions:             10,
+			InputIdleTimeout:        10,
+			TailLines:               20,
+			AlertContextLines:       10,
+			LLMBackend:              "claude-code",
+			DefaultProjectDir:       home,
+			AutoGitCommit:           true,
+			AutoGitInit:             false,
+			GitDefault:              false,
+			ClaudeEnabled:           true,
+			MCPMaxRetries:           5,
+			ScheduleSettleMs:        200,
+			StaleTimeoutSeconds:     1800,
+			FinaliseIntervalMinutes: 10,
 			// BL219 — tooling lifecycle defaults.
 			GitignoreCheckOnStart: true,
 			GitignoreArtifacts:    []string{"aider", "goose", "gemini"},
@@ -8736,6 +8814,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Session.StaleTimeoutSeconds == 0 {
 		cfg.Session.StaleTimeoutSeconds = 1800
 	}
+	if cfg.Session.FinaliseIntervalMinutes < 0 {
+		cfg.Session.FinaliseIntervalMinutes = 10
+	}
 	if cfg.Session.LLMBackend == "" {
 		cfg.Session.LLMBackend = "claude-code"
 	}
@@ -9182,6 +9263,9 @@ func validateLoaded(cfg *Config) error {
 	if err := cfg.Autonomous.MergePipeline.Validate(); err != nil {
 		return err
 	}
+	if err := cfg.Autonomous.Deploy.Validate(); err != nil {
+		return err
+	}
 	if err := cfg.ProjectsDefaults.Validate(); err != nil {
 		return err
 	}
@@ -9405,6 +9489,9 @@ func Load(path string) (*Config, error) {
 	if err := loadHousekeepingRepairs(cfg); err != nil {
 		return nil, err
 	}
+	if err := loadGateRepair(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -9467,6 +9554,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := loadHousekeepingRepairs(cfg); err != nil {
+		return nil, err
+	}
+	if err := loadGateRepair(cfg); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)

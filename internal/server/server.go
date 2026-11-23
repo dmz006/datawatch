@@ -369,7 +369,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("GET /api/projects/{name}/overview-summary", api.handleProjectOverviewSummary) // overview: header, progress, active plan lines, counts
 	apiMux.HandleFunc("GET /api/projects/{name}/arcs", api.handleProjectArcs)                        // deprecated alias: roll-up arcs plus plans
 	apiMux.HandleFunc("GET /api/plans/{ref}/automata", api.handlePlanAutomata)                       // plans read API: a plan's Automata in run order
+	apiMux.HandleFunc("GET "+plansRollupPath, api.handlePlansRollupGet)                              // plans roll-up: preview what the roll-up would change
+	apiMux.HandleFunc("POST "+plansRollupPath, api.handlePlansRollupPost)                            // plans roll-up: apply it (dry_run previews)
 	apiMux.HandleFunc("POST /api/plans", api.handlePlanCreate)                                       // plans write API: create a plan
+	apiMux.HandleFunc("PATCH /api/plans/{ref}", api.handlePlanEdit)                                  // plans write API: rename a plan and/or edit its goal
 	apiMux.HandleFunc("PUT /api/plans/order", api.handlePlansOrder)                                  // plans write API: set the plan priority order
 	apiMux.HandleFunc("PUT /api/plans/{ref}/automata/order", api.handlePlanAutomataOrder)            // plans write API: set the order of a plan's Automata
 	apiMux.HandleFunc("POST /api/plans/{ref}/attach", api.handlePlanAttach)                          // plans write API: attach an Automaton, Automation or finding
@@ -398,6 +401,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/secrets", api.handleSecrets)                                             // BL242 (list + create)
 	apiMux.HandleFunc("/api/docs/", api.handleDocs)                                                  // BL274 (v6.16.0)
 	apiMux.HandleFunc("/api/docs", api.handleDocs)                                                   // BL274
+	apiMux.HandleFunc("/api/packs", api.handlePacks)                                                 // installable packs
+	apiMux.HandleFunc("/api/packs/", api.handlePacks)                                                // installable packs (sub-paths)
 	apiMux.HandleFunc("/api/skills/registries", api.handleSkillsRegistries)                          // BL255
 	apiMux.HandleFunc("/api/skills/registries/", api.handleSkillsRegistries)                         // BL255
 	apiMux.HandleFunc("/api/skills", api.handleSkills)                                               // BL255 (synced list)
@@ -630,6 +635,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline", api.handleMergePipeline)                           // merge pipeline in effect for a project: definition, source, reason, conflict policy, overrides
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/record", api.handleMergePipelineRecord)              // PUT sets and DELETE removes a project's daemon-held pipeline record
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/validate", api.handleMergePipelineValidate)          // POST checks a pipeline body or a repository file without saving
+	apiMux.HandleFunc("/api/autonomous/deploy", api.handleAutonomousDeploy)                                // GET effective deploy settings, last deploy phase and outcome, deferral, snapshot time and SHA-256
+	apiMux.HandleFunc("/api/autonomous/deploy/run", api.handleAutonomousDeployRun)                         // POST starts the deploy sequence for the current build now; 409 while a merge or deploy runs
 	apiMux.HandleFunc("/api/autonomous/release-readiness", api.handleReleaseReadiness)                     // release readiness for one size: record, conflict and PWA counts against the bar, zeros included
 	apiMux.HandleFunc("/api/autonomous/checks", api.handleAutonomousChecks)                                // resolved checks policy + recorded check findings
 	apiMux.HandleFunc("/api/autonomous/restart-interruptions", api.handleAutonomousRestartInterruptions)   // what a restart now would interrupt + the restart policy
@@ -642,7 +649,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/decision-records/", api.handleDecisionRecords)                      // decision records: one by id, update, withdraw
 	apiMux.HandleFunc("/api/plan-records/", api.handlePlanRecords)                                         // plan records: registry rows, findings, search, import
 	apiMux.HandleFunc("/api/plans/migrate/row-plans", api.handlePlansRowPlans)                             // release plans API: list (GET) and convert (POST, preview by default) the registry-row plans
-	apiMux.HandleFunc("/api/plans/migrate", api.handlePlansMigrate)                                        // plans migrate: dry run by default, {apply:true} writes plans from arcs and registry rows
+	apiMux.HandleFunc("POST /api/plans/migrate", api.handlePlansMigrate)                                   // plans migrate: dry run by default, {apply:true} writes plans from arcs and registry rows
 	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)                           // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
 	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                              // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
 	apiMux.HandleFunc("/api/supervisor-loop/jobs", api.handleSupervisorLoopJobs)                           // supervisor loop jobs: style, backend, model, enabled, last outcome
@@ -679,6 +686,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/security-failures", api.handleSecurityFailures)                     // stored security failure reports with their run identity, newest first
 	apiMux.HandleFunc("/api/autonomous/supervisor-watch", api.handleSupervisorWatch)                       // supervisor watch state: mode, last poll, findings, comparison
 	apiMux.HandleFunc("/api/autonomous/housekeeping-repairs", api.handleHousekeepingRepairs)               // housekeeping repairs: per group mode, would-do and did
+	apiMux.HandleFunc("/api/autonomous/gate-repairs", api.handleGateRepairs)                               // gate repair engine: mode and repair records, newest first
+	apiMux.HandleFunc("/api/autonomous/gate-repair", api.handleGateRepair)                                 // gate repair: mode, records and budget split per class per task
+	apiMux.HandleFunc("/api/autonomous/gate-repair/run", api.handleGateRepairRun)                          // gate repair run: one gate (automaton_id+task_id) or one pass (no body)
 	apiMux.HandleFunc("/api/autonomous/supervisor-watch/stats", api.handleSupervisorWatchStats)            // supervisor watch numbers: mode, poll age, finding counts, agreed days
 	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)                              // read-only admission query
 
@@ -1705,6 +1715,9 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 
 	// The observer pull collector starts with the daemon and stops with ctx.
 	s.api.StartObserverPull(ctx)
+	// Finish a deploy the restart interrupted (health check, rollback) and
+	// retry a deferred one, in the background.
+	s.StartDeployResume(ctx)
 
 	// Wire real-time stats broadcast — fires on every collection (every 5s).
 	// Chain with any existing onCollect (e.g. Prometheus metrics update).

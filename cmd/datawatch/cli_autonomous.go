@@ -70,6 +70,13 @@ Subcommands:
                                   alerted), newest first
   housekeeping-repairs [--json]   Housekeeping repairs read: per group the mode (off, report, on),
                                   what it would do and what it did
+  gate-repairs [--json]           Gate repair engine read: the mode (off, report, on), the repair records
+                                  newest first (class found, would-do or did, how to undo) and the
+                                  repair budget spent
+  gate-repair status [--json]     Gate repair status: the mode, the repair records and the spent budget
+  gate-repair run [--automaton ID --task ID] [--json]
+                                  Run one gate repair pass (or repair one failed task gate); prints the
+                                  run's outcomes and the fresh status
   supervisor-watch [--json]       Supervisor watch read: the mode, the last poll, one line per finding
                                   (kind, state, last seen, the operator line) and the comparison
                                   against the supervisor script's output
@@ -242,6 +249,7 @@ Subcommands:
   events --queue <name>           Read pending events from an mcp_queue queue [--since <cursor>] [--limit n] [--json]
   merge-pipeline show|set-record|clear-record|validate   The merge pipeline of a project, its record, and a check of a pipeline
   merge-shadow status|compare <automaton>   Merge shadow matched/different counts per release size, and one Automaton's differences
+  deploy show|run                 The deploy settings and last record; start a deploy now
 `,
 	}
 	cmd.AddCommand(
@@ -253,6 +261,7 @@ Subcommands:
 		newAutonomousInfraRetriesCmd(),
 		newAutonomousMergePipelineCmd(),
 		newAutonomousMergeShadowCmd(),
+		newAutonomousDeployCmd(),
 		newAutonomousStatusCmd(),
 		newAutonomousGeneratedArtefactsCmd(),
 		newAutonomousChangeRecordCmd(),
@@ -379,6 +388,8 @@ Subcommands:
 		newAutonomousSecurityFailureCmd(),
 		newAutonomousSupervisorWatchCmd(),
 		newAutonomousHousekeepingRepairsCmd(),
+		newAutonomousGateRepairsCmd(),
+		newAutonomousGateRepairCmd(),
 		newAutonomousDecisionsCmd(),
 		// Decision records: the structured operator decisions on the Automaton.
 		newDecisionRecordsCmd(),

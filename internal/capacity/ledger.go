@@ -267,8 +267,12 @@ type PoolStatus struct {
 	// Options.NodeState; a non-node pool or an undrained node leaves them
 	// unset (zero). A drained pool still shows its Held count: the tasks
 	// still holding it.
-	Drained    bool      `json:"drained,omitempty"`
-	DrainUntil time.Time `json:"drain_until,omitzero"`
+	Drained bool `json:"drained,omitempty"`
+	// Unhealthy and UnhealthyReason show a MarkNodeUnhealthy mark on a node
+	// pool; placement skips the node while it is set.
+	Unhealthy       bool      `json:"unhealthy,omitempty"`
+	UnhealthyReason string    `json:"unhealthy_reason,omitempty"`
+	DrainUntil      time.Time `json:"drain_until,omitzero"`
 	// Overflow counts adopted leases running on this node beyond its limit (see
 	// Lease.NodeOverflow). They are not in Held, so Held+External never exceeds
 	// Limit, but they occupy the node: admission counts Held+External+Overflow.
@@ -324,7 +328,7 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Options tune dispatch behaviour.
 //
 // LOCK RULE: every function in Options (External, Backpressure,
-// RoleBackpressure, AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState,
+// RoleBackpressure, AutonomousBackpressure, AutonomousModelBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState,
 // VerifierHeadroom)
 // is invoked while the ledger lock is held. Each must therefore be a fast
 // in-memory read: it must never call back
@@ -356,6 +360,11 @@ type Options struct {
 	// Requests marked Interactive skip it. Called under the lock: in-memory
 	// state only.
 	RoleBackpressure func(pool string, role Role, heldByRole map[Role]int) (blocked bool, reason string)
+	// AutonomousModelBackpressure is AutonomousBackpressure that also gets the
+	// request's Model, for blocks limited to some models of a pool (a usage
+	// back-off holding a model list). Interactive requests skip it. Called
+	// under the lock: in-memory state only.
+	AutonomousModelBackpressure func(pool, model string) (blocked bool, reason string)
 	// HeldBackpressure is a soft block for autonomous requests that needs the
 	// pool's current usage. Both numbers come from the ledger itself: held is
 	// the count of leases naming the pool (l.leases) and limit is the value set
@@ -454,7 +463,8 @@ type Ledger struct {
 	rates     map[string]RateCeiling
 	rateUse   map[string][]rateEntry
 	opt       Options
-	changed   chan struct{} // closed and replaced on every capacity change; see Changed
+	unhealthy unhealthyMarks // see node_unhealthy.go
+	changed   chan struct{}  // closed and replaced on every capacity change; see Changed
 
 	adopting   bool      // set by BeginAdoption; requests wait while it is set
 	adoptSince time.Time // when BeginAdoption was called
@@ -766,6 +776,11 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}
+		if l.opt.AutonomousModelBackpressure != nil && !req.Interactive {
+			if blocked, why := l.opt.AutonomousModelBackpressure(p, req.Model); blocked {
+				return fmt.Sprintf("pool %s backpressure: %s", p, why)
+			}
+		}
 		if l.opt.AutonomousBackpressure != nil && !req.Interactive {
 			if blocked, why := l.opt.AutonomousBackpressure(p); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
@@ -886,6 +901,12 @@ func (l *Ledger) swapVerifierNodePoolLocked(req *Request, node string) {
 // consumer now: NodeGate when set (its reason verbatim), else the legacy
 // NodeHealthy hook ("unhealthy" when it refuses), else every node is open.
 func (l *Ledger) nodeGateLocked(node, consumer string) (bool, string) {
+	if bad, why := l.unhealthy.get(node); bad {
+		if why == "" {
+			why = "unhealthy"
+		}
+		return false, why
+	}
 	if l.opt.NodeGate != nil {
 		ok, reason := l.opt.NodeGate(node, consumer)
 		return ok, reason
@@ -901,6 +922,11 @@ func (l *Ledger) resolveLocked(req Request) (Request, string) {
 		return req, why
 	}
 	if !req.multiNode() {
+		if req.Node != "" {
+			if bad, why := l.unhealthy.get(req.Node); bad {
+				return req, fmt.Sprintf("waiting for node %s: unhealthy: %s", req.Node, why)
+			}
+		}
 		if req.Node != "" && l.opt.NodeGate != nil {
 			if ok, why := l.opt.NodeGate(req.Node, req.Consumer); !ok {
 				return req, fmt.Sprintf("waiting for node %s: %s", req.Node, why)
@@ -1745,6 +1771,9 @@ func (l *Ledger) Snapshot() Status {
 		ps := PoolStatus{Name: p, Limit: l.limits[p], Held: l.heldLocked(p)}
 		if node, ok := strings.CutPrefix(p, "node:"); ok {
 			ps.Overflow = len(l.overflowLocked(node))
+			if bad, why := l.unhealthy.get(node); bad {
+				ps.Unhealthy, ps.UnhealthyReason = true, why
+			}
 			if l.opt.NodeState != nil {
 				if ns := l.opt.NodeState(node); ns.Drained {
 					ps.Drained = true

@@ -71,10 +71,12 @@ type fakeAdmission struct {
 	routes map[string]string
 	held   map[string]bool
 	calls  []string
+	// holdRung is the rung name the hold call recorded per backend.
+	holdRung map[string]string
 }
 
 func newFakeAdmission(cap int) *fakeAdmission {
-	return &fakeAdmission{cap: cap, routes: map[string]string{}, held: map[string]bool{}}
+	return &fakeAdmission{cap: cap, routes: map[string]string{}, held: map[string]bool{}, holdRung: map[string]string{}}
 }
 func (a *fakeAdmission) InflightCap(string) int { a.mu.Lock(); defer a.mu.Unlock(); return a.cap }
 func (a *fakeAdmission) SetInflight(b string, n int) error {
@@ -95,10 +97,15 @@ func (a *fakeAdmission) RouteBackend(from, to string, on bool) error {
 	a.calls = append(a.calls, fmt.Sprintf("route %s %s %v", from, to, on))
 	return nil
 }
-func (a *fakeAdmission) HoldNewWork(b string, on bool) error {
+func (a *fakeAdmission) HoldNewWork(b, rung string, on bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.held[b] = on
+	if on && rung != "" {
+		a.holdRung[b] = rung
+	} else if !on {
+		delete(a.holdRung, b)
+	}
 	a.calls = append(a.calls, fmt.Sprintf("hold %s %v", b, on))
 	return nil
 }
@@ -266,8 +273,8 @@ func TestBurnGuardRenewsHoldWhileAppliedAndClearsOnStepBack(t *testing.T) {
 
 	// First tick: the projection is over the line, the hold rung climbs in and sets the flag once.
 	d := g.Tick(ctx)
-	if d.Direction != burnguard.DirectionClimb || d.Rung != burnguard.RungHoldClaude {
-		t.Fatalf("first tick = %+v, want a climb to hold_claude", d)
+	if d.Direction != burnguard.DirectionClimb || d.Rung != burnguard.RungHoldEntry {
+		t.Fatalf("first tick = %+v, want a climb to hold_entry", d)
 	}
 	if got := holdCalls(true); got != 1 {
 		t.Fatalf("climb set the hold %d times, want 1", got)

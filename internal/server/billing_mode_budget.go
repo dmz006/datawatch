@@ -12,7 +12,6 @@ package server
 
 import (
 	"github.com/dmz006/datawatch/internal/autonomous"
-	"github.com/dmz006/datawatch/internal/burnguard"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
 )
@@ -54,7 +53,7 @@ func (s *Server) llmBillingMode(name string) string {
 	if l, ok := s.llmEntry(name); ok {
 		return config.ResolveBillingMode(l, s.cfg)
 	}
-	if name == burnguard.ClaudeBackend {
+	if name == config.BurnGuardLegacyEntryDefault {
 		return config.BillingModeAllowance
 	}
 	return config.BillingModeAPI
@@ -68,8 +67,8 @@ func (s *Server) backendUnitKeys() map[string]string {
 			out[l.Name] = UsageUnitKey(config.ResolveBillingMode(*l, s.cfg))
 		}
 	}
-	if _, ok := out[burnguard.ClaudeBackend]; !ok {
-		out[burnguard.ClaudeBackend] = UsageUnitPoints
+	if _, ok := out[config.BurnGuardLegacyEntryDefault]; !ok {
+		out[config.BurnGuardLegacyEntryDefault] = UsageUnitPoints
 	}
 	return out
 }

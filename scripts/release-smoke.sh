@@ -173,6 +173,19 @@ fi
 if [ "${DW_SKIP_DOCKERFILE_GO_VERSION_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-dockerfile-go-versions.sh" ]; then
   "$SMOKE_DIR/check-dockerfile-go-versions.sh" >&2 || exit 1
 fi
+# 2026-10-18 — unsafe-tmux-call audit (fail-closed): server-wide kills
+# without a dedicated socket, kill-session -a, pkill/killall of the tmux
+# server. Static scan, no daemon required, so it sits with the other lints
+# and blocks the release before any daemon is even started. Verify the
+# executable-bit first (a missing/non-executable gate must fail this run,
+# not silently skip the audit).
+if [ "${DW_SKIP_UNSAFE_TMUX_CALLS_CHECK:-0}" != "1" ]; then
+  if [ ! -x "$SMOKE_DIR/check-unsafe-tmux-calls.sh" ]; then
+    echo "Error: scripts/check-unsafe-tmux-calls.sh is missing or not executable (release gate must run)" >&2
+    exit 1
+  fi
+  "$SMOKE_DIR/check-unsafe-tmux-calls.sh" >&2 || exit 1
+fi
 # v6.21.0 — Docs-as-MCP currency lints.
 if [ "${DW_SKIP_DOCS_AS_MCP_CHECK:-0}" != "1" ]; then
   for s in check-curated-howtos.sh check-howto-coverage.sh check-plugin-manifests.sh; do
@@ -197,6 +210,7 @@ mkdir -p "$TEST_DATA_DIR" # scratch dir for this script's own fixtures either wa
 EXTERNAL_DAEMON=0
 PLUGINS_SMOKE_DIR=""
 DEMO_SERVICE_PORT=""
+SMOKE_TMUX_DIR=""
 
 if [[ -n "${DW_BASE:-}" ]]; then
   EXTERNAL_DAEMON=1
@@ -281,8 +295,18 @@ YAML
   echo "Binary       : $_DW_BIN"
   echo ""
 
+  # Dedicated tmux socket scratch dir, under the smoke scratch area: the daemon
+  # is started with TMUX_TMPDIR pointing here so its tmux sessions
+  # (cs-dw-smoke-test-*) land on a dedicated socket — never the production or
+  # default tmux server. cleanup_all cleans up the exact same socket
+  # layout (tmux-$(id -u)/default under $SMOKE_TMUX_DIR), matching the sandbox
+  # helper's convention (scripts/lib/sandbox.sh).
+  SMOKE_TMUX_DIR="${TEST_DATA_DIR}/dw-tmux-scratch"
+  mkdir -p "$SMOKE_TMUX_DIR"
+
   # Start the test daemon in the background.
-  "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
+  env TMUX_TMPDIR="${TEST_DATA_DIR}/dw-tmux-scratch" \
+    "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!
   # Record it with the shared daemon-lifecycle library so every exit path
@@ -7597,6 +7621,112 @@ PY
         curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$LEAN_SID\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1 || true
       fi
     fi
+  fi
+fi
+
+H "Deploy after ship"
+# GET /api/autonomous/deploy is read-only. POST /api/autonomous/deploy/run is
+# never called here: it would build, install and restart the daemon.
+
+DP_GET=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/deploy" 2>/dev/null || echo "000")
+DP_CODE=$(echo "$DP_GET" | tail -n1)
+DP_BODY=$(echo "$DP_GET" | sed '$d')
+if [[ "$DP_CODE" == "503" ]]; then
+  skip "deploy: autonomous is disabled on this daemon (HTTP 503); the deploy checks are not run"
+else
+  if [[ "$DP_CODE" == "200" ]] && echo "$DP_BODY" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d["settings"],dict) and isinstance(d["running"],bool)' 2>/dev/null; then
+    ok "deploy: GET /api/autonomous/deploy returns settings and running"
+  else
+    ko "deploy: GET /api/autonomous/deploy answered HTTP $DP_CODE without settings and running"
+  fi
+
+  if echo "$DP_BODY" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "snapshot" not in d or set(d["snapshot"])<={"time","sha256"}' 2>/dev/null; then
+    ok "deploy: status shows the snapshot identity only, never its contents"
+  else
+    ko "deploy: status snapshot carries fields beyond time and sha256"
+  fi
+
+  DP_CFG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print("deploy" in json.load(sys.stdin).get("autonomous",{}))' 2>/dev/null || echo "")
+  if [[ "$DP_CFG" == "True" ]]; then
+    ok "deploy: GET /api/config carries autonomous.deploy"
+  else
+    ko "deploy: GET /api/config has no autonomous.deploy block"
+  fi
+
+  DP_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/deploy" 2>/dev/null || echo "000")
+  if [[ "$DP_POST" == "405" ]]; then
+    ok "deploy: POST to the status route is refused with HTTP 405"
+  else
+    ko "deploy: POST to the status route answered HTTP $DP_POST, expected 405"
+  fi
+
+  DP_GETRUN=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/autonomous/deploy/run" 2>/dev/null || echo "000")
+  if [[ "$DP_GETRUN" == "405" ]]; then
+    ok "deploy: GET on the run route is refused with HTTP 405 (nothing was started)"
+  else
+    ko "deploy: GET on the run route answered HTTP $DP_GETRUN, expected 405"
+  fi
+
+  DP_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.deploy.health_timeout":"not-a-duration"}' "$BASE/api/config" 2>/dev/null || echo "000")
+  if [[ "$DP_BAD" == "400" ]]; then
+    ok "deploy: an invalid health_timeout is refused with HTTP 400"
+  else
+    ko "deploy: an invalid health_timeout answered HTTP $DP_BAD, expected 400"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "93. Deploy routes: documented status fields and the no-command refusal"
+# GET /api/autonomous/deploy: status and the documented fields. POST
+# /api/autonomous/deploy/run is called ONLY when the status shows that no
+# build, install or restart command is set, so the answer is the refusal
+# ("skipped"); it never builds, installs or restarts anything.
+
+D93_GET=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/deploy" 2>/dev/null || echo "000")
+D93_CODE=$(echo "$D93_GET" | tail -n1)
+D93_BODY=$(echo "$D93_GET" | sed '$d')
+if [[ "$D93_CODE" == "503" ]]; then
+  skip "deploy routes: autonomous is disabled on this daemon (HTTP 503)"
+else
+  if [[ "$D93_CODE" == "200" ]]; then
+    ok "deploy routes: GET /api/autonomous/deploy answers HTTP 200"
+  else
+    ko "deploy routes: GET /api/autonomous/deploy answered HTTP $D93_CODE, expected 200"
+  fi
+
+  if echo "$D93_BODY" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+keys={"build_command","install_command","binary_path","restart_command","health_check","drain_timeout","health_timeout"}
+assert isinstance(d["running"],bool)
+assert set(d["settings"])>=keys
+assert d["settings"]["drain_timeout"] and d["settings"]["health_timeout"]
+assert "phase" not in d or isinstance(d["phase"],str)
+assert "outcome" not in d or isinstance(d["outcome"],str)
+' 2>/dev/null; then
+    ok "deploy routes: status carries running and the seven settings, timeouts defaulted"
+  else
+    ko "deploy routes: status lacks running or one of the seven documented settings"
+  fi
+
+  D93_EMPTY=$(echo "$D93_BODY" | python3 -c '
+import json,sys
+s=json.load(sys.stdin).get("settings",{})
+print(all(not s.get(k) for k in ("build_command","install_command","restart_command")))
+' 2>/dev/null || echo "")
+  if [[ "$D93_EMPTY" == "True" ]]; then
+    D93_POST=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST "$BASE/api/autonomous/deploy/run" 2>/dev/null || echo "000")
+    D93_PCODE=$(echo "$D93_POST" | tail -n1)
+    D93_PBODY=$(echo "$D93_POST" | sed '$d')
+    if [[ "$D93_PCODE" == "200" ]] && echo "$D93_PBODY" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["status"]=="skipped" and d["note"] and not d.get("error")' 2>/dev/null; then
+      ok "deploy routes: POST run with no command set answers skipped with a note"
+    elif [[ "$D93_PCODE" == "503" ]]; then
+      skip "deploy routes: no worktree base repo (HTTP 503); the run refusal is not checked"
+    else
+      ko "deploy routes: POST run with no command set answered HTTP $D93_PCODE, expected 200 skipped"
+    fi
+  else
+    skip "deploy routes: a deploy command is configured here; the run route is not called"
   fi
 fi
 

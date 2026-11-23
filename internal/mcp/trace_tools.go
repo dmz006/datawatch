@@ -79,7 +79,7 @@ func (s *Server) toolTraceSession() mcpsdk.Tool {
 		mcpsdk.WithDescription("Read the trace of one session: its recorded tool calls, results, model requests, state changes, capability and permission decisions, loop warnings and errors in order, plus the session roll-up and how much of the backend's activity the trace covers. Read-only; same data as GET /api/trace/session/{id}. Event text is redacted when stored."),
 		mcpsdk.WithString("session", mcpsdk.Required(), mcpsdk.Description("Session full id")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
-	}, traceEventFilterOpts()...)
+	}, append(traceEventFilterOpts(), tracePackOpt())...)
 	return mcpsdk.NewTool("trace_session", opts...)
 }
 
@@ -88,7 +88,8 @@ func (s *Server) handleTraceSession(_ context.Context, req mcpsdk.CallToolReques
 	if bad != nil {
 		return bad, nil
 	}
-	return s.traceProxy("trace_session", "/api/trace/session/"+url.PathEscape(id), traceFilterQuery(req))
+	q := addTracePackQuery(req, traceFilterQuery(req))
+	return s.traceProxy("trace_session", "/api/trace/session/"+url.PathEscape(id), q)
 }
 
 // ── trace_automaton ─────────────────────────────────────────────────────────
@@ -118,6 +119,7 @@ func (s *Server) toolTraceRollup() mcpsdk.Tool {
 		mcpsdk.WithString("dimension", mcpsdk.Enum("session", "task", "story", "automaton", "agent", "backend"), mcpsdk.Description("Optional — grouping axis (default session)")),
 		mcpsdk.WithString("key", mcpsdk.Description("Optional — keep only this group")),
 		mcpsdk.WithNumber("loop_threshold", mcpsdk.Description("Optional — repeat count that raises a loop warning (default 5)")),
+		tracePackOpt(),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
@@ -133,6 +135,7 @@ func (s *Server) handleTraceRollup(_ context.Context, req mcpsdk.CallToolRequest
 	if v, ok := args["loop_threshold"].(float64); ok && v > 0 {
 		q.Set("loop_threshold", strconv.Itoa(int(v)))
 	}
+	q = addTracePackQuery(req, q)
 	return s.traceProxy("trace_rollup", "/api/trace/rollup", q)
 }
 

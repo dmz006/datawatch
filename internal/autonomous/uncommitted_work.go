@@ -294,11 +294,15 @@ func isIgnoreFileName(p string) bool {
 }
 
 // daemonIgnoreLines is every non-comment line the daemon may append to an
-// ignore file: the Automata scratch patterns, the artifact patterns of each
+// ignore file: the Automata scratch patterns, the Python compile-cache
+// patterns, the artifact patterns of each
 // backend and its own folder.
 func daemonIgnoreLines() map[string]bool {
 	set := map[string]bool{daemonIgnoreDir: true}
 	for _, p := range automatonScratchIgnorePatterns {
+		set[p] = true
+	}
+	for _, p := range tooling.DefaultPythonArtifactPatterns {
 		set[p] = true
 	}
 	for _, patterns := range tooling.BackendArtifacts {

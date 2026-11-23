@@ -13,6 +13,78 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
 - **Lane fill no longer mis-gates proposal-writing and defect Automata.** The lane fill proposal gate now takes an Automaton's proposal to be the `docs/plans/<name>.md` path named on an explicit proposal field or line in its title or spec — a path that is merely mentioned elsewhere names no proposal, and the plan folder's README is never one. Defect, research, operational and personal Automata are exempt from the gate, as is any Automaton whose title or spec states that its own job is to write the proposal: such an Automaton is never gated on the `Confirmed: yes` line of the proposal it is producing. In particular, an authoring Automaton that states its job in its title alone is now exempt too, and an Automaton that names its proposal in its title alone is no longer refused as `proposal_missing`. No new keys, endpoints or settings; the gate and its reason codes are unchanged. Docs: the lane fill how-to, the lane fill operations notes, the Eligibility reason definition and the lane fill block of the config reference.
 
+## v9.182.94 — Deploy after ship: a configured post-ship build, install, restart and health check
+
+### Changed
+
+- Deploy after ship: a configured post-ship build, install, restart and health check.
+
+## v9.182.93 — Runs leave no debris: clean tests, harness self-cleanup, safe auto-commits
+
+### Changed
+
+- Runs leave no debris: clean tests, harness self-cleanup, safe auto-commits.
+
+## v9.182.92 — Sessions toolbar fixes: closable Filters panel and icon view buttons
+
+### Changed
+
+- Sessions toolbar fixes: closable Filters panel and icon view buttons.
+
+## v9.182.91 — Core automation stability 1: automatic gate repair
+
+### Changed
+
+- Core automation stability 1: automatic gate repair.
+
+## v9.182.90 — Finalise session records whose process is gone and make every session list agree
+
+### Changed
+
+- Finalise session records whose process is gone and make every session list agree.
+
+## v9.182.89 — Archive-based trivy scan for the agent-base build and scan gate
+
+### Changed
+
+- Archive-based trivy scan for the agent-base build and scan gate.
+
+## v9.182.88 — Installable packs for standard tasks and Automaton templates
+
+### Changed
+
+- Installable packs for standard tasks and Automaton templates.
+
+## v9.182.87 — e2120001
+
+### Changed
+
+- e2120001.
+
+## v9.182.86 — Plan status roll-up and plan rename/edit
+
+### Changed
+
+- Plan status roll-up and plan rename/edit.
+
+## v9.182.85 — Core automation stability 3: planner avoids foreseeable task and check failures
+
+### Changed
+
+- Core automation stability 3: planner avoids foreseeable task and check failures.
+
+## v9.182.84 — Pi stall reporting, fast failure and node preflight
+
+### Changed
+
+- Pi stall reporting, fast failure and node preflight.
+
+## v9.182.83 — Per-LLM and per-model usage hold and burn guard
+
+### Changed
+
+- Per-LLM and per-model usage hold and burn guard.
+
 ## v9.182.82 — Send an empty system_tags array on summary rows and legacy list records, and align the doc
 
 ### Changed

@@ -1,0 +1,22 @@
+# gate-repair fixture — grounded in scripts/check-no-internal-refs.sh, whose
+# pattern \b(BL[0-9]+|F[0-9]+\b|B[0-9]+\b|S[0-9]+\b) false-matches CSS hex
+# color codes: here the two reported "leaks" (#B40044, #F40044) are colors,
+# not tracker IDs.
+# expect: tracker_id_css_hex
+# exit-code: 1
+# signal-killed: no
+# script: .datawatch/verify/story1-no-internal-refs.sh
+# own-verify-folder: yes
+# script-story: 0
+# gate-story: 0
+# changed: internal/server/web/style.css
+# script text:
+#   set -e
+#   if grep -nE '\b(BL[0-9]+|F[0-9]+\b|B[0-9]+\b|S[0-9]+\b)' internal/server/web/style.css; then
+#     echo "✗ FAIL: internal-ref leak(s) in user-facing surface." >&2
+#     exit 1
+#   fi
+---
+312: .badge-ok { background: #B40044; color: #F8FFFFFF; }
+315: .badge-warn { border: 2px solid #F40044; }
+✗ FAIL: 2 internal-ref leak(s) in user-facing surface.

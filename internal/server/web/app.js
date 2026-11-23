@@ -6224,7 +6224,10 @@ function _projectOverviewSummaryHTML(p) {
 // The findings and registry rows linked to a plan come from the summary list
 // GET /api/plan-records/browse; no full record is ever read. Controls write
 // through the plans write API (reorder plans and Automata, create a plan,
-// attach an Automaton, an Automation or a finding). Which plans are expanded
+// attach an Automaton, an Automation or a finding, rename a plan, edit its
+// goal: PATCH /api/plans/{ref}). Each plan shows its status, which the daemon
+// rolls up from the plan's linked Automata, with a "set by hand" badge when the
+// status was written by hand and so is kept. Which plans are expanded
 // is remembered per browser under the one localStorage key _PLANS_BROWSER_KEY.
 // The search box waits for a pause in typing on the one window-level timer
 // window._plansBrowserSearchTimer; nothing else polls.
@@ -6254,6 +6257,7 @@ function _plansBrowserFresh(project) {
     matchPlans: null,   // plan ids with a registry row or finding that matches q
     detail: {},         // plan id -> { status, automata, tasks, tasksTotal, tasksStatus, error }
     links: { status: 'idle', rows: [] },
+    edit: null,         // the open rename / goal editor: { planId, mode, value, error, busy }
     busy: false,
   };
 }
@@ -6437,6 +6441,14 @@ function _plansStateLabel(state) {
   const v = t(key);
   return v === key ? String(state || '') : v;
 }
+// _plansStateChipHTML is the plan's status, as the roll-up last wrote it, and a
+// "set by hand" badge when the status was set by hand (the roll-up keeps it).
+function _plansStateChipHTML(plan, cls) {
+  const badge = plan.set_by_hand
+    ? ` <span class="plans-browser-by-hand" title="${escHtml(t('plans_browser_by_hand_hint'))}" style="font-size:11px;border:1px solid var(--border);border-radius:8px;padding:0 6px;color:var(--text2);white-space:nowrap;">${escHtml(t('plans_browser_by_hand'))}</span>`
+    : '';
+  return `<span class="${cls}" style="font-size:12px;">${escHtml(_plansStateLabel(plan.state))}</span>${badge}`;
+}
 function _plansPointsText(n) {
   const v = Math.round((Number(n) || 0) * 10) / 10;
   return `${v} ${t('projects_page_points')}`;
@@ -6492,6 +6504,55 @@ function _plansTasksHTML(st, plan) {
   return `<div class="plans-browser-tasks" style="margin:8px 0 0 12px;">${head}<div style="margin-left:12px;">${body}</div></div>`;
 }
 
+// ── rename and goal edit ────────────────────────────────────────────────────
+// The detail of a plan shows its status (with the "set by hand" badge) and two
+// controls: Rename and Edit goal. Each opens one inline editor that checks the
+// value as it is typed, with the same rules the daemon applies: a title is
+// required, is one line and is at most 100 characters; a goal is at most 2000.
+// A refusal from the daemon (a taken title is a 409 that names the other plan)
+// is shown in place and the editor stays open with what was typed.
+const _PLANS_TITLE_MAX = 100;
+const _PLANS_GOAL_MAX = 2000;
+function _plansLen(s) { return Array.from(String(s || '').trim()).length; }
+function _plansEditMax(mode) { return mode === 'goal' ? _PLANS_GOAL_MAX : _PLANS_TITLE_MAX; }
+// _plansEditCheck returns the message for a value the daemon would refuse, or ''.
+function _plansEditCheck(mode, value) {
+  const v = String(value || '').trim();
+  if (mode === 'goal') return _plansLen(v) > _PLANS_GOAL_MAX ? t('plans_edit_goal_too_long', [_PLANS_GOAL_MAX]) : '';
+  if (!v) return t('plans_edit_title_required');
+  if (/[\n\r\v\f\u0085\u2028\u2029]/.test(v)) return t('plans_edit_title_one_line');
+  if (_plansLen(v) > _PLANS_TITLE_MAX) return t('plans_edit_title_too_long', [_PLANS_TITLE_MAX]);
+  return '';
+}
+function _plansFind(st, id) { return st.plans.concat(st.backlog).find(p => p && p.id === id) || null; }
+
+function _plansEditorHTML(plan, e) {
+  const goal = e.mode === 'goal';
+  const max = _plansEditMax(e.mode);
+  const n = _plansLen(e.value);
+  const label = t(goal ? 'plans_edit_goal_label' : 'plans_edit_rename_label');
+  const common = `id="plansEditInput" class="form-input plans-edit-input" aria-label="${escHtml(label)}" aria-describedby="plansEditCounter plansEditError" aria-invalid="${e.error ? 'true' : 'false'}" oninput="plansBrowserEditInput(this.value)" onkeydown="plansBrowserEditKey(event)"`;
+  const field = goal
+    ? `<textarea ${common} rows="3" style="width:100%;font-size:13px;">${escHtml(e.value)}</textarea>`
+    : `<input type="text" ${common} value="${escHtml(e.value)}" style="width:100%;font-size:13px;">`;
+  const disabled = e.busy || !!_plansEditCheck(e.mode, e.value);
+  return `<div class="plans-edit" data-edit="${goal ? 'goal' : 'rename'}" role="group" aria-label="${escHtml(label)}" style="margin:6px 0 6px 12px;">
+    ${field}
+    <div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin-top:4px;">
+      <span id="plansEditCounter" class="plans-edit-counter" style="font-size:12px;color:${n > max ? 'var(--error)' : 'var(--text2)'};">${escHtml(t('plans_edit_counter', [n, max]))}</span>
+      <button id="plansEditSave" type="button" class="btn-primary plans-edit-save" style="font-size:12px;padding:2px 10px;"${disabled ? ' disabled' : ''} onclick="plansBrowserEditSave();return false;">${escHtml(t(e.busy ? 'plans_edit_saving' : 'plans_edit_save'))}</button>
+      <button type="button" class="btn-secondary plans-edit-cancel" style="font-size:12px;padding:2px 10px;" onclick="plansBrowserEditCancel();return false;">${escHtml(t('plans_edit_cancel'))}</button>
+    </div>
+    <div id="plansEditError" class="plans-edit-error" role="alert" style="color:var(--error);font-size:13px;margin-top:4px;overflow-wrap:anywhere;">${escHtml(e.error)}</div></div>`;
+}
+
+function _plansDetailHeadHTML(st, plan) {
+  const e = st.edit && st.edit.planId === plan.id ? st.edit : null;
+  const btn = (cls, key, mode) => `<button type="button" class="btn-secondary ${cls}" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansBrowserEditOpen', plan.id, mode)}">${escHtml(t(key))}</button>`;
+  const status = `<span style="font-size:13px;color:var(--text2);">${escHtml(t('plans_edit_status_label'))}:</span> ${_plansStateChipHTML(plan, 'plans-browser-detail-state')}`;
+  return `<div class="plans-browser-detail-head" style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:6px 0 2px 12px;">${status}${e ? '' : btn('plans-edit-rename', 'plans_edit_rename', 'rename') + btn('plans-edit-goal', 'plans_edit_goal', 'goal')}</div>${e ? _plansEditorHTML(plan, e) : ''}`;
+}
+
 function _plansExpandedHTML(st, plan) {
   const d = st.detail[plan.id];
   const autos = d && Array.isArray(d.automata) ? d.automata : [];
@@ -6509,7 +6570,7 @@ function _plansExpandedHTML(st, plan) {
   const linked = st.links.rows.filter(r => r.plan_id === plan.id);
   const fin = linked.filter(r => r.kind === 'finding');
   const rows = linked.filter(r => r.kind !== 'finding');
-  return `<div class="plans-browser-expanded">${plan.plan_kind === 'release' ? plansReleaseThemesHTML(st, plan) : ''}${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
+  return `<div class="plans-browser-expanded">${_plansDetailHeadHTML(st, plan)}${plan.plan_kind === 'release' ? plansReleaseThemesHTML(st, plan) : ''}${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
     ${section('plans_browser_findings', fin.length ? fin.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
     ${section('plans_browser_rows', rows.length ? rows.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
     ${_plansAttachFormHTML(st, plan)}</div>`;
@@ -6528,7 +6589,7 @@ function _plansPlanHTML(st, plan, idx, list, canMove) {
   return `<div class="plans-browser-plan" data-plan="${escHtml(plan.id)}" data-state="${escHtml(plan.state || '')}" style="border-top:1px solid var(--border);padding:6px 0;">
     <div class="plans-browser-head" style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;">
       <a href="#" class="plans-browser-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggle', plan.id)}" style="font-size:14px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(plan.title || plan.id)}</a>${badge}
-      <span class="plans-browser-state" style="font-size:12px;">${escHtml(_plansStateLabel(plan.state))}</span>
+      ${_plansStateChipHTML(plan, 'plans-browser-state')}
       <span class="plans-browser-bar" style="flex:1 1 160px;min-width:140px;"><div class="project-progress" role="progressbar" aria-label="${escHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" style="display:flex;align-items:center;gap:8px;">
         <div style="flex:1;min-width:60px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent,#3b82f6);"></div></div>
         <span style="font-size:12px;color:var(--text2);white-space:nowrap;">${escHtml(label)}</span></div></span>
@@ -7399,6 +7460,85 @@ window.plansBrowserAttach = function(planId, kind, value) {
   value = String(value || '').trim();
   if (!value) { _plansBrowser.notice = t('plans_browser_attach_needs_value'); _plansBrowserPaint(); return Promise.resolve(); }
   return _plansWrite(_plansPath(planId, '/attach'), 'POST', { kind, id: value }).then(r => (r ? _plansReloadAfterWrite(planId) : null));
+};
+
+function _plansEditFocus() {
+  const el = document.getElementById('plansEditInput');
+  if (el && typeof el.focus === 'function') el.focus();
+}
+// _plansEditSync updates the counter, the message and the Save button in place,
+// so typing never redraws the field and loses the caret.
+function _plansEditSync() {
+  const e = _plansBrowser.edit;
+  if (!e) return;
+  const max = _plansEditMax(e.mode);
+  const n = _plansLen(e.value);
+  const counter = document.getElementById('plansEditCounter');
+  if (counter) { counter.textContent = t('plans_edit_counter', [n, max]); counter.style.color = n > max ? 'var(--error)' : 'var(--text2)'; }
+  const err = document.getElementById('plansEditError');
+  if (err) err.textContent = e.error;
+  const save = document.getElementById('plansEditSave');
+  if (save) save.disabled = !!e.busy || !!_plansEditCheck(e.mode, e.value);
+  const input = document.getElementById('plansEditInput');
+  if (input && typeof input.setAttribute === 'function') input.setAttribute('aria-invalid', e.error ? 'true' : 'false');
+}
+window.plansBrowserEditOpen = function(planId, mode) {
+  const st = _plansBrowser;
+  const plan = _plansFind(st, planId);
+  if (!plan) return Promise.resolve();
+  const goal = mode === 'goal';
+  st.notice = '';
+  st.edit = { planId, mode: goal ? 'goal' : 'rename', value: String(goal ? (plan.goal || '') : (plan.title || '')), error: '', busy: false };
+  _plansBrowserPaint();
+  _plansEditFocus();
+  return Promise.resolve();
+};
+window.plansBrowserEditInput = function(value) {
+  const e = _plansBrowser.edit;
+  if (!e || e.busy) return;
+  e.value = String(value == null ? '' : value);
+  e.error = _plansEditCheck(e.mode, e.value);
+  _plansEditSync();
+};
+window.plansBrowserEditCancel = function() {
+  if (!_plansBrowser.edit) return;
+  _plansBrowser.edit = null;
+  _plansBrowserPaint();
+};
+window.plansBrowserEditKey = function(ev) {
+  if (!ev) return;
+  if (ev.key === 'Escape') { window.plansBrowserEditCancel(); return; }
+  const e = _plansBrowser.edit;
+  if (ev.key === 'Enter' && e && (e.mode === 'rename' || ev.ctrlKey || ev.metaKey)) {
+    if (typeof ev.preventDefault === 'function') ev.preventDefault();
+    window.plansBrowserEditSave();
+  }
+};
+window.plansBrowserEditSave = function() {
+  const st = _plansBrowser;
+  const e = st.edit;
+  if (!e || e.busy) return Promise.resolve();
+  const bad = _plansEditCheck(e.mode, e.value);
+  if (bad) { e.error = bad; _plansEditSync(); return Promise.resolve(); }
+  const value = e.value.trim();
+  const plan = _plansFind(st, e.planId);
+  const goal = e.mode === 'goal';
+  if (plan && value === String(goal ? (plan.goal || '') : (plan.title || ''))) { st.edit = null; _plansBrowserPaint(); return Promise.resolve(); }
+  e.busy = true; e.error = '';
+  _plansEditSync();
+  const body = goal ? { goal: value } : { title: value };
+  return apiFetch(_plansPath(e.planId, ''), { method: 'PATCH', body: JSON.stringify(body) }).then(() => {
+    if (_plansBrowser !== st || st.edit !== e) return null;
+    st.edit = null;
+    _plansBrowserPaint();
+    return _plansReloadAfterWrite(e.planId);
+  }, err => {
+    if (_plansBrowser !== st || st.edit !== e) return null;
+    e.busy = false; e.error = _plansErrText(err);
+    _plansBrowserPaint();
+    _plansEditFocus();
+    return null;
+  });
 };
 
 // _plansBrowserLoadSelected is called with the rest of the selected project's
@@ -10727,23 +10867,98 @@ window.SESSIONS_SAVED_VIEWS_KEY = SESSIONS_SAVED_VIEWS_KEY;
 window.SESSIONS_GROUP_AXES = SESSIONS_GROUP_AXES;
 window.SESSIONS_GROUP_UNGROUPED = SESSIONS_GROUP_UNGROUPED;
 
-// One-line toolbar view-mode control: a native <select> (accessible, keyboard-
-// operable, and it can never wrap the row). _sessionsSetViewMode remains the
-// sole mutator — the select is just its trigger, exactly like the three
-// buttons it replaces. No new storage key: the stored mode (or computed
-// default) is simply the selected option.
+// One-line toolbar view-mode control: a role=group of three native buttons
+// (List / Tiles / Compact) — keyboard operable (Tab to the group's buttons,
+// Enter or Space activates), and their combined width never wraps the row.
+// _sessionsSetViewMode remains the sole mutator — the buttons are just its
+// trigger. No new storage key: the stored mode (or computed default) simply
+// marks the active button. On touch, holding a button (~500 ms) shows its
+// label in a small tooltip next to it instead of changing the mode: the
+// synthetic click is cancelled by preventing the touchend's default action.
 function _sessionsViewSelectHTML(mode) {
   const m = (SESSIONS_VIEW_MODES.indexOf(mode) >= 0) ? mode : _sessionsViewMode();
   const label = _stx('sessions_view_dropdown', _stx('sessions_view_toggle', 'Sessions view mode'));
   const defs = [
-    { key: 'list', label: _stx('sessions_view_list', 'List') },
-    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles') },
-    { key: 'compact', label: _stx('sessions_view_compact', 'Compact') },
+    { key: 'list', glyph: '&#9776;', label: _stx('sessions_view_list', 'List') },
+    { key: 'tiles', glyph: '&#8862;', label: _stx('sessions_view_tiles', 'Tiles') },
+    { key: 'compact', glyph: '&#9636;', label: _stx('sessions_view_compact', 'Compact') },
   ];
-  const opts = defs.map(d => `<option value="${d.key}"${d.key === m ? ' selected' : ''}>${escHtml(d.label)}</option>`).join('');
-  return `<select id="sessionsViewSelect" class="sessions-view-select" aria-label="${escHtml(label)}" title="${escHtml(label)}" onchange="_sessionsSetViewMode(this.value)">${opts}</select>`;
+  const btns = defs.map(d => {
+    const on = d.key === m;
+    return `<button type="button" class="sessions-view-btn${on ? ' active' : ''}" data-mode="${d.key}" aria-pressed="${on ? 'true' : 'false'}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')" ontouchstart="_svbPressStart(this)" ontouchend="_svbPressEnd(event,this)" ontouchcancel="_svbPressEnd(event,this)"><span aria-hidden="true">${d.glyph}</span></button>`;
+  }).join('');
+  return `<div class="sessions-view-buttons" role="group" aria-label="${escHtml(label)}">${btns}</div>`;
 }
 window._sessionsViewSelectHTML = _sessionsViewSelectHTML;
+
+// Long-press (touch) label hint for the view-mode buttons: a short tap
+// fires the normal click (mode change); holding for ~500 ms shows the
+// button's label in a tooltip and cancels the synthetic click so the
+// long press never changes the mode. Both paths hide the tooltip when the
+// finger lifts (touchend or touchcancel).
+const SESSIONS_VIEW_BTN_LONG_PRESS_MS = 500;
+function _svbPressStart(btn) {
+  if (!btn) return; // no DOM (tests) — nothing to arm
+  clearTimeout(btn._svbTimer);
+  btn._svbTimer = setTimeout(function () {
+    btn._svbTimer = null;
+    btn._svbLong = true;
+    _svbShowTip(btn);
+  }, SESSIONS_VIEW_BTN_LONG_PRESS_MS);
+}
+function _svbPressEnd(ev, btn) {
+  if (btn && btn._svbTimer) {
+    clearTimeout(btn._svbTimer);
+    btn._svbTimer = null;
+    return; // brief touch: let the synthetic click run the normal mode change
+  }
+  if (btn) btn._svbLong = false;
+  _svbHideTip();
+  if (ev) {
+    // The long press already fired: cancel the synthetic click so lifting
+    // the finger does not switch the mode.
+    try { if (ev.preventDefault) ev.preventDefault(); } catch (_) { /* stub */ }
+  }
+}
+function _svbTipEl() {
+  try {
+    if (typeof document === 'undefined' || !document.body) return null;
+    let el = document.getElementById('sessionsViewTip');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'sessionsViewTip';
+      el.className = 'sessions-view-tip';
+      el.style.display = 'none';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+    }
+    return el;
+  } catch (_) { return null; }
+}
+function _svbShowTip(btn) {
+  const el = _svbTipEl();
+  if (!el || !btn) return;
+  const label = btn.getAttribute ? btn.getAttribute('aria-label') : '';
+  el.textContent = label || '';
+  try {
+    const r = btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
+    if (r) {
+      el.style.left = (r.left + r.width / 2) + 'px';
+      el.style.top = (r.top - 6) + 'px';
+    }
+    el.style.transform = 'translate(-50%, -100%)';
+  } catch (_) { /* positioning is cosmetic only */ }
+  el.style.display = 'block';
+}
+function _svbHideTip() {
+  const el = _svbTipEl();
+  if (el) el.style.display = 'none';
+}
+window.SESSIONS_VIEW_BTN_LONG_PRESS_MS = SESSIONS_VIEW_BTN_LONG_PRESS_MS;
+window._svbPressStart = _svbPressStart;
+window._svbPressEnd = _svbPressEnd;
+window._svbShowTip = _svbShowTip;
+window._svbHideTip = _svbHideTip;
 
 window.renderSessionsViewsBar = renderSessionsViewsBar;
 window._savedViewsRead = _savedViewsRead;
@@ -11221,7 +11436,7 @@ function _sessionsFiltersButtonHTML() {
   const label = _stx('sessions_filters_btn', 'Filters');
   const badge = n > 0 ? `<span class="sessions-filters-badge" id="sessionsFiltersBadge">${n}</span>` : '';
   const tip = _stx('sessions_filters_tip', 'Group, saved views and status filters');
-  return `<button type="button" class="sessions-filters-btn${n > 0 ? ' active' : ''}" id="sessionsFiltersBtn" onclick="sessionsFiltersOpen()" title="${escHtml(tip)}" aria-label="${escHtml(label)}" aria-haspopup="dialog" aria-expanded="${state._sessionsSheetOpen ? 'true' : 'false'}"><span aria-hidden="true">&#9776;</span><span class="sessions-filters-label">${escHtml(label)}</span>${badge}</button>`;
+  return `<button type="button" class="sessions-filters-btn${n > 0 ? ' active' : ''}" id="sessionsFiltersBtn" onclick="sessionsFiltersToggle()" title="${escHtml(tip)}" aria-label="${escHtml(label)}" aria-haspopup="dialog" aria-expanded="${state._sessionsSheetOpen ? 'true' : 'false'}"><span aria-hidden="true">&#9776;</span><span class="sessions-filters-label">${escHtml(label)}</span>${badge}</button>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11293,13 +11508,33 @@ function _sessionsSheetKeydown(e) {
   if (e && (e.key === 'Escape' || e.key === 'Esc')) sessionsFiltersClose();
 }
 
+// Outside-click close, bound to `document` so it works for the phone sheet
+// and the desktop panel alike (both render the same `.sessions-sheet` node
+// under the same backdrop). Clicks on the Filters button itself are its own
+// toggle's job — the click that opens it is the same one that closes it, no
+// close-then-reopen. Clicks inside the live sheet node must not close it,
+// including the sheet kit's in-place re-patches, which never dispatch
+// document-level clicks.
+function _sessionsSheetClickOutside(e) {
+  if (!state._sessionsSheetOpen) return;
+  const tgt = e && e.target;
+  try {
+    if (tgt && typeof tgt.closest === 'function' && tgt.closest('#sessionsFiltersBtn')) return;
+    const sheet = (typeof document.querySelector === 'function') ? document.querySelector('.sessions-sheet') : null;
+    if (sheet && typeof sheet.contains === 'function' && sheet.contains(tgt)) return;
+  } catch (_) { /* no DOM */ }
+  sessionsFiltersClose();
+}
+
 function _sessionsSheetListen(on) {
   try {
     if (on && !state._sessionsSheetListening) {
       document.addEventListener('keydown', _sessionsSheetKeydown);
+      document.addEventListener('click', _sessionsSheetClickOutside);
       state._sessionsSheetListening = true;
     } else if (!on && state._sessionsSheetListening) {
       document.removeEventListener('keydown', _sessionsSheetKeydown);
+      document.removeEventListener('click', _sessionsSheetClickOutside);
       state._sessionsSheetListening = false;
     }
   } catch (_) { /* no DOM */ }
@@ -11308,6 +11543,11 @@ function _sessionsSheetListen(on) {
 // Called on every render: the listener follows the open state.
 function _sessionsSheetSyncKey() {
   _sessionsSheetListen(!!state._sessionsSheetOpen && state.activeView === 'sessions');
+}
+
+function sessionsFiltersToggle() {
+  if (state._sessionsSheetOpen) sessionsFiltersClose();
+  else sessionsFiltersOpen();
 }
 
 function sessionsFiltersOpen() {
@@ -11330,6 +11570,7 @@ window._sessionsActiveFilterCount = _sessionsActiveFilterCount;
 window.sessionsFiltersOpen = sessionsFiltersOpen;
 window.sessionsFiltersClose = sessionsFiltersClose;
 window.sessionsFiltersBackdrop = sessionsFiltersBackdrop;
+window.sessionsFiltersToggle = sessionsFiltersToggle;
 window.sessionsFiltersBadgeCount = _sessionsActiveFilterCount;
 
 // Sessions carry no task counts, so progress is lifecycle based: a finished
@@ -17146,6 +17387,15 @@ function settingsSectionHeader(key, title, docsPath) {
 // and target-choice order; reproduced here, not re-derived.
 const DOCS_DEFINITIONS = 'datawatch-definitions.md';
 const DOCS_LINKS_BY_KEY = {
+  // Deploy after ship: the card and each deploy setting
+  'autonomous.deploy.build_command': DOCS_DEFINITIONS + '#autonomous-deploy-build-command',
+  'autonomous.deploy.install_command': DOCS_DEFINITIONS + '#autonomous-deploy-install-command',
+  'autonomous.deploy.binary_path': DOCS_DEFINITIONS + '#autonomous-deploy-binary-path',
+  'autonomous.deploy.restart_command': DOCS_DEFINITIONS + '#autonomous-deploy-restart-command',
+  'autonomous.deploy.health_check': DOCS_DEFINITIONS + '#autonomous-deploy-health-check',
+  'autonomous.deploy.drain_timeout': DOCS_DEFINITIONS + '#autonomous-deploy-drain-timeout',
+  'autonomous.deploy.health_timeout': DOCS_DEFINITIONS + '#autonomous-deploy-health-timeout',
+  deploy_card_title: DOCS_DEFINITIONS + '#deploy-after-ship',
   // Screen headers
   view_sessions: DOCS_DEFINITIONS + '#sessions-list',
   view_session_detail: DOCS_DEFINITIONS + '#inside-a-session-terminal-area',
@@ -17581,6 +17831,11 @@ function supervisorLoopDocsLink(key) {
   const rest = key.slice('supervisor_loop.'.length).replace(/[._]+/g, '-');
   return DOCS_DEFINITIONS + '#supervisor-loop-' + rest;
 }
+// The Deploy card and its settings map to the Deploy after ship section; the
+// per-setting keys have their own entries in DOCS_LINKS_BY_KEY above.
+const DOCS_DEPLOY_LINKS = [
+  [['autonomous.deploy.', 'settings_deploy_', 'deploy_'], DOCS_DEFINITIONS + '#deploy-after-ship'],
+];
 
 // Mirrors DocsLinks.kt's forKey(): exact key match first, then the same
 // 4 dynamic-prefix fallbacks (per-panel stats cards, per-backend config
@@ -17600,6 +17855,9 @@ function docsLinkForKey(key) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   for (const [prefixes, link] of DOCS_MERGE_PIPELINE_LINKS) {
+    if (prefixes.some(p => key.startsWith(p))) return link;
+  }
+  for (const [prefixes, link] of DOCS_DEPLOY_LINKS) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   for (const [prefixes, link] of DOCS_ONBOARDING_REPORT_LINKS) {
@@ -20504,6 +20762,7 @@ window._renderLLMEditPanel = function(existing) {
     `<tr data-node="${escHtml(em.node||'')}" data-model="${escHtml(em.model||'')}">
       <td style="padding:4px 8px 4px 0;"><code style="font-size:11px;">${escHtml(em.node||'—')}</code></td>
       <td style="padding:4px 8px;"><code style="font-size:11px;">${escHtml(em.model||'')}</code></td>
+      ${_llmModelRateCell(em)}
       <td style="padding:4px 0;text-align:right;">
         <button type="button" class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="_llmRemoveModelRow(this)" title="Remove">&#x2715;</button>
       </td>
@@ -20784,6 +21043,7 @@ window._llmAddModelRow = function() {
   tr.dataset.model = model;
   tr.innerHTML = `<td style="padding:4px 8px 4px 0;"><code style="font-size:11px;">${escHtml(node||'—')}</code></td>` +
     `<td style="padding:4px 8px;"><code style="font-size:11px;">${escHtml(model)}</code></td>` +
+    _llmModelRateCell({}) +
     `<td style="padding:4px 0;text-align:right;"><button type="button" class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="_llmRemoveModelRow(this)" title="Remove">&#x2715;</button></td>`;
   tbody.appendChild(tr);
   modelEl.value = '';
@@ -20811,11 +21071,29 @@ window._llmRefreshTestModelSel = function() {
 window._llmCollectModels = function() {
   const tbody = document.getElementById('llmModelsBody');
   if (!tbody) return [];
-  return Array.from(tbody.querySelectorAll('tr')).map(tr => ({
-    node: tr.dataset.node || '',
-    model: tr.dataset.model || '',
-  })).filter(em => em.model);
+  return Array.from(tbody.querySelectorAll('tr')).map(tr => {
+    const em = { node: tr.dataset.node || '', model: tr.dataset.model || '' };
+    // Optional per-model rates (USD per 1K tokens); blank = per-backend cost_rates.
+    tr.querySelectorAll('input.llm-model-rate').forEach(inp => {
+      const v = String(inp.value || '').trim();
+      if (v !== '' && !isNaN(parseFloat(v))) em[inp.dataset.rate] = parseFloat(v);
+    });
+    return em;
+  }).filter(em => em.model);
 };
+
+// Per-model cost-rate inputs (configuration only, provider-dependent).
+// Blank fields fall back to the per-backend cost_rates entry.
+const _LLM_MODEL_RATE_KEYS = ['in_per_k', 'out_per_k', 'cache_read_per_k', 'cache_write_per_k'];
+function _llmModelRateCell(em) {
+  em = em || {};
+  const inputs = _LLM_MODEL_RATE_KEYS.map(k => {
+    const v = (em[k] === undefined || em[k] === null) ? '' : String(em[k]);
+    const label = t('llm_model_rate_' + k) || k;
+    return `<input type="number" step="any" min="0" class="llm-model-rate" data-rate="${k}" value="${escHtml(v)}" placeholder="${escHtml(label)}" title="${escHtml(label)}" style="width:72px;font-size:11px;" />`;
+  }).join(' ');
+  return `<td style="padding:4px 8px;" title="${escHtml(t('llm_model_rate_hint') || '')}">${inputs}</td>`;
+}
 
 window._llmProbeNodeModels = function() {
   const kind = (document.getElementById('llmEditKind') || {}).value || 'ollama';
@@ -26683,6 +26961,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'resource_limits.memory_floor_mb', label: '', labelKey: 'settings_resource_limits_memory_floor_mb', helpKey: 'settings_resource_limits_memory_floor_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '2048', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_floor_mb', this)" },
     { key: 'resource_limits.memory_cap_mb', label: '', labelKey: 'settings_resource_limits_memory_cap_mb', helpKey: 'settings_resource_limits_memory_cap_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '16384', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_cap_mb', this)" },
   ]},
+  // Standard task packs: the enabled switch, the active order list and the
+  // pack inputs. The fields live in app-packs-settings-fields.js, loaded first.
+  { id: 'packs', sectionKey: 'settings_packs', section: 'Standard task packs', docs: 'howto/automata-standard-tasks.md', fields: (typeof PACKS_SETTINGS_FIELDS !== 'undefined' ? PACKS_SETTINGS_FIELDS : []) },
   { id: 'costreport', sectionKey: 'settings_cost_report', section: 'Cost Report', docs: 'datawatch-definitions.md', fields: [
     { key: 'cost_report.default_group_by', label: 'Default group by', labelKey: 'settings_cost_report_default_group_by', type: 'select', options: ['automaton','automation','backend','week'] },
     { key: 'cost_report.default_window_days', label: 'Default window (days)', labelKey: 'settings_cost_report_default_window_days', type: 'number', placeholder: '7', min: 1, step: 1 },
@@ -26717,6 +26998,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.capacity_wait_seconds', label: 'Interactive session capacity wait (sec)', labelKey: 'settings_session_capacity_wait', type: 'number', placeholder: '8' },
     { key: 'session.task_delivery_window_seconds', label: 'Task delivery wait per attempt (sec)', labelKey: 'settings_session_task_delivery_window', type: 'number', placeholder: '60' },
     { key: 'session.task_delivery_attempts', label: 'Task delivery attempts', labelKey: 'settings_session_task_delivery_attempts', type: 'number', placeholder: '3' },
+    { key: 'session.finalise_interval_minutes', label: 'Session finalise interval (min)', labelKey: 'settings_finalise_interval', helpKey: 'settings_finalise_interval_help', type: 'number', placeholder: '10' },
     { key: 'session.store_flush_interval', label: 'Session store write delay (ms; 0 = write through)', labelKey: 'settings_session_store_flush_interval', helpKey: 'settings_session_store_flush_interval_help', type: 'number', placeholder: '1000' },
     { key: 'session.store_archive_after_days', label: 'Archive finished sessions after (days; 0 = never)', labelKey: 'settings_session_store_archive_after_days', helpKey: 'settings_session_store_archive_after_days_help', type: 'number', placeholder: '14' },
     { key: 'session.store_field_cap_kb', label: 'Session store inline field cap (KB)', labelKey: 'settings_session_store_field_cap_kb', helpKey: 'settings_session_store_field_cap_kb_help', type: 'number', placeholder: '256' },
@@ -26904,6 +27186,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.planning_routing.enabled', label: 'Route Automata planning by rules', labelKey: 'planning_routing_field_enabled', type: 'toggle' },
     { key: 'autonomous.planning_routing.shadow', label: 'Record planning routing without applying it (shadow)', labelKey: 'planning_routing_field_shadow', type: 'toggle' },
+    { key: 'autonomous.tmux_kill_guard', label: 'Worker tmux kill guard', labelKey: 'settings_tmux_kill_guard', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
     // Verifier headroom gates: a verifier cap above 1 and a verifier_slots write above 1
@@ -27206,6 +27489,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.housekeeping_repairs.lane_fill', label: 'Lane fill repairs', labelKey: 'settings_housekeeping_lane_fill', helpKey: 'settings_housekeeping_lane_fill_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.planning', label: 'Planning repairs', labelKey: 'settings_housekeeping_planning', helpKey: 'settings_housekeeping_planning_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.leftovers', label: 'Leftover repairs', labelKey: 'settings_housekeeping_leftovers', helpKey: 'settings_housekeeping_leftovers_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    // Gate repair — the gate failure repair engine, one mode (off, report or on;
+    // default report).
+    { label: 'Gate repair', labelKey: 'settings_gate_repairs', hintKey: 'settings_gate_repairs_hint', type: 'group' },
+    { key: 'autonomous.gate_repair.mode', label: 'Mode (off, report or on; default report)', labelKey: 'settings_gate_repairs_mode', helpKey: 'settings_gate_repairs_mode_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     // Platform context — the toggle and the project note. Reads GET /api/config and writes
     // through PUT /api/config (platform_context.enabled, platform_context.note).
     { label: 'Platform context', labelKey: 'settings_platform_context_title', docsKey: 'settings_platform_context_title', type: 'group' },
@@ -27415,6 +27702,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_shadow.enabled', label: 'Merge shadow (the finish-time shadow merge plan; on by default)', labelKey: 'settings_merge_shadow_enabled', helpKey: 'settings_merge_shadow_enabled_help', helpDocs: 'howto/merge-shadow.md', type: 'toggle' },
     { key: 'autonomous.merge_shadow.gate_timeout', label: 'Merge shadow gate timeout (a Go duration per gate, default 20m)', labelKey: 'settings_merge_shadow_gate_timeout', helpKey: 'settings_merge_shadow_gate_timeout_help', helpDocs: 'howto/merge-shadow.md', type: 'text', placeholder: '20m' },
     { key: 'autonomous.merge_shadow.plan_keep', label: 'Merge shadow plans kept per project (whole number, minimum 1, default 200)', labelKey: 'settings_merge_shadow_plan_keep', helpKey: 'settings_merge_shadow_plan_keep_help', helpDocs: 'howto/merge-shadow.md', type: 'number', placeholder: '200', min: 1, step: 1 },
+    // Deploy — how a shipped build becomes a running daemon: build, install, restart, health check.
+    { label: 'Deploy', labelKey: 'settings_deploy_group', docsKey: 'deploy_card_title', type: 'group' },
+    { key: 'autonomous.deploy.build_command', label: 'Deploy build command', labelKey: 'settings_deploy_build_command', hintKey: 'settings_deploy_build_command_hint', docsKey: 'autonomous.deploy.build_command', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.install_command', label: 'Deploy install command', labelKey: 'settings_deploy_install_command', hintKey: 'settings_deploy_install_command_hint', docsKey: 'autonomous.deploy.install_command', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.binary_path', label: 'Deploy installed binary path', labelKey: 'settings_deploy_binary_path', hintKey: 'settings_deploy_binary_path_hint', docsKey: 'autonomous.deploy.binary_path', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.restart_command', label: 'Deploy restart command', labelKey: 'settings_deploy_restart_command', hintKey: 'settings_deploy_restart_command_hint', docsKey: 'autonomous.deploy.restart_command', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.health_check', label: 'Deploy health check', labelKey: 'settings_deploy_health_check', hintKey: 'settings_deploy_health_check_hint', docsKey: 'autonomous.deploy.health_check', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.drain_timeout', label: 'Deploy drain timeout', labelKey: 'settings_deploy_drain_timeout', hintKey: 'settings_deploy_drain_timeout_hint', docsKey: 'autonomous.deploy.drain_timeout', type: 'text', placeholder: '' },
+    { key: 'autonomous.deploy.health_timeout', label: 'Deploy health timeout', labelKey: 'settings_deploy_health_timeout', hintKey: 'settings_deploy_health_timeout_hint', docsKey: 'autonomous.deploy.health_timeout', type: 'text', placeholder: '' },
     // Onboarding report — what is configured, what is missing and what to try next. The
     // list is comma separated; an id that names no check is ignored.
     // Tracing — how much of each agent's activity is recorded for the Trace card.
@@ -28441,10 +28737,11 @@ function loadGeneralConfig() {
           } else if (f.type === 'toggle') {
             const checked = !!val;
             const _togHint = _fieldHintHTML(f);
+            const _togOnchange = f.onchange || `saveGeneralField('${f.key}', this.checked)`;
             html += `<div class="settings-row" style="justify-content:space-between;${(_togHint || f.helpDocs) ? 'flex-wrap:wrap;gap:6px;' : ''}">
               <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.docsKey ? defsLink(f.docsKey) : ''}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
               <label class="toggle-switch">
-                <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
+                <input type="checkbox" ${checked ? 'checked' : ''} onchange="${_togOnchange}" />
                 <span class="toggle-slider"></span>
               </label>
               ${f.helpDocs ? _settingsHelpTextHTML(f) : ''}${_togHint}
@@ -35852,6 +36149,13 @@ const _AUTOMATA_TEMPLATE_SUBTABS = [
     load: () => _automataStandardTasksLoad(),
     render: () => _automataStandardTasksRender(),
   },
+  {
+    key: 'packs',
+    titleKey: 'packs_subtab_title',
+    // Packs: a shell from app-packs-subtab.js; it keeps no pack list.
+    load: () => packsSubtabLoad(),
+    render: () => packsSubtabRender(),
+  },
 ];
 
 // The selected sub-tab key, persisted under its own localStorage key and
@@ -38081,7 +38385,7 @@ function capacityBackoffHtml(backoff) {
     // any pool prefix the ledger added. Every other reason shows as sent.
     const reasonText = String(b.reason || '').replace(/back-off, review reserve in use/g, t('capacity_backoff_reason_review_reserve') || 'back-off, review reserve in use');
     const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(reasonText)}</div>` : '';
-    return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
+    return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${typeof usageBackoffModelsHtml === 'function' ? usageBackoffModelsHtml(b) : ''}${reason}</div>`;
   }).join('');
   return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
 }
@@ -38377,6 +38681,9 @@ function usageCalcReadingBody(input) {
     if (!isFinite(s) || s < 0 || s > 100) return { error: t('usage_calc_session_range') };
     body.session_percent = s;
   }
+  // The paid LLM entry the reading measures; blank is the first entry.
+  const llm = String(input.llm === undefined || input.llm === null ? '' : input.llm).trim();
+  if (llm !== '') body.llm = llm;
   let at = input.readAt ? new Date(input.readAt) : null;
   if (!at || isNaN(at.getTime())) at = new Date(input.now === undefined ? Date.now() : input.now);
   body.at = at.toISOString();
@@ -38531,6 +38838,7 @@ window.usageCalcFrameHtml = function (body, opts) {
     if (row) parts.push(row);
   }
   parts.push(`<div class="usage-settings-link" style="font-size:12px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(t('usage_page_settings_link'))}</a></div>`);
+  parts.push(`<div id="usageBackoffCard">${window.usageBackoffCardHtml()}</div>`);
   return `<div class="card usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
 };
 
@@ -38593,6 +38901,7 @@ function _usageCalcReadingForm(res, opts) {
     `<div style="font-weight:600;">${escHtml(t('usage_calc_reading_title'))}</div>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_percent_label'))} <input id="usageCalcPercent" type="number" min="0" max="1000" step="any" value="${escHtml(percent)}" style="width:100%;max-width:200px;"></label>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_session_label'))} <input id="usageCalcSession" type="number" min="0" max="100" step="any" value="" style="width:100%;max-width:200px;"></label>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_llm_label'))} <input id="usageCalcLLM" type="text" value="" style="width:100%;max-width:200px;"></label>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_read_at_label'))} <input id="usageCalcReadAt" type="datetime-local" value="${_usageCalcLocalInput(now)}" style="max-width:100%;"></label>` +
     `<div><button type="button" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSubmitReading()">${escHtml(t('usage_calc_save_reading'))}</button></div>` +
     `<div id="usageCalcFormMsg" role="status" style="font-size:12px;color:var(--error,#ef4444);"></div>` +
@@ -38648,6 +38957,7 @@ window.usageCalcSubmitReading = function () {
   const built = usageCalcReadingBody({
     percent: val('usageCalcPercent'),
     session: val('usageCalcSession'),
+    llm: val('usageCalcLLM'),
     readAt: val('usageCalcReadAt'),
     now: Date.now(),
   });
@@ -39211,6 +39521,178 @@ function usageCalcRerender() {
   if (ctl) ctl.paint();
 }
 
+// Usage back-off card on the usage page: the live holds from GET /api/usage/backoff
+// (each with its held and open models) and a set/clear control. The optional
+// models field limits a set or clear to those models of the backend; empty holds
+// or clears the whole backend. Only the status block repaints on refresh, so
+// typed values in the form survive a poll.
+const USAGE_BACKOFF_REFRESH_MS = 30000;
+window._usageBackoff = window._usageBackoff || { status: null, error: '', message: '' };
+
+// Splits the models field on commas and whitespace, trims, drops blanks and
+// repeats. Returns [] for an empty field (= whole backend).
+window.usageBackoffParseModels = function (text) {
+  const out = [];
+  String(text == null ? '' : text).split(/[\s,]+/).forEach(m => {
+    const v = m.trim();
+    if (v && out.indexOf(v) < 0) out.push(v);
+  });
+  return out;
+};
+
+// Builds the POST body for a set from the form values. Returns {error} when a
+// value is not acceptable, otherwise {body}.
+window.usageBackoffBuildSetBody = function (vals) {
+  vals = vals || {};
+  const backend = String(vals.backend || '').trim();
+  if (!backend) return { error: t('usage_backoff_backend_required') || 'Backend is required' };
+  const body = { backend };
+  const minRaw = String(vals.minutes == null ? '' : vals.minutes).trim();
+  if (minRaw !== '') {
+    const n = Number(minRaw);
+    if (!Number.isInteger(n) || n < 1 || n > 525600) return { error: t('usage_backoff_minutes_invalid') || 'Minutes must be a whole number from 1 to 525600' };
+    body.minutes = n;
+  }
+  const reason = String(vals.reason || '').trim();
+  if (reason) body.reason = reason;
+  const models = window.usageBackoffParseModels(vals.models);
+  if (models.length) body.models = models;
+  return { body };
+};
+
+// The held/open models line shared by the capacity card and the back-off card.
+// Field names follow both bodies: whole_backend/held_models/open_models.
+function usageBackoffModelsHtml(h) {
+  if (!h) return '';
+  const held = Array.isArray(h.held_models) ? h.held_models : [];
+  const open = Array.isArray(h.open_models) ? h.open_models : [];
+  const parts = [];
+  if (h.whole_backend || held.length === 0) {
+    if (h.whole_backend) parts.push(`<span class="backoff-held-all">${escHtml(t('usage_backoff_whole_backend') || 'All models held')}</span>`);
+  } else {
+    parts.push(`<span class="backoff-held-models">${escHtml(t('usage_backoff_held_models') || 'Held models')}: ${escHtml(held.join(', '))}</span>`);
+  }
+  if (open.length) {
+    parts.push(`<span class="backoff-open-models">${escHtml(t('usage_backoff_open_models') || 'Open models')}: ${escHtml(open.join(', '))}</span>`);
+  } else if (!h.whole_backend && held.length && h.other_models_open) {
+    parts.push(`<span class="backoff-open-models">${escHtml(t('usage_backoff_other_models_open') || 'Other models stay open')}</span>`);
+  }
+  if (!parts.length) return '';
+  return `<div class="backoff-models" style="font-size:11px;color:var(--text2);display:flex;flex-wrap:wrap;gap:8px;">${parts.join('')}</div>`;
+}
+window.usageBackoffModelsHtml = usageBackoffModelsHtml;
+
+window.usageBackoffStatusHtml = function (status) {
+  const holds = status && Array.isArray(status.holds) ? status.holds : [];
+  const active = status && Array.isArray(status.active) ? status.active : [];
+  if (!holds.length && !active.length) return `<div style="color:var(--text2);font-size:12px;">${escHtml(t('usage_backoff_none') || 'No back-off is active')}</div>`;
+  const byBackend = {};
+  active.forEach(e => { if (e && e.backend) byBackend[e.backend] = e; });
+  const list = holds.length ? holds : active.map(e => ({ backend: e.backend, whole_backend: !(e.models && e.models.length), held_models: e.models || [], open_models: [] }));
+  return list.map(h => {
+    const e = byBackend[h.backend] || {};
+    const until = e.until ? `${escHtml(t('capacity_card_backoff_resets') || 'Resets')}: ${escHtml(typeof budgetTime === 'function' ? budgetTime(e.until) : e.until)}` : '';
+    const reason = e.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(e.reason)}</div>` : '';
+    return `<div class="usage-backoff-hold" data-backend="${escHtml(h.backend || '')}" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(h.backend || '')}</span><span>${until}</span></div>${window.usageBackoffModelsHtml(h)}${reason}</div>`;
+  }).join('');
+};
+
+window.usageBackoffCardHtml = function () {
+  const st = window._usageBackoff || {};
+  const lbl = (k, d) => escHtml(t(k) || d);
+  const inp = 'style="min-width:0;max-width:100%;padding:4px 6px;"';
+  const msg = st.error
+    ? `<div class="usage-backoff-error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(st.error)}</div>`
+    : (st.message ? `<div class="usage-backoff-message" style="color:var(--success,#22c55e);font-size:12px;">${escHtml(st.message)}</div>` : '');
+  return `<div class="usage-backoff-card" style="border:1px solid var(--border,#333);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0;">`
+    + `<div style="font-weight:600;">${lbl('usage_backoff_card_title', 'Usage back-off')}</div>`
+    + `<div id="usageBackoffStatus">${window.usageBackoffStatusHtml(st.status)}</div>`
+    + `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end;">`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_backend', 'Backend')}<input id="usageBackoffBackend" type="text" placeholder="claude-code" ${inp}></label>`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_minutes', 'Minutes')}<input id="usageBackoffMinutes" type="number" min="1" step="1" placeholder="60" ${inp}></label>`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_models', 'Models (optional, comma separated)')}<input id="usageBackoffModels" type="text" placeholder="${lbl('usage_backoff_models_placeholder', 'empty = whole backend')}" ${inp}></label>`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_reason', 'Reason')}<input id="usageBackoffReason" type="text" ${inp}></label>`
+    + `<button class="btn-secondary" onclick="usageBackoffSet()">${lbl('usage_backoff_set', 'Set back-off')}</button>`
+    + `<button class="btn-secondary" onclick="usageBackoffClear()">${lbl('usage_backoff_clear', 'Clear')}</button>`
+    + `</div>`
+    + `<div style="font-size:11px;color:var(--text2);">${lbl('usage_backoff_models_hint', 'Name models to hold or clear only those models of the backend; leave empty for the whole backend.')}</div>`
+    + `<div id="usageBackoffMsg">${msg}</div>`
+    + `</div>`;
+};
+
+function _usageBackoffPaint(full) {
+  const st = window._usageBackoff;
+  const s = document.getElementById('usageBackoffStatus');
+  if (s) s.innerHTML = window.usageBackoffStatusHtml(st.status);
+  const m = document.getElementById('usageBackoffMsg');
+  if (m) m.innerHTML = st.error
+    ? `<div class="usage-backoff-error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(st.error)}</div>`
+    : (st.message ? `<div class="usage-backoff-message" style="color:var(--success,#22c55e);font-size:12px;">${escHtml(st.message)}</div>` : '');
+  if (full) {
+    const c = document.getElementById('usageBackoffCard');
+    if (c && !s) c.innerHTML = window.usageBackoffCardHtml();
+  }
+}
+
+function _usageBackoffFormValues() {
+  const v = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+  return { backend: v('usageBackoffBackend'), minutes: v('usageBackoffMinutes'), models: v('usageBackoffModels'), reason: v('usageBackoffReason') };
+}
+
+window.usageBackoffRefresh = function () {
+  return Promise.resolve(apiFetch('/api/usage/backoff')).then(body => {
+    window._usageBackoff.status = body; window._usageBackoff.error = '';
+    _usageBackoffPaint(true);
+  }).catch(err => {
+    window._usageBackoff.error = err && err.message ? err.message : String(err);
+    _usageBackoffPaint(true);
+  });
+};
+
+window.usageBackoffSet = function () {
+  const built = window.usageBackoffBuildSetBody(_usageBackoffFormValues());
+  if (built.error) { window._usageBackoff.error = built.error; window._usageBackoff.message = ''; _usageBackoffPaint(); return Promise.resolve(); }
+  return Promise.resolve(apiFetch('/api/usage/backoff', { method: 'POST', body: JSON.stringify(built.body) })).then(body => {
+    window._usageBackoff.status = body || window._usageBackoff.status;
+    window._usageBackoff.error = ''; window._usageBackoff.message = t('usage_backoff_saved') || 'Back-off set';
+    _usageBackoffPaint();
+  }).catch(err => {
+    window._usageBackoff.error = err && err.message ? err.message : String(err); window._usageBackoff.message = '';
+    _usageBackoffPaint();
+  });
+};
+
+window.usageBackoffClear = function () {
+  const vals = _usageBackoffFormValues();
+  const body = { backend: String(vals.backend || '').trim() };
+  const models = window.usageBackoffParseModels(vals.models);
+  if (models.length) {
+    if (!body.backend || body.backend.toLowerCase() === 'all') {
+      window._usageBackoff.error = t('usage_backoff_models_need_backend') || 'Name a backend to clear only some models';
+      window._usageBackoff.message = ''; _usageBackoffPaint(); return Promise.resolve();
+    }
+    body.models = models;
+  }
+  return Promise.resolve(apiFetch('/api/usage/backoff', { method: 'DELETE', body: JSON.stringify(body) })).then(() => {
+    window._usageBackoff.error = ''; window._usageBackoff.message = t('usage_backoff_cleared') || 'Back-off cleared';
+    return window.usageBackoffRefresh();
+  }).catch(err => {
+    window._usageBackoff.error = err && err.message ? err.message : String(err); window._usageBackoff.message = '';
+    _usageBackoffPaint();
+  });
+};
+
+window.usageBackoffStartPolling = function () {
+  if (window._usageBackoffInterval) return;
+  window._usageBackoffInterval = setInterval(() => {
+    if (!document.getElementById('usageBackoffCard')) { window.usageBackoffStopPolling(); return; }
+    window.usageBackoffRefresh();
+  }, USAGE_BACKOFF_REFRESH_MS);
+};
+window.usageBackoffStopPolling = function () {
+  if (window._usageBackoffInterval) { clearInterval(window._usageBackoffInterval); window._usageBackoffInterval = null; }
+};
+
 // ── Burn guard card ─────────────────────────────────────────────────────────
 // The burn guard (GET /api/usage/burn-guard, POST /api/usage/burn-guard/run) watches
 // the weekly burn against the pace line and climbs or steps back a ladder of rungs.
@@ -39218,7 +39700,7 @@ function usageCalcRerender() {
 // burn guard section of the Settings page (Automata tab) where config is edited.
 // It computes nothing itself. The effort ceiling is still read from the status body.
 // Auto-refresh uses a window-level interval variable, never a DOM-held timer.
-const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude' };
+const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude', route_entry: 'burn_guard_rung_route_entry', route_cheaper_model: 'burn_guard_rung_route_cheaper_model', hold_entry: 'burn_guard_rung_hold_entry' };
 const BURN_GUARD_STATE_KEYS = { off: 'burn_guard_state_off', idle: 'burn_guard_state_idle', guarding: 'burn_guard_state_guarding', waiting: 'burn_guard_state_waiting' };
 const BURN_GUARD_DIRECTION_KEYS = { hold: 'burn_guard_dir_hold', climb: 'burn_guard_dir_climb', step_back: 'burn_guard_dir_step_back', disabled: 'burn_guard_dir_disabled' };
 const BURN_GUARD_REFRESH_MS = 60000;
@@ -39365,6 +39847,7 @@ window.burnGuardStopPolling = function () {
   if (window._burnGuardInterval) { clearInterval(window._burnGuardInterval); window._burnGuardInterval = null; }
 };
 
+
 // The usage card's loader, registered like the capacity card's: a skeleton on
 // the first load, the daemon's error plainly with Retry, and the last good body
 // kept beneath it. It does not poll; the card refreshes when the operator asks
@@ -39381,6 +39864,8 @@ function _automationUsageLoader() {
       _usageCalc.error = '';
       if (typeof window.burnGuardRefresh === 'function') window.burnGuardRefresh();
       if (typeof window.burnGuardStartPolling === 'function') window.burnGuardStartPolling();
+      if (typeof window.usageBackoffRefresh === 'function') window.usageBackoffRefresh();
+      if (typeof window.usageBackoffStartPolling === 'function') window.usageBackoffStartPolling();
       return apiFetch(url + q, init).then(body => { _usageCalc.body = body; return body; });
     },
     failedText: msg => t('usage_calc_error', [msg]),
@@ -40460,6 +40945,78 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<div id="mergePipelineMessage" class="merge-pipeline-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;"></div></details>`;
   return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${confirmation}${releaseApproval}${statusBlock}${editor}</div>`;
 };
+// ── Deploy card ─────────────────────────────────────────────────────────────
+// deployCardHtml(view, opts) turns the decoded GET /api/autonomous/deploy body
+// into the Automation Overview card: the settings in effect (commands as text),
+// the phase and last outcome, the deferred reason and a Run now button. The
+// button is disabled while no build, install or restart command is set, and
+// while a merge or deploy is running. opts.result is the last Run now answer.
+// A missing view renders the placeholder; the loader owns the failed state.
+// Every value is escaped.
+const DEPLOY_FIELDS = [
+  ['build_command', 'deploy_field_build_command'],
+  ['install_command', 'deploy_field_install_command'],
+  ['binary_path', 'deploy_field_binary_path'],
+  ['restart_command', 'deploy_field_restart_command'],
+  ['health_check', 'deploy_field_health_check'],
+  ['drain_timeout', 'deploy_field_drain_timeout'],
+  ['health_timeout', 'deploy_field_health_timeout'],
+];
+window.deployCardHtml = function(view, opts) {
+  opts = opts || {};
+  const head = `<div class="cap-title">${escHtml(t('deploy_card_title'))}</div>`;
+  if (!view || typeof view !== 'object') {
+    return `<div class="prd-capacity-card deploy-card">${head}<div style="color:var(--text2);">${escHtml(t('deploy_placeholder'))}</div></div>`;
+  }
+  const st = (view.settings && typeof view.settings === 'object') ? view.settings : {};
+  const val = k => (typeof st[k] === 'string' ? st[k].trim() : '');
+  const rows = DEPLOY_FIELDS.map(([k, lk]) => {
+    const v = val(k);
+    return `<div class="deploy-setting" style="display:flex;flex-wrap:wrap;gap:2px 8px;min-width:0;padding:2px 0;">` +
+      `<span style="font-size:12px;color:var(--text2);">${escHtml(t(lk))}</span>` +
+      `<code class="deploy-value" style="font-size:12px;overflow-wrap:anywhere;min-width:0;">${escHtml(v || t('deploy_not_set'))}</code></div>`;
+  }).join('');
+  const settings = `<div class="deploy-settings" style="margin-top:6px;min-width:0;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('deploy_settings_heading'))}</div>${rows}</div>`;
+  let last = '';
+  if (view.phase || view.outcome) {
+    last = (view.phase ? `<div class="deploy-phase">${escHtml(t('deploy_phase_label', [view.phase]))}</div>` : '') +
+      (view.outcome ? `<div class="deploy-outcome">${escHtml(t('deploy_outcome_label', [view.outcome]))}</div>` : '');
+  } else {
+    last = `<div class="deploy-none" style="color:var(--text2);">${escHtml(t('deploy_none_recorded'))}</div>`;
+  }
+  const deferred = view.deferred && view.deferred.reason
+    ? `<div class="deploy-deferred" style="color:var(--warning,#a06b00);overflow-wrap:anywhere;">${escHtml(t('deploy_deferred_reason', [view.deferred.reason]))}</div>` : '';
+  const running = view.running ? `<div class="deploy-running" style="color:var(--text2);">${escHtml(t('deploy_running'))}</div>` : '';
+  const hasCommand = !!(val('build_command') || val('install_command') || val('restart_command'));
+  const disabled = !hasCommand || !!view.running;
+  const hint = hasCommand ? '' : `<div class="deploy-run-hint" style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(t('deploy_run_now_disabled_hint'))}</div>`;
+  const button = `<div style="margin-top:8px;"><button type="button" class="btn-primary deploy-run" style="font-size:11px;padding:3px 10px;"${disabled ? ' disabled' : ''} onclick="window.deployRunNow()">${escHtml(t('deploy_run_now'))}</button>${hint}` +
+    `<div id="deployMessage" class="deploy-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;">${escHtml(typeof opts.result === 'string' ? opts.result : '')}</div></div>`;
+  return `<div class="prd-capacity-card deploy-card" style="min-width:0;">${head}${settings}<div style="margin-top:6px;">${last}${deferred}${running}</div>${button}</div>`;
+};
+window._deployResult = '';
+window.deployRunNow = function() {
+  const msg = document.getElementById('deployMessage');
+  if (msg) { msg.textContent = t('deploy_run_started'); msg.style.color = 'var(--text2)'; }
+  return Promise.resolve(apiFetch('/api/autonomous/deploy/run', { method: 'POST' }))
+    .then(r => {
+      r = r || {};
+      const text = r.error ? t('deploy_run_failed', [r.error])
+        : (r.note ? t('deploy_run_result_note', [r.status || '', r.note]) : t('deploy_run_result', [r.status || '']));
+      window._deployResult = text;
+      const el = document.getElementById('deployMessage');
+      if (el) { el.textContent = text; el.style.color = r.error ? 'var(--error,#c00)' : 'var(--text2)'; }
+      const l = window._listLoaders && window._listLoaders.automation_deploy;
+      if (l && typeof l.retry === 'function') l.retry();
+    })
+    .catch(e => {
+      const text = t('deploy_run_failed', [(e && e.message) || String(e)]);
+      window._deployResult = text;
+      const el = document.getElementById('deployMessage');
+      if (el) { el.textContent = text; el.style.color = 'var(--error,#c00)'; }
+    });
+};
+
 // The card's state: the project shown, the registry names and the project
 // list. The loader reads it on every poll. When no project is chosen the
 // card preselects the first project of the list: an empty choice with no
@@ -42253,6 +42810,107 @@ function _automationHousekeepingRepairsLoader() {
   });
 }
 
+// Gate repair: the gate failure repair engine, shown next to the
+// Housekeeping repairs card in the Housekeeping view. The mode select writes
+// autonomous.gate_repair.mode through PUT /api/config and the Run-now button
+// runs one pass through POST /api/autonomous/gate-repair/run; both refresh
+// through the same listLoader (the shared polling pattern), and every label
+// goes through t() and escHtml().
+function _gateRepairModeLabel(mode) {
+  const s = t('gate_repair_mode_' + mode);
+  return (s && s !== 'gate_repair_mode_' + mode) ? s : String(mode || '');
+}
+function _gateRepairKindLabel(kind) {
+  const key = 'gate_repair_kind_' + kind;
+  const s = t(key);
+  return (s && s !== key) ? s : String(kind || '');
+}
+function _gateRepairToast(msg) {
+  if (typeof showToast === 'function') showToast(msg, 'error');
+}
+function _gateRepairRefresh() {
+  const c = window._listLoaders && window._listLoaders['automation_gate_repair'];
+  if (c && c.load) c.load();
+}
+window.gateRepairCardHtml = function(data) {
+  data = data || {};
+  const mode = String(data.mode || '');
+  const records = Array.isArray(data.records) ? data.records : [];
+  const findings = records.slice(-5).reverse().map(r => {
+    r = r || {};
+    let rec = '<div class="gate-repair-finding" style="margin:6px 0;padding:6px 8px;border:1px solid var(--border,#333);border-radius:6px;">' +
+      `<div class="gate-repair-finding-head" style="font-weight:600;">${escHtml(r.subject || '')} · ${escHtml(_gateRepairKindLabel(r.kind))}</div>` +
+      `<div class="gate-repair-finding-cause" style="color:var(--text2);">${escHtml(t('gate_repair_finding_cause'))}: ${escHtml(r.found || '')}</div>` +
+      `<div class="gate-repair-finding-repair" style="color:var(--text2);">${escHtml(t('gate_repair_finding_repair'))}: ${escHtml(r.done || r.undo || '')}</div>`;
+    if (r.before) rec += `<div class="gate-repair-finding-before" style="color:var(--text2);">${escHtml(t('gate_repair_finding_before'))}: <code>${escHtml(r.before)}</code></div>`;
+    if (r.after) rec += `<div class="gate-repair-finding-after" style="color:var(--text2);">${escHtml(t('gate_repair_finding_after'))}: <code>${escHtml(r.after)}</code></div>`;
+    return rec + '</div>';
+  });
+  const empty = findings.length
+    ? ''
+    : `<div class="gate-repair-nothing" style="color:var(--text2);">${escHtml(t('gate_repair_nothing'))}</div>`;
+  const budgetKeys = (Array.isArray(data.budget) ? data.budget : []).map(k => String(k));
+  const budgetLines = budgetKeys.slice(-8).map(k => {
+    const parts = k.split('\x00');
+    const task = parts[0] || k;
+    const cls = parts.length > 1 ? parts[1] : '';
+    return `<div class="gate-repair-budget-line" style="color:var(--text2);">${escHtml(t('gate_repair_budget_spent', [task, cls]))}</div>`;
+  });
+  const budgetEmpty = budgetLines.length
+    ? ''
+    : `<div class="gate-repair-budget-empty" style="color:var(--text2);">${escHtml(t('gate_repair_budget_empty'))}</div>`;
+  const selVal = (mode === 'on') ? 'on' : 'report';
+  return '<div class="prd-capacity-card gate-repair-card" style="min-width:0;margin:6px 8px 0;">' +
+    `<div class="prd-capacity-card-title" style="margin:0 12px 6px;font-weight:700;">${escHtml(t('gate_repair_card_title'))}</div>` +
+    `<div class="gate-repair-purpose" style="margin:0 12px 8px;color:var(--text2);">${escHtml(t('gate_repair_purpose'))}</div>` +
+    '<div class="gate-repair-mode-row" style="margin:0 12px 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      `<span class="gate-repair-mode-current" style="font-weight:600;">${escHtml(t('gate_repair_mode_label'))}: ${escHtml(_gateRepairModeLabel(mode))}</span>` +
+      `<select id="gateRepairModeSelect" class="gate-repair-mode-select" onchange="window.setGateRepairMode(this)" aria-label="${escHtml(t('gate_repair_mode_label'))}">` +
+        `<option value="report" ${selVal === 'report' ? 'selected' : ''}>${escHtml(t('gate_repair_mode_report'))}</option>` +
+        `<option value="on" ${selVal === 'on' ? 'selected' : ''}>${escHtml(t('gate_repair_mode_on'))}</option>` +
+      '</select>' +
+      `<button type="button" class="gate-repair-run-now" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border,#333);background:transparent;color:var(--text);cursor:pointer;" onclick="window.runGateRepairNow(this)">${escHtml(t('gate_repair_run_now'))}</button>` +
+    '</div>' +
+    `<div class="gate-repair-findings-label" style="margin:0 12px 4px;font-weight:600;color:var(--text2);">${escHtml(t('gate_repair_findings_label'))}</div>` +
+    `<div class="gate-repair-findings" style="margin:0 12px 8px;max-height:220px;overflow-y:auto;">${findings.join('') || empty}</div>` +
+    `<div class="gate-repair-budget-label" style="margin:0 12px 4px;font-weight:600;color:var(--text2);">${escHtml(t('gate_repair_budget_label'))}</div>` +
+    `<div class="gate-repair-budget" style="margin:0 12px 12px;">${budgetLines.join('') || budgetEmpty}</div>` +
+  '</div>';
+};
+window.setGateRepairMode = function(sel) {
+  const v = String((sel && sel.value) || '').trim();
+  if (v !== 'report' && v !== 'on') return;
+  if (sel) sel.disabled = true;
+  apiFetch('/api/config', {
+    method: 'PUT',
+    body: JSON.stringify({ 'autonomous.gate_repair.mode': v }),
+  }).then(() => _gateRepairRefresh())
+    .catch(err => {
+      if (sel) sel.disabled = false;
+      _gateRepairToast(t('gate_repair_mode_save_failed', [String((err && err.message) || err)]));
+    });
+};
+window.runGateRepairNow = function(btn) {
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.textContent = t('gate_repair_run_running'); }
+  apiFetch('/api/autonomous/gate-repair/run', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }).then(() => _gateRepairRefresh())
+    .catch(err => {
+      if (btn) { btn.disabled = false; btn.textContent = t('gate_repair_run_now'); }
+      _gateRepairToast(t('gate_repair_run_failed', [String((err && err.message) || err)]));
+    });
+};
+function _automationGateRepairLoader() {
+  return window._listLoaders.automation_gate_repair || listLoader({
+    key: 'automation_gate_repair', el: 'automationGateRepairCard', url: '/api/autonomous/gate-repair', pollMs: 30000,
+    failedText: msg => t('gate_repair_failed', [msg]),
+    active: () => !!document.getElementById('automationGateRepairCard'),
+    render: data => window.gateRepairCardHtml(data),
+  });
+}
+
 // _cleanupSkipReasonText names a skip reason in the operator's language and
 // falls back to the raw reason name when no label exists for it.
 function _cleanupSkipReasonText(reason) {
@@ -43246,6 +43904,43 @@ window.costReportReconcileHtml = function(rc) {
   return out + '</div>';
 };
 
+// costReportModelRowsHtml renders the report's by-model section
+// (model_rows): one row per model name with its in / out / cached tokens
+// and its API-equivalent dollars, priced at the model's own rate (the
+// per-model cost entry when one is configured, else the backend's rate).
+// The section is an equivalence — the plan is flat — never a bill. It
+// returns '' when the report carries no model_rows (older daemon).
+window.costReportModelRowsHtml = function(report) {
+  const rep = (report && typeof report === 'object' && !Array.isArray(report)) ? report : {};
+  const rows = Array.isArray(rep.model_rows) ? rep.model_rows : [];
+  if (!rows.length) return '';
+  const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const anyUsd = rows.some(r => r && typeof r === 'object' &&
+    r.api_equivalent_usd !== undefined && r.api_equivalent_usd !== null && Number.isFinite(Number(r.api_equivalent_usd)));
+  let out = `<div style="margin-top:8px;font-size:10px;">
+    <div style="font-weight:600;color:var(--text);margin-bottom:2px;">${escHtml(t('cost_report_by_model_title') || 'By model')} <span style="font-weight:400;color:var(--text2);">${escHtml(t('cost_report_by_model_note') || 'API-equivalent at each model’s own rate — an equivalence, not a bill')}</span></div>`;
+  for (const r of rows.slice(0, COST_REPORT_MAX_ROWS)) {
+    if (!r || typeof r !== 'object') continue;
+    const name = (r.model === undefined || r.model === null || String(r.model).trim() === '')
+      ? (t('cost_report_key_unknown') || '—') : r.model;
+    const tok = t('cost_report_by_model_tokens', [num(r.tokens_in), num(r.tokens_out), num(r.cache_read), num(r.cache_creation)])
+      || (num(r.tokens_in) + ' in / ' + num(r.tokens_out) + ' out');
+    let usd = '';
+    if (anyUsd) {
+      const has = r.api_equivalent_usd !== undefined && r.api_equivalent_usd !== null && Number.isFinite(Number(r.api_equivalent_usd));
+      usd = has
+        ? escHtml(t('cost_report_usd_api_value', [num(r.api_equivalent_usd).toFixed(2)]) || ('$' + num(r.api_equivalent_usd).toFixed(2) + ' API-equivalent'))
+        : escHtml(t('cost_report_usd_none') || '—');
+    }
+    out += `<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;white-space:nowrap;overflow:hidden;padding:1px 0;" title="${escHtml(String(name))}">
+      <span style="overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:600;">${escHtml(String(name))}</span> <span style="color:var(--text2);font-family:monospace;">${escHtml(tok)}</span></span>
+      ${usd ? `<span style="color:var(--text2);font-family:monospace;">${usd}</span>` : ''}
+    </div>`;
+  }
+  out += '</div>';
+  return out;
+};
+
 // costReportCardHtml renders the whole card body from a decoded
 // GET /api/cost/report body: title + help link, the retention line
 // (retention_days), the lifetime-fallback note, the group table (tokens
@@ -43300,7 +43995,8 @@ window.costReportCardHtml = function(report, opts) {
   if (hidden > 0) {
     body += `<div style="font-size:9px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_report_rows_not_shown', [hidden]) || (hidden + ' more groups not shown'))}</div>`;
   }
-  return head + window.costReportTotalsHtml(rep.totals) + notes + body + window.costReportReconcileHtml(rep.reconciliation);
+  const modelSection = window.costReportModelRowsHtml(rep);
+  return head + window.costReportTotalsHtml(rep.totals) + notes + body + modelSection + window.costReportReconcileHtml(rep.reconciliation);
 };
 
 // ── BL412 — self-config card ────────────────────────────────────────────
@@ -46970,6 +47666,15 @@ registerAutomationCardSlot('housekeeping', {
   mount: () => listLoaderAll([_automationHousekeepingRepairsLoader()]),
   stop: () => _automationStopLoaders(['automation_housekeeping_repairs']),
 });
+// The Gate repair card sits next to the Housekeeping repairs card and, like
+// it, is polled only while the Housekeeping sub-tab is shown.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationGateRepairCard',
+  order: 95,
+  html: _automationPlaceholderHTML('automationGateRepairCard'),
+  mount: () => listLoaderAll([_automationGateRepairLoader()]),
+  stop: () => _automationStopLoaders(['automation_gate_repair']),
+});
 // The Unlanded work card fills the Housekeeping slot: hidden until the list
 // has a row, and polled only while the Housekeeping sub-tab is shown.
 registerAutomationCardSlot('housekeeping', {
@@ -48814,6 +49519,18 @@ function _automationMergePipelineLoader() {
       if (view && view.project) window._mergePipelineShown = view.project;
       return window.mergePipelineCardHtml(view, { models: window._mergePipelineModels, projects: window._mergePipelineProjects, mergeStatus: window._mergeStatus.body });
     },
+  });
+}
+
+// _automationDeployLoader reads the deploy settings and status beside the merge
+// pipeline card. It does not poll: Run now reads it again. Its failed state is
+// the list loader's banner.
+function _automationDeployLoader() {
+  return window._listLoaders.automation_deploy || listLoader({
+    key: 'automation_deploy', el: 'automationDeployCard', url: '/api/autonomous/deploy', pollMs: 0,
+    failedText: msg => t('deploy_failed', [msg]),
+    active: () => !!document.getElementById('automationDeployCard'),
+    render: view => window.deployCardHtml(view, { result: window._deployResult }),
   });
 }
 

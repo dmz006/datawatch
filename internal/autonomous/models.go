@@ -758,6 +758,13 @@ type PRD struct {
 	// default detail GET returns (see CapPRDText), where it is derived
 	// by ReviewStateOf. Never stored.
 	ReviewState *ReviewResult `json:"review_state,omitempty"`
+
+	// LeftoverWarnings surfaces files left behind in the project
+	// directory when the PRD reaches a terminal outcome: known harness
+	// scratch files that were tracked (and therefore not deletable) and
+	// unexpected untracked files. Populated at end-of-run cleanup, plain
+	// language, one warning per file.
+	LeftoverWarnings []string `json:"leftover_warnings,omitempty"`
 }
 
 // DecomposeLintRecord captures one decompose-lint pass (all modes
@@ -1345,6 +1352,11 @@ type Task struct {
 	// GateRestartRetryUsed is true once the Automaton has retried this final
 	// gate after a daemon restart killed it; a second kill is not retried.
 	GateRestartRetryUsed bool `json:"gate_restart_retry_used,omitempty"`
+	// ModelUnresponsiveRetries is the consecutive requeues of this task after
+	// a model-unresponsive failure. It has its own bounded backoff and never
+	// touches InfraRetryCount; it is reset with it when the task gets a fair
+	// attempt.
+	ModelUnresponsiveRetries int `json:"model_unresponsive_retries,omitempty"`
 	// SystemTags is the placement-derived tag set this task carries (its
 	// Automaton's project, Automation and Automaton, plus the stage the
 	// Automaton's member slot carries): derived by ObjectTagsForTask under
@@ -1618,6 +1630,10 @@ type Task struct {
 	// DaemonRun true means the daemon performs the task itself and no
 	// session is started for it.
 	DaemonRun bool `json:"daemon_run,omitempty"`
+	// PackInputs holds the redacted pack input values resolved when the task
+	// was created. Secret inputs show their vault reference or a mask. Never
+	// updated after creation.
+	PackInputs map[string]string `json:"pack_inputs,omitempty"`
 
 	// ReportPath is the one repo-relative path a read-only task may
 	// write (see validateReportPath); empty means it writes nothing. It

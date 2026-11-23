@@ -114,6 +114,12 @@ commit that adds it, same as any other rule change.
   rather than reusing a warmed shared cache; that is the trade-off for
   leaving nothing behind in the temp directory. A missing `trivy` skips
   the scan with a message and still passes the step.
+  Its trivy scan runs through `scripts/trivy-scan-image.sh`, which saves
+  the image with `docker save` and scans the archive with
+  `trivy image --input` (docker 29.1.x daemon scans fail with "failed to
+  analyze layer"); a HIGH/CRITICAL finding not in `.trivyignore` fails it.
+  Run this single step on its own with
+  `PRE_TAG_ONLY=docker-agent-base bash scripts/pre-tag.sh`.
 - [ ] Each run appends one line to `.datawatch/pre-tag-record` (git-ignored):
   `<sha> <iso-date> steps=<n> result=<pass|fail> seconds=<total>`. Tag only
   when the last line is for the commit being tagged and says `result=pass`.

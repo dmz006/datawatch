@@ -112,9 +112,9 @@ func (f *postShipSpyShip) Push(_ context.Context, _, b, tag string) error {
 	f.note("push " + b + " " + tag)
 	return nil
 }
-func (f *postShipSpyShip) Deploy(_ context.Context, _ string) error {
+func (f *postShipSpyShip) Deploy(_ context.Context, _ string) (mergepipeline.ShipResult, error) {
 	f.note("deploy")
-	return nil
+	return mergepipeline.ShipResult{}, nil
 }
 func (f *postShipSpyShip) Hook(ctx context.Context, dir string, st mergepipeline.Step) (string, error) {
 	f.note("hook " + st.Name)

@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -126,6 +127,15 @@ func ParseManifestBytes(data []byte) (*Manifest, error) {
 		return nil, fmt.Errorf("skill manifest missing required `name` field")
 	}
 	return &m, nil
+}
+
+// ClassifySkillDir reports the entry type of the folder at dir: a folder
+// holding a pack.yaml is a SkillTypePack, anything else is a SkillTypeSkill.
+func ClassifySkillDir(dir string) string {
+	if info, err := os.Stat(filepath.Join(dir, "pack.yaml")); err == nil && !info.IsDir() {
+		return SkillTypePack
+	}
+	return SkillTypeSkill
 }
 
 // extractFrontmatter pulls the YAML between leading `---\n` and the

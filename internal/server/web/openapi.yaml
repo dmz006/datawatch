@@ -2005,8 +2005,10 @@ paths:
     get:
       summary: A project's plans in order, with a Backlog group
       description: |
-        Lists the project's plans in priority order, each with its goal, state,
-        progress (Automata done out of total, with a whole-number percent for a bar),
+        Lists the project's plans in priority order, each with its goal, state (the
+        status, derived from the linked work by `POST /api/plans/rollup` unless it was
+        set by hand), `set_by_hand` (true when the status was written by hand, so the
+        roll-up keeps it), progress (Automata done out of total, with a whole-number percent for a bar),
         points, the ids of its Automations and Automata, and a next marker naming the
         Automaton that runs next. Plans with no Automaton yet are in the `backlog`
         group, in priority order. Paged with `limit` and `offset` (default 50, at most
@@ -2032,7 +2034,7 @@ paths:
                 type: object
                 properties:
                   project: {type: string}
-                  plans: {type: array, items: {type: object}}
+                  plans: {type: array, items: {$ref: "#/components/schemas/PlanRow"}}
                   page: {type: object}
                   backlog: {type: object}
         "400": {description: A paging value is not a whole number}
@@ -2101,7 +2103,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  plan: {type: object}
+                  plan: {$ref: "#/components/schemas/PlanHeader"}
                   progress: {type: object}
                   next: {type: object, nullable: true}
                   automata: {type: array, items: {type: object}}
@@ -2136,7 +2138,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  plan: {type: object}
+                  plan: {$ref: "#/components/schemas/PlanHeader"}
                   tasks: {type: array, items: {type: object}}
                   page: {type: object}
         "400": {description: A paging value is not a whole number}
@@ -2178,6 +2180,79 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans/rollup:
+    get:
+      summary: Preview the plan status roll-up (what would change)
+      description: |
+        Shows what the roll-up would change, and writes nothing. A plan's status is
+        derived from the states last reported for the Automata and Automations linked
+        to it: no linked work leaves the plan alone; any failed or blocked item makes
+        it `blocked`; any running item keeps it `open`; all items shipped makes it
+        `shipped`; all items finished makes it `done`; anything else keeps it `open`.
+        A plan whose status was set by hand is never changed: it is listed with
+        `set_by_hand_kept` true and the status the roll-up would have written.
+        `dry_run` defaults to true on this route and `dry_run=false` is refused with
+        400: a read never writes, so use `POST /api/plans/rollup` to apply. `project`
+        limits it to one registered project alias; without it every project is
+        previewed. Needs the autonomous read capability when called by a federated
+        peer.
+      operationId: plansRollupPreview
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Registered project alias; default every project"}
+        - {name: dry_run, in: query, schema: {type: boolean, default: true}, description: "Only true is accepted on GET"}
+      responses:
+        "200":
+          description: The changes the roll-up would make
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRollupResult"
+        "400": {description: dry_run is false or not a boolean, or the project is not a registered alias}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+    post:
+      summary: Apply the plan status roll-up
+      description: |
+        Derives each plan's status from its linked work (see `GET /api/plans/rollup`
+        for the rules) and writes it. It applies by default; `{"dry_run": true}` in the
+        body, or `?dry_run=true`, only reports what would change and writes nothing, so
+        the same request can be run both ways. A plan whose status was set by hand is
+        kept and reported with `set_by_hand_kept` true. A plan that becomes closed
+        gets its `closed_at`; one that becomes open again loses it. Each write is
+        recorded in the audit log with the actor `rollup`. Both body fields are
+        optional; an empty body rolls every project up. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: plansRollupApply
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Registered project alias; the body's project wins"}
+        - {name: dry_run, in: query, schema: {type: boolean}, description: "true previews instead of applying"}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project: {type: string, description: "Registered project alias; default every project"}
+                dry_run: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The changes made (or, with dry_run, the changes that would be made)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRollupResult"
+        "400": {description: Bad body, dry_run is not a boolean, or the project is not a registered alias}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Plan records are turned off}
         "503": {description: Plan records are not available}
   /api/plans/migrate:
@@ -2307,6 +2382,56 @@ paths:
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Plan records are turned off}
         "409": {description: The title is already used in the project, or the project already has a release plan for that release (the answer names it)}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}:
+    patch:
+      summary: Rename a plan and/or edit its goal
+      description: |
+        Gives the plan a new title, a new goal, or both; a field that is left out is
+        left alone. The body must hold at least one of `title` and `goal`. A title is
+        trimmed, must not be empty, is one line and is at most 100 characters, and
+        must not be used by another record in the plan's project; an invalid title
+        answers 400, and a taken title answers 409 with a message that names the
+        record holding it (and `existing`, that record), exactly as create does.
+        Renaming a plan to the title it already has changes nothing. The old title
+        stays as an alias, so older references still resolve, and a renamed plan
+        keeps its title through a later plans migration. A goal is trimmed and is
+        at most 2000 characters; an empty `goal` clears it. The whole request is
+        checked before anything is written, so a refused goal never leaves a rename
+        behind. Needs the autonomous write capability when called by a federated
+        peer. Both changes are written to the audit log with the old and new value
+        and the actor.
+      operationId: planEdit
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid, title or an older title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                title: {type: string, maxLength: 100, description: "The new title: one line, at most 100 characters, unique in the project"}
+                goal: {type: string, maxLength: 2000, description: "The new goal; an empty string clears it"}
+      responses:
+        "200":
+          description: The stored plan, title first, with its goal and whether its title is kept by hand
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  goal: {type: string}
+                  title_set_by_hand: {type: boolean}
+        "400": {description: Nothing to change, an empty, multi-line or over-long title, an over-long goal, or the reference is not a plan}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The title is already used in the project (the answer names the other record), or the reference is ambiguous}
         "503": {description: Plan records are not available}
   /api/plans/order:
     put:
@@ -3507,6 +3632,57 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the config-write capability}
 
+  /api/autonomous/deploy:
+    get:
+      summary: Deploy settings and last deploy state
+      description: |
+        The effective `autonomous.deploy` settings (the two timeouts with their
+        defaults filled in), whether a merge or deploy is running now, and the last
+        deploy: its `phase`, its `outcome`, why and when it was deferred, and the
+        saved binary's time and SHA-256. The saved binary's contents are never
+        returned. Read-only; a federated peer needs the autonomous read capability.
+      operationId: autonomousDeploy
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The deploy state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Automata is disabled}
+
+  /api/autonomous/deploy/run:
+    post:
+      summary: Run the deploy now
+      description: |
+        Starts the deploy sequence (snapshot, build, wait for final-gate tasks,
+        install, restart) for the current build, the same step the merge pipeline
+        runs after a ship. It takes no body and shares the merge run lock. An empty
+        setting means that step does nothing; with no build, install or restart
+        command set the answer is `skipped`. `restarting` means the restart command
+        ran; the health check and any rollback finish after the daemon is back. A
+        federated peer needs the autonomous write capability.
+      operationId: autonomousDeployRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The result of the run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployRunResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: A merge or deploy is already running}
+        "503": {description: Automata is disabled, or no worktree base repository is set}
+
   /api/autonomous/merge-pipeline:
     get:
       summary: Merge pipeline in effect for a project
@@ -4205,6 +4381,98 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/gate-repairs:
+    get:
+      summary: Gate repair engine
+      description: |
+        The gate repair engine: the mode in effect (`off`, `report` or `on`;
+        report records what it would do and acts on nothing), the repair
+        records newest last (`records` — for each failed gate the failure
+        class found, what it would do or did, and how to undo it), and the
+        spent repair budget keys (`budget`). Read-only: reading it repairs
+        nothing, raises no alert and changes no mode; the mode changes only
+        through the existing config set paths (`autonomous.gate_repair.mode`).
+        Needs the autonomous read capability when called by a federated peer.
+      operationId: autonomousGateRepairs
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Gate repair engine
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateRepairStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/gate-repair:
+    get:
+      summary: Gate repair engine status
+      description: |
+        The gate repair engine: the mode in effect (`off`, `report` or `on`;
+        report records what it would do and acts on nothing, the shipped
+        default), the repair records (`records` — for each failed gate the
+        failure class found, what it would do or did, and how to undo it,
+        newest last) and the spent repair budget keys (`budget`, one
+        `automaton_id/task_id/<class>` key per class already spent). Read-only:
+        reading it repairs nothing, raises no alert and changes no mode; the
+        mode changes only through the existing config set paths
+        (`autonomous.gate_repair.mode`). Needs the autonomous read capability
+        when called by a federated peer.
+      operationId: autonomousGateRepairStatus
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Gate repair engine status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateRepairStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/gate-repair/run:
+    post:
+      summary: Run the gate repair engine now — one failed gate, or one pass across all failed gates
+      description: |
+        Runs the gate repair engine now, in the mode configured for
+        `autonomous.gate_repair.mode` (report records what it would do and acts
+        on nothing; on applies the safe repair once per class per task). Give
+        both `automaton_id` and `task_id` to repair that one failed gate now, or
+        send no targets (an empty body) to run one pass over every currently
+        failed gate. Giving exactly one of the two is refused with a 400. Needs
+        the autonomous run capability when called by a federated peer.
+      operationId: autonomousGateRepairRun
+      tags: [Autonomous]
+      requestBody:
+        description: Optional targets; both or neither.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                automaton_id: {type: string, description: "With task_id, the one failed gate to repair now"}
+                task_id: {type: string, description: "With automaton_id, the one failed gate to repair now"}
+      responses:
+        "200":
+          description: The run outcome(s) and the refreshed status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateRepairRunResponse"
+        "400": {description: Exactly one of automaton_id/task_id was given}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous run capability}
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
@@ -11230,7 +11498,7 @@ paths:
       tags: [Singletons]
       responses: {"200": {description: OK}}
     post:
-      summary: Set a back-off flag for a backend (minutes or until, optional reason)
+      summary: Set a back-off flag for a backend (minutes or until, optional reason, optional models array holding only those models of the backend)
       operationId: usageBackoffSet
       tags: [Singletons]
       requestBody:
@@ -11245,9 +11513,13 @@ paths:
                 minutes: {type: integer, minimum: 1}
                 until: {type: string, format: date-time}
                 reason: {type: string}
+                models:
+                  type: array
+                  items: {type: string}
+                  description: Optional. Hold only these models of the backend; omit to hold the whole backend
       responses: {"200": {description: OK}, "400": {description: Invalid request}}
     delete:
-      summary: Clear one backend's back-off flag, or all flags when no backend is given
+      summary: Clear one backend's back-off flag, or all flags when no backend is given (optional models array narrows the clear to those models of the named backend; a clear-all is never model-scoped)
       operationId: usageBackoffClear
       tags: [Singletons]
       requestBody:
@@ -11258,6 +11530,10 @@ paths:
               type: object
               properties:
                 backend: {type: string}
+                models:
+                  type: array
+                  items: {type: string}
+                  description: Optional. Remove only these models from the flag; requires a named backend
       responses: {"200": {description: OK}}
   /api/usage-backoff/recheck:
     post:
@@ -13173,10 +13449,57 @@ components:
           items: {type: object, properties: {kind: {type: string}, ref: {type: string}}}
         aliases: {type: array, items: {type: string}}
         needs_review: {type: boolean}
+        set_by_hand: {type: boolean, description: "True when the status (state) was written by hand, so the plan roll-up keeps it. Always present"}
         review_reason: {type: string}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         closed_at: {type: string, format: date-time}
+    PlanRow:
+      type: object
+      description: One plan of the plans list. The title comes first and the id second.
+      properties:
+        title: {type: string}
+        id: {type: string}
+        uid: {type: string}
+        goal: {type: string}
+        state:
+          type: string
+          description: The plan's status. Derived from its linked work by the roll-up unless set_by_hand is true.
+        set_by_hand: {type: boolean, description: "True when the status was written by hand; the roll-up keeps it and a client marks it (by hand)"}
+        order: {type: integer}
+        progress: {type: object, properties: {done: {type: integer}, total: {type: integer}, percent: {type: integer}}}
+        points: {type: number}
+        automation_ids: {type: array, items: {type: string}}
+        automaton_ids: {type: array, items: {type: string}}
+        finding_count: {type: integer}
+        next: {type: object, nullable: true, properties: {automaton_id: {type: string}, title: {type: string}}}
+    PlanHeader:
+      type: object
+      description: The plan header of the plan detail reads (the Automata and tasks routes).
+      properties:
+        title: {type: string}
+        id: {type: string}
+        state: {type: string, description: The plan's status}
+        set_by_hand: {type: boolean, description: True when the status was written by hand}
+    PlanRollupChange:
+      type: object
+      description: One plan the roll-up found different from its derived status.
+      properties:
+        title: {type: string}
+        plan: {type: string, description: The plan id}
+        from: {type: string, description: The status the plan has}
+        to: {type: string, description: The status the roll-up derives}
+        reason: {type: string}
+        set_by_hand_kept: {type: boolean, description: "True when the status was set by hand: `to` is what the roll-up would have written and nothing was"}
+    PlanRollupResult:
+      type: object
+      properties:
+        project: {type: string, description: Present when the roll-up was limited to one project}
+        dry_run: {type: boolean}
+        applied: {type: boolean, description: True when the changes were written}
+        changes: {type: array, items: {$ref: "#/components/schemas/PlanRollupChange"}}
+        changed: {type: integer, description: Plans written, or that would be on a dry run}
+        kept: {type: integer, description: Plans whose hand-set status was left alone}
     PlanRecordResponse:
       type: object
       properties:
@@ -13848,6 +14171,38 @@ components:
           description: One operator-facing sentence per unmet condition; empty when ready
           items: {type: string}
         ready: {type: boolean, description: True only when missing is empty}
+    DeployStatus:
+      type: object
+      description: The deploy state, as GET /api/autonomous/deploy returns it.
+      properties:
+        settings:
+          type: object
+          description: "The seven autonomous.deploy keys as text; the two timeouts have their defaults filled in"
+          additionalProperties: true
+        running: {type: boolean, description: "A merge or deploy is running now"}
+        phase: {type: string, enum: [deferred, restarting, install_failed, restart_failed, done, rolled_back, rollback_failed], description: "Phase of the last deploy; absent when none is recorded"}
+        outcome: {type: string, enum: [ok, rolled_back, rollback_failed], description: "Last recorded outcome; absent when none"}
+        deferred:
+          type: object
+          description: "Present while the deploy is deferred"
+          properties:
+            reason: {type: string}
+            at: {type: string, format: date-time}
+        snapshot:
+          type: object
+          description: "The saved binary's identity, never its contents"
+          properties:
+            time: {type: string, format: date-time}
+            sha256: {type: string}
+      required: [settings, running]
+    DeployRunResult:
+      type: object
+      description: The answer of POST /api/autonomous/deploy/run.
+      properties:
+        status: {type: string, enum: [skipped, deferred, failed, restarting]}
+        note: {type: string, description: "What happened, in plain words"}
+        error: {type: string, description: "Present only when the step returned an error"}
+      required: [status]
     MergePipelineView:
       type: object
       description: The merge pipeline in effect for a project, as GET /api/autonomous/merge-pipeline returns it.
@@ -14563,6 +14918,52 @@ components:
         found: {type: string}
         done: {type: string}
         undo: {type: string, description: How to undo what was done}
+    GateRepairStatus:
+      type: object
+      description: The gate repair engine read view, as GET /api/autonomous/gate-repairs.
+      properties:
+        mode: {type: string, enum: [off, report, "on"], description: The engine mode in effect (an unset mode reads report)}
+        budget: {type: array, items: {type: string}, description: The spent repair budget keys (failed task plus failure class)}
+        records:
+          type: array
+          items: {$ref: "#/components/schemas/GateRepairRecord"}
+    GateRepairRecord:
+      type: object
+      description: One gate repair record, newest last.
+      properties:
+        at: {type: string, format: date-time}
+        group: {type: string}
+        subject: {type: string, description: The failed gate (task and script)}
+        kind: {type: string, description: What happened to it: would, did, failed or skipped}
+        found: {type: string, description: What the engine found, including the failure class}
+        done: {type: string, description: What it would do or did}
+        undo: {type: string, description: How to undo what was done}
+        before: {type: string, description: The script text pair of a file edit, before}
+        after: {type: string, description: The script text pair of a file edit, after}
+    GateRepairOutcome:
+      type: object
+      description: One gate repair run outcome, as POST /api/autonomous/gate-repair/run returns it.
+      properties:
+        mode: {type: string, enum: [off, report, "on"], description: The engine mode in effect}
+        class: {type: string, description: The failure class that was repaired or proposed}
+        would: {type: string, description: What report mode would do (the class's proposed repair)}
+        did: {type: string, description: What on mode actually did}
+        done: {type: string, description: The on-mode outcome text for a hold, refusal or failed repair}
+        before: {type: string, description: The script text pair of an applied file edit, before}
+        after: {type: string, description: The script text pair of an applied file edit, after}
+        held: {type: string, description: The id of the held operator question raised, if any}
+        err: {type: string, description: The outcome error text (a failed repair or a refusal)}
+        kind: {type: string, description: The housekeeping record kind: would, did, failed or skipped}
+        subject: {type: string, description: The record/alert subject (the automaton and task)}
+        found: {type: string, description: The record's finding line (class plus the leading output)}
+    GateRepairRunResponse:
+      type: object
+      description: The POST /api/autonomous/gate-repair/run reply: the run outcome(s) plus a fresh status read.
+      required: [runs, status]
+      properties:
+        runs: {type: array, description: The outcome of the gate(s) repaired; empty for an empty pass, one entry for a single gate, one entry per pass for a full pass}
+          items: {$ref: "#/components/schemas/GateRepairOutcome"}
+        status: {$ref: "#/components/schemas/GateRepairStatus"}
     SupervisorWatchStatus:
       type: object
       description: >-
@@ -15356,11 +15757,24 @@ components:
         last_prompt:
           type: string
           description: The prompt text that triggered waiting_input state
+        ended_at:
+          type: string
+          format: date-time
+          description: When the daemon finalised the record because its process was gone. Present only on a session that was finalised this way; omitted on every other session.
+        end_note:
+          type: string
+          description: Why the record was finalised. Always `process gone, finalised` when present; omitted on a session that was not finalised this way.
+          example: "process gone, finalised"
 
     SessionState:
       type: string
       enum: [running, waiting_input, complete, failed, killed]
       description: |
+        The true state of the session. A record is never left in `running` or
+        another non-final state after its terminal session and process are gone:
+        the daemon finalises it as `killed`, or `complete` when its output ends
+        with the completion marker, and sets `ended_at` and `end_note`.
+
         - `running`: claude-code is actively running
         - `waiting_input`: claude-code is waiting for user response
         - `complete`: claude-code exited successfully
@@ -16773,8 +17187,8 @@ components:
         margin_points: {type: number, description: "Points the projection may run over the pace line before the guard acts, 0 to 50. Default 2"}
         ladder:
           type: array
-          items: {type: string, enum: [lower_inflight, route_pi_prompt, hold_claude]}
-          description: "Ordered rungs applied while over the line. Default: all three in that order"
+          items: {type: string, enum: [lower_inflight, route_entry, hold_entry, route_pi_prompt, hold_claude]}
+          description: "Ordered rungs applied while over the pace line. Default: lower_inflight, route_entry, hold_entry. The rung acts on the ladder's entry; route_pi_prompt and hold_claude are legacy first-version names that normalize to route_entry and hold_entry"
         step_back: {type: boolean, description: "Undo rungs in reverse once the projection is back under the line. Default true"}
         ask_on_change:
           type: boolean
