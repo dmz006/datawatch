@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.74"
+var Version = "9.182.83"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -630,8 +630,12 @@ type Server struct {
 	questionRaiseNotifier QuestionRaiseNotifier
 	// questionNotifies — counts the raise fan-out goroutines in flight
 	// (see WaitQuestionNotifies) so a caller can block until the latest
-	// raise's alert-write side effect has completed.
-	questionNotifies sync.WaitGroup
+	// raise's alert-write side effect has completed. Serialized (a mutex
+	// guards the WaitGroup, see questionNotifyGate) so a new raise's Add
+	// can never run concurrently with a Wait on a zero counter — the
+	// "WaitGroup misuse" panic that was reachable on the daemon-exit
+	// path.
+	questionNotifies questionNotifyGate
 	// questionAnswerReturnPath — the per-question opt-in session line on
 	// answer (one line of DATAWATCH_ANSWER: into the asking session); wired
 	// by main.go via SetQuestionAnswerReturnPath; nil (default) = no
@@ -6688,6 +6692,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"discover_interval":     s.cfg.RTK.DiscoverInterval,
 			"auto_update":           s.cfg.RTK.AutoUpdate,
 			"update_check_interval": s.cfg.RTK.UpdateCheckInterval,
+			"write_rules_files":     s.cfg.RTK.WriteRulesFiles,
 		},
 		"pipeline": map[string]interface{}{
 			"max_parallel":    s.cfg.Pipeline.MaxParallel,
@@ -9895,6 +9900,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.RTK.UpdateCheckInterval = n
 			}
+		case "rtk.write_rules_files":
+			cfg.RTK.WriteRulesFiles = toBool(v)
 		case "pipeline.max_parallel":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Pipeline.MaxParallel = n
@@ -10223,7 +10230,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "classifier.timeout_seconds", "classifier.top_logprobs", "classifier.abstain_margin", "classifier.min_probability", "classifier.min_option_mass", "classifier.rotate_options", "classifier.thinking_off_models", "classifier.probe_ttl_seconds", "classifier.probe_timeout_seconds", "classifier.calibration.test_fraction", "classifier.calibration.split_seed", "classifier.calibration.min_fit_samples", "classifier.calibration.false_pass_weight", "classifier.calibration.rotation_bias_threshold", "classifier.calibration.rotation_flip_threshold":
 			// Validated in handlePutConfig; stored normalized.
 			applyClassifierPatchKey(&cfg.Classifier, k, v)
-		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change", "usage.burn_guard.max_projection_gap_points", "usage.burn_guard.mode", "usage.burn_guard.week_tolerance", "usage.burn_guard.points_to_week_factor", "usage.burn_guard.window_percent_per_point", "usage.burn_guard.window_stop_percent", "usage.burn_guard.reading_freshness_minutes":
+		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change", "usage.burn_guard.max_projection_gap_points", "usage.burn_guard.mode", "usage.burn_guard.week_tolerance", "usage.burn_guard.points_to_week_factor", "usage.burn_guard.window_percent_per_point", "usage.burn_guard.window_stop_percent", "usage.burn_guard.reading_freshness_minutes", "usage.burn_guard.entries":
 			// Validated in handlePutConfig; stored normalized.
 			applyBurnGuardPatchKey(&cfg.Usage.BurnGuard, k, v)
 		case "autonomous.backoff_max_wait_minutes":
@@ -10422,7 +10429,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			laneFillKeyPrefix + "poll_seconds", laneFillKeyPrefix + "gpu_backend",
 			laneFillKeyPrefix + "gpu_model", laneFillKeyPrefix + "claude_backend",
 			laneFillKeyPrefix + "count_verifier_wait", laneFillKeyPrefix + "stale_after_hours",
-			laneFillKeyPrefix + "host_down_after_minutes",
+			laneFillKeyPrefix + "host_down_after_minutes", laneFillKeyPrefix + "stalled_merge_minutes",
 			laneFillKeyPrefix + "require_confirmed_proposal", laneFillKeyPrefix + "check_main_carries",
 			laneFillKeyPrefix + "require_worktree", laneFillKeyPrefix + "lane_counts_from_caps",
 			laneFillKeyPrefix + "gpu_mode", laneFillKeyPrefix + "claude_mode":

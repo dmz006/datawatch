@@ -37,6 +37,10 @@ type LaneFillConfig struct {
 	// HostDownAfterMinutes: minutes a pool host may stay unreachable before it
 	// is treated as down. Nil means 10; an explicit 0 never treats it as down.
 	HostDownAfterMinutes *int `json:"host_down_after_minutes,omitempty"`
+	// StalledMergeMinutes: whole minutes a task-branch merge may stay pending
+	// without progress before the Automaton stops holding its lane. Nil means
+	// 30; an explicit 0 turns the rule off.
+	StalledMergeMinutes *int `json:"stalled_merge_minutes,omitempty"`
 	// RequireConfirmedProposal, CheckMainCarries, RequireWorktree and
 	// LaneCountsFromCaps are eligibility and counting rules; nil means true.
 	RequireConfirmedProposal *bool `json:"require_confirmed_proposal,omitempty"`
@@ -70,6 +74,7 @@ func LaneFillConfigFromYAML(c config.AutonomousLaneFillConfig) LaneFillConfig {
 
 		StaleAfterHours:          c.StaleAfterHours,
 		HostDownAfterMinutes:     c.HostDownAfterMinutes,
+		StalledMergeMinutes:      c.StalledMergeMinutes,
 		RequireConfirmedProposal: c.RequireConfirmedProposal,
 		CheckMainCarries:         c.CheckMainCarries,
 		RequireWorktree:          c.RequireWorktree,
@@ -96,6 +101,7 @@ func (c LaneFillConfig) yaml() config.AutonomousLaneFillConfig {
 
 		StaleAfterHours:          c.StaleAfterHours,
 		HostDownAfterMinutes:     c.HostDownAfterMinutes,
+		StalledMergeMinutes:      c.StalledMergeMinutes,
 		RequireConfirmedProposal: c.RequireConfirmedProposal,
 		CheckMainCarries:         c.CheckMainCarries,
 		RequireWorktree:          c.RequireWorktree,
@@ -152,6 +158,12 @@ func (c LaneFillConfig) EffectiveStaleAfterHours() int { return c.yaml().Effecti
 // = 10, explicit 0 = never treat an unreachable host as down).
 func (c LaneFillConfig) EffectiveHostDownAfterMinutes() int {
 	return c.yaml().EffectiveHostDownAfterMinutes()
+}
+
+// EffectiveStalledMergeMinutes returns the stalled-merge threshold in effect
+// (nil = 30, explicit 0 = rule off).
+func (c LaneFillConfig) EffectiveStalledMergeMinutes() int {
+	return c.yaml().EffectiveStalledMergeMinutes()
 }
 
 // EffectiveRequireConfirmedProposal returns the confirmed-proposal rule in

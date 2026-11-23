@@ -163,7 +163,7 @@ type burnGuardAdmNull struct{}
 func (burnGuardAdmNull) InflightCap(string) int                  { return 0 }
 func (burnGuardAdmNull) SetInflight(string, int) error           { return nil }
 func (burnGuardAdmNull) RouteBackend(string, string, bool) error { return nil }
-func (burnGuardAdmNull) HoldNewWork(string, bool) error          { return nil }
+func (burnGuardAdmNull) HoldNewWork(string, string, bool) error  { return nil }
 
 func getConsole(t *testing.T, s *Server) (int, dashboardConsoleResponse) {
 	t.Helper()

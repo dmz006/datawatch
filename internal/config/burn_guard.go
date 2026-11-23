@@ -14,8 +14,16 @@ import (
 )
 
 const (
-	// Ladder rung names, in the order the default ladder applies them.
-	BurnGuardRungLowerInflight = "lower_inflight"
+	// Ladder rung names, in the order the default ladder applies them. They are
+	// entry-generic: each rung acts on the ladder's entry, not on any fixed backend.
+	BurnGuardRungLowerInflight     = "lower_inflight"
+	BurnGuardRungRouteEntry        = "route_entry"
+	BurnGuardRungRouteCheaperModel = "route_cheaper_model"
+	BurnGuardRungHoldEntry         = "hold_entry"
+
+	// Legacy first-version rung names (now route_entry and hold_entry). They are
+	// still accepted in saved configs and normalize to the entry-generic names
+	// (burnGuardLegacyRungs).
 	BurnGuardRungRoutePiPrompt = "route_pi_prompt"
 	BurnGuardRungHoldClaude    = "hold_claude"
 
@@ -86,7 +94,9 @@ type BurnGuardConfig struct {
 	// compare: the gap check is off.
 	MaxProjectionGapPoints float64 `yaml:"max_projection_gap_points" json:"max_projection_gap_points"`
 	// Ladder is the ordered list of rungs applied while over the line
-	// (default lower_inflight, route_pi_prompt, hold_claude).
+	// (default lower_inflight, route_entry, hold_entry). The legacy first-version
+	// names route_pi_prompt and hold_claude are accepted and normalize to
+	// route_entry and hold_entry.
 	Ladder []string `yaml:"ladder,omitempty" json:"ladder,omitempty"`
 	// StepBack undoes rungs in reverse once the projection is back under the
 	// line (default true).
@@ -127,14 +137,182 @@ type BurnGuardConfig struct {
 	// is stale and the guard asks the operator for a fresh one, whole number
 	// 1 to 1440 (default 60).
 	PaceLineReadingFreshnessMinutes int `yaml:"reading_freshness_minutes" json:"reading_freshness_minutes"`
+	// Entries are the paid LLM entries the guard evaluates, one projection and one
+	// ladder each. Empty means one entry built from the settings above (see
+	// EffectiveEntries), so a config written before per-entry guarding keeps working.
+	Entries []BurnGuardEntryConfig `yaml:"entries,omitempty" json:"entries,omitempty"`
+}
+
+// Plan types of a guarded entry.
+const (
+	// BurnGuardPlanFlat is a flat plan read as a weekly percentage of an allowance.
+	BurnGuardPlanFlat = "flat"
+	// BurnGuardPlanMetered is a metered plan read as a spend figure in dollars.
+	BurnGuardPlanMetered = "metered"
+	// BurnGuardUsageSourceReadings reads the entry's usage from the readings series.
+	BurnGuardUsageSourceReadings = "readings"
+	// BurnGuardUsageSourceNone means the entry has no usage reading source; it is
+	// never held.
+	BurnGuardUsageSourceNone = "none"
+
+	// BurnGuardLegacyEntryDefault and BurnGuardLegacyRouteToDefault name the entry
+	// and the route target of the single entry built when no entries are configured
+	// (the guard acted on these before per-entry guarding). They are configuration
+	// defaults only; the guard reads every name from the entry.
+	BurnGuardLegacyEntryDefault   = "claude-code"
+	BurnGuardLegacyRouteToDefault = "pi-prompt"
+)
+
+// BurnGuardEntryConfig is one paid LLM entry the guard evaluates.
+type BurnGuardEntryConfig struct {
+	// LLM is the LLM entry name (the backend name admission uses).
+	LLM string `yaml:"llm" json:"llm"`
+	// UsageSource is where the entry's usage is read: readings (the readings series,
+	// readings that name this entry) or none. An entry with no source is never held.
+	UsageSource string `yaml:"usage_source" json:"usage_source"`
+	// Plan is flat (a weekly percentage) or metered (a spend figure). Default flat.
+	Plan string `yaml:"plan" json:"plan"`
+	// PeriodTarget is the ceiling of the period: a percentage for a flat plan
+	// (default 100, plus bought extra credit) or dollars for a metered plan
+	// (required; a metered entry with no target is never held).
+	PeriodTarget float64 `yaml:"period_target" json:"period_target"`
+	// Model is the model whose per-model cost rate prices the entry's tokens; empty
+	// means the entry's first model.
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+	// Ladder is this entry's ordered rungs; empty means the guard-wide ladder.
+	Ladder []string `yaml:"ladder,omitempty" json:"ladder,omitempty"`
+	// HeldModels limits the hold rung to these models of the entry; empty holds the
+	// whole entry.
+	HeldModels []string `yaml:"held_models,omitempty" json:"held_models,omitempty"`
+	// RouteTo is the backend the route rung sends new work to; empty means the
+	// route rung does nothing for this entry.
+	RouteTo string `yaml:"route_to,omitempty" json:"route_to,omitempty"`
+	// RouteCheaperModel is the model the route_cheaper_model rung sends this entry's
+	// new work to: the entry's own cheaper model (for a Claude entry, Haiku). Empty
+	// means the entry's own cheapest priced model (resolved from its per-model cost
+	// rates); it changes the model, not the backend.
+	RouteCheaperModel string `yaml:"route_cheaper_model,omitempty" json:"route_cheaper_model,omitempty"`
+	// PointsPerUSD converts a flat entry's dollar-priced tokens to points of its
+	// weekly allowance; 0 means price the tokens with the guard-wide cache
+	// coefficients (the fitted ones) instead.
+	PointsPerUSD float64 `yaml:"points_per_usd,omitempty" json:"points_per_usd,omitempty"`
+}
+
+// HasUsageSource reports whether the entry has a usage reading source.
+func (e BurnGuardEntryConfig) HasUsageSource() bool {
+	return strings.EqualFold(strings.TrimSpace(e.UsageSource), BurnGuardUsageSourceReadings)
+}
+
+// IsMetered reports whether the entry is on a metered plan.
+func (e BurnGuardEntryConfig) IsMetered() bool {
+	return strings.EqualFold(strings.TrimSpace(e.Plan), BurnGuardPlanMetered)
+}
+
+// EntryModelCost pairs one model of an LLM entry with its resolved input and
+// output USD price per 1K tokens (the per-model cost rate, backend-fallback
+// merged in). It is the input to PickCheaperModel.
+type EntryModelCost struct {
+	Model   string
+	InPerK  float64
+	OutPerK float64
+}
+
+// PickCheaperModel returns an entry's cheaper model: the model the
+// route_cheaper_model rung should send this entry's new work to. It is the
+// cheapest-priced model other than the entry's own (by input+output per 1K),
+// using each model's own cost rate. A Claude entry (preferHaiku) prefers the
+// haiku-named model over another model of the same price, and a haiku model
+// never loses to another model on price alone: it wins unless the cheapest
+// non-haiku model is strictly cheaper than it. An entry's own model and empty
+// names are excluded. "" when there is no other model (nothing to route to).
+func PickCheaperModel(own string, preferHaiku bool, models []EntryModelCost) string {
+	own = strings.TrimSpace(own)
+	var rest []EntryModelCost
+	for _, m := range models {
+		if m.Model == "" || m.Model == own {
+			continue
+		}
+		rest = append(rest, m)
+	}
+	if len(rest) == 0 {
+		return ""
+	}
+	haiku := func(m string) bool { return strings.Contains(strings.ToLower(m), "haiku") }
+	cost := func(m EntryModelCost) float64 { return m.InPerK + m.OutPerK }
+	best := rest[0]
+	for _, c := range rest[1:] {
+		cc, bc := cost(c), cost(best)
+		if cc < bc {
+			best = c
+			continue
+		}
+		if cc == bc && preferHaiku && haiku(c.Model) && !haiku(best.Model) {
+			best = c
+		}
+	}
+	return best.Model
+}
+
+// EffectiveEntries returns the entries the guard evaluates: the configured ones with a
+// name, or, when none is configured, one flat entry reading the readings series with
+// the guard-wide ladder (the behaviour before per-entry guarding). The first entry owns
+// the readings that name no entry.
+func (c BurnGuardConfig) EffectiveEntries() []BurnGuardEntryConfig {
+	var out []BurnGuardEntryConfig
+	seen := map[string]bool{}
+	for _, e := range c.Entries {
+		e.LLM = strings.TrimSpace(e.LLM)
+		if e.LLM == "" || seen[e.LLM] {
+			continue
+		}
+		seen[e.LLM] = true
+		if strings.TrimSpace(e.Plan) == "" {
+			e.Plan = BurnGuardPlanFlat
+		}
+		out = append(out, e)
+	}
+	if len(out) > 0 {
+		return out
+	}
+	return []BurnGuardEntryConfig{{
+		LLM: BurnGuardLegacyEntryDefault, UsageSource: BurnGuardUsageSourceReadings,
+		Plan: BurnGuardPlanFlat, RouteTo: BurnGuardLegacyRouteToDefault,
+	}}
 }
 
 var burnGuardModes = []string{BurnGuardModeOff, BurnGuardModeShadow, BurnGuardModeOn}
 
 var (
-	burnGuardRungs    = []string{BurnGuardRungLowerInflight, BurnGuardRungRoutePiPrompt, BurnGuardRungHoldClaude}
-	burnGuardCeilings = []string{BurnGuardCeilingLow, BurnGuardCeilingMedium, BurnGuardCeilingHigh, BurnGuardCeilingCheapBackend}
+	// burnGuardRungs is the set of ladder rung names a configured ladder may use, in the
+	// order the rungs are canonically applied. route_cheaper_model is allowed here so a
+	// ladder can place it (canonically before hold_entry), but it is not in the always-on
+	// default ladder because it is a no-op until an entry resolves a cheaper model.
+	burnGuardRungs = []string{BurnGuardRungLowerInflight, BurnGuardRungRouteEntry, BurnGuardRungRouteCheaperModel, BurnGuardRungHoldEntry}
+	// burnGuardDefaultLadder is the ladder applied when none is configured.
+	burnGuardDefaultLadder = []string{BurnGuardRungLowerInflight, BurnGuardRungRouteEntry, BurnGuardRungHoldEntry}
+	burnGuardCeilings      = []string{BurnGuardCeilingLow, BurnGuardCeilingMedium, BurnGuardCeilingHigh, BurnGuardCeilingCheapBackend}
 )
+
+// burnGuardLegacyRungs maps legacy first-version rung names to their
+// entry-generic names.
+var burnGuardLegacyRungs = map[string]string{
+	BurnGuardRungRoutePiPrompt: BurnGuardRungRouteEntry,
+	BurnGuardRungHoldClaude:    BurnGuardRungHoldEntry,
+}
+
+// burnGuardRungName resolves one rung name: the entry-generic name, or the
+// entry-generic name a legacy first-version name maps to. ok is false when the
+// name is not a rung at all.
+func burnGuardRungName(r string) (string, bool) {
+	name, ok := usageChoice(r, burnGuardRungs)
+	if ok {
+		return name, true
+	}
+	if name, ok2 := burnGuardLegacyRungs[r]; ok2 {
+		return name, true
+	}
+	return r, false
+}
 
 // burnGuardLogf receives the warning lines raised while normalising a loaded
 // config. Tests replace it to capture the output.
@@ -150,7 +328,7 @@ func DefaultBurnGuard() BurnGuardConfig {
 		IntervalMinutes:            BurnGuardIntervalMinutesDefault,
 		MarginPoints:               BurnGuardMarginPointsDefault,
 		MaxProjectionGapPoints:     BurnGuardProjectionGapDefault,
-		Ladder:                     append([]string(nil), burnGuardRungs...),
+		Ladder:                     append([]string(nil), burnGuardDefaultLadder...),
 		StepBack:                   true,
 		CacheWritePointsPerMillion: BurnGuardCacheWriteDefault,
 		CacheReadPointsPerMillion:  BurnGuardCacheReadDefault,
@@ -221,12 +399,13 @@ func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...inte
 	out.CacheWritePointsPerMillion = price("cache_write_points_per_million", c.CacheWritePointsPerMillion, d.CacheWritePointsPerMillion)
 	out.CacheReadPointsPerMillion = price("cache_read_points_per_million", c.CacheReadPointsPerMillion, d.CacheReadPointsPerMillion)
 
-	// Ladder: keep valid, non-duplicate rungs in order; an empty result is
-	// the default ladder.
+	// Ladder: keep valid, non-duplicate rungs in order (legacy first-version
+	// names normalize to the entry-generic names); an empty result is the
+	// default ladder.
 	out.Ladder = nil
 	seen := map[string]bool{}
 	for _, r := range c.Ladder {
-		name, ok := usageChoice(r, burnGuardRungs)
+		name, ok := burnGuardRungName(r)
 		switch {
 		case !ok:
 			say("[warn] usage.burn_guard.ladder: %q is not a rung — dropped (allowed: %s)", r, strings.Join(burnGuardRungs, ", "))
@@ -268,6 +447,38 @@ func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...inte
 		}
 		if len(out.EffortCeiling) == 0 {
 			out.EffortCeiling = d.EffortCeiling
+		}
+	}
+
+	// Entries: an entry's ladder keeps valid rungs (empty means the guard-wide
+	// ladder); an unknown plan or source is reported and read as flat / none.
+	if len(c.Entries) > 0 {
+		out.Entries = make([]BurnGuardEntryConfig, 0, len(c.Entries))
+		for i, e := range c.Entries {
+			// An entry's ladder keeps valid rungs, legacy names included (empty means
+			// the guard-wide ladder).
+			var rungs []string
+			for _, r := range e.Ladder {
+				if name, ok := burnGuardRungName(r); ok {
+					rungs = append(rungs, name)
+				} else {
+					say("[warn] usage.burn_guard.entries[%d].ladder: %q is not a rung — dropped", i, r)
+				}
+			}
+			e.Ladder = rungs
+			if p := strings.TrimSpace(e.Plan); p != "" && !strings.EqualFold(p, BurnGuardPlanFlat) && !strings.EqualFold(p, BurnGuardPlanMetered) {
+				say("[warn] usage.burn_guard.entries[%d].plan: %q — using %q", i, e.Plan, BurnGuardPlanFlat)
+				e.Plan = BurnGuardPlanFlat
+			}
+			if src := strings.TrimSpace(e.UsageSource); src != "" && !e.HasUsageSource() && !strings.EqualFold(src, BurnGuardUsageSourceNone) {
+				say("[warn] usage.burn_guard.entries[%d].usage_source: %q — using %q", i, e.UsageSource, BurnGuardUsageSourceNone)
+				e.UsageSource = BurnGuardUsageSourceNone
+			}
+			if !burnGuardFinite(e.PeriodTarget) || e.PeriodTarget < 0 {
+				say("[warn] usage.burn_guard.entries[%d].period_target: %v — unset", i, e.PeriodTarget)
+				e.PeriodTarget = 0
+			}
+			out.Entries = append(out.Entries, e)
 		}
 	}
 
@@ -314,12 +525,14 @@ func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...inte
 	return out
 }
 
-// BurnGuardRungs returns the allowed ladder rung names, in default order.
+// BurnGuardRungs returns the allowed ladder rung names (the entry-generic names), in
+// default order.
 func BurnGuardRungs() []string { return append([]string(nil), burnGuardRungs...) }
 
-// ValidateBurnGuardRung reports an error for a name that is not a ladder rung.
+// ValidateBurnGuardRung reports an error for a name that is not a ladder rung. The
+// legacy first-version names count: they normalize to the entry-generic names.
 func ValidateBurnGuardRung(name string) error {
-	if _, ok := usageChoice(name, burnGuardRungs); !ok {
+	if _, ok := burnGuardRungName(name); !ok {
 		return fmt.Errorf("usage.burn_guard.ladder: %q is not a rung (allowed: %s)", name, strings.Join(burnGuardRungs, ", "))
 	}
 	return nil

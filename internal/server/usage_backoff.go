@@ -155,37 +155,45 @@ type usageBackoffSetRequest struct {
 	Minutes *int   `json:"minutes,omitempty"`
 	Until   string `json:"until,omitempty"`
 	Reason  string `json:"reason,omitempty"`
+	// Models, when non-empty, limits the flag to these models of the backend;
+	// empty or absent holds the whole backend.
+	Models []string `json:"models,omitempty"`
 }
 
-// resolve validates the request and returns the backend and deadline.
-func (r usageBackoffSetRequest) resolve(now time.Time) (string, time.Time, error) {
+// resolve validates the request and returns the backend, deadline and the
+// normalised model list (nil = whole backend).
+func (r usageBackoffSetRequest) resolve(now time.Time) (string, time.Time, []string, error) {
+	models := autonomous.NormalizeModels(r.Models)
+	if r.Models != nil && len(models) == 0 {
+		return "", time.Time{}, nil, errors.New("models: at least one model name is required")
+	}
 	backend := strings.TrimSpace(r.Backend)
 	if backend == "" {
-		return "", time.Time{}, errors.New("backend: required")
+		return "", time.Time{}, nil, errors.New("backend: required")
 	}
 	if r.Minutes != nil && strings.TrimSpace(r.Until) != "" {
-		return "", time.Time{}, errors.New("minutes and until: specify exactly one")
+		return "", time.Time{}, nil, errors.New("minutes and until: specify exactly one")
 	}
 	if r.Minutes != nil {
 		if *r.Minutes < 1 {
-			return "", time.Time{}, errors.New("minutes: must be >= 1")
+			return "", time.Time{}, nil, errors.New("minutes: must be >= 1")
 		}
 		if *r.Minutes > usageBackoffMaxMinutes {
-			return "", time.Time{}, errors.New("minutes: must be <= 525600")
+			return "", time.Time{}, nil, errors.New("minutes: must be <= 525600")
 		}
-		return backend, now.Add(time.Duration(*r.Minutes) * time.Minute), nil
+		return backend, now.Add(time.Duration(*r.Minutes) * time.Minute), models, nil
 	}
 	if u := strings.TrimSpace(r.Until); u != "" {
 		until, err := time.Parse(time.RFC3339, u)
 		if err != nil {
-			return "", time.Time{}, errors.New("until: must be an RFC3339 time")
+			return "", time.Time{}, nil, errors.New("until: must be an RFC3339 time")
 		}
 		if !until.After(now) {
-			return "", time.Time{}, errors.New("until: must be in the future")
+			return "", time.Time{}, nil, errors.New("until: must be in the future")
 		}
-		return backend, until, nil
+		return backend, until, models, nil
 	}
-	return backend, now.Add(usageBackoffDefaultMinutes * time.Minute), nil
+	return backend, now.Add(usageBackoffDefaultMinutes * time.Minute), models, nil
 }
 
 func (s *Server) handleUsageBackoff(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +220,7 @@ func (s *Server) handleUsageBackoff(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		backend, until, err := req.resolve(time.Now())
+		backend, until, models, err := req.resolve(time.Now())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -221,8 +229,14 @@ func (s *Server) handleUsageBackoff(w http.ResponseWriter, r *http.Request) {
 		if reason == "" {
 			reason = "operator back-off until " + until.Format("15:04 MST")
 		}
-		s.usageBackoff.Set(backend, until, reason, autonomous.BackoffSourceOperator)
-		s.backoffAudit().BackoffSet(s.auditActor(r.Context()), backend, until, autonomous.BackoffSourceOperator)
+		if len(models) > 0 {
+			// Model-scoped flag: holds only the named models of the backend.
+			s.usageBackoff.SetWithModels(backend, until, reason, autonomous.BackoffSourceOperator, true, "", models)
+		} else {
+			// Whole-backend flag (the legacy behaviour).
+			s.usageBackoff.Set(backend, until, reason, autonomous.BackoffSourceOperator)
+		}
+		s.backoffAudit().BackoffSet(s.auditActor(r.Context()), backend, until, autonomous.BackoffSourceOperator, models)
 		writeJSONOK(w, s.usageBackoffStatus())
 	case http.MethodDelete:
 		if !s.fedCap(w, r, federation.CapConfigWrite) {
@@ -233,22 +247,39 @@ func (s *Server) handleUsageBackoff(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			Backend string `json:"backend"`
+			Backend string   `json:"backend"`
+			Models  []string `json:"models"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		backend := strings.TrimSpace(req.Backend)
+		models := autonomous.NormalizeModels(req.Models)
 		target := backend
 		cleared := 0
+		var modelDetails []string
 		if backend == "" || strings.EqualFold(backend, "all") {
+			if len(models) > 0 {
+				// A clear-all is not model-scoped: name the backend to narrow.
+				http.Error(w, "models: name a backend to narrow a clear; a clear-all removes whole-backend flags only", http.StatusBadRequest)
+				return
+			}
 			target = "all"
 			cleared = s.usageBackoff.ClearAll()
+		} else if len(models) > 0 {
+			// Model-scoped clear: removes the named models from the flag,
+			// dropping it when that empties the list; whole-backend flags and
+			// lists not covered by the named models are left unchanged.
+			cleared = 1
+			if !s.usageBackoff.ClearModels(backend, models) {
+				cleared = 0
+			}
+			modelDetails = models
 		} else if s.usageBackoff.Clear(backend) {
 			cleared = 1
 		}
-		s.backoffAudit().BackoffCleared(s.auditActor(r.Context()), target)
+		s.backoffAudit().BackoffCleared(s.auditActor(r.Context()), target, modelDetails)
 		st := s.usageBackoffStatus()
 		writeJSONOK(w, struct {
 			Cleared int `json:"cleared"`

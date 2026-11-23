@@ -46,7 +46,7 @@ func frTick(t *testing.T, l *Ladder, p Projection, s LadderSettings) Decision {
 
 func newFRLadder(t *testing.T) *Ladder {
 	t.Helper()
-	l, err := NewLadder(&memStore{})
+	l, err := newTestLadder(&memStore{})
 	if err != nil {
 		t.Fatal(err)
 	}
