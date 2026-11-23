@@ -6065,5 +6065,7 @@
   "cost_charts_col_local_tokens": "Tokens lokaler Modelle",
   "cost_charts_col_active": "Aktive Zeit",
   "cost_charts_not_reported_marker": "nicht gemeldet (%1$s)",
-  "cost_report_not_reported": "nicht gemeldet (%1$s)"
+  "cost_report_not_reported": "nicht gemeldet (%1$s)",
+  "settings_rtk_write_rules_files": "Sitzungsanweisungen in AGENT.md und CLAUDE.md schreiben",
+  "settings_rtk_write_rules_files_help": "Wenn aus (Standard), schreibt der Daemon niemals in AGENT.md oder CLAUDE.md: Er legt sie nicht an, aktualisiert ihren Sitzungskopf nicht und fügt keine RTK-, Memory- oder Cross-Session-Anweisungen hinzu. Diese gehen stattdessen in eine nicht versionierte Datei pro Sitzung. Regeldateien werden nur von Menschen geschrieben."
 }
