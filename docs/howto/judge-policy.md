@@ -477,10 +477,13 @@ failed to be found) and an `action`: the next step it suggests.
   time limit. This is the hold described in
   [The needs-review hold](#the-needs-review-hold): the Automaton is in
   `needs_review` (reason `judge_timeout_hold`), nothing has been approved or
-  passed, and only your decision moves it on. The `cause` names the backends
-  that timed out, how many, and their limit (for example, "judge timed out
-  on 2 backend(s): ollama-a, ollama-b, limit 30m0s"). The `action` is one
-  of two:
+  passed, and only your decision moves it on. The `cause` starts with "not
+  judged" and names the backends that timed out, how many, and their limit (for
+  example, "not judged: the judge timed out on 2 backend(s): ollama-a, ollama-b,
+  limit 30m0s"). Each judge attempt in the review state also lists its outcome,
+  its session id and the last output of that judge, the tail of what it printed
+  before the limit, so read that output to see how far the judge got. The
+  `action` is one of two:
   - **`retry`** — every timed-out attempt came from a backend in the judge
     policy, so re-judging on the same judge order is the sensible next step.
   - **`reroute`** — the Automaton has a guardrail backend (a stronger judge)
@@ -598,9 +601,9 @@ daemon takes a change from the next judgment, like the other judge settings.
 |---|---|---|
 | YAML (`~/.datawatch/config.yaml`) | `autonomous.judge_policy`, `autonomous.judge_timeout_seconds`, `autonomous.judge_timeout_per_thousand_lines_seconds`, `autonomous.judge_size_threshold_lines`, `autonomous.judge_strong_backend`, `autonomous.judge_verdict_cache_enabled` | Edit the keys and restart the daemon |
 | REST | `GET /api/autonomous/config` and `GET /api/config` | `PUT /api/autonomous/config` with `{"judge_policy": ["a","b"], "judge_timeout_seconds": 1800, "judge_size_threshold_lines": 400, "judge_strong_backend": "claude-code", "judge_verdict_cache_enabled": false}`; or `PUT /api/config` with the dotted keys |
-| MCP | `autonomous_config_get` | `autonomous_config_set` with `judge_policy` (array), `judge_timeout_seconds` (number), `judge_size_threshold_lines` (number), `judge_strong_backend` (string) and `judge_verdict_cache_enabled` (boolean) |
+| MCP | `autonomous_config_get` | `autonomous_config_set` with `judge_policy` (array), `judge_timeout_seconds` (number), `judge_timeout_per_thousand_lines_seconds` (number), `judge_size_threshold_lines` (number), `judge_strong_backend` (string) and `judge_verdict_cache_enabled` (boolean) |
 | CLI | `datawatch autonomous config-get` | `datawatch autonomous config-set --judge-policy ollama-a,claude-code --judge-timeout-seconds 1800 --judge-size-threshold-lines 400 --judge-strong-backend claude-code --judge-verdict-cache=false` |
-| Comm channel | `autonomous judge-policy` | `autonomous judge-policy-set judge_policy=ollama-a,claude-code judge_timeout_seconds=1800 judge_size_threshold_lines=400 judge_strong_backend=claude-code judge_verdict_cache_enabled=false`; or `configure autonomous.judge_strong_backend=claude-code` |
+| Comm channel | `autonomous judge-policy` | `autonomous judge-policy-set judge_policy=ollama-a,claude-code judge_timeout_seconds=1800 judge_timeout_per_thousand_lines_seconds=600 judge_size_threshold_lines=400 judge_strong_backend=claude-code judge_verdict_cache_enabled=false`; or `configure autonomous.judge_strong_backend=claude-code` |
 | PWA | Settings, autonomous card | The `judge_policy` comma list, the `judge_timeout_seconds` field, the `judge_size_threshold_lines` field (Judge size threshold), the `judge_strong_backend` text field (Strong judge backend (large-diff reroute)) and the `judge_verdict_cache_enabled` toggle (Judge verdict cache) on the same card |
 
 Notes on the write forms:
