@@ -23,3 +23,23 @@ func TestAdoptOverLimitFlagsAndBlocks(t *testing.T) {
 		t.Fatal("still over")
 	}
 }
+
+func TestSnapshotFlagsRoutedWorkerOverLimit(t *testing.T) {
+	l := New(Options{})
+	l.SetLimit("llm:y", 1)
+	l.Adopt(Request{Holder: "a", PRDID: "a", Pools: []string{"llm:y"}}, "s-a")
+	// A routed (non-adopted) worker lease sharing the over-limit pool.
+	l.mu.Lock()
+	l.leases["r"] = &Lease{Holder: "r", PRDID: "r", Role: RoleWorker, Pools: []string{"llm:y"}}
+	l.mu.Unlock()
+	codes := map[string]string{}
+	for _, ls := range l.Snapshot().Leases {
+		if !ls.OverLimit || ls.OverLimitReason == "" {
+			t.Fatalf("lease not flagged: %+v", ls)
+		}
+		codes[ls.Holder] = ls.OverLimitCode
+	}
+	if codes["a"] != "adopted_over_limit" || codes["r"] != "routed_over_limit" {
+		t.Fatalf("codes = %v", codes)
+	}
+}
