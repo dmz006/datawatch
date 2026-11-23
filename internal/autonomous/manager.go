@@ -6742,6 +6742,16 @@ func prdLLMOverrideAllowed(status PRDStatus) bool {
 	return status != PRDRunning && status != PRDCompleted
 }
 
+// ErrPlanInProgress is returned when a PRD-level LLM mutation is refused
+// because a planning run is in flight for the PRD.
+var ErrPlanInProgress = errors.New("plan in progress")
+
+// planInProgressErr is the refusal for a worker or guardrail LLM change made
+// while the Automaton is planning.
+func planInProgressErr(prdID string) error {
+	return fmt.Errorf("%w: prd %q is planning (a plan is running); wait for it to finish, then change the LLM settings", ErrPlanInProgress, prdID)
+}
+
 // SetPRDLLM updates the PRD's LLM fields. The third return value reports
 // the planning-requeue outcome (requirement b): non-nil whenever a planning
 // field (decomposition_profile / decomposition_model) was part of the call —
@@ -6752,6 +6762,12 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	// A worker backend/effort/model change is refused while the plan is being
+	// written. A planning-only change (decomposition_profile / _model) stays
+	// allowed: it is handled by the planning-requeue path below.
+	if prd.Status == PRDPlanning && (backend != nil || effort != nil || model != nil) {
+		return nil, nil, planInProgressErr(prdID)
 	}
 	// Completed Automata are finished — there is nothing left to run, so a
 	// worker LLM/effort change reaches no task. A RUNNING Automaton still
@@ -6849,6 +6865,9 @@ func (m *Manager) SetPRDGuardrailLLM(prdID string, backend, model *string, actor
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status == PRDPlanning {
+		return nil, planInProgressErr(prdID)
 	}
 	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
 		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
