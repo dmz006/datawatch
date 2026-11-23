@@ -1,0 +1,148 @@
+package autonomous
+
+import (
+	"encoding/json"
+	"log"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+// finishedWorkLimit bounds the findings kept in memory and on disk.
+const finishedWorkLimit = 200
+
+// finishedWorkSweepFile sits beside the other autonomous stores.
+const finishedWorkSweepFile = "finished_work_findings.json"
+
+// FinishedWorkFinding is one finding of the finished-work sweep: an
+// Automaton that finished, what was found about its work, and what to do
+// about it.
+type FinishedWorkFinding struct {
+	Automaton string `json:"automaton"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+	Cause     string `json:"cause"`
+	Action    string `json:"action"`
+	At        string `json:"at"`
+}
+
+// FinishedWorkSweep is the bounded, persisted findings of the finished-work
+// sweep, newest first. Listing the findings never changes them.
+type FinishedWorkSweep struct {
+	mu       sync.Mutex
+	path     string
+	findings []FinishedWorkFinding
+	dirty    bool
+}
+
+// NewFinishedWorkSweep opens the sweep under dir. A missing file is an empty
+// sweep; a corrupt one is logged and replaced with an empty sweep, never
+// fatal.
+func NewFinishedWorkSweep(dir string) *FinishedWorkSweep {
+	s := &FinishedWorkSweep{path: filepath.Join(dir, finishedWorkSweepFile)}
+	s.load()
+	return s
+}
+
+func (s *FinishedWorkSweep) load() {
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("[autonomous] finished work sweep: read %s: %v", s.path, err)
+		}
+		return
+	}
+	if err := json.Unmarshal(data, &s.findings); err != nil {
+		log.Printf("[autonomous] finished work sweep: %s is corrupt, starting empty: %v", s.path, err)
+		s.dirty = true
+		s.save()
+		return
+	}
+	if len(s.findings) > finishedWorkLimit {
+		s.findings = s.findings[:finishedWorkLimit]
+	}
+}
+
+// Record stores one finding, newest first. An empty At reads as now.
+func (s *FinishedWorkSweep) Record(f FinishedWorkFinding) {
+	if f.At == "" {
+		f.At = time.Now().UTC().Format(time.RFC3339)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.findings = append([]FinishedWorkFinding{f}, s.findings...)
+	if len(s.findings) > finishedWorkLimit {
+		s.findings = s.findings[:finishedWorkLimit]
+	}
+	s.dirty = true
+	s.save()
+}
+
+// SweepFindings returns the stored findings, newest first (all of them).
+func (s *FinishedWorkSweep) SweepFindings() []FinishedWorkFinding {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]FinishedWorkFinding, len(s.findings))
+	copy(out, s.findings)
+	return out
+}
+
+// save writes the findings when they changed. The caller holds s.mu.
+func (s *FinishedWorkSweep) save() {
+	if !s.dirty {
+		return
+	}
+	data, err := json.Marshal(s.findings)
+	if err == nil {
+		err = atomicWriteFile(s.path, data)
+	}
+	if err != nil {
+		log.Printf("[autonomous] finished work sweep: write %s: %v", s.path, err)
+		return
+	}
+	s.dirty = false
+}
+
+// FinishedWorkSweep returns the sweep the daemon records finished-work
+// findings in (nil when not wired).
+func (m *Manager) FinishedWorkSweep() *FinishedWorkSweep {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.finishedWork
+}
+
+// RecordFinishedWorkFinding stores one finished-work finding (a no-op when
+// no sweep is wired).
+func (m *Manager) RecordFinishedWorkFinding(f FinishedWorkFinding) {
+	m.mu.Lock()
+	s := m.finishedWork
+	m.mu.Unlock()
+	if s != nil {
+		s.Record(f)
+	}
+}
+
+// SweepFindings lists the finished-work findings (none when no sweep is
+// wired).
+func (m *Manager) SweepFindings() []FinishedWorkFinding {
+	m.mu.Lock()
+	s := m.finishedWork
+	m.mu.Unlock()
+	if s == nil {
+		return []FinishedWorkFinding{}
+	}
+	return s.SweepFindings()
+}
+
+// FinishedWorkSweep serves the finished_work rows of
+// GET /api/autonomous/housekeeping-repairs.
+func (a *API) FinishedWorkSweep() *FinishedWorkSweep { return a.M.FinishedWorkSweep() }
+
+// SweepFindings lists the finished-work findings (none when no sweep is
+// wired).
+func (a *API) SweepFindings() []FinishedWorkFinding { return a.M.SweepFindings() }
+
+// RecordFinishedWorkFinding stores one finished-work finding (a no-op when
+// no sweep is wired).
+func (a *API) RecordFinishedWorkFinding(f FinishedWorkFinding) { a.M.RecordFinishedWorkFinding(f) }
