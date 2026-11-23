@@ -5253,6 +5253,9 @@ paths:
                       type: object
                       properties:
                         node_unknown: {type: boolean, description: "True when the lease's compute node was expected and could not be determined at adoption. The lease holds no node pool. Absent when false"}
+                        over_limit: {type: boolean, description: "True when a worker lease sits in a pool or node holding more than its limit. Absent when false (under the limit)"}
+                        over_limit_code: {type: string, enum: [adopted_over_limit, routed_over_limit], description: "Machine-readable reason for over_limit: adopted_over_limit is a lease adopted at boot over the limit; routed_over_limit is a lease routed from another backend into an over-limit pool. Absent when over_limit is false"}
+                        over_limit_reason: {type: string, description: "Readable reason naming the pool or node, what it holds and its limit. Absent when over_limit is false"}
                   waiting: {type: array, items: {type: object}}
                   backoff:
                     type: array

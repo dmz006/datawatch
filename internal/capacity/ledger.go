@@ -238,7 +238,10 @@ type Lease struct {
 	// OverLimit flags an adopted lease that sits in a pool or node holding more
 	// than its limit; OverLimitReason says which and by how much. The session is
 	// real and stays recorded. Both clear when the holding is back under the cap.
+	// Worker leases in an over-limit pool are flagged too (code
+	// "routed_over_limit"); over_limit is absent when false.
 	OverLimit       bool   `json:"over_limit,omitempty"`
+	OverLimitCode   string `json:"over_limit_code,omitempty"`
 	OverLimitReason string `json:"over_limit_reason,omitempty"`
 }
 
@@ -1496,10 +1499,10 @@ func (l *Ledger) flagOverLimitLocked() {
 		over[o.Pool] = o
 	}
 	for _, ls := range l.leases {
-		if !ls.Adopted {
+		if !ls.Adopted && ls.Role != RoleWorker && ls.Role != "" {
 			continue
 		}
-		ls.OverLimit, ls.OverLimitReason = false, ""
+		ls.OverLimit, ls.OverLimitCode, ls.OverLimitReason = false, "", ""
 		pools := ls.Pools
 		if ls.NodeOverflow && ls.Node != "" {
 			pools = append(append([]string(nil), pools...), "node:"+ls.Node)
@@ -1507,6 +1510,12 @@ func (l *Ledger) flagOverLimitLocked() {
 		for _, p := range pools {
 			if o, ok := over[p]; ok {
 				ls.OverLimit = true
+				if !ls.Adopted {
+					ls.OverLimitCode = "routed_over_limit"
+					ls.OverLimitReason = fmt.Sprintf("routed from another backend over the limit: %s %s holds %d, limit %d; new admissions wait until it is back under the cap", o.Kind, o.Name, o.Held, o.Limit)
+					break
+				}
+				ls.OverLimitCode = "adopted_over_limit"
 				ls.OverLimitReason = fmt.Sprintf("adopted at boot over the limit: %s %s holds %d, limit %d; new admissions wait until it is back under the cap", o.Kind, o.Name, o.Held, o.Limit)
 				break
 			}
@@ -1783,6 +1792,7 @@ func (l *Ledger) Snapshot() Status {
 		names[p] = true
 	}
 	var st Status
+	l.flagOverLimitLocked()
 	for _, ls := range l.leases {
 		st.Leases = append(st.Leases, *ls)
 		for _, p := range ls.Pools {
