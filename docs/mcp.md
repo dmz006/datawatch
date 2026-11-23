@@ -292,6 +292,15 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Voice | (no MCP tools — REST `/api/voice/transcribe` + chat-channel auto-handle) |
 | Automata events (the Events tab) | (no MCP tools — REST `GET /api/autonomous/event-log`, CLI `datawatch autonomous event-log`, comm `autonomous event-log`) |
 
+- **Packs tools** (installable task and Automaton template packs; same data as `/api/packs`):
+  - **`packs_list`** — lists installed packs with name, version, digest, whether the operator accepted them, and a summary. No parameters.
+  - **`packs_setting_get`** — reads the packs setting `{enabled, active[]}`. No parameters.
+  - **`packs_setting_set`** — changes the packs setting. Parameters: `enabled` (bool, optional), `active` (string list, optional); a field left out is unchanged. Every active name must be `builtin` or an installed pack.
+  - **`packs_inputs_get`** — reads the input values a pack has at one level. Secret inputs come back redacted.
+  - **`packs_inputs_set`** — replaces the input values a pack has at one level; every name must be an input the pack declares.
+  - **`packs_install`** — installs a pack from a folder on the daemon host; it is not usable until accepted.
+  - **`packs_accept`** — accepts an installed pack version so it may run; records the digest in the trust store.
+  - **`packs_remove`** — removes one installed version of a pack.
 - **`autonomous_standard_tasks`** — lists the built-in standard tasks the decomposer adds to each story, with whether each is on for the project and its `mode`. Parameters: `project` (optional string; a project directory or alias, selects the per-project override; empty reports the global `enabled`). Returns the same object as `GET /api/autonomous/standard-tasks`: `{enabled, tasks[]}`, where each row has `id`, `title`, `kind`, `summary`, `offered_when`, `enabled`, `project_override`, `mode` (`llm`, `daemon` or `off`, from `autonomous.task_templates.mode`) and `runner` (`session`, `script gate`, `daemon` or `none`). Example: `autonomous_standard_tasks {"project": "/home/<user>/app"}`. The comm channel has the same list as `standard tasks` (or `autonomous standard-tasks`): one line per task, `id | title | on|off | mode | runner`, using the global setting.
 
 Compute node tools:

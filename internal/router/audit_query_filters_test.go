@@ -123,7 +123,7 @@ func TestAuditQuery_FilterParityAcrossSurfaces(t *testing.T) {
 		"cli":   cliAuditFlags(t),
 		"comm":  router.AuditCommKeys(),
 	}
-	want := []string{"action", "actor", "limit", "session_id", "since", "subject", "until"}
+	want := []string{"action", "actor", "limit", "pack_name", "session_id", "since", "subject", "until"}
 	for name, set := range sets {
 		got := slices.Clone(set)
 		sort.Strings(got)

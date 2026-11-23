@@ -375,6 +375,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newProjectSummaryCmd(), // BL35
 		newTemplateCmd(),       // BL5
 		newAcmeCmd(),           // BL397
+		newPacksCmd(),          // packs
 		newProjectsCmd(),       // BL27
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30

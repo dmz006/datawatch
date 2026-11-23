@@ -875,6 +875,11 @@ type Config struct {
 	// its default while an explicit value sticks through saves and YAML
 	// round trips. See the cost_report block in docs/config-reference.yaml.
 	CostReport CostReportConfig `yaml:"cost_report,omitempty" json:"cost_report,omitempty"`
+
+	// Packs holds the standard-task pack block (packs.*): the enabled switch
+	// (default false) and the active pack names (default ["builtin"]). See
+	// PacksConfig in packs_config.go.
+	Packs PacksConfig `yaml:"packs" json:"packs"`
 }
 
 // CostReport defaults. Every one of them is read from the config struct:
@@ -8187,6 +8192,7 @@ func DefaultConfig() *Config {
 			Peers: ObserverPeersConfig{SilentAlertMinutes: 5},
 			Pull:  DefaultObserverPullConfig(),
 		},
+		Packs: DefaultPacksConfig(),
 		Signal: SignalConfig{
 			ConfigDir:  filepath.Join(home, ".local", "share", "signal-cli"),
 			DeviceName: hostname,

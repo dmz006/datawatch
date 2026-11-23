@@ -26683,6 +26683,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'resource_limits.memory_floor_mb', label: '', labelKey: 'settings_resource_limits_memory_floor_mb', helpKey: 'settings_resource_limits_memory_floor_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '2048', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_floor_mb', this)" },
     { key: 'resource_limits.memory_cap_mb', label: '', labelKey: 'settings_resource_limits_memory_cap_mb', helpKey: 'settings_resource_limits_memory_cap_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '16384', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_cap_mb', this)" },
   ]},
+  // Standard task packs: the enabled switch, the active order list and the
+  // pack inputs. The fields live in app-packs-settings-fields.js, loaded first.
+  { id: 'packs', sectionKey: 'settings_packs', section: 'Standard task packs', docs: 'howto/automata-standard-tasks.md', fields: (typeof PACKS_SETTINGS_FIELDS !== 'undefined' ? PACKS_SETTINGS_FIELDS : []) },
   { id: 'costreport', sectionKey: 'settings_cost_report', section: 'Cost Report', docs: 'datawatch-definitions.md', fields: [
     { key: 'cost_report.default_group_by', label: 'Default group by', labelKey: 'settings_cost_report_default_group_by', type: 'select', options: ['automaton','automation','backend','week'] },
     { key: 'cost_report.default_window_days', label: 'Default window (days)', labelKey: 'settings_cost_report_default_window_days', type: 'number', placeholder: '7', min: 1, step: 1 },
@@ -28440,10 +28443,11 @@ function loadGeneralConfig() {
           } else if (f.type === 'toggle') {
             const checked = !!val;
             const _togHint = _fieldHintHTML(f);
+            const _togOnchange = f.onchange || `saveGeneralField('${f.key}', this.checked)`;
             html += `<div class="settings-row" style="justify-content:space-between;${(_togHint || f.helpDocs) ? 'flex-wrap:wrap;gap:6px;' : ''}">
               <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.docsKey ? defsLink(f.docsKey) : ''}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
               <label class="toggle-switch">
-                <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
+                <input type="checkbox" ${checked ? 'checked' : ''} onchange="${_togOnchange}" />
                 <span class="toggle-slider"></span>
               </label>
               ${f.helpDocs ? _settingsHelpTextHTML(f) : ''}${_togHint}
@@ -35850,6 +35854,13 @@ const _AUTOMATA_TEMPLATE_SUBTABS = [
     // every story, loaded from the REST read (never the config directly).
     load: () => _automataStandardTasksLoad(),
     render: () => _automataStandardTasksRender(),
+  },
+  {
+    key: 'packs',
+    titleKey: 'packs_subtab_title',
+    // Packs: a shell from app-packs-subtab.js; it keeps no pack list.
+    load: () => packsSubtabLoad(),
+    render: () => packsSubtabRender(),
   },
 ];
 

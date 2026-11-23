@@ -125,6 +125,12 @@ type Automation struct {
 	// Project is the explicit project link: the name of a configured project.
 	// Member Automata without their own link inherit it. Empty on older records.
 	Project string `json:"project,omitempty"`
+	// Packs names the template packs this Automaton draws from, in the order
+	// configured (earlier packs take priority). Assign it with SetPacks, which puts the list in
+	// canonical form via normalizePacks (trimmed, non-empty, unique,
+	// first-seen order); the field is persisted with the
+	// Automaton like every other field.
+	Packs []string `json:"packs,omitempty"`
 
 	ProjectDir string `json:"project_dir,omitempty"` // informational; BL428 3a keys on each member's own tree
 
