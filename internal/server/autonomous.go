@@ -5399,6 +5399,11 @@ func guardrailLLMKeys(body []byte, legacyKeys ...string) (hasGuardrail, hasLegac
 // error. A refused model/backend pairing is a client error (400); any
 // other error keeps the status the calling handler already uses.
 func modelBackendErrStatus(err error, fallback int) int {
+	// A refusal because a plan is in flight is transient: 409 so a client
+	// can retry once the planner finishes.
+	if errors.Is(err, autonomous.ErrPlanInProgress) {
+		return http.StatusConflict
+	}
 	if errors.Is(err, autonomous.ErrModelBackendMismatch) {
 		return http.StatusBadRequest
 	}
