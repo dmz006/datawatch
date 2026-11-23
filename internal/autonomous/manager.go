@@ -1532,7 +1532,7 @@ type Manager struct {
 	// /api/autonomous/status, returned verbatim by the autonomous_status
 	// MCP tool). Guarded by mu. Nil = the check is not wired.
 	hostLoadStatusFn func() HostLoadStatus
-	templates        *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	templates        *TemplateStore // dedicated template store
 	decompose        DecomposeFn
 	guardrail        GuardrailFn
 	// guardrailClassify gates generative guardrail outcomes in classify mode.
