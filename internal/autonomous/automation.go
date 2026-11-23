@@ -47,6 +47,11 @@ const (
 	// carries pending_item_id; attaching an Automaton converts it in place into
 	// an ordinary Automaton member.
 	MemberKindPending = "pending_item"
+	// MemberKindDecisionWait asks the operator a question and waits for the
+	// answer. It runs nothing: it holds only its own branch (or, outside a
+	// fork, the Automation's single path) until the question is answered, then
+	// completes along on_complete. It carries question and on_complete only.
+	MemberKindDecisionWait = "decision_wait"
 )
 
 // Branch failure rules for a join (AutomationMember.OnBranchFailure). The
@@ -122,6 +127,22 @@ type Automation struct {
 	// value, and the JSON clone keeps it.
 	Milestone bool `json:"milestone,omitempty"`
 
+	// MaxParallel caps how many members of this Automation run at once: 0 (or
+	// unset) means no limit, today's behavior. When a member would start and
+	// that many members are already running, it waits for a free slot (its
+	// cursor is held, the Automation is not blocked) and starts when a running
+	// member finishes, in member order. A fork's own max_parallel narrows it
+	// for that fork's branches; the smaller limit wins. Never negative.
+	MaxParallel int `json:"max_parallel,omitempty"`
+
+	// StageGate turns member stages from a label into a gate: false (the
+	// default) is today's behavior, where Stage is cosmetic. When true, the
+	// stepper does not start a staged member while an earlier stage still has
+	// unfinished members, and starts it when that stage finishes. Stages are
+	// ordered by first appearance in Members; unstaged members form no gate and
+	// are never held. See automation_stage_gate.go.
+	StageGate bool `json:"stage_gate,omitempty"`
+
 	// Project is the explicit project link: the name of a configured project.
 	// Member Automata without their own link inherit it. Empty on older records.
 	Project string `json:"project,omitempty"`
@@ -165,6 +186,26 @@ type AutomationMember struct {
 	ForkMembers     []string `json:"fork_members,omitempty"`      // kind=fork: branch member IDs (at least 2)
 	JoinMembers     []string `json:"join_members,omitempty"`      // kind=join: branch member IDs, equal to the paired fork's
 	OnBranchFailure string   `json:"on_branch_failure,omitempty"` // kind=join: all_must_succeed (default) | any_one_is_enough | continue_anyway
+	// MaxParallel (kind=fork only) caps how many of the fork's branch members
+	// run at once: 0 (or unset) means no fork limit. It never widens the
+	// Automation's max_parallel; the smaller of the two applies. Never negative.
+	MaxParallel int `json:"max_parallel,omitempty"`
+	// WaitingForSlot is runtime state written only by the stepper: the member
+	// holds its cursor but was not started because a max_parallel limit was
+	// reached. It is meaningful only while the member has not started; the
+	// status views read it through memberWaitingForSlot.
+	WaitingForSlot bool `json:"waiting_for_slot,omitempty"`
+
+	// Question is the text a kind decision_wait member asks the operator; it is
+	// required on that kind and valid on no other. QuestionID and
+	// WaitingForOperator are runtime state written only by the coordinator: the
+	// open operator question the member waits on, and the flag that the member
+	// holds its cursor for that answer. They are meaningful only on kind
+	// decision_wait; the status views read them through
+	// memberWaitingForOperator.
+	Question           string `json:"question,omitempty"`
+	QuestionID         string `json:"question_id,omitempty"`
+	WaitingForOperator bool   `json:"waiting_for_operator,omitempty"`
 
 	AddedAt     time.Time `json:"added_at"`
 	AddedBy     string    `json:"added_by"`               // "operator" | "session:<id>" | "agent:<id>" | "import:bl117:<graph>"
@@ -187,9 +228,16 @@ type AutomationMember struct {
 	EstimatedCostUSD float64 `json:"estimated_cost_usd,omitempty"`
 
 	// Stage is the optional operator label grouping members of one Automation
-	// (e.g. "build", "review"); empty means unstaged. It is cosmetic — the
-	// graph edges, advance rule and budget never read it.
+	// (e.g. "build", "review"); empty means unstaged. It is cosmetic unless the
+	// Automation sets StageGate: the graph edges, advance rule and budget never
+	// read it, and with the gate on only the stepper's start check does.
 	Stage string `json:"stage,omitempty"`
+	// WaitingForStage is runtime state written only by the stepper and the
+	// coordinator: the name of the earlier stage whose unfinished members hold
+	// this member back under the Automation's StageGate. The member keeps its
+	// cursor and has not started. It is meaningful only while the member has not
+	// started; the status views read the gate live through stageHold.
+	WaitingForStage string `json:"waiting_for_stage,omitempty"`
 }
 
 // kind returns the member's kind, treating the empty kind as MemberKindPRD.
@@ -366,6 +414,9 @@ func validateAutomation(a *Automation) error {
 	if a == nil || strings.TrimSpace(a.Name) == "" {
 		return fmt.Errorf("automation invalid: nil Automation or blank name")
 	}
+	if a.MaxParallel < 0 {
+		return fmt.Errorf("automation invalid: max_parallel %d must not be negative (0 means no limit)", a.MaxParallel)
+	}
 	switch a.Status {
 	case AutomationDraft, AutomationActive, AutomationPaused,
 		AutomationCompleted, AutomationBlocked, AutomationCancelled:
@@ -484,7 +535,7 @@ func validateAutomation(a *Automation) error {
 // not check PRD existence or edges; those belong to validateAutomation.
 func validateMemberKind(a *Automation, m AutomationMember) error {
 	switch m.Kind {
-	case "", MemberKindPRD, MemberKindAutomation, MemberKindFork, MemberKindJoin, MemberKindPending:
+	case "", MemberKindPRD, MemberKindAutomation, MemberKindFork, MemberKindJoin, MemberKindPending, MemberKindDecisionWait:
 	default:
 		return fmt.Errorf("automation invalid: member %s has unknown kind %q", m.ID, m.Kind)
 	}
@@ -497,6 +548,12 @@ func validateMemberKind(a *Automation, m AutomationMember) error {
 	}
 	if k != MemberKindAutomation && m.AutomationID != "" {
 		return fmt.Errorf("automation invalid: member %s: automation_id is only valid on kind automation", m.ID)
+	}
+	if m.MaxParallel < 0 {
+		return fmt.Errorf("automation invalid: member %s: max_parallel %d must not be negative (0 means no limit)", m.ID, m.MaxParallel)
+	}
+	if k != MemberKindFork && m.MaxParallel != 0 {
+		return fmt.Errorf("automation invalid: member %s: max_parallel is only valid on kind fork", m.ID)
 	}
 	if m.EstimatedCostUSD < 0 {
 		return fmt.Errorf("automation invalid: member %s: estimated_cost_usd %v must not be negative", m.ID, m.EstimatedCostUSD)
@@ -512,6 +569,9 @@ func validateMemberKind(a *Automation, m AutomationMember) error {
 	}
 	if k != MemberKindPending && k != MemberKindPRD && m.PendingItemID != "" {
 		return fmt.Errorf("automation invalid: member %s: pending_item_id is only valid on kind pending_item or on a member that had an Automaton attached", m.ID)
+	}
+	if err := validateDecisionWaitMember(m, k); err != nil {
+		return err
 	}
 	if k == MemberKindAutomation {
 		if strings.TrimSpace(m.AutomationID) == "" {
@@ -531,14 +591,46 @@ func validateMemberKind(a *Automation, m AutomationMember) error {
 	return nil
 }
 
+// decisionWaitQuestionMaxBytes caps a decision_wait member's question text, so
+// the question the coordinator raises (this text plus a short context line)
+// always fits the question store's own text cap.
+const decisionWaitQuestionMaxBytes = 4096
+
+// validateDecisionWaitMember checks the fields of a decision_wait member and
+// that no other kind carries them. A decision_wait member asks one question; it
+// has no PRD, no fork or join fields (checked by validateMemberKind for every
+// kind) and may carry on_complete only: when its question is withdrawn there is
+// no edge to take, so its branch fails (or, outside a fork, the Automation
+// blocks with that reason). Edges are checked in validateAutomation.
+func validateDecisionWaitMember(m AutomationMember, k string) error {
+	if k != MemberKindDecisionWait {
+		if m.Question != "" || m.QuestionID != "" || m.WaitingForOperator {
+			return fmt.Errorf("automation invalid: member %s: question, question_id and waiting_for_operator are only valid on kind decision_wait", m.ID)
+		}
+		return nil
+	}
+	if strings.TrimSpace(m.Question) == "" {
+		return fmt.Errorf("automation invalid: member %s: kind decision_wait needs a question", m.ID)
+	}
+	if len(m.Question) > decisionWaitQuestionMaxBytes {
+		return fmt.Errorf("automation invalid: member %s: question is %d bytes; the cap is %d", m.ID, len(m.Question), decisionWaitQuestionMaxBytes)
+	}
+	if m.OnBlocked != "" || m.OnFailed != "" {
+		return fmt.Errorf("automation invalid: member %s: a decision_wait member may carry on_complete only; a withdrawn question fails its branch", m.ID)
+	}
+	return nil
+}
+
 // validateForkJoinPairing enforces the fork/join addenda (design doc
 // "Validation addenda" rules 1-4 and the branch rules in "Fork/join
-// semantics"): branch sets name prd or automation members that carry no
-// outcome edges and belong to one fork and one join at most, a fork and its
-// join name the same branch set, and a fork carries no outcome edges and a
-// join carries only on_complete. Errors name the member IDs involved.
+// semantics"): a fork lists the head of each branch chain and each chain is
+// valid (checkBranchChains), a join names the chain tails, a fork and its join
+// pair when the join's members are exactly the fork's chain tails, and a fork
+// carries no outcome edges and a join carries only on_complete. A branch of one
+// member is a chain whose head is its tail. Errors name the member IDs involved.
 func validateForkJoinPairing(a *Automation, byID map[string]AutomationMember) error {
-	forkClaims := make(map[string]string)
+	chainClaims := make(map[string]string)
+	heads := make(map[string]struct{})
 	joinClaims := make(map[string]string)
 	for _, m := range a.Members {
 		switch m.kind() {
@@ -549,8 +641,11 @@ func validateForkJoinPairing(a *Automation, byID map[string]AutomationMember) er
 			if m.OnComplete != "" || m.OnBlocked != "" || m.OnFailed != "" {
 				return fmt.Errorf("automation invalid: fork %s must not carry outcome edges; its forward path is its paired join", m.ID)
 			}
-			if err := checkBranchSet(m, m.ForkMembers, byID, forkClaims); err != nil {
+			if err := checkBranchChains(a, m, byID, chainClaims); err != nil {
 				return err
+			}
+			for _, h := range m.ForkMembers {
+				heads[h] = struct{}{}
 			}
 		case MemberKindJoin:
 			if len(m.JoinMembers) < 2 {
@@ -559,23 +654,27 @@ func validateForkJoinPairing(a *Automation, byID map[string]AutomationMember) er
 			if m.OnBlocked != "" || m.OnFailed != "" {
 				return fmt.Errorf("automation invalid: join %s may carry only on_complete; a join failure blocks the automation", m.ID)
 			}
-			if err := checkBranchSet(m, m.JoinMembers, byID, joinClaims); err != nil {
+			if err := checkJoinTails(m, byID, joinClaims); err != nil {
 				return err
 			}
 		}
+	}
+	if err := checkChainEntries(a, chainClaims, heads); err != nil {
+		return err
 	}
 	for _, f := range a.Members {
 		if f.kind() != MemberKindFork {
 			continue
 		}
+		tails := forkTails(a, &f)
 		var joins []string
 		for _, j := range a.Members {
-			if j.kind() == MemberKindJoin && sameMemberSet(j.JoinMembers, f.ForkMembers) {
+			if j.kind() == MemberKindJoin && sameMemberSet(j.JoinMembers, tails) {
 				joins = append(joins, j.ID)
 			}
 		}
 		if len(joins) != 1 {
-			return fmt.Errorf("automation invalid: fork %s has %d paired joins %v; exactly one join must list its branch set", f.ID, len(joins), joins)
+			return fmt.Errorf("automation invalid: fork %s has %d paired joins %v; exactly one join must list its branch tails", f.ID, len(joins), joins)
 		}
 	}
 	for _, j := range a.Members {
@@ -584,44 +683,50 @@ func validateForkJoinPairing(a *Automation, byID map[string]AutomationMember) er
 		}
 		var forks []string
 		for _, f := range a.Members {
-			if f.kind() == MemberKindFork && sameMemberSet(f.ForkMembers, j.JoinMembers) {
+			if f.kind() == MemberKindFork && sameMemberSet(forkTails(a, &f), j.JoinMembers) {
 				forks = append(forks, f.ID)
 			}
 		}
 		if len(forks) != 1 {
-			return fmt.Errorf("automation invalid: join %s has %d paired forks %v; exactly one fork must list its branch set", j.ID, len(forks), forks)
+			return fmt.Errorf("automation invalid: join %s has %d paired forks %v; exactly one fork must have its branch tails as the join's members", j.ID, len(forks), forks)
 		}
 	}
 	return nil
 }
 
-// checkBranchSet checks one fork's or join's branch list for owner m. Each
-// branch must be a known prd or automation member with no outcome edges, must
-// not repeat, and must not already be claimed by another owner of the same
-// kind (claims maps branch ID to owner ID).
-func checkBranchSet(m AutomationMember, branches []string, byID map[string]AutomationMember, claims map[string]string) error {
-	seen := make(map[string]struct{}, len(branches))
-	for _, b := range branches {
+// checkJoinTails checks one join's member list for owner m. Each member must be
+// a known prd or automation member that is a chain tail (empty on_complete),
+// must not repeat, and must not already be claimed by another join (claims maps
+// branch ID to join ID).
+func checkJoinTails(m AutomationMember, byID map[string]AutomationMember, claims map[string]string) error {
+	seen := make(map[string]struct{}, len(m.JoinMembers))
+	for _, b := range m.JoinMembers {
 		if _, dup := seen[b]; dup {
-			return fmt.Errorf("automation invalid: %s %s lists branch member %s more than once", m.kind(), m.ID, b)
+			return fmt.Errorf("automation invalid: join %s lists branch member %s more than once", m.ID, b)
 		}
 		seen[b] = struct{}{}
 		target, found := byID[b]
 		if !found {
-			return fmt.Errorf("automation invalid: %s %s names unknown branch member %s", m.kind(), m.ID, b)
+			return fmt.Errorf("automation invalid: join %s names unknown branch member %s", m.ID, b)
 		}
-		if k := target.kind(); k != MemberKindPRD && k != MemberKindAutomation {
-			return fmt.Errorf("automation invalid: %s %s branch member %s is a %s member; branches must be prd or automation members", m.kind(), m.ID, b, k)
+		if k := target.kind(); !isBranchMemberKind(k) {
+			return fmt.Errorf("automation invalid: join %s branch member %s is a %s member; branches must be prd or automation members (or decision_wait)", m.ID, b, k)
 		}
 		if target.OnComplete != "" || target.OnBlocked != "" || target.OnFailed != "" {
-			return fmt.Errorf("automation invalid: branch member %s of %s %s must not carry outcome edges", b, m.kind(), m.ID)
+			return fmt.Errorf("automation invalid: join %s names %s, which is not a branch tail; a join names the last member of each chain (the member with an empty on_complete)", m.ID, b)
 		}
 		if prev, taken := claims[b]; taken {
-			return fmt.Errorf("automation invalid: branch member %s is already in %s %s", b, m.kind(), prev)
+			return fmt.Errorf("automation invalid: branch member %s is already in join %s", b, prev)
 		}
 		claims[b] = m.ID
 	}
 	return nil
+}
+
+// isBranchMemberKind reports whether a member of kind k may sit on a fork branch
+// chain: a PRD, a nested Automation, or a decision_wait member.
+func isBranchMemberKind(k string) bool {
+	return k == MemberKindPRD || k == MemberKindAutomation || k == MemberKindDecisionWait
 }
 
 // sameMemberSet reports whether x and y hold the same member IDs. Both lists
