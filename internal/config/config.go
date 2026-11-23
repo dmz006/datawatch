@@ -8224,6 +8224,14 @@ type WhisperConfig struct {
 	// window is 30 s). Used only by the `whisper` backend.
 	ChunkSeconds int `yaml:"chunk_seconds" json:"chunk_seconds"`
 
+	// TimeoutSeconds is a fixed deadline, in seconds, for one voice
+	// transcription request. 0 (the default) keeps the automatic deadline:
+	// 5 minutes, or twice the audio length when that is longer, capped at
+	// 30 minutes. A positive value replaces the automatic deadline, so a
+	// very long recording on a slow host can be given more than 30 minutes
+	// (or a tight host less). Valid values are 0 or >= 30.
+	TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
+
 	// Endpoint is the base URL for the `openai` / `openai_compat`
 	// backend (e.g. "https://api.openai.com/v1" or
 	// "http://localhost:3000/api"). The full transcribe URL is

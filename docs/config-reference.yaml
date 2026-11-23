@@ -1070,6 +1070,10 @@ whisper:
   # 0 disables chunking; otherwise the value must be >= 30 (whisper's own window is 30 s).
   # Other values are ignored when set through the API. Local whisper backend only.
   chunk_seconds: 120
+  # Fixed deadline (seconds) for one voice transcription request.
+  # 0 (default) = automatic: 5 minutes, or twice the audio length when longer, capped at 30 minutes.
+  # A positive value replaces the automatic deadline; it must be >= 30 (other values are ignored when set through the API).
+  timeout_seconds: 0
 
 # ── Vision Image Description ──
 # Describes image attachments from messaging backends (Signal, Telegram) as text.

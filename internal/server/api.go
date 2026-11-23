@@ -7159,11 +7159,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// daemon was honoring the YAML value (e.g. "ollama" → BL201
 			// inheritance silently routed through OpenWebUI's audio API).
 			// Operator-flagged after Chrome PWA audit.
-			"backend":       s.cfg.Whisper.Backend,
-			"model":         s.cfg.Whisper.Model,
-			"language":      s.cfg.Whisper.Language,
-			"venv_path":     s.cfg.Whisper.VenvPath,
-			"chunk_seconds": s.cfg.Whisper.ChunkSeconds,
+			"backend":         s.cfg.Whisper.Backend,
+			"model":           s.cfg.Whisper.Model,
+			"language":        s.cfg.Whisper.Language,
+			"venv_path":       s.cfg.Whisper.VenvPath,
+			"chunk_seconds":   s.cfg.Whisper.ChunkSeconds,
+			"timeout_seconds": s.cfg.Whisper.TimeoutSeconds,
 		},
 		"vision": map[string]interface{}{
 			"enabled":         s.cfg.Vision.Enabled,
@@ -9964,6 +9965,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// anything from 1 to 29 is skipped, not stored.
 			if n, ok := toInt(v); ok && (n == 0 || n >= 30) {
 				cfg.Whisper.ChunkSeconds = n
+			}
+		case "whisper.timeout_seconds":
+			// 0 keeps the automatic deadline; a positive value is a fixed
+			// deadline. Below 30 s no transcription could finish, so 1 to
+			// 29 is skipped, not stored.
+			if n, ok := toInt(v); ok && (n == 0 || n >= 30) {
+				cfg.Whisper.TimeoutSeconds = n
 			}
 		// v4.0.8 (B38) — autonomous / plugins / orchestrator keys.
 		// Without these cases the PWA + mobile-client save forms

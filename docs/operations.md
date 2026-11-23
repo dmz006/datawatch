@@ -3630,7 +3630,7 @@ OpenAI Whisper, then processed as normal commands.
 | Method | How |
 |--------|-----|
 | **YAML** | `whisper:` section in `config.yaml` |
-| **CLI** | `datawatch config set whisper.model small`, `datawatch config set whisper.chunk_seconds 120` |
+| **CLI** | `datawatch config set whisper.model small`, `datawatch config set whisper.chunk_seconds 120`, `datawatch config set whisper.timeout_seconds 0` |
 | **Web UI** | Settings → General → **Voice Input (Whisper)** card |
 | **REST API** | `PUT /api/config` with `{"whisper.enabled": true, "whisper.model": "small", "whisper.chunk_seconds": 120}` |
 | **Comm channel** | `configure whisper.enabled=true`, `configure whisper.language=es`, `configure whisper.chunk_seconds=120` |

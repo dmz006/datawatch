@@ -10136,7 +10136,8 @@ paths:
         returned in the `action` field.
 
         The transcription deadline is 5 minutes, or twice the audio length
-        when that is longer, capped at 30 minutes. Local whisper splits audio
+        when that is longer, capped at 30 minutes, unless `whisper.timeout_seconds`
+        is set to a positive value (0 is automatic). Local whisper splits audio
         longer than `whisper.chunk_seconds` (default 120, 0 disables) and
         transcribes it slice by slice.
       operationId: voiceTranscribe
