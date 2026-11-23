@@ -3543,9 +3543,7 @@ func resolveTaskExecutionLLM(t *Task, story *Story, prd *PRD, auto *Automation, 
 		// model route: once the backend changes the original model is meaningless
 		// anyway.
 		backend, model, source = to, "", ExecutorSourceBurnGuard
-		return backend, model, source
-	}
-	if m, ok := routeModelFor(backend); ok {
+	} else if m, ok := routeModelFor(backend); ok {
 		// The route_cheaper_model rung keeps this backend but sends new work to a
 		// cheaper model on it: the model is replaced, the backend is unchanged.
 		model, source = m, ExecutorSourceBurnGuard

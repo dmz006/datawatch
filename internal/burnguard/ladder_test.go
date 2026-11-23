@@ -461,13 +461,6 @@ func TestRungPredicatesAcceptBothNamingConventions(t *testing.T) {
 
 func DecisionApplied(d Decision) []string { return d.Applied }
 
-func burnguardKnownRung(r string) bool {
-	if r == RungLowerInflight || r == RungRouteEntry || r == RungRoutePiPrompt || r == RungHoldEntry || r == RungHoldClaude {
-		return true
-	}
-	return false
-}
-
 func TestSaveErrorStillDecides(t *testing.T) {
 	st := &memStore{err: errors.New("disk full")}
 	l, _ := newTestLadder(st)

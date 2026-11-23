@@ -927,7 +927,7 @@ func (s *Server) burnGuardEntryCheaperModel(e config.BurnGuardEntryConfig) strin
 func safeEntryFileName(name string) string {
 	b := []byte(name)
 	for i, c := range b {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.') {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' && c != '.' {
 			b[i] = '_'
 		}
 	}

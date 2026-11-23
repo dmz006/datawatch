@@ -211,7 +211,7 @@ func TestUsageBackoffComm_ModelsRoundTrip(t *testing.T) {
 	}
 
 	// A clear with models= names the backend and the model list.
-	out = send("usage_backoff clear claude-code models=opus")
+	_ = send("usage_backoff clear claude-code models=opus")
 	m, b := fake.methods[len(fake.methods)-1], fake.bodies[len(fake.methods)-1]
 	if m != http.MethodDelete || b["backend"] != "claude-code" {
 		t.Errorf("clear one = %s %v", m, b)
