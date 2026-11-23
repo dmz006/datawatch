@@ -123,7 +123,7 @@ func checkBudgetTarget(a *Automation, req BudgetSetRequest) error {
 	if memberFinished(mem) {
 		return fmt.Errorf("409: member %s is %s; a budget can only be set on a member that has not finished", req.MemberID, mem.Status)
 	}
-	if k := mem.kind(); k == MemberKindFork || k == MemberKindJoin || k == MemberKindPending {
+	if k := mem.kind(); k == MemberKindFork || k == MemberKindJoin || k == MemberKindPending || k == MemberKindDecisionWait {
 		return fmt.Errorf("budget invalid: member %s is a %s and has no budget of its own; set it on a member or on the Automation", req.MemberID, k)
 	}
 	return nil

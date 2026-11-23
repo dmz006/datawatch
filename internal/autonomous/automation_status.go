@@ -51,10 +51,21 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 			IdleSince:     a.IdleSince,
 			ActiveCursors: activeCursorSummaries(a, m.pendingItemByID),
 			JoinWait:      joinWaitSummary(a),
+			BranchChains:  forkBranchChains(a),
 		}
 		if a.DecisionAssistant.enabled() {
 			s.DecisionAssistant = cloneDecisionAssistant(a.DecisionAssistant)
 		}
+		s.MaxParallel = a.MaxParallel
+		if anyMaxParallel(a) {
+			s.RunningMembers = runningMembers(a)
+		}
+		s.WaitingForSlot = slotWaiters(a)
+		s.StageGate = a.StageGate
+		if a.StageGate {
+			s.WaitingForStage = stageWaiters(a)
+		}
+		s.WaitingForOperator = operatorWaiters(a)
 		if automationIsLinear(a) {
 			s.CurrentMemberID = a.CurrentMemberID
 		}
@@ -117,7 +128,23 @@ func activeCursorSummaries(a *Automation, itemOf func(id string) (*PendingItem, 
 			continue
 		}
 		c := ActiveCursorSummary{MemberID: mem.ID, Status: string(mem.Status)}
+		if memberWaitingForSlot(mem) {
+			c.Status = CursorStatusWaitingForSlot
+			c.WaitReason = SlotWaitReason
+		}
+		if stage := stageWaiting(a, mem); stage != "" {
+			c.Status = CursorStatusWaitingForStage
+			c.WaitReason = stageWaitReason(stage)
+			c.WaitStage = stage
+		}
 		switch mem.kind() {
+		case MemberKindDecisionWait:
+			c.Kind = MemberKindDecisionWait
+			c.QuestionID = mem.QuestionID
+			if memberWaitingForOperator(mem) {
+				c.Status = CursorStatusWaitingForOperator
+				c.WaitReason = DecisionWaitReason
+			}
 		case MemberKindAutomation:
 			c.AutomationID = mem.AutomationID
 		case MemberKindPRD:

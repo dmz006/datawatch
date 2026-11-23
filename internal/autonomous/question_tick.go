@@ -113,6 +113,7 @@ func (c *Coordinator) questionPass(ctx context.Context) {
 	}
 	c.m.QuestionTick(ctx)
 	c.m.DecisionRecordTick(ctx)
+	c.decisionWaitPass() // decision_wait members: answers and withdrawals read from the store
 }
 
 // SetDecisionRecords attaches the decision record service the coordinator
