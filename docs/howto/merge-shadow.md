@@ -1,7 +1,7 @@
 ---
 title: "How to: Merge shadow"
 description: "What the four merge shadow settings enable, their defaults and the values they accept, every way they are set, where the shadow state is read (REST, MCP, CLI, comm channel, PWA card) and what the daemon never does"
-last_updated: "2026-11-17"
+last_updated: "2026-11-23"
 topics:
   - merge
   - shadow
