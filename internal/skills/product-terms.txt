@@ -1,0 +1,19 @@
+# Reviewed product term allowlist for staged skills.
+# This file is reviewed: every product term a staged skill may name is listed here.
+# A term not listed here fails the staged skill check.
+# A new term is added as a new line.
+# One term per line; lines starting with # are comments; blank lines are ignored.
+
+# Command entry points under cmd/
+datawatch
+datawatch-channel
+datawatch-stats
+datawatch-validator
+
+# MCP tool name prefix (MCP server name is the bare command name)
+mcp__datawatch__
+
+# Names the daemon exposes as routing modes and worker profiles
+datawatch-proxy
+datawatch-tools
+datawatch-web-search
