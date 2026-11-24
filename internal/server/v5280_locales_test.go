@@ -655,6 +655,9 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// The Infrastructure retries card in the Automation view.
 		"infra_retry_card_title",
 		"infra_retry_held_label",
+		// Attempt cap: the held badge on a task and the project policy field.
+		"attempt_cap_held_label",
+		"project_policy_attempt_cap",
 		// Uncommitted-work check: the card title in the Automata overview and
 		// the two settings labels.
 		"uncommitted_work_card_title",

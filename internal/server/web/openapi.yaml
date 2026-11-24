@@ -1119,6 +1119,18 @@ paths:
         infrastructure retry value rejects the whole PUT with 400 and nothing is
         written. GET returns all seven values in effect under `autonomous.infra_retry`
         and the running Automaton manager picks up changes without a restart.
+        `autonomous.attempt_cap.enabled` (true|false, default true),
+        `autonomous.attempt_cap.max_total` (whole number from 1 to 1000, default 6: the
+        attempts a task may be started for in all),
+        `autonomous.attempt_cap.free_attempts` (whole number from 1 to 1000, default 3:
+        the attempts that start with no wait) and
+        `autonomous.attempt_cap.backoff_minutes` (a JSON array of whole minutes, or a
+        comma list such as `5,15,45`; each 0 to 10080; the wait before each attempt after
+        the free ones, the last entry repeating; an empty list means no wait). A bad
+        attempt cap value rejects the whole PUT with 400 and nothing is written. GET
+        returns the four values in effect under `autonomous.attempt_cap` and the running
+        Automaton manager picks up changes without a restart. A project may set its own cap
+        in its policy block as `attempt_cap`.
         `autonomous.merge_pipeline.file_name` (a file name inside the project, default
         `.datawatch/merge-pipeline.yaml`), `autonomous.merge_pipeline.source_order` (a JSON
         array or comma list of `file` and `record`, default `file,record`),

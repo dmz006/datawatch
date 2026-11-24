@@ -115,6 +115,7 @@ type failureEscalationShowPRD struct {
 			Title              string          `json:"title"`
 			Status             string          `json:"status"`
 			EscalationFailures int             `json:"escalation_failures"`
+			AttemptsTotal      int             `json:"attempts_total"`
 			FailureEscalation  json.RawMessage `json:"failure_escalation"`
 		} `json:"tasks"`
 	} `json:"stories"`
@@ -156,6 +157,7 @@ func failureEscalationShowView(prd failureEscalationShowPRD, taskID string, cfg 
 				"title":               t.Title,
 				"status":              t.Status,
 				"escalation_failures": t.EscalationFailures,
+				"attempts_total":      t.AttemptsTotal,
 				"failure_escalation":  rawOrNull(t.FailureEscalation),
 			}
 			return view, nil
