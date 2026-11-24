@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.4 (2026-11-24).** A worker tmux kill guard, subagent token accounting under the parent session, saves that report what applied now or needs a restart, and a planning guard on every LLM setter. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.5 (2026-11-24).** The eBPF probes load for a daemon with file capabilities, and setup ebpf can print, install and remove a sudoers rule so updates keep the capabilities. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

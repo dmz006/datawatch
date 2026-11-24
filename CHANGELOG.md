@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.5 — eBPF probes load, and setup ebpf can print, install and remove a sudoers rule
+
+### Fixed
+- The eBPF probes now load for a daemon that runs with file capabilities. The load failed with `open /proc/self/mem: permission denied` because a process with file capabilities is not dumpable and the library's kernel version detection reads that file; the probe programs now carry the kernel version, so no root and no change to the process is needed. A permission error now says why (a release removed the capabilities) and what to run.
+
+### Added
+- `datawatch setup ebpf` prints, installs and removes a sudoers rule (`--sudoers`, `--install-sudoers`, `--remove-sudoers`) pinned to the exact capability list and binary path and validated with visudo before it is installed, a `--status` that reports the file capabilities, the running daemon and the rule, and a `--reapply` that re-applies the capabilities without a password when the rule exists. A binary update (command line or web) re-applies them the same way, or prints the one command to run. `setup ebpf` now applies `cap_bpf,cap_perfmon,cap_sys_resource=ep`.
+
+### Documentation
+- A how-to for eBPF process telemetry: the install, setup and restart sequence, the sudoers rule text, how to remove it, and the security note about who can write the binary.
+
 ## v9.187.4 — Worker tmux guard, subagent usage under the parent session, and settings that say what took effect
 
 ### Added
