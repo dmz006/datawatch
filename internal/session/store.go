@@ -387,6 +387,14 @@ type Session struct {
 	// 2026-10-14). Nil = not delivered yet.
 	TaskDeliveredAt *time.Time `json:"task_delivered_at,omitempty"`
 
+	// DaemonDeliversTask — true when the launch left the task off the command
+	// line, so the daemon itself types it once the input box is ready (the
+	// channel-enabled claude-code launch). For such a session a ready channel
+	// or a running agent process proves nothing about the task: it counts as
+	// started only once the task is delivered (AgentStarted). Persisted so a
+	// restarted daemon judges the session the same way.
+	DaemonDeliversTask bool `json:"daemon_delivers_task,omitempty"`
+
 	// PlatformContextDelivered — true once the platform context text has been
 	// prepended to this session's first prompt (first_prompt delivery modes).
 	// Persisted so a relaunch or restart never prepends it a second time.

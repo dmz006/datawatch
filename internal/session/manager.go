@@ -3141,6 +3141,10 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
 		ex.SetExcludeAncestorClaudeMd(sess.PRDID != "")
 	}
+	// The claude --effort level is this launch's own request, set on every
+	// launch for the same reason: left alone, the value of an earlier session
+	// would carry into this one.
+	setLaunchEffort(backendObj, startEffort(opt))
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
@@ -3254,11 +3258,6 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		if opt.Model != "" {
 			if mm, ok := backendObj.(interface{ SetModel(string) }); ok {
 				mm.SetModel(opt.Model)
-			}
-		}
-		if opt.ClaudeEffort != "" {
-			if em, ok := backendObj.(interface{ SetEffort(string) }); ok {
-				em.SetEffort(opt.ClaudeEffort)
 			}
 		}
 		if opt.ThinkingLevel != "" {
@@ -5021,6 +5020,8 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
 		ex.SetExcludeAncestorClaudeMd(sess.PRDID != "")
 	}
+	// A restart names no effort; clear what an earlier launch left behind.
+	setLaunchEffort(backendObj, "")
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
@@ -6034,6 +6035,13 @@ func (m *Manager) MainPromptReady(fullID string) bool {
 	if err != nil || content == "" {
 		return false
 	}
+	return panePromptReady(content)
+}
+
+// panePromptReady is the screen test behind MainPromptReady: a "❯" input row
+// and no choice dialog on screen. Pure, so the CLI-version canary can replay
+// recorded panes through it.
+func panePromptReady(content string) bool {
 	lower := strings.ToLower(StripANSI(content))
 	for _, phrase := range activeChoiceDialogPhrases {
 		if strings.Contains(lower, phrase) {
@@ -7178,6 +7186,43 @@ func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, con
 	return m.matchPromptLines(lines, n, true)
 }
 
+// setLaunchEffort sets the claude --effort level for the launch about to
+// run. An empty level clears whatever an earlier launch left on the shared
+// backend (ClearEffort) rather than setting an empty one, so the launch has
+// no --effort flag. Backends without an effort setting ignore it.
+func setLaunchEffort(backendObj interface{}, effort string) {
+	if effort == "" {
+		if ce, ok := backendObj.(interface{ ClearEffort() }); ok {
+			ce.ClearEffort()
+		}
+		return
+	}
+	if em, ok := backendObj.(interface{ SetEffort(string) }); ok {
+		em.SetEffort(effort)
+	}
+}
+
+// startEffort is the claude effort a start request names, or "".
+func startEffort(opt *StartOptions) string {
+	if opt == nil {
+		return ""
+	}
+	return opt.ClaudeEffort
+}
+
+// inputRowIndex returns the index of the last input row ("❯" alone, or "❯"
+// then a space and text) in lines, or -1. The gap is a plain space or the
+// no-break space Claude Code 2.1.331 draws.
+func inputRowIndex(lines []string) int {
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := strings.TrimSpace(lines[i])
+		if l == "❯" || strings.HasPrefix(l, "❯ ") || strings.HasPrefix(l, "❯\u00a0") {
+			return i
+		}
+	}
+	return -1
+}
+
 // matchPromptLines is matchPromptInLines with control over needs-input
 // markers. A line that merely mentions a marker (task text, wrapped
 // placeholder, shell echo) is never a prompt; a real standalone marker is
@@ -7196,14 +7241,7 @@ func (m *Manager) matchPromptLines(lines []string, n int, markersTrusted bool) (
 	// Check whether Claude is actively processing by looking for tool execution
 	// indicators in the lines just above the input area (❯ prompt). Claude's
 	// layout: output/spinner above separator, ❯ prompt, separator, status bar.
-	promptIdx := -1
-	for i := len(lines) - 1; i >= 0; i-- {
-		l := strings.TrimSpace(lines[i])
-		if l == "❯" || strings.HasPrefix(l, "❯ ") {
-			promptIdx = i
-			break
-		}
-	}
+	promptIdx := inputRowIndex(lines)
 	if promptIdx > 0 {
 		// Check up to 10 content lines above the ❯ prompt for active indicators.
 		checked := 0

@@ -93,6 +93,11 @@ func (b *Backend) Model() string { return b.model }
 // SetEffort (v5.27.5) — effort level forwarded to `--effort`.
 func (b *Backend) SetEffort(effort string) { b.effort = effort }
 
+// ClearEffort drops any effort level left by an earlier launch, so the next
+// launch carries no --effort flag. The backend is a shared singleton: without
+// this a session that names no effort would run at the previous session's.
+func (b *Backend) ClearEffort() { b.effort = "" }
+
 // SetExcludeAncestorClaudeMd — opt-in: hide ancestor-directory CLAUDE.md files
 // (never the project's own or ~/.claude/CLAUDE.md) from the launched claude.
 // Set explicitly on every launch: the backend is a shared singleton.
@@ -102,6 +107,33 @@ func (b *Backend) SetExcludeAncestorClaudeMd(on bool) { b.excludeAncestorClaudeM
 // directory — of the worker starting context the launcher writes and hands
 // to Claude Code with --append-system-prompt.
 const WorkerStartingContextFileName = "worker-starting-context.md"
+
+// newLaunchDir creates the private folder (mode 0700, a fresh name per
+// launch) that holds one session's launch files and records it for the
+// session-end release (internal/llm/scratch). The folder lives under the
+// system temp directory, never under the project directory.
+func newLaunchDir(tmuxSession string) (string, error) {
+	dir, err := os.MkdirTemp("", "datawatch-launch-"+scratchNamePart(tmuxSession)+"-*")
+	if err != nil {
+		return "", fmt.Errorf("create launch folder: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", fmt.Errorf("restrict launch folder: %w", err)
+	}
+	scratch.RecordPath(tmuxSession, dir)
+	return dir, nil
+}
+
+// scratchNamePart keeps a session name usable inside a temp folder name.
+func scratchNamePart(s string) string {
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, s)
+}
 
 // WorkerProfileLaunch carries a resolved worker session profile
 // (internal/workerprofile) plus the inputs the launcher needs to
@@ -218,8 +250,9 @@ func (b *Backend) settingsFlag(projectDir string, w WorkerProfileLaunch) string 
 }
 
 // profileFlags materializes the applied worker profile (if any) for the
-// session working directory and returns the Claude Code flags it maps to.
-// It writes two files into projectDir:
+// session and returns the Claude Code flags it maps to. It writes two files
+// into a private per-session folder (newLaunchDir: owner-only, outside the
+// project directory, removed at session end through the scratch inventory):
 //
 //   - worker-mcp.json (channel.WorkerMCPConfigFileName): the per-session
 //     MCP config (0600, atomic) naming exactly the servers the profile's
@@ -239,7 +272,7 @@ func (b *Backend) settingsFlag(projectDir string, w WorkerProfileLaunch) string 
 // The mapping is one-way: the profile's tools allow-list becomes
 // --allowedTools. Profiles carry no deny-list, and the launcher never
 // emits a flag that disallows tools for a worker profile.
-func (b *Backend) profileFlags(projectDir string, w WorkerProfileLaunch) (string, error) {
+func (b *Backend) profileFlags(projectDir, tmuxSession string, w WorkerProfileLaunch) (flags string, err error) {
 	p := w.Profile
 	if p.Name == "" {
 		return "", nil
@@ -251,12 +284,25 @@ func (b *Backend) profileFlags(projectDir string, w WorkerProfileLaunch) (string
 		return "", newProfileApplyError(p.Name, err)
 	}
 
-	// MCP selection: pin the session to exactly the allowed servers.
-	mcpPath, err := channel.WriteWorkerMCPConfig(projectDir, p.MCP, w.MCPServers)
+	// Both launch files go to a private per-session folder, never the
+	// project directory: the MCP config can hold the session's live API
+	// token, and two launches into one project folder must not share a file.
+	launchDir, err := newLaunchDir(tmuxSession)
 	if err != nil {
 		return "", newProfileApplyError(p.Name, err)
 	}
-	flags := " --strict-mcp-config --mcp-config " + shellQuote(mcpPath)
+	defer func() {
+		if err != nil {
+			_ = os.RemoveAll(launchDir) // a failed apply leaves nothing behind
+		}
+	}()
+
+	// MCP selection: pin the session to exactly the allowed servers.
+	mcpPath, err := channel.WriteWorkerMCPConfig(launchDir, p.MCP, w.MCPServers)
+	if err != nil {
+		return "", newProfileApplyError(p.Name, err)
+	}
+	flags = " --strict-mcp-config --mcp-config " + shellQuote(mcpPath)
 
 	// Tools: the allow-list maps to --allowedTools. Entries are
 	// comma-joined because an entry may itself contain spaces
@@ -270,7 +316,7 @@ func (b *Backend) profileFlags(projectDir string, w WorkerProfileLaunch) (string
 	// directory, and pass its full text to Claude Code.
 	ctxInput := w.Starting
 	ctxInput.Profile = p
-	ctxPath := filepath.Join(projectDir, WorkerStartingContextFileName)
+	ctxPath := filepath.Join(launchDir, WorkerStartingContextFileName)
 	if ctxErr := os.WriteFile(ctxPath, []byte(autonomous.BuildWorkerStartingContext(ctxInput)), 0o600); ctxErr != nil {
 		return "", newProfileApplyError(p.Name, fmt.Errorf("write starting context: %w", ctxErr))
 	}
@@ -426,7 +472,7 @@ func (b *Backend) LaunchWithProfile(ctx context.Context, w WorkerProfileLaunch, 
 func (b *Backend) LaunchWithProfileFallback(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile string) (fallbackReason string, err error) {
 	channelName := sessionChannelName(tmuxSession)
 	pre := b.preFlagsStr(channelName)
-	profileFlags, fallbackReason, err := b.launchFlags(projectDir, w)
+	profileFlags, fallbackReason, err := b.launchFlags(projectDir, tmuxSession, w)
 	if err != nil {
 		return "", err
 	}
@@ -486,7 +532,7 @@ func (b *Backend) LaunchResumeWithProfile(ctx context.Context, w WorkerProfileLa
 func (b *Backend) LaunchResumeWithProfileFallback(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile, resumeID string) (fallbackReason string, err error) {
 	channelName := sessionChannelName(tmuxSession)
 	pre := b.preFlagsStr(channelName)
-	profileFlags, fallbackReason, err := b.launchFlags(projectDir, w)
+	profileFlags, fallbackReason, err := b.launchFlags(projectDir, tmuxSession, w)
 	if err != nil {
 		return "", err
 	}

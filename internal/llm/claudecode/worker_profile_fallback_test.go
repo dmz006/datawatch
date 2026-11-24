@@ -35,6 +35,7 @@ func lockedDir(t *testing.T) string {
 // error is returned as the reason instead of failing the launch.
 func TestLaunchWithProfileFallback_WriteFailureLaunchesWithoutProfile(t *testing.T) {
 	d := lockedDir(t)
+	t.Setenv("TMPDIR", d) // the launch folder is created under the temp dir
 	b := backendOf()
 
 	argvNone := startFakeTmux(t, false)
@@ -68,6 +69,7 @@ func TestLaunchWithProfileFallback_WriteFailureLaunchesWithoutProfile(t *testing
 // resume-path counterpart.
 func TestLaunchResumeWithProfileFallback_WriteFailureLaunchesWithoutProfile(t *testing.T) {
 	d := lockedDir(t)
+	t.Setenv("TMPDIR", d) // the launch folder is created under the temp dir
 	b := backendOf()
 
 	argvNone := startFakeTmux(t, false)

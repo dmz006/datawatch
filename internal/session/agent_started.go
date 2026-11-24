@@ -46,8 +46,15 @@ func (m *Manager) AgentStarted(fullID string) bool {
 	}
 	fullID = sess.FullID
 	tmuxSession, logFile, channelReady := sess.TmuxSession, sess.LogFile, sess.ChannelReady
+	daemonDelivers := sess.DaemonDeliversTask
 	m.mu.Unlock()
 
+	if daemonDelivers {
+		// The task is typed by the daemon, never on the command line: a ready
+		// channel or a running agent process is also what an agent at an empty
+		// prompt looks like. Only a delivered task or an answer counts.
+		return m.TaskDelivered(fullID) || logShowsAssistantTurn(logFile)
+	}
 	if channelReady || m.TaskDelivered(fullID) {
 		return true
 	}

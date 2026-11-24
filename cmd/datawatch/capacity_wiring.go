@@ -1220,6 +1220,16 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// status read has the tool text without waiting on it: a slow or missing
 	// tool must never delay startup, so it runs off the hot path.
 	go func() { _ = mgr.RefreshClaudeCLIVersion() }()
+	// Claude Code version canary: when the installed CLI's version text changes
+	// (checked at start and every half hour), replay the recorded real panes
+	// through the prompt-ready and delivery checks and raise one alert if any
+	// no longer reads as recorded. It never updates the agent.
+	go func() {
+		for {
+			mgr.RunClaudeCLICanary()
+			time.Sleep(30 * time.Minute)
+		}
+	}()
 	amgr.SetBudgetsStatus(autonomousBudget.StatusAll)
 	httpServer.SetUsageBackoff(autonomousBackoff)
 	// The review-reserve gate: the status reports the effective slot count

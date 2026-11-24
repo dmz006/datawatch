@@ -15,6 +15,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -122,9 +123,18 @@ func TestWorkerProfileLaunchFn_LeanLaunchProfileApplied(t *testing.T) {
 		}
 	}
 
-	raw, err := os.ReadFile(filepath.Join(d, "worker-mcp.json"))
+	// The config is written to a private per-session folder named in the
+	// command, never to the project directory.
+	cfgPath := regexp.MustCompile(`--mcp-config '([^']+)'`).FindStringSubmatch(cmd)
+	if cfgPath == nil {
+		t.Fatalf("launch command has no --mcp-config path:\n%s", cmd)
+	}
+	raw, err := os.ReadFile(cfgPath[1])
 	if err != nil {
 		t.Fatalf("session MCP config not written: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(d, "worker-mcp.json")); !os.IsNotExist(statErr) {
+		t.Errorf("worker-mcp.json written into the project directory %s", d)
 	}
 	if !strings.Contains(string(raw), "datawatch") {
 		t.Errorf("worker-mcp.json does not keep the datawatch server:\n%s", raw)

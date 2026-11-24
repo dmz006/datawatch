@@ -1,8 +1,9 @@
-// Exclusion set for the launcher files the session launcher writes into a
-// project directory root when a worker session starts.
+// Exclusion set for the launcher files a worker session start writes.
 //
-// The launcher writes exactly two files into the project root, and neither
-// is operator work: the per-session MCP config,
+// The launcher writes exactly two files per session, now into a private
+// per-session folder outside the project directory (claudecode newLaunchDir);
+// older versions wrote them at the project root, so copies there are still
+// excluded by name. Neither is operator work: the per-session MCP config,
 // channel.WorkerMCPConfigFileName ("worker-mcp.json",
 // internal/channel/worker_mcp_config.go), and the starting-context
 // document, claudecode.WorkerStartingContextFileName

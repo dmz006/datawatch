@@ -1,7 +1,7 @@
 // Worker-profile apply fallback for the claude-code launch.
 //
-// A launch that carries a worker profile materializes it into the session
-// directory (worker-mcp.json, worker-starting-context.md). When that cannot be
+// A launch that carries a worker profile materializes it into a private
+// per-session folder (worker-mcp.json, worker-starting-context.md). When that cannot be
 // done — the write fails, or the profile names an MCP server that is not
 // configured — the launch does not fail the task. It starts again with no
 // profile, so its command equals a launch with nothing configured, and the
@@ -41,8 +41,8 @@ func (e *ProfileApplyError) Unwrap() error { return e.Err }
 // retries with no profile, so the flags equal a launch built with a zero
 // WorkerProfileLaunch, and returns the apply error text as fallbackReason.
 // Any other error is returned unchanged.
-func (b *Backend) launchFlags(projectDir string, w WorkerProfileLaunch) (flags, fallbackReason string, err error) {
-	profileFlags, err := b.profileFlags(projectDir, w)
+func (b *Backend) launchFlags(projectDir, tmuxSession string, w WorkerProfileLaunch) (flags, fallbackReason string, err error) {
+	profileFlags, err := b.profileFlags(projectDir, tmuxSession, w)
 	if err != nil {
 		var applyErr *ProfileApplyError
 		if !errors.As(err, &applyErr) {

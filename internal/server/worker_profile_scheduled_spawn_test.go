@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -46,7 +47,8 @@ func TestWorkerProfileScheduledSpawn_SupervisorResolvesToolsAndRewritesLauncher(
 	if err := os.WriteFile(filepath.Join(d, ".mcp.json"), []byte(mcpJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// Stale launcher files from an earlier run must be rewritten.
+	// A launcher file left in the project root by an older daemon is not
+	// touched (launch files now live in a private per-session folder).
 	stale := filepath.Join(d, "worker-mcp.json")
 	if err := os.WriteFile(stale, []byte("stale"), 0o600); err != nil {
 		t.Fatal(err)
@@ -60,22 +62,30 @@ func TestWorkerProfileScheduledSpawn_SupervisorResolvesToolsAndRewritesLauncher(
 		t.Fatalf("fallback reason = %q, want empty", *reason)
 	}
 
-	raw, err := os.ReadFile(stale)
+	cmd := leanRecordedLaunchCmd(t, argvFile)
+	m := regexp.MustCompile(`--mcp-config '([^']+)'`).FindStringSubmatch(cmd)
+	if m == nil {
+		t.Fatalf("launch command has no --mcp-config path:\n%s", cmd)
+	}
+	if filepath.Dir(m[1]) == d {
+		t.Fatalf("worker-mcp.json written into the project directory: %s", m[1])
+	}
+	raw, err := os.ReadFile(m[1])
 	if err != nil {
 		t.Fatalf("worker-mcp.json: %v", err)
 	}
-	if string(raw) == "stale" || !strings.Contains(string(raw), "datawatch") {
-		t.Fatalf("worker-mcp.json not rewritten with the datawatch server:\n%s", raw)
+	if !strings.Contains(string(raw), "datawatch") {
+		t.Fatalf("worker-mcp.json lacks the datawatch server:\n%s", raw)
+	}
+	if old, _ := os.ReadFile(stale); string(old) != "stale" {
+		t.Fatalf("a launcher file in the project root was rewritten: %q", old)
 	}
 	if strings.Contains(string(raw), "other") {
 		t.Fatalf("worker-mcp.json kept a server outside the profile:\n%s", raw)
 	}
-	entries, _ := filepath.Glob(filepath.Join(d, "*starting*"))
-	if len(entries) == 0 {
-		names, _ := os.ReadDir(d)
-		t.Fatalf("starting context file not written; dir has %v", names)
+	if _, err := os.Stat(filepath.Join(filepath.Dir(m[1]), "worker-starting-context.md")); err != nil {
+		t.Fatalf("starting context file not written next to the config: %v", err)
 	}
-	cmd := leanRecordedLaunchCmd(t, argvFile)
 	if !strings.Contains(cmd, "--strict-mcp-config") || !strings.Contains(cmd, "worker-mcp.json") {
 		t.Fatalf("launch command lacks the profile pin:\n%s", cmd)
 	}
