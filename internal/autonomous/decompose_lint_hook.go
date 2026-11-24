@@ -63,6 +63,7 @@ type decomposeLintSettings struct {
 	mode       string
 	maxRetries int
 	rules      []Rule
+	disabled   []string
 }
 
 // decomposeLintSettingsSnapshot resolves the decompose_lint settings
@@ -86,6 +87,7 @@ func (m *Manager) decomposeLintSettingsSnapshot() decomposeLintSettings {
 		mode:       mode,
 		maxRetries: config.NormalizeDecomposeLintMaxRetries(raw.MaxRetries),
 		rules:      EffectiveRules(raw),
+		disabled:   raw.DisabledRules,
 	}
 }
 
@@ -170,6 +172,7 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 	findings := func(s []Story) []LintFinding {
 		f := LintTasksIn(prd.ProjectDir, m.daemonModeStories(s), st.rules)
 		f = append(f, RunVerifyScriptPreflight(prd.ProjectDir, s)...)
+		f = append(f, RunPlanCoverageChecks(prd, s, st.disabled)...)
 		if f == nil {
 			f = []LintFinding{}
 		}
@@ -278,6 +281,7 @@ func (m *Manager) LintPRD(prdID string) (*DecomposeLintReport, error) {
 	}
 	st := m.decomposeLintSettingsSnapshot()
 	findings := LintTasksIn(prd.ProjectDir, m.daemonModeStories(prd.Story), st.rules)
+	findings = append(findings, RunPlanCoverageChecks(prd, prd.Story, st.disabled)...)
 	if findings == nil {
 		findings = []LintFinding{}
 	}
