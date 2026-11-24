@@ -591,6 +591,8 @@ type laneFillRaw struct {
 	shippedRelease, shippedCommit string
 	// hold is a copy of the hold record of a held Automaton, nil otherwise.
 	hold *HoldState
+	// projectDir is the Automaton's project directory, for the operator pause.
+	projectDir string
 }
 
 var laneFillRunningTask = map[TaskStatus]bool{
@@ -629,6 +631,7 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 				template: p.IsTemplate, typ: p.Type, branch: p.Git.Branch,
 				defect:        EffectiveKind(p, nil) == PRDKindBug,
 				reviewOutcome: p.RulesReviewOutcome,
+				projectDir:    p.ProjectDir,
 			}
 			if hasShippedRecord(p) && !overrideCovers(p) {
 				r.shippedRelease, r.shippedCommit = strings.TrimSpace(p.MergedInRelease), strings.TrimSpace(p.MergeCommit)
@@ -773,6 +776,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 			UpdatedAt:            r.updated,
 			HoldReason:           holdText,
 			HoldCode:             holdCode,
+			PausedReason:         c.m.pausedReasonFor(r.projectDir),
 			AllTasksDone:         r.tasks > 0 && r.tasks == r.tasksDone,
 			InAutomation:         r.automationID != "",
 			BackendChangeAllowed: prdLLMOverrideAllowed(r.status),

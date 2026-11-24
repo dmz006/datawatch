@@ -100,6 +100,10 @@ type LaneFillCandidate struct {
 	// means held.
 	HoldReason string
 	HoldCode   string
+	// PausedReason is the readable operator-pause refusal when the operator
+	// has paused new work for this Automaton's project (or globally); empty
+	// when nothing is paused.
+	PausedReason string
 	// Refusal is filled by the snapshot from EvaluateLaneFillEligibility. When
 	// set, the candidate is never started or decomposed.
 	Refusal LaneFillRefusal

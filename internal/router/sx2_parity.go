@@ -1369,13 +1369,23 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.reply("autonomous edit-task", prettyJSON(out))
 	case "reset-task", "reset_task":
 		if len(args) < 3 {
-			r.reply("autonomous reset-task failed", "usage: autonomous reset-task <prd-id> <task-id> [clean-restart]")
+			r.reply("autonomous reset-task failed", "usage: autonomous reset-task <prd-id> <task-id> [force] [clean-restart]")
 			return
 		}
 		// Optional trailing "clean-restart": the next attempt starts from the
 		// pre-task tree instead of restoring the preserved attempt work.
-		cleanRestart := len(args) > 3 && (args[3] == "clean-restart" || args[3] == "clean_restart")
-		body, _ := json.Marshal(map[string]any{"task_id": args[2], "actor": "operator", "clean_restart": cleanRestart})
+		// Optional "force": requeue a completed or cancelled task. As the
+		// operator's own, a force reset also clears the total attempt count.
+		cleanRestart, force := false, false
+		for _, tok := range args[3:] {
+			switch tok {
+			case "clean-restart", "clean_restart":
+				cleanRestart = true
+			case "force":
+				force = true
+			}
+		}
+		body, _ := json.Marshal(map[string]any{"task_id": args[2], "actor": "operator", "force": force, "clean_restart": cleanRestart})
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/reset_task", string(body))
 		if err != nil {
 			r.reply("autonomous reset-task failed", err.Error())
@@ -2564,4 +2574,74 @@ func specCheckChatText(reply string) string {
 		return "\n\n" + block
 	}
 	return ""
+}
+
+// pauseActorChannel labels a pause or resume sent from a messaging channel in
+// the audit log. The channel is the operator's own surface.
+const pauseActorChannel = "channel"
+
+// handlePause serves "pause <reason…> [project=<p>] [peers=…]" and
+// "pause status" through the /api/pause loopback.
+func (r *Router) handlePause(cmd Command) {
+	const usage = "usage: pause <reason…> [project=<p>] [peers=all|a,b] | pause status [peers]"
+	if cmd.PauseVerb == "status" {
+		var q url.Values
+		if cmd.PauseAllPeers {
+			q = url.Values{"peers": {"1"}}
+		}
+		body, err := r.commGet("/api/pause", q)
+		if err != nil {
+			r.reply("pause status failed", err.Error())
+			return
+		}
+		r.reply("pause status", body)
+		return
+	}
+	if strings.TrimSpace(cmd.PauseReason) == "" {
+		r.reply("pause failed", "a pause needs a reason; "+usage)
+		return
+	}
+	req := map[string]any{"scope": "global", "reason": cmd.PauseReason, "actor": pauseActorChannel}
+	if cmd.PauseProject != "" {
+		req["scope"], req["project"] = "project", cmd.PauseProject
+	}
+	pausePeerFields(req, cmd)
+	payload, _ := json.Marshal(req)
+	out, err := r.commJSON(http.MethodPost, "/api/pause", string(payload))
+	if err != nil {
+		r.reply("pause failed", err.Error())
+		return
+	}
+	r.reply("pause", out)
+}
+
+// handleResume serves "resume [all] [project=<p>] [peers=…]" through the
+// /api/pause/resume loopback. The daemon decides who may resume.
+func (r *Router) handleResume(cmd Command) {
+	req := map[string]any{"actor": pauseActorChannel}
+	switch {
+	case cmd.PauseAll:
+		req["all"] = true
+	case cmd.PauseProject != "":
+		req["scope"], req["project"] = "project", cmd.PauseProject
+	default:
+		req["scope"] = "global"
+	}
+	pausePeerFields(req, cmd)
+	payload, _ := json.Marshal(req)
+	out, err := r.commJSON(http.MethodPost, "/api/pause/resume", string(payload))
+	if err != nil {
+		r.reply("resume failed", err.Error())
+		return
+	}
+	r.reply("resume", out)
+}
+
+func pausePeerFields(req map[string]any, cmd Command) {
+	if cmd.PauseAllPeers {
+		req["all_peers"] = true
+	}
+	if len(cmd.PausePeers) > 0 {
+		req["peers"] = cmd.PausePeers
+	}
 }

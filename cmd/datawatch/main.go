@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.183.0"
+var Version = "9.184.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -379,6 +379,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newProjectsCmd(),       // BL27
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30
+		newPauseCmd(),          // operator pause
+		newResumeCmd(),         // operator pause
 		newUsageBackoffCmd(),   // BL428 Phase 4
 		newStaleCmd(),          // BL40
 		newCostCmd(),           // BL6
@@ -4791,6 +4793,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			GateDisagreement:                 acfgIn.GateDisagreement,
 			FailureEscalation:                failureEscalationFromConfig(acfgIn.FailureEscalation),
 			InfraRetry:                       acfgIn.InfraRetry.Clone(),
+			AttemptCap:                       acfgIn.AttemptCap.Clone(),
 			RequestWatch:                     acfgIn.RequestWatch.Clone(),
 			PlanningBackend:                  acfgIn.PlanningBackend,
 			PlanningRouting:                  acfgIn.PlanningRouting,
@@ -7873,6 +7876,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}, amgr)
 			var requestWatchReader requestwatch.Reader = requestWatcher
 			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
+			wirePause(cfg, amgr, httpServer)
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, headroom.Gate, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)

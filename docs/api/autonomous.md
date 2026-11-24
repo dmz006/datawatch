@@ -323,6 +323,26 @@ log sits in its project directory, 405 for non-GET. The PWA shows the
 snapshot on the running task's card in the Status tab; the session view no
 longer carries a progress strip of its own (removed in 9.31.3).
 
+### Attempt cap and `reset_task`
+
+Every task carries `attempts_total`, the number of attempts the daemon has
+started for it in all, across cancels, resets, review retries and daemon
+restarts, plus `attempt_cap_held` (true while the task is held at the cap) and
+`attempt_not_before` (the earliest start of its next attempt while the cap's
+back-off applies). `GET /api/autonomous/prds/{id}/tasks` and the review list
+carry them too.
+
+`POST /api/autonomous/prds/{id}/reset_task` never clears the count, except for
+one call: `force: true` made as the operator. That call also releases a task
+held at the cap, sets it to pending and writes an `attempt_cap_cleared`
+decision; its audit entry carries `clears_attempt_count: true`. The daemon
+reads who is calling from the credential: a session's scoped credential makes
+the call that session's (actor `session:<id>`), a federation peer's makes it the
+peer's, and a body that names another actor makes it that actor's. None of
+those clears the count, and a task held at the cap is refused for them with 400.
+`POST /api/autonomous/prds/{id}/resolve_task_review` with `retry` on a task held
+at the cap is refused with a message naming the attempt cap; `cancel` works.
+
 ### Clean restart on `reset_task`
 
 `POST /api/autonomous/prds/{id}/reset_task` accepts a `clean_restart` boolean

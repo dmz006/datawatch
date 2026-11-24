@@ -13,6 +13,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
 - **Lane fill no longer mis-gates proposal-writing and defect Automata.** The lane fill proposal gate now takes an Automaton's proposal to be the `docs/plans/<name>.md` path named on an explicit proposal field or line in its title or spec — a path that is merely mentioned elsewhere names no proposal, and the plan folder's README is never one. Defect, research, operational and personal Automata are exempt from the gate, as is any Automaton whose title or spec states that its own job is to write the proposal: such an Automaton is never gated on the `Confirmed: yes` line of the proposal it is producing. In particular, an authoring Automaton that states its job in its title alone is now exempt too, and an Automaton that names its proposal in its title alone is no longer refused as `proposal_missing`. No new keys, endpoints or settings; the gate and its reason codes are unchanged. Docs: the lane fill how-to, the lane fill operations notes, the Eligibility reason definition and the lane fill block of the config reference.
 
+## v9.184.0 — Operator pause, attempt cap and burn guard enforcement
+
+### Added
+
+- Operator pause: a datawatch-level service, global or per project, that holds new worker work (starts, lane fill and worker admission) without stopping the daemon, schedules or running tasks. Only the operator can resume; no session, doer or model can. State persists across restarts (`pause.start_paused` starts the daemon paused). REST, MCP, CLI (`pause`, `resume`), chat verbs, a PWA header control, federation and an audit record.
+- Attempt cap: a total attempt count per task across cancel, reset and retry, kept in the task record. After the free attempts each retry waits (5, 15, then 45 minutes); at the cap (default 6) the task is held with one alert and one question. Only an operator force reset clears the count. Infra retries do not count. Settings under `autonomous.attempt_cap`, with a per-project cap.
+- Burn guard pace enforcement: `usage.burn_guard.mode` now acts. In shadow it records what it would hold; in `on` it holds new worker work at the window stop line and the weekly pace line, and lifts it when the reading drops or the window resets. The default stays shadow.
+
+### Changed
+
+- The actor of a task reset is taken from the credential (a session credential is always `session:<id>`), and a session reset never clears the attempt count.
+
 ## v9.183.0 — Archived work landed: finished-not-merged review, planning guard, escalation fixes, voice timeout
 
 ### Added

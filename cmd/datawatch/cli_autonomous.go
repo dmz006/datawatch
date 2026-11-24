@@ -300,6 +300,7 @@ Subcommands:
 		newAutonomousPRDSetStoryNodeCmd(),
 		newAutonomousFailureEscalationCmd(),
 		newAutonomousResolveReviewCmd(),
+		newAutonomousPRDResetTaskCmd(),
 		newAutonomousPRDSetThinkingLevelCmd(),
 		newAutonomousPRDSetStoryThinkingLevelCmd(),
 		newAutonomousPRDSetTaskThinkingLevelCmd(),

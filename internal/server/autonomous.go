@@ -1984,9 +1984,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "task_id required", http.StatusBadRequest)
 			return
 		}
-		if req.Actor == "" {
-			req.Actor = "operator"
-		}
+		// The daemon decides who is calling: a session's scoped credential
+		// and a federation peer name themselves, whatever the body claims, so
+		// only the operator's own force reset can clear the attempt count.
+		req.Actor = s.resetActor(r, req.Actor)
 		updated, err := s.autonomousMgr.ResetTaskWithOptions(id, req.TaskID, req.Actor, req.Force, req.CleanRestart)
 		if err != nil {
 			status := http.StatusBadRequest
@@ -2002,7 +2003,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// Run() is now idempotent: if an executor is already live it returns
 		// immediately; the live goroutine will pick up the newly-pending task.
 		_ = s.autonomousMgr.Run(id)
-		s.audit(r.Context(), "reset_task", "automaton", id, map[string]any{"task_id": req.TaskID, "force": req.Force, "clean_restart": req.CleanRestart}) // GH#201 Phase 4
+		s.audit(r.Context(), "reset_task", "automaton", id, map[string]any{"task_id": req.TaskID, "force": req.Force, "clean_restart": req.CleanRestart, "actor": req.Actor, "clears_attempt_count": req.Force && autonomous.IsOperatorActor(req.Actor)}) // GH#201 Phase 4
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "task reset to pending; the executor will retry it")
 	case "rejudge":

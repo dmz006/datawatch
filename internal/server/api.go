@@ -54,6 +54,7 @@ import (
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
+	"github.com/dmz006/datawatch/internal/pause"
 	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/profile"
@@ -207,7 +208,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.183.0"
+var Version = "9.184.0"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -405,6 +406,8 @@ type Server struct {
 	capacityWatchdogThreshold time.Duration
 	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
 	usageBackoff *autonomous.Backoff
+	// pauseStore is the operator pause service (see pause.go); nil = not wired.
+	pauseStore *pause.Store
 	// backoffReserve is the review-reserve gate (nil = not wired); the usage
 	// back-off status uses it to report the per-hour reserve usage per
 	// backed-off backend.
@@ -7084,6 +7087,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// filled in, keyed without the supervisor_loop. prefix.
 			"supervisor_loop": supervisorLoopConfigSurface(s.cfg.Autonomous.SupervisorLoop),
 			"infra_retry":     infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
+			// Effective, not raw: the attempt cap values with defaults filled in.
+			"attempt_cap": attemptCapConfigSurface(s.cfg.Autonomous.AttemptCap),
 			// Effective, not raw: the merge pipeline values with defaults filled in.
 			"merge_pipeline": mergePipelineConfigSurface(s.cfg.Autonomous.MergePipeline),
 			// Effective, not raw: the deploy block with the timeout defaults filled in.
@@ -7929,6 +7934,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// The infrastructure retry block is checked as a whole too: one bad value
 	// among its seven keys refuses the whole PUT.
 	if err := validateInfraRetryPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The attempt cap block is checked as a whole too.
+	if err := validateAttemptCapPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9994,6 +10004,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// See https://github.com/dmz006/datawatch/issues/19.
 		case "autonomous.enabled":
 			cfg.Autonomous.Enabled = toBool(v)
+		case "pause.start_paused":
+			// Read once at daemon start (a saved pause state wins over it).
+			cfg.Pause.StartPaused = toBool(v)
 		case "autonomous.project_link_backfill_apply":
 			cfg.Autonomous.ProjectLinkBackfillApply = toBool(v)
 		// Planning routing switches; the rules, ladders and classes go
@@ -11550,6 +11563,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// autonomous.infra_retry.*; the values were checked by
 			// validateInfraRetryPatch.
 			if applyInfraRetryPatch(cfg, k, v) {
+				continue
+			}
+			// autonomous.attempt_cap.*; the values were checked by
+			// validateAttemptCapPatch. The executor reads the live block, so
+			// the change applies with no restart.
+			if applyAttemptCapPatch(cfg, k, v) {
 				continue
 			}
 			// autonomous.merge_pipeline.*; the values were checked by

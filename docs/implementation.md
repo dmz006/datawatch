@@ -2388,6 +2388,25 @@ A compute node runs one verifier by default and needs no measurement for that. A
   - comm `autonomous infra-retries` (`internal/router/infra_retry_comm.go`);
   - PWA Infrastructure retries card, task badges and settings fields (`internal/server/web/app.js`), with the `infra_retry_*` and `settings_infra_retry_*` strings in the five locale bundles (en, de, es, fr, ja).
 
+## Attempt cap (autonomous.attempt_cap)
+
+The daemon owns a total attempt count per task so that no reset, cancel, review retry or restart gives a looping model a fresh budget.
+
+- **Config block:** `autonomous.attempt_cap` (`config.AttemptCapConfig` in `internal/config/attempt_cap.go`, held as `AttemptCap` on `config.AutonomousConfig` and mirrored on `autonomous.Config`). Keys and defaults: `enabled` (true), `max_total` (6), `free_attempts` (3), `backoff_minutes` (`[5, 15, 45]`). `enabled` is a `*bool` and the list keeps nil (unset, reads the default) apart from a non-nil empty list (explicit: no wait), as `InfraRetryConfig` does, with `MarshalYAML` and `IsZero`. `BackoffBefore(n)` is the wait before attempt n. A project's policy block carries `attempt_cap` (`ProjectPolicy.AttemptCap`, resolved as `EffectivePolicy.AttemptCap` across automaton, project and daemon tiers); `Manager.attemptCapConfig` applies it when the project or Automaton tier set it.
+- **Task fields:** `Task.AttemptsTotal` (the count), `Task.AttemptNotBefore` (the earliest start of the next attempt) and `Task.AttemptCapHeld` (the cap's hold). All three are stored with the task, so a restart keeps them.
+- **Counting:** `Manager.noteAttemptStarted` in `internal/autonomous/attempt_cap.go` adds one when `executeOne` has spawned a worker (or resumed the earlier session) for an attempt index it has not counted. `gatedIdx` and `countedIdx` in the retry loop make a pass that repeats an index (an infrastructure retry, a session that never started, a daemon restart) neither gate nor count again; an adopted session is never counted.
+- **Gate:** `Manager.attemptCapGate` runs before a new attempt starts: at or above the cap it calls `holdAtAttemptCap`; otherwise it sleeps out `AttemptNotBefore` (`attemptCapSleep`, replaced in tests), with the task's wait reason saying so. `holdTaskForReview` also holds at the cap when the failure ladder ends a task that has used every attempt.
+- **Back-off:** `recordFailedAttempt` sets `AttemptNotBefore` from the attempt's end time and the count; an interrupted attempt that ended as an operator cancellation sets it too.
+- **Hold:** `holdAtAttemptCap` parks the task through `parkTaskForReview` (source `attempt-cap-hold`, an `attempt_cap_hold` decision), raises one alert and one question (`raiseAttemptCapQuestion`, asker `attempt-cap-hold`, options `force_reset` and `cancel`, default `hold`). `ResolveTaskReview` refuses a retry of a held task; `CancelTask` withdraws the question.
+- **Clear:** `resetTaskRecord` clears the count, the wait and the hold only when `force` is set, there is no review requeue and the actor is `operator` (`isOperatorActor`). It also accepts a task in review that is held at the cap for that call only, and writes an `attempt_cap_cleared` decision. `API.resolveAttemptCapAnswer` turns an operator's force-reset answer into that reset and ignores (and notes) any other actor's.
+- **Who is the operator:** REST `Server.resetActor` (`internal/server/attempt_cap.go`) takes the actor from the credential first (`auditActor`: a session token names `session:<id>`, a federation peer `peer:<name>`), then from the body; the MCP tool sends `session:<id>` for a scoped call; `datawatch autonomous prd-reset-task` sends `session:<id>` when `DATAWATCH_SESSION_ID` is set. A caller using the admin token and naming itself `operator` is the operator, as everywhere else in the daemon.
+- **Surfaces:**
+  - REST `autonomous.attempt_cap` on `GET /api/config` and `PUT /api/config` (`internal/server/attempt_cap.go`); task fields on every task view (`TaskEntry`, `ReviewNeededEntry`);
+  - MCP `attempt_cap_*` arguments of `autonomous_config_set` (`internal/mcp/attempt_cap_tools.go`);
+  - CLI `datawatch autonomous prd-reset-task` (`cmd/datawatch/cli_autonomous_reset_task.go`);
+  - comm `autonomous reset-task <id> <task> [force]`;
+  - PWA settings group, project policy field, task badges and the held task's Force reset button (`internal/server/web/app.js`).
+
 ## Model request progress (autonomous.request_watch)
 
 The daemon observes the in-flight model request of a worker or verifier session whose model runs on a registered compute node, so a hung request can be told from a slow one. It is observation only: it makes no model call and performs no remediation (it never ends a worker, retries on another backend or unloads a model).
@@ -3643,3 +3662,11 @@ The `projects_defaults` block (`internal/config/projects_defaults.go`) holds thr
 - **Validation:** `PacksConfig.Validate(installed []string)` accepts `builtin` or a name in `installed`. It rejects blank names, repeated names and unknown names, and names the `packs.active` key in its error. Names match exactly (case-sensitive). The method is not yet called from `Load` because no installed-pack registry exists yet; the caller that supplies that list is a later change.
 - **Enable check and list order:** `packs.CheckEnable(connected []skills.Registry)` (`internal/packs/enable_gate.go`) errors when no registry source is enabled. `packs.ActivePacks(automaton, project, global, packsEnabled)` (`internal/packs/order.go`) returns `["builtin"]` when packs are off, else the first non-empty of Automaton, project, global (never merged), else `["builtin"]`. `Automation.Packs` (JSON `packs`) is assigned with `SetPacks` (`internal/autonomous/automation_packs.go`: trim, drop blanks and repeats, keep order). Neither function is called by the daemon yet, and `ProjectConfigEntry` has no `packs` key.
 - **Tests:** `internal/config/packs_config_test.go` covers defaults, default independence, validation cases, the YAML keys and round trip, and loading with an absent or explicit section.
+
+## Operator pause
+
+Package `internal/pause` holds the state (global plus per-project entries, saved to `<data_dir>/pause.json`), the audit hook and the refusal rule for a resume by a non-operator actor. The autonomous manager holds only the read side (`pause.Gate`, `Manager.SetPauseGate`): `Manager.Run` and `API.runLocked` refuse the start of an Automaton that is not already running, lane fill refuses a paused candidate (`operator_pause`), and `admitPreferring` waits before a worker admission (`waitOperatorPause`, poll 5 s). REST `GET|POST /api/pause` and `POST /api/pause/resume` (`internal/server/pause.go`) derive the actor from the credential: a session-scoped credential is always a session and cannot resume. Capabilities `pause:read` and `pause:write`. Audit actions `pause_set`, `pause_resumed`, `pause_resume_refused`.
+
+| Config key | Type | Default | Meaning |
+|---|---|---|---|
+| `pause.start_paused` | bool | `false` | A daemon with no saved pause state starts globally paused. A saved state always wins. Read at daemon start. |

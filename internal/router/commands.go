@@ -103,6 +103,11 @@ const (
 	CmdTrace      CommandType = "trace"
 	CmdCooldown   CommandType = "cooldown"
 	CmdStale      CommandType = "stale"
+	// Operator pause: "pause [project=<p>] [peers=all|a,b] <reason>",
+	// "pause status", "resume [all] [project=<p>] [peers=all|a,b]". Same
+	// behaviour as REST / MCP / CLI.
+	CmdPause  CommandType = "pause"
+	CmdResume CommandType = "resume"
 	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
 	// as REST / MCP / CLI.
 	CmdUsageBackoff CommandType = "usage_backoff"
@@ -548,6 +553,20 @@ type Command struct {
 	UsageBackoffUntil   string
 	UsageBackoffReason  string
 	UsageBackoffModels  []string
+
+	// CmdPause / CmdResume fields.
+	//   PauseVerb: "set" | "status" (CmdPause only)
+	//   PauseProject: project name or directory; "" = the global pause
+	//   PauseReason: why (set; required)
+	//   PauseAll: resume every pause, global and per project
+	//   PausePeers / PauseAllPeers: also send the action to these federation
+	//     peers, or to all of them
+	PauseVerb     string
+	PauseProject  string
+	PauseReason   string
+	PauseAll      bool
+	PausePeers    []string
+	PauseAllPeers bool
 
 	// CmdBudget fields. BudgetLLM names one LLM; empty = every budgeted LLM.
 	BudgetLLM string
@@ -1490,6 +1509,12 @@ func Parse(text string) Command {
 	case lower == "usage" || strings.HasPrefix(lower, "usage "):
 		return parseUsage(strings.TrimSpace(text[len("usage"):]))
 
+	case lower == "pause" || strings.HasPrefix(lower, "pause "):
+		return parsePause(strings.TrimSpace(text[len("pause"):]))
+
+	case lower == "resume" || strings.HasPrefix(lower, "resume "):
+		return parseResume(strings.TrimSpace(text[len("resume"):]))
+
 	case lower == "usage_backoff" || lower == "usage-backoff" ||
 		strings.HasPrefix(lower, "usage_backoff ") || strings.HasPrefix(lower, "usage-backoff "):
 		return parseUsageBackoff(strings.TrimSpace(text[len("usage_backoff"):]))
@@ -2040,6 +2065,9 @@ trace rollup [dimension=<d>] [key=<k>] | trace coverage [backend=<b>]   trace ro
 cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown
+pause <reason…> [project=<p>] [peers=all|a,b]  pause new work (all, or one project); running tasks finish
+pause status [peers]             show the pause state (global and per project), and each peer's own with peers
+resume [all] [project=<p>] [peers=all|a,b]  resume the global pause, one project, or every pause; only the operator can resume
 usage_backoff                    show per-backend usage back-off flags, the effective config (incl. the backoff_reserve_for_review and backoff_reserve_tokens_per_hour reserve settings) and the live reserve usage (reserve array), plus the patterns_version/patterns_stale/claude_cli_version drift guard
 usage_backoff set <backend> <minutes> [reason …] [models=a,b]  hold autonomous dispatch to a backend (or only the named models of it)
 usage_backoff clear [backend|all] [models=a,b]  clear one back-off, or all (default); models=a,b narrows the clear to those models of the named backend
@@ -2270,6 +2298,63 @@ func parseUsage(rest string) Command {
 // An unrecognized verb or a set without a usable deadline keeps the verb and
 // leaves the deadline fields zero, so the handler can answer with usage
 // instead of guessing.
+// pauseOption reads one project= or peers= word; ok is false for any other
+// word. peers=all sets allPeers, peers=a,b lists names.
+func pauseOption(c *Command, field string) bool {
+	lower := strings.ToLower(field)
+	switch {
+	case strings.HasPrefix(lower, "project="):
+		c.PauseProject = strings.TrimSpace(field[len("project="):])
+		return true
+	case strings.HasPrefix(lower, "peers="):
+		v := strings.TrimSpace(field[len("peers="):])
+		if strings.EqualFold(v, "all") {
+			c.PauseAllPeers = true
+			return true
+		}
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				c.PausePeers = append(c.PausePeers, p)
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// parsePause reads "pause [project=<p>] [peers=all|a,b] <reason…>" and
+// "pause status". A bare "pause" or "pause peers" shows the state.
+func parsePause(rest string) Command {
+	cmd := Command{Type: CmdPause, PauseVerb: "set"}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 || (len(fields) == 1 && (strings.EqualFold(fields[0], "status") || strings.EqualFold(fields[0], "peers"))) {
+		cmd.PauseVerb = "status"
+		cmd.PauseAllPeers = len(fields) == 1 && strings.EqualFold(fields[0], "peers")
+		return cmd
+	}
+	var reason []string
+	for _, f := range fields {
+		if !pauseOption(&cmd, f) {
+			reason = append(reason, f)
+		}
+	}
+	cmd.PauseReason = strings.Join(reason, " ")
+	return cmd
+}
+
+// parseResume reads "resume [all] [project=<p>] [peers=all|a,b]".
+func parseResume(rest string) Command {
+	cmd := Command{Type: CmdResume}
+	for _, f := range strings.Fields(rest) {
+		if strings.EqualFold(f, "all") {
+			cmd.PauseAll = true
+			continue
+		}
+		pauseOption(&cmd, f)
+	}
+	return cmd
+}
+
 func parseUsageBackoff(rest string) Command {
 	cmd := Command{Type: CmdUsageBackoff, UsageBackoffVerb: "status"}
 	fields := strings.Fields(rest)

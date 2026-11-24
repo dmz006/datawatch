@@ -95,6 +95,9 @@ type ProjectPolicy struct {
 	// InfraRetryEscalateAfter is the infra-failure count after which a task
 	// stops auto-retrying and is held.
 	InfraRetryEscalateAfter *int `yaml:"infra_retry_escalate_after,omitempty" json:"infra_retry_escalate_after,omitempty"`
+	// AttemptCap replaces autonomous.attempt_cap.max_total for this project's
+	// tasks: the total number of attempts a task may be started for.
+	AttemptCap *int `yaml:"attempt_cap,omitempty" json:"attempt_cap,omitempty"`
 	// FailureEscalation: the hold-for-review policy; each sub-field is
 	// resolved independently across tiers.
 	FailureEscalation *FailureEscalationLevel `yaml:"failure_escalation,omitempty" json:"failure_escalation,omitempty"`
@@ -226,6 +229,7 @@ type EffectivePolicy struct {
 	RetryCeilingTotal       Field[int]
 	AutoFixRetries          Field[int]
 	InfraRetryEscalateAfter Field[int]
+	AttemptCap              Field[int]
 	FailureEscalation       Field[FailureEscalationResolved]
 
 	// Git default.
@@ -317,6 +321,7 @@ func ValidateProjectPolicy(p *ProjectPolicy, keyPrefix string) error {
 	countField("retry_ceiling_total", p.RetryCeilingTotal, 0)
 	countField("auto_fix_retries", p.AutoFixRetries, 0)
 	countField("infra_retry_escalate_after", p.InfraRetryEscalateAfter, 0)
+	countField("attempt_cap", p.AttemptCap, 1)
 	if p.FailureEscalation != nil {
 		if err := ValidateProjectPolicyFailureEscalation(p.FailureEscalation, keyPath); err != nil {
 			fatal("%v", err)
@@ -399,6 +404,7 @@ type daemonPolicyValues struct {
 	retryCeilingTotal       int
 	autoFixRetries          int
 	infraRetryEscalateAfter int
+	attemptCap              int
 	failureEscalation       FailureEscalationResolved
 	defaultAutoPR           bool
 	maxConcurrentTasks      int
@@ -441,6 +447,7 @@ func newDaemonPolicyValues(src DaemonPolicySource) daemonPolicyValues {
 	v.retryCeilingTotal = a.RetryCeilingTotal
 	v.autoFixRetries = a.AutoFixRetries
 	v.infraRetryEscalateAfter = a.InfraRetryEscalateAfter
+	v.attemptCap = a.AttemptCap.EffectiveMaxTotal()
 	v.failureEscalation = FailureEscalationResolved{
 		Enabled:     a.FailureEscalation.Enabled,
 		MaxFailures: a.FailureEscalation.MaxFailures,
@@ -592,6 +599,8 @@ func ResolveProjectPolicy(daemon DaemonPolicySource, project *ProjectPolicy, aut
 			nil, projectPolicyPointer(project, func(p *ProjectPolicy) *int { return p.AutoFixRetries })),
 		InfraRetryEscalateAfter: intField(d.infraRetryEscalateAfter,
 			nil, projectPolicyPointer(project, func(p *ProjectPolicy) *int { return p.InfraRetryEscalateAfter })),
+		AttemptCap: intField(d.attemptCap,
+			nil, projectPolicyPointer(project, func(p *ProjectPolicy) *int { return p.AttemptCap })),
 		FailureEscalation: policyFailureEscalation(d.failureEscalation,
 			escalationLevelOrNil(project), automaton.FailureEscalation),
 

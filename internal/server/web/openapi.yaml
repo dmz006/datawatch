@@ -1119,6 +1119,18 @@ paths:
         infrastructure retry value rejects the whole PUT with 400 and nothing is
         written. GET returns all seven values in effect under `autonomous.infra_retry`
         and the running Automaton manager picks up changes without a restart.
+        `autonomous.attempt_cap.enabled` (true|false, default true),
+        `autonomous.attempt_cap.max_total` (whole number from 1 to 1000, default 6: the
+        attempts a task may be started for in all),
+        `autonomous.attempt_cap.free_attempts` (whole number from 1 to 1000, default 3:
+        the attempts that start with no wait) and
+        `autonomous.attempt_cap.backoff_minutes` (a JSON array of whole minutes, or a
+        comma list such as `5,15,45`; each 0 to 10080; the wait before each attempt after
+        the free ones, the last entry repeating; an empty list means no wait). A bad
+        attempt cap value rejects the whole PUT with 400 and nothing is written. GET
+        returns the four values in effect under `autonomous.attempt_cap` and the running
+        Automaton manager picks up changes without a restart. A project may set its own cap
+        in its policy block as `attempt_cap`.
         `autonomous.merge_pipeline.file_name` (a file name inside the project, default
         `.datawatch/merge-pipeline.yaml`), `autonomous.merge_pipeline.source_order` (a JSON
         array or comma list of `file` and `record`, default `file,record`),
@@ -11536,6 +11548,65 @@ paths:
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
+  /api/pause:
+    get:
+      summary: The operator pause state (global pause and every project pause, with who paused, why and when); peers=1 also reads each federation peer's own state. Needs pause:read
+      operationId: pauseGet
+      tags: [Singletons]
+      parameters:
+        - {name: peers, in: query, required: false, schema: {type: string, enum: ["1", "true"]}, description: Also read every federation peer's own pause state}
+      responses:
+        "200": {description: OK}
+        "503": {description: The pause service is not available}
+    post:
+      summary: Pause new work, globally or for one project. Running tasks finish; nothing new is admitted or restarted until the operator resumes. A reason is required. Needs pause:write; the pause can be sent to federation peers, each of which reports its own state
+      operationId: pauseSet
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, reason]
+              properties:
+                scope: {type: string, enum: [global, project]}
+                project: {type: string, description: A registered project name or a directory (required for scope project)}
+                reason: {type: string}
+                actor: {type: string, description: Optional surface label for the audit log (cli, web); ignored for a session or federation caller}
+                all_peers: {type: boolean, description: Also send the pause to every federation peer}
+                peers:
+                  type: array
+                  items: {type: string}
+                  description: Also send the pause to these federation peers
+      responses:
+        "200": {description: OK. Carries the new state and, when peers were named, a peers map with each peer's own result}
+        "400": {description: Missing reason or project, or an unknown scope}
+        "403": {description: The caller lacks pause:write}
+  /api/pause/resume:
+    post:
+      summary: Resume paused work, one scope or everything. Only the operator can resume; the daemon refuses it from a session-scoped credential and from any actor naming a worker, watcher, supervisor or model. Needs pause:write
+      operationId: pauseResume
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scope: {type: string, enum: [global, project]}
+                project: {type: string}
+                all: {type: boolean, description: Clear the global pause and every project pause in one action}
+                note: {type: string}
+                actor: {type: string}
+                all_peers: {type: boolean}
+                peers:
+                  type: array
+                  items: {type: string}
+      responses:
+        "200": {description: OK. cleared counts the pauses removed}
+        "403": {description: Refused because the caller is not the operator, with the reason}
   /api/usage-backoff:
     get:
       summary: Active per-backend usage back-off flags, effective config (mode, max_wait_minutes, reserve_for_review, reserve_tokens_per_hour), the reserve array (current-window per-hour reserve usage per backed-off backend; omitted when the review-reserve gate is not wired or no flag is live), pattern staleness (patterns_version, patterns_stale) and claude_cli_version
@@ -11810,6 +11881,29 @@ paths:
                   margin: {type: number}
                   last_projection: {type: object, description: "Projected weekly burn (projected), the pace line (line), the margin and how far it is over (over_by)"}
                   last_decision: {type: object, description: "The last evaluation: direction (hold, climb, step_back, disabled), rung, level, previous and reason"}
+                  pace:
+                    type: object
+                    description: "The pace policy (usage.burn_guard.mode). It holds new work at the window pause line (window_stop_percent) and at the weekly pace line plus week_tolerance, and lifts the hold when the reading drops or the window or the week resets. Running sessions finish and operator and supervisor sessions are never held. In shadow it only records what it would hold."
+                    properties:
+                      mode: {type: string, enum: [off, shadow, "on"], description: "off decides nothing, shadow records without holding, on holds new worker admission; unset reads shadow"}
+                      enforcing: {type: boolean, description: True only in mode on}
+                      held: {type: boolean, description: True when any entry's new work is held now}
+                      entries:
+                        type: array
+                        description: One state per guarded LLM entry
+                        items:
+                          type: object
+                          properties:
+                            llm: {type: string}
+                            held: {type: boolean, description: A real hold is in force}
+                            would_hold: {type: boolean, description: The shadow path would hold; nothing is held}
+                            rule: {type: string, enum: [window_pause_line, weekly_pace_line]}
+                            since: {type: string, format: date-time}
+                            last: {$ref: "#/components/schemas/BurnGuardPaceDecision"}
+                      log:
+                        type: array
+                        description: The recent decisions that changed the verdict or the hold, newest first, at most 100
+                        items: {$ref: "#/components/schemas/BurnGuardPaceDecision"}
         "401": {$ref: "#/components/responses/Unauthorized"}
   /api/usage/burn-guard/run:
     post:
@@ -13473,6 +13567,35 @@ components:
             example: "unauthorized"
 
   schemas:
+    BurnGuardPaceDecision:
+      type: object
+      description: One pace policy decision with the evidence it was made on
+      properties:
+        at: {type: string, format: date-time}
+        entry: {type: string, description: The LLM entry}
+        mode: {type: string, enum: [off, shadow, "on"]}
+        hold: {type: boolean, description: "The verdict, whatever the mode: the policy wants new work held"}
+        rule: {type: string, enum: [window_pause_line, weekly_pace_line], description: The line that says so}
+        action: {type: string, enum: [none, hold, release, would_hold, would_release]}
+        held_after: {type: boolean}
+        reason: {type: string}
+        week_read_at: {type: string, format: date-time}
+        week_percent: {type: number, description: The newest weekly reading}
+        week_points_since: {type: number}
+        week_estimated: {type: number, description: The reading plus the burn since it times points_to_week_factor}
+        week_line: {type: number, description: The weekly pace line now}
+        week_tolerance: {type: number}
+        week_reset: {type: boolean}
+        window_read_at: {type: string, format: date-time}
+        window_percent: {type: number, description: The newest session (window) reading}
+        window_points_since: {type: number}
+        window_estimated: {type: number}
+        window_stop_percent: {type: number, description: The pause line}
+        window_start: {type: string, format: date-time}
+        window_end: {type: string, format: date-time}
+        window_reset: {type: boolean}
+        reading_age_minutes: {type: integer}
+        stale: {type: boolean}
     PlanRecord:
       type: object
       description: A registry row or a finding. The title comes first and the id second.

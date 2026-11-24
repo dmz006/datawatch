@@ -188,6 +188,21 @@ type burnGuardStatusView struct {
 		Rung      string `json:"rung"`
 	} `json:"last_decision"`
 	LastError string `json:"last_error"`
+
+	// Pace is the pace policy block: its mode, the holds it keeps and its newest decisions.
+	Pace *struct {
+		Mode      string `json:"mode"`
+		Enforcing bool   `json:"enforcing"`
+		Entries   []struct {
+			LLM       string `json:"llm"`
+			Held      bool   `json:"held"`
+			WouldHold bool   `json:"would_hold"`
+			Rule      string `json:"rule"`
+			Last      struct {
+				Reason string `json:"reason"`
+			} `json:"last"`
+		} `json:"entries"`
+	} `json:"pace"`
 }
 
 // replyBurnGuard mirrors the burn guard status: state, rung, last projection against
@@ -232,6 +247,22 @@ func (r *Router) replyBurnGuard() {
 			fmt.Fprintf(&b, " %s", d.Rung)
 		}
 		b.WriteString("\n")
+	}
+	if pc := st.Pace; pc != nil {
+		fmt.Fprintf(&b, "pace policy: %s\n", pc.Mode)
+		anyHeld := false
+		for _, e := range pc.Entries {
+			switch {
+			case e.Held:
+				anyHeld = true
+				fmt.Fprintf(&b, "  %s held on %s: %s\n", e.LLM, e.Rule, e.Last.Reason)
+			case e.WouldHold:
+				fmt.Fprintf(&b, "  %s would hold on %s (shadow, nothing is held): %s\n", e.LLM, e.Rule, e.Last.Reason)
+			}
+		}
+		if !anyHeld {
+			b.WriteString("  no new work is held\n")
+		}
 	}
 	if st.LastError != "" {
 		fmt.Fprintf(&b, "last error: %s\n", st.LastError)

@@ -113,6 +113,12 @@ const (
 	CapAutonomousWrite = "autonomous:write"
 	CapAutonomousRun   = "autonomous:run"
 
+	// operator pause: reading the pause state is broad; setting or clearing a
+	// pause is held back (never in a session's default grant), and clearing it
+	// is refused to a session-scoped credential even when granted.
+	CapPauseRead  = "pause:read"
+	CapPauseWrite = "pause:write"
+
 	// council
 	CapCouncilList = "council:list"
 	CapCouncilRead = "council:read"
@@ -205,6 +211,7 @@ var allCaps = []string{
 	CapAlertsList, CapAlertsRead, CapAlertsWrite,
 	CapDashboardRead, CapDashboardWrite,
 	CapQueueRead, CapQueueWrite,
+	CapPauseRead, CapPauseWrite,
 	CapResultsList, CapResultsRead, CapResultsWrite,
 	CapMemoryRead, CapMemoryWrite,
 }
@@ -394,6 +401,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapAlertsList, CapAlertsRead,
 			CapDashboardRead,
 			CapQueueRead,
+			CapPauseRead,
 			CapResultsList, CapResultsRead,
 			CapMemoryRead,
 		},
@@ -447,6 +455,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapPipelinesList, CapPipelinesRead, CapPipelinesStart, CapPipelinesCancel,
 			CapCommRead, CapCommWrite,
 			CapQueueRead, CapQueueWrite,
+			CapPauseRead,
 			CapResultsList, CapResultsRead, CapResultsWrite,
 			CapMemoryRead, CapMemoryWrite,
 		},

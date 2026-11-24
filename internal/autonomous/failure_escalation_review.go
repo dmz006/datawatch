@@ -201,6 +201,12 @@ func (m *Manager) ResolveTaskReview(prdID, taskID string, req ReviewResolution, 
 	if req.Action == reviewActionCancel {
 		return m.cancelHeldTask(prdID, taskID, actor, req.Note)
 	}
+	var capHeld bool
+	m.store.WithLock(func() { capHeld = task.AttemptCapHeld })
+	if capHeld {
+		return nil, fmt.Errorf("task %q is held at the attempt cap and a retry does not start it; "+
+			"only the operator's force reset (reset_task with force) clears the attempt count, or cancel the task", taskID)
+	}
 	if err := m.refuseHeld(prd); err != nil {
 		return nil, err
 	}

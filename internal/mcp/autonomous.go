@@ -319,7 +319,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("planning_restart_policy", mcpsdk.Enum("reattach", "restart", "draft"), mcpsdk.Description("autonomous.planning_restart_policy — what a daemon restart does to an Automaton that is still in planning (decompose running): reattach (the default) keeps planning running and re-attaches it to the restarted daemon; restart restarts planning once after the restart and records a decision saying so; draft resets the Automaton to draft, as the daemon did before this setting existed. Any other value is refused. It is sent on PUT /api/config. See docs/howto/restart-with-work-running.md.")),
 		mcpsdk.WithString("gate_repair_mode", mcpsdk.Enum("off", "report", "on"), mcpsdk.Description("autonomous.gate_repair.mode — the gate repair engine's mode: off (no detection, nothing recorded), report (detect and record the finding as a gate_repair repair record but repair nothing; the shipped default), on (apply the safe repair for the failed class, once per class per task; a spent budget or an unknown class raises a held operator question). Any other value is refused. It is sent on PUT /api/config.")),
 		mcpsdk.WithNumber("inherited_tags_cache_seconds", mcpsdk.Description("autonomous.inherited_tags_cache_seconds — lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (default 15); 0 = the default, negative = cache off. Not an autonomous-manager key: it is sent on PUT /api/config and takes effect on the next tag read.")),
-	}, append(append(append(append(append(append(append(daemonTaskKeysSetOptions(), verifierPolicyConfigTools()...), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...), pendingItemConfigOptions()...)...)...)
+	}, append(append(append(append(append(append(append(append(daemonTaskKeysSetOptions(), verifierPolicyConfigTools()...), infraRetryConfigOptions()...), attemptCapConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...), pendingItemConfigOptions()...)...)...)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{}
@@ -692,6 +692,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	// Infrastructure retry (autonomous.infra_retry.*) lives in the daemon
 	// config as well, so it rides in the same config PUT.
 	if entries := infraRetryConfigArgs(req); len(entries) > 0 {
+		if allocation == nil {
+			allocation = map[string]any{}
+		}
+		for k, v := range entries {
+			allocation[k] = v
+		}
+	}
+	// The attempt cap (autonomous.attempt_cap.*) lives in the daemon config
+	// as well, so it rides in the same config PUT.
+	if entries := attemptCapConfigArgs(req); len(entries) > 0 {
 		if allocation == nil {
 			allocation = map[string]any{}
 		}
@@ -1874,18 +1884,25 @@ func (s *Server) handleAutonomousPRDRemoveTask(_ context.Context, req mcpsdk.Cal
 
 func (s *Server) toolAutonomousPRDResetTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_reset_task",
-		mcpsdk.WithDescription("v8.23.0 — reset a failed/blocked/waiting-for-capacity task to pending so the autonomous loop retries it. A waiting-for-capacity task needs no force: the daemon re-admits it (same queue position, retargeted pool if the worker resolution changed, fresh wait budget). BL382: pass force=true to requeue a completed or cancelled task. BL451: force=true on an already-pending task in a terminal PRD reopens the PRD to running."),
+		mcpsdk.WithDescription("v8.23.0 — reset a failed/blocked/waiting-for-capacity task to pending so the autonomous loop retries it. A waiting-for-capacity task needs no force: the daemon re-admits it (same queue position, retargeted pool if the worker resolution changed, fresh wait budget). BL382: pass force=true to requeue a completed or cancelled task. BL451: force=true on an already-pending task in a terminal PRD reopens the PRD to running. The daemon keeps a total attempt count per task that no reset clears; only a force reset made by the operator clears it (and the attempt-cap hold with it), and the clear is recorded on the Automaton. A force reset made by a session carrying a scoped credential requeues the task but keeps the count, and a task held at the attempt cap is refused for it."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to reset")),
 		mcpsdk.WithBoolean("force", mcpsdk.Description("Set true to requeue completed or cancelled tasks (failed, blocked and waiting-for-capacity tasks never need force)")),
 		mcpsdk.WithBoolean("clean_restart", mcpsdk.Description("Set true to start the next attempt from the pre-task tree: the preserved work of earlier attempts is not restored for that one attempt. Default false (restore stays on)")),
 	)
 }
-func (s *Server) handleAutonomousPRDResetTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleAutonomousPRDResetTask(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
+	// A call made with a session's scoped credential is that session's reset,
+	// not the operator's: only the operator's force reset clears the attempt
+	// count.
+	actor := "operator"
+	if sid, scoped := s.scopedCallerSessionID(ctx); scoped && sid != "" {
+		actor = "session:" + sid
+	}
 	body, _ := json.Marshal(map[string]any{
 		"task_id":       req.GetString("task_id", ""),
-		"actor":         "operator",
+		"actor":         actor,
 		"force":         req.GetBool("force", false),
 		"clean_restart": req.GetBool("clean_restart", false),
 	})

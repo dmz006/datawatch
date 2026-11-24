@@ -59,6 +59,10 @@ const (
 	// appears in the refusal of a start and on the record, not as a lane
 	// fill chip.
 	LaneFillReasonWorkClosed = "work_closed"
+	// LaneFillReasonOperatorPause: the operator has paused new work, globally
+	// or for the Automaton's project. Lane fill neither starts nor decomposes
+	// it until the operator resumes.
+	LaneFillReasonOperatorPause = "operator_pause"
 )
 
 // LaneFillRefusal is why lane fill will not take a queued Automaton: a stable
@@ -303,6 +307,9 @@ func laneFillExcludedText(id string, r LaneFillRefusal) string {
 //  0. already_shipped: the candidate's own shipped record is set (release and
 //     merge commit), so its work is delivered; checked right after the
 //     operator hold, before everything else;
+//     operator_pause: the operator has paused new work for the global scope
+//     or the candidate's project; checked right after already_shipped, so a
+//     shipped Automaton is never reported as waiting on a pause;
 //  1. held: the candidate carries a hold (HOLD line, do not run, sequenced
 //     last, a judge time-out, or sequenced after an unshipped Automaton);
 //  2. stale: a queued Automaton (draft, approved or needs_review) whose last
@@ -331,6 +338,9 @@ func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now ti
 	if c.ShippedRelease != "" && c.ShippedCommit != "" {
 		return LaneFillReasonAlreadyShipped, fmt.Sprintf("its own shipped record is set (release %s, commit %s): the work is delivered and does not run",
 			c.ShippedRelease, shortCommit(c.ShippedCommit))
+	}
+	if c.PausedReason != "" {
+		return LaneFillReasonOperatorPause, c.PausedReason
 	}
 	if c.HoldReason != "" {
 		code = c.HoldCode

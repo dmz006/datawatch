@@ -382,6 +382,7 @@ func (s *Server) handleProjectPolicyEffective(w http.ResponseWriter, r *http.Req
 			"retry_ceiling_total":        {Value: eff.RetryCeilingTotal.Value, Source: eff.RetryCeilingTotal.Source},
 			"auto_fix_retries":           {Value: eff.AutoFixRetries.Value, Source: eff.AutoFixRetries.Source},
 			"infra_retry_escalate_after": {Value: eff.InfraRetryEscalateAfter.Value, Source: eff.InfraRetryEscalateAfter.Source},
+			"attempt_cap":                {Value: eff.AttemptCap.Value, Source: eff.AttemptCap.Source},
 			"failure_escalation":         {Value: eff.FailureEscalation.Value, Source: eff.FailureEscalation.Source},
 			"default_auto_pr":            {Value: eff.DefaultAutoPR.Value, Source: eff.DefaultAutoPR.Source},
 			"max_concurrent_tasks":       {Value: eff.MaxConcurrentTasks.Value, Source: eff.MaxConcurrentTasks.Source},

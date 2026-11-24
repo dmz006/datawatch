@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.183.0 (2026-11-23).** Archived work that never reached main is now landed: a finished-not-merged view and review, a planning guard, failure escalation fixes and a voice timeout setting. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.184.0 (2026-11-23).** The control batch: an operator pause (global or per project), a daemon-owned attempt cap with backoff, and burn guard pace enforcement. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

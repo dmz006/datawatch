@@ -32,8 +32,13 @@ a running session.`,
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "status",
-		Short: "Show the guard's state, rung, last projection (line and margin) and last decision",
-		Args:  cobra.NoArgs,
+		Short: "Show the guard's state, rung, last projection (line and margin), last decision and the pace policy",
+		Long: `Show the guard's state, rung, last projection (line and margin) and last decision.
+The pace block is the pace policy: its mode (off, shadow or on), whether new work
+is held now and on which rule (window_pause_line or weekly_pace_line), and the
+recent decisions that changed the verdict or the hold, each with the evidence it
+was made on. In shadow the policy records what it would hold and holds nothing.`,
+		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			return daemonJSON(http.MethodGet, "/api/usage/burn-guard", nil)
 		},

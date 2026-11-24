@@ -31,8 +31,13 @@ A guard that reads the Claude session transcripts, prices the tokens in points o
 | 7 | PWA card, locales, Settings section and Monitor stat card | Done |
 | 8 | Docs, openapi, release smoke section, browser story TS-843, app parity issue | Done |
 | 9 | Live daemon validation on a sandbox daemon | Done, see the testing tracker section "Burn guard surfaces" |
+| 10 | Pace policy: hold new work at the window pause line and the weekly pace line, mode shadow or on, decisions with evidence | Code done, default shadow; the switch to on waits for the shadow log. Live validation not run |
 
 Shipped in: the release that carries this change (the merge helper records the number in the changelog).
+
+## Pace policy (phase 10)
+
+The ladder is graded and works from the projection. The pace policy is the hard line: from the readings as they stand it holds new worker admission at the window pause line (`window_stop_percent`, 85) and at the weekly pace line plus `week_tolerance`, and lifts the hold when the reading drops or the window or the week resets. `usage.burn_guard.mode` picks `off`, `shadow` (default, records what it would hold) or `on`. Running work finishes; operator and supervisor sessions are never held. Every decision is recorded with its evidence on the status, in the web app, on the dashboard and in `burn_guard_pace.jsonl`. Parity draft: `docs/plans/parity-issues/burn-guard-pace-enforce.md`.
 
 ## Parity surface
 

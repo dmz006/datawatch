@@ -824,7 +824,7 @@ mode](#llm-billing-mode) is `allowance` (the default for `claude-code`) or the
 entry has a dollar budget; for an `api` or `local` entry without one it releases
 its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards).
 
-The **pace_line policy** for the weekly and the window usage sits beside the ladder in the same block: `mode` (`off`, `shadow`, `on`; an unset mode reads `shadow` — shadow first, then on), `week_tolerance` (default 2, whole number 0 to 10; how many points the week reading may run over the pace line and still be ok), `points_to_week_factor` (default 1.3, 1 to 10; one point of ledger burn counts as this many points of the weekly allowance), `window_percent_per_point` (default 4, 1 to 25; one point burned is this percent of the current window), `window_stop_percent` (default 85, 50 to 95; a window is over at this percent used) and `reading_freshness_minutes` (default 60, whole number 1 to 1440; a reading older than this is stale and the guard asks for a fresh one). The window anchors are fixed behavior, not a setting: windows end at 02:00, 07:00 and 12:00, then every 5 hours. All six keys are readable and writable on the same surfaces as the rest of the block, and one invalid value rejects the whole change, leaving the stored settings unchanged. As of this change the settings are in place on every surface and the guard's own behavior is unchanged until the pace_line policy runs; the default mode `shadow` computes and records the decision without touching anything. See [the policy's full description](howto/burn-guard.md#the-pace_line-policy-the-weekly-and-window-guard).
+The **pace_line policy** for the weekly and the window usage sits beside the ladder in the same block: `mode` (`off`, `shadow`, `on`; an unset mode reads `shadow` — shadow first, then on), `week_tolerance` (default 2, whole number 0 to 10; how many points the week reading may run over the pace line and still be ok), `points_to_week_factor` (default 1.3, 1 to 10; one point of ledger burn counts as this many points of the weekly allowance), `window_percent_per_point` (default 4, 1 to 25; one point burned is this percent of the current window), `window_stop_percent` (default 85, 50 to 95; a window is over at this percent used) and `reading_freshness_minutes` (default 60, whole number 1 to 1440; a reading older than this is stale and the guard asks for a fresh one). The window anchors are fixed behavior, not a setting: windows end at 02:00, 07:00 and 12:00, then every 5 hours. All six keys are readable and writable on the same surfaces as the rest of the block, and one invalid value rejects the whole change, leaving the stored settings unchanged. In mode `on` the policy holds new work at the window pause line and at the weekly pace line, lifts the hold when the reading drops or the window or the week resets, and never holds running work, operator sessions or supervisor sessions; the default mode `shadow` computes and records each decision with its evidence in the `pace` block of the guard status and in `burn_guard_pace.jsonl` without touching admission. See [the policy's full description](howto/burn-guard.md#the-pace_line-policy-the-weekly-and-window-guard).
 
 | Method | How |
 |--------|-----|
@@ -1107,6 +1107,28 @@ When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold
 | `autonomous.infra_retry.raise_question` | `true` | `true` or `false`. Raises an operator question when a task is held; needs `autonomous.questions.enabled`. |
 
 A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel or the web app is refused and nothing is written; the refusal names the key and the valid values. A bad value written by hand into `config.yaml` is not checked on load: a try limit below 1 reads as 3, an unknown `exhausted_action` reads as `hold`, a negative delay waits no time and an unknown class is never retried. Changes made through the write surfaces apply at once, with no restart.
+
+### Attempt cap
+
+A task keeps a total count of the attempts the daemon has started for it, across failures, cancels, resets, review retries and daemon restarts, so a model that cancels and retries a task cannot loop for ever. The failure ladder (`autonomous.failure_escalation`) still counts failed attempts since the last operator action and starts over on every reset; the attempt count never starts over except through the operator's force reset. The first `autonomous.attempt_cap.free_attempts` attempts start at once and each later attempt waits the next delay of `autonomous.attempt_cap.backoff_minutes` after the previous attempt ended (a cancel counts as an end). At `autonomous.attempt_cap.max_total` the task is held in `review_needed` with the failure source `attempt-cap-hold`, one error alert "Automaton task reached its attempt cap" is raised and, when `autonomous.questions.enabled` is on, one question offers to clear the count and run again or cancel (the default is to stay held). A review retry, a plain reset and a force reset made by a session do not start a held task. The operator's force reset (`reset_task` with `force`, made as the operator) clears the count and the hold, writes an `attempt_cap_cleared` decision and an audit entry with `clears_attempt_count`. A start that failed on the infrastructure and is retried, a session that never started, a restart and a session adopted after a restart are not counted. The operator guide is [howto/attempt-cap.md](howto/attempt-cap.md).
+
+| Method | How |
+|--------|-----|
+| **YAML** | `config.yaml` → `autonomous.attempt_cap:` with `enabled`, `max_total`, `free_attempts` and `backoff_minutes`; a project's `policy:` block takes `attempt_cap` |
+| **CLI** | `datawatch config set autonomous.attempt_cap.max_total 8`; `datawatch autonomous tasks <id>` shows `attempts_total`; `datawatch autonomous prd-reset-task <id> <task> --force` is the operator's force reset |
+| **Web UI** | Settings → Automata → Attempt cap; the project policy field **Attempt cap**; each task row shows the count, the hold and the wait, and a held task has a **Force reset** button |
+| **REST API** | `PUT /api/config` with the dotted keys; `GET /api/config` shows the block under `autonomous.attempt_cap`; tasks carry `attempts_total`, `attempt_cap_held`, `attempt_not_before`; `POST /api/autonomous/prds/{id}/reset_task` with `force` |
+| **Comm channel** | `configure autonomous.attempt_cap.max_total=8`; `autonomous reset-task <id> <task> force` |
+| **MCP** | `autonomous_config_set` with the `attempt_cap_*` arguments, `config_set`, `autonomous_prd_get`, `autonomous_prd_tasks`, `autonomous_prd_reset_task` with `force` |
+
+| Key | Default | Allowed values and effect |
+|-----|---------|---------------------------|
+| `autonomous.attempt_cap.enabled` | `true` | `true` or `false`. `false` restores the earlier behaviour: only the failure ladder limits a task. |
+| `autonomous.attempt_cap.max_total` | `6` | Whole number from 1 to 1000. Attempts a task may be started for in all. |
+| `autonomous.attempt_cap.free_attempts` | `3` | Whole number from 1 to 1000. Attempts that start at once. |
+| `autonomous.attempt_cap.backoff_minutes` | `[5, 15, 45]` | List of whole minutes (0 to 10080 each, at most 100 entries), as a JSON array or a comma list; the last entry repeats; an empty list means no wait. |
+
+A bad value is refused and nothing is written; the refusal names the key.
 
 ### Completion review block recovery
 

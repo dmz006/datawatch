@@ -1532,6 +1532,10 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		r.handleTraceCmd(cmd)
 	case CmdCooldown:
 		r.handleCooldown(cmd)
+	case CmdPause:
+		r.handlePause(cmd)
+	case CmdResume:
+		r.handleResume(cmd)
 	case CmdUsageBackoff:
 		r.handleUsageBackoff(cmd)
 	case CmdBudget:

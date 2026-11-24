@@ -1002,7 +1002,13 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 		if err := a.M.refuseHeld(p); err != nil {
 			return false, err
 		}
+		// Closed or shipped work is refused before the pause, so a shipped
+		// Automaton reports already_shipped and not a pause wait.
 		if err := a.M.refuseClosedWork(p); err != nil {
+			return false, err
+		}
+		// A paused project is refused the same way, before a slot is claimed.
+		if err := a.M.refusePaused(p); err != nil {
 			return false, err
 		}
 	}
@@ -1631,6 +1637,9 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 		return
 	}
 	if a.resolveInfraHoldAnswer(c) {
+		return
+	}
+	if a.resolveAttemptCapAnswer(c) {
 		return
 	}
 	// The answer to a stuck model request question is only recorded on the
