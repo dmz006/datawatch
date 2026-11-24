@@ -494,6 +494,11 @@ type Manager struct {
 	// scheduledSpawnTask, when set, rebuilds the task of a launch-role spawn
 	// schedule each time it fires (guarded by mu).
 	scheduledSpawnTask func(ds DeferredSession) string
+	// schedFireMu makes concurrent FireDueSessions callers take turns.
+	schedFireMu sync.Mutex
+	// schedAlertHook and schedRearmPolicy are guarded by mu.
+	schedAlertHook   func(ScheduleAlert)
+	schedRearmPolicy func() RearmPolicy
 
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
@@ -2431,7 +2436,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			}
 		}
 		if active >= m.maxSessions {
-			return nil, fmt.Errorf("max sessions (%d) reached", m.maxSessions)
+			return nil, fmt.Errorf("%w (%d) reached", ErrMaxSessions, m.maxSessions)
 		}
 	}
 
@@ -7236,76 +7241,10 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 		}
 	}
 
-	// Process due deferred sessions (new_session and spawn types).
-	dueSessions := m.schedStore.DuePendingSessions(now)
-	for _, sc := range dueSessions {
-		if sc.DeferredSession == nil {
-			_ = m.schedStore.MarkDone(sc.ID, true)
-			continue
-		}
-		ds := sc.DeferredSession
-		opts := &StartOptions{
-			Name:               ds.Name,
-			Backend:            ds.Backend,
-			LLMRef:             ds.LLMRef,
-			Model:              ds.Model,
-			Effort:             ds.Effort,
-			OneShot:            ds.OneShot,
-			EphemeralWorkspace: ds.Ephemeral,
-			Subprocess:         ds.Subprocess,
-		}
-		task := ds.Task
-		if ds.LaunchRole != "" {
-			m.mu.Lock()
-			hook := m.scheduledSpawnTask
-			m.mu.Unlock()
-			if hook != nil {
-				if t := hook(*ds); t != "" {
-					task = t
-				}
-			}
-		}
-		newSess, err := m.Start(ctx, task, "", ds.ProjectDir, opts)
-		if err != nil {
-			_ = m.schedStore.MarkDone(sc.ID, true)
-			fmt.Printf("[schedule] failed to start session %q (type=%s): %v\n", ds.Name, sc.Type, err)
-		} else {
-			// GH#128: only link SessionID for new_session type. Spawn schedules must
-			// NOT store the launched session's ID — CancelBySession fires when the
-			// spawned session is deleted, which would cancel the recurring schedule.
-			if sc.Type != SchedTypeSpawn {
-				sc.SessionID = newSess.FullID
-			}
-			// GH#204 Phase 1 — attach the schedule that spawned this session, set
-			// server-side (never self-reported by the job): the DeferredSession
-			// carries it from AddSpawn; fall back to the entry's own
-			// ScheduleName for schedules written before DeferredSession had the
-			// field.
-			name := ds.ScheduleName
-			if name == "" {
-				name = sc.ScheduleName
-			}
-			attach := false
-			if name != "" && newSess.ScheduleName == "" {
-				newSess.ScheduleName = name
-				attach = true
-			}
-			// Carry the requested launch role (e.g. the lean supervisor
-			// profile) from DeferredSession onto the spawned session,
-			// server-side like the schedule name.
-			if ds.LaunchRole != "" && newSess.LaunchRole == "" {
-				newSess.LaunchRole = ds.LaunchRole
-				attach = true
-			}
-			if attach {
-				if err := m.store.Save(newSess); err != nil {
-					fmt.Printf("[schedule] persist spawn metadata on %s: %v\n", newSess.FullID, err)
-				}
-			}
-			_ = m.schedStore.MarkDone(sc.ID, false)
-			fmt.Printf("[schedule] spawned session %s (%s type=%s)\n", newSess.FullID, ds.Name, sc.Type)
-		}
-	}
+	// Process due deferred sessions (new_session and spawn types). The same
+	// path the daemon's scheduler goroutine uses, so a refused start is
+	// re-armed under the schedule policy whichever loop sees it first.
+	m.FireDueSessions(ctx, now)
 
 	// Process waiting_input triggers for active sessions
 	for _, sess := range m.store.List() {
