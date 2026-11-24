@@ -45,7 +45,27 @@ the review step reads them, and how to adopt the scheme in a new repository.
 
 When an Automaton task finishes, the daemon builds a change record from the
 task's diff and the commands the task ran, and keeps it. The records of all
-tasks of an Automaton merge into one. It holds:
+tasks of an Automaton merge into one.
+
+The counts come from the merge base with main, the same diff the merge would
+apply, so the record counts only the Automaton's own work: changes that
+arrived through a merge of main are not counted, even when the branch merged
+main after the task started. The record keeps the base it counted from
+(`base_ref`) and how it found it (`base_how`): `merge_base` when the merge
+base resolved, `task_start` when it could not and the record fell back to
+the task-start ref (on that fallback the draft's `Base:` line still reads
+"merge base with main"; `base_how` is what names the base actually used). The changelog,
+parity and tracker drafts name the base with the line
+`Base: merge base with main (<short sha>)`.
+
+**Operator review:** records and drafts written before this change count
+from the task-start ref, so they may count changes that are not the
+Automaton's own, and they carry no `Base:` line. A regenerate rewrites a
+file nobody edited with the corrected counts and the line; a file a person
+edited is kept as is (section 3), so an edited draft keeps its old counts
+until a person takes the new ones over.
+
+The record holds:
 
 | Field | Meaning |
 |---|---|
@@ -56,6 +76,8 @@ tasks of an Automaton merge into one. It holds:
 | `locale_keys_added` | New locale keys with their English values |
 | `tests_added` | Names of the tests the change added |
 | `commands` | Each command run, its exit code and the tests it passed and failed |
+| `base_ref` | The commit the change was counted from: the merge base with main, or the task-start ref when the merge base could not be resolved |
+| `base_how` | How that base was found: `merge_base` or `task_start` |
 | `cost` | The ledger-backed cost summary: sessions, token, cache and tool-call counts, the span of time the work spanned, the session ids and — when one exists — the API-equivalent dollar estimate with the label that names it, plus the ledger's window and unknown-spend notes; absent when no ledger reading was attached |
 
 The artefacts are rendered from these fields. The record is data, not prose:
@@ -149,6 +171,8 @@ never a number, because the release version is taken when the work is merged:
 
 Change from Automaton <id>: 14 files in 5 packages.
 
+Base: merge base with main (abc123456)
+
 - 7 new settings: `autonomous.generated_artefacts.gate_report`, ….
 - 4 new routes: `GET /api/…`, ….
 - 35 new locale keys.
@@ -170,6 +194,8 @@ Parent release: datawatch next release
 
 ## What changed
 <one line summary>
+
+Base: merge base with main (abc123456)
 
 ## Settings to add to the mobile app
 - `autonomous.generated_artefacts.gate_report`
@@ -195,7 +221,9 @@ add the placement and defaults a person knows; do not file it unread.
 One row per surface the change touched (web UI, REST API, MCP, CLI, config,
 comm channel), in the column order of the table in `docs/testing-tracker.md`:
 Feature, Test Name, Test Conditions, Description, Test Type, Tested?,
-Pass/Fail?, Validated?, Notes. The rows come out as `Tested? Yes` when the
+Pass/Fail?, Validated?, Notes. The rows are preceded by the same
+`Base: merge base with main (<short sha>)` line. The rows come out as
+`Tested? Yes` when the
 change added tests and `No` when it did not, `Pass/Fail? Pending` and
 `Validated? No`. Validation needs a live run by a person; the draft never
 claims one.
@@ -405,4 +433,5 @@ Checklist:
 - [ ] One Automaton run read through the preview
 - [ ] Where a gate report carries a cost section, its session ids and notes are machine-free (no hostname, no absolute path)
 - [ ] Old gate reports that may still carry the private hostname have been reviewed: scrubbed, or the machine name rotated
+- [ ] Drafts written before the merge-base change have been reviewed: regenerated where unedited, or the old counts taken over deliberately in an edited file
 - [ ] Team knows an edited draft is never overwritten
