@@ -5497,12 +5497,13 @@ usage:
     # Most retries of one task on Claude. 0 to 20, default 2.
     retry_limit_claude: 2
     # The pace_line policy for the weekly and the window usage, beside the
-    # ladder. mode: off never fires; shadow (the default — an unset mode
-    # reads shadow; shadow first, then on) computes and records the decision
-    # without touching anything; on backs the claude-code backend off until
-    # the estimate is back inside the line and the window. As of this change
-    # the settings are in place on every surface and the guard's own behavior
-    # is unchanged until the pace_line policy runs.
+    # ladder. mode: off decides nothing; shadow (the default — an unset mode
+    # reads shadow; shadow first, then on) computes the decision and records
+    # it with its evidence without touching admission; on holds new work at
+    # the window pause line (window_stop_percent) and at the weekly pace line
+    # plus week_tolerance, and lifts the hold when the reading drops or the
+    # window or the week resets. Running work, operator sessions and
+    # supervisor sessions are never held.
     mode: shadow
     # How many points the week reading may run over the pace line and still
     # be ok. Whole number 0 to 10, default 2.

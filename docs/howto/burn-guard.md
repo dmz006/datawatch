@@ -359,10 +359,11 @@ Beside the ladder, the burn guard carries the **pace_line policy** for the
 weekly and the window usage. Its six settings sit in the same
 `usage.burn_guard` block:
 
-- **`mode`** — `off` never fires; `shadow` computes and records the decision
-  without touching anything; `on` backs the `claude-code` backend off until
-  the estimate is back inside the line and the window. An unset mode reads
-  `shadow` — shadow first, then on.
+- **`mode`** — `off` decides nothing; `shadow` computes the decision and
+  records it with its evidence without touching admission; `on` holds new
+  work at the window pause line and at the weekly pace line, and lifts the
+  hold when the reading drops or the window or the week resets. An unset mode
+  reads `shadow` — shadow first, then on.
 - **`week_tolerance`** — how many points the week reading may run over the
   pace line and still be ok. Whole number 0 to 10, default `2`.
 - **`points_to_week_factor`** — one point of ledger burn counts as this many
@@ -383,16 +384,85 @@ and they share the same rule: one invalid value rejects the whole change and
 nothing is stored, and a saved value that is out of range falls back to its
 default on load, with a warning in the daemon log.
 
-**Status.** As of this change the settings are in place on every surface and
-the guard's own behavior is unchanged until the pace_line policy runs. The
-default mode is `shadow`, so the first state the policy takes is one that
-computes and records the decision without touching anything — you choose when
-it goes `on`.
+## How the pace policy decides
 
-**Review before you turn it on.** Check that the window anchors above match
-how your provider's windows actually run, and that `window_stop_percent`,
-`window_percent_per_point`, `week_tolerance` and `points_to_week_factor` fit
-the allowance you are pacing, before you set `mode` to `on`.
+Each interval, after the ladder, the guard runs the pace policy once for every
+guarded Claude entry. It works from the readings as they stand, not from the
+projection to the reset, and it has two lines:
+
+- **The window pause line.** The window estimate is the newest session (window)
+  reading plus the points burned since that reading times
+  `window_percent_per_point`. When it reaches `window_stop_percent` (85 by
+  default) new work is held. A session reading from before the current window
+  began belongs to the finished window, so only the burn since the window began
+  counts: the window reset lifts a window hold with no new reading.
+- **The weekly pace line.** The week estimate is the newest weekly reading plus
+  the points burned since it times `points_to_week_factor`. When it is more than
+  `week_tolerance` points above the pace line now, new work is held. A newer,
+  lower reading, or the weekly reset, lifts the hold.
+
+The ladder and the policy work together. The ladder is graded: from the
+projection it lowers the entry's lanes (never below one lane, so with one lane
+that rung changes nothing), routes the entry's new work to its route target, and
+only at its last rung, `hold_entry`, holds. The policy is the hard line: at the
+pause line or the weekly pace line it holds new work whatever rung the ladder
+is on. Both read the same readings and the same transcripts.
+
+**What a hold does.**
+
+- It makes new worker admission on that entry's pool wait. The wait reason
+  reads *backend claude-code backed off by the burn guard pace hold until
+  HH:MM: ...* and the task waits, it does not fail.
+- **Running work finishes.** A task that is already running keeps its session,
+  and its verifier and judge are not held.
+- **Operator sessions and supervisor sessions are never held.** They start the
+  way an operator start does, and the hold does not apply to them. They are
+  accounted in the usage, not limited by the hold.
+- The hold has a deadline of two guard intervals that the guard renews on every
+  tick that keeps it. If the guard stops ticking, the hold lapses by itself.
+- The hold is its own flag. The ladder's `hold_entry` rung and a rate-limit
+  back-off keep theirs, and none of the three lifts another.
+
+**Modes.**
+
+| `mode` | What happens |
+|---|---|
+| `off` | Nothing is decided. A hold left in force is released. |
+| `shadow` (the default in code) | The decision is made and recorded with its evidence as `would_hold` or `would_release`. Admission is never touched. |
+| `on` | The same decision holds and lifts new work, and each change raises an alert that says how many running sessions were left alone. |
+
+Leaving `on` (to `shadow`, to `off`, or turning the guard off) releases the hold
+at once, so admission is never left restricted by a policy that is not
+enforcing.
+
+**Where the decisions show.** Every decision that changes the verdict or the
+hold is kept with the numbers it was made on: the two readings and their age,
+the burn since each, the estimates, the pace line, the tolerance, the window
+bounds and the pause line, the rule, the mode and the action. They show in:
+
+- the `pace` block of the guard status (`GET /api/usage/burn-guard`, the
+  `burn_guard_status` tool, `datawatch usage burn-guard status`), which also
+  carries the log of the last 100 decisions and the hold of each entry;
+- the **Burn guard** card on the usage page of the web app (mode, what is held
+  and on which rule, the five newest decisions);
+- the usage line of the dashboard console;
+- the chat reply to `usage burn-guard`;
+- `burn_guard_pace.jsonl` in the usage data directory, one JSON line per
+  decision, which survives a restart (the status shows the newest 100 after one).
+
+A reading older than `reading_freshness_minutes` does not stop a decision: the
+estimate already adds the burn since the reading. The decision is flagged
+*stale* and its reason asks you for a fresh reading.
+
+**Before you switch from shadow to on.** Let the policy run in shadow for a few
+days, then read the log. Check that each `would_hold` was a moment you would
+have wanted new work held, and that the lift came when you expected. Check that
+the window anchors above match how your provider's windows run (the last window
+of the day, 22:00 to 02:00, is four hours), and that `window_stop_percent`,
+`window_percent_per_point`, `week_tolerance` and `points_to_week_factor` fit the
+allowance you are pacing. Then set `mode` to `on`; no restart is needed. To
+stand down at any time, set `mode` back to `shadow`: the hold is released on the
+next tick, or run the guard now to apply it at once.
 
 ## Settings
 
@@ -420,7 +490,7 @@ is unchanged, so a script or config file that used the old keys keeps working.
 | `refit_on_reading` | Refit the two prices when a new reading arrives | `true` |
 | `effort_ceiling` | Task kind to ceiling (see below) | `docs`, `parity`, `live_check`, `final_gate` all `low` |
 | `retry_limit_claude` | Most retries of one task on Claude, 0 to 20 | `2` |
-| `mode` | The pace_line policy mode: `off` (never fires), `shadow` (computes and records the decision without touching anything), `on` (backs the `claude-code` backend off until the estimate is back inside the line and the window). An unset mode reads `shadow` | `shadow` |
+| `mode` | The pace_line policy mode: `off` (decides nothing), `shadow` (computes and records the decision with its evidence, holds nothing), `on` (holds new work at the window pause line and the weekly pace line, lifts the hold when the reading drops or the window or the week resets). An unset mode reads `shadow` | `shadow` |
 | `week_tolerance` | How many points the week reading may run over the pace line and still be ok, whole number 0 to 10 | `2` |
 | `points_to_week_factor` | One point of ledger burn counts as this many points of the weekly allowance, 1 to 10 | `1.3` |
 | `window_percent_per_point` | One point burned is this percent of the current window, 1 to 25 | `4` |
