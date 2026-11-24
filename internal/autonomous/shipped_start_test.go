@@ -78,6 +78,7 @@ func TestShippedStartBackfillEnabledMarksWithoutBlocking(t *testing.T) {
 		t.Errorf("cancelled PRD changed by startup: status=%s shipped=%v",
 			fx.cancelled.Status, fx.cancelled.IsShipped())
 	}
+	settleMergeShadowCompares(t, fx.m.dataDir, fx.autoOK.ID)
 }
 
 func TestShippedStartBackfillOnceWrapsDryRun(t *testing.T) {
@@ -113,4 +114,5 @@ func TestShippedStartBackfillOnceWrapsDryRun(t *testing.T) {
 	if run.PrdsMarked != 3 || run.AutomationsMarked != 1 {
 		t.Errorf("run marked %d prds, %d automations, want 3/1: %+v", run.PrdsMarked, run.AutomationsMarked, run)
 	}
+	settleMergeShadowCompares(t, fx.m.dataDir, fx.autoOK.ID)
 }

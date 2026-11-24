@@ -189,6 +189,7 @@ func TestShippedBackfillHonoursMainBranch(t *testing.T) {
 		t.Errorf("release attribution on the non-main branch: released=%q unreleased=%q",
 			fx.released.MergedInRelease, fx.unreleased.MergedInRelease)
 	}
+	settleMergeShadowCompares(t, fx.m.dataDir, fx.autoOK.ID)
 }
 
 // newShippedBackfillFixture builds a Manager holding four PRDs (three
@@ -418,6 +419,7 @@ func TestShippedBackfillMergedThenCancelledIsMarked(t *testing.T) {
 	if onlyAfter.ShippedSource != ShippedSourceBackfill {
 		t.Errorf("Automation ShippedSource = %q, want backfill", onlyAfter.ShippedSource)
 	}
+	settleMergeShadowCompares(t, fx.m.dataDir, fx.autoOK.ID, only.ID)
 }
 
 // TestShippedBackfillCancelledWithoutMergeUntouched: a cancelled PRD no
@@ -457,6 +459,7 @@ func TestShippedBackfillCancelledWithoutMergeUntouched(t *testing.T) {
 	if p.MergeCommit != "" || p.MergedAt != nil {
 		t.Errorf("PRD MergeCommit=%q MergedAt=%v, want both unset", p.MergeCommit, p.MergedAt)
 	}
+	settleMergeShadowCompares(t, fx.m.dataDir, fx.autoOK.ID)
 }
 
 // TestShippedBackfillDryRunCountsWritesNothing: a dry run accounts for
@@ -525,6 +528,7 @@ func TestShippedBackfillDryRunCountsWritesNothing(t *testing.T) {
 		t.Errorf("prds_would_mark_cancelled: dry=%d real=%d, want equal",
 			rep.PrdsWouldMarkCancelled, real.PrdsWouldMarkCancelled)
 	}
+	settleMergeShadowCompares(t, fx.m.dataDir, fx.autoOK.ID)
 }
 
 // TestShippedBackfillSecondRunMarksNothing: a second real run finds
@@ -571,6 +575,7 @@ func TestShippedBackfillSecondRunMarksNothing(t *testing.T) {
 		t.Errorf("second run LeftCancelled=%d Unmatched=%v, want 1/[deadbeef]",
 			second.LeftCancelled, second.UnmatchedIDs)
 	}
+	settleMergeShadowCompares(t, fx.m.dataDir, fx.autoOK.ID)
 }
 
 // backfillReportLine renders the dry-run/real-run report as plain

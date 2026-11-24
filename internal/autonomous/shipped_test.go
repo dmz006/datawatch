@@ -83,6 +83,9 @@ func TestShippedRecorderPersists(t *testing.T) {
 	if !a2.IsShipped() {
 		t.Error("reloaded automation IsShipped = false, want true")
 	}
+	// Settle the post-ship merge shadow compare so the background hook's
+	// record write cannot race the tempdir cleanup.
+	settleMergeShadowCompares(t, dir, auto.ID)
 }
 
 func assertShippedFieldsSame(t *testing.T, what, release, commit, source string, mergedAt *time.Time) {
@@ -106,7 +109,7 @@ func assertShippedFieldsSame(t *testing.T, what, release, commit, source string,
 // UpdatedAt, while a different commit updates everything (including a
 // merge_step record replacing a backfill one).
 func TestShippedIdempotentSameCommitNoop(t *testing.T) {
-	_, m, prd, auto := newShippedFixture(t)
+	dir, m, prd, auto := newShippedFixture(t)
 
 	if prd.IsShipped() {
 		t.Fatal("fresh PRD reports IsShipped = true, want false")
@@ -160,6 +163,9 @@ func TestShippedIdempotentSameCommitNoop(t *testing.T) {
 	if a3.MergeCommit != "bead1" || a3.ShippedSource != ShippedSourceMergeStep || !a3.IsShipped() {
 		t.Errorf("automation different-commit record = commit %q source %q; want bead1 merge_step", a3.MergeCommit, a3.ShippedSource)
 	}
+	// Settle the post-ship merge shadow compare so the background hook's
+	// record write cannot race the tempdir cleanup.
+	settleMergeShadowCompares(t, dir, auto.ID)
 }
 
 // TestShippedFromCancelledPRDIsStillCancelled records shipped state on a

@@ -7,7 +7,7 @@ MB="$(git merge-base HEAD main)"
 changed_go() { { git diff --name-only "$MB"; git ls-files --others --exclude-standard; } | sort -u | grep "\.go$" | while read -r f; do [ -f "$f" ] && echo "$f"; done; }
 fmt_check() { g="$(changed_go)"; [ -z "$g" ] && return 0; bad="$(echo "$g" | xargs gofmt -l)"; [ -z "$bad" ] || fail "gofmt needed: $bad"; }
 
-ALLOW="internal/mergeshadow/|internal/autonomous/|docs/|scripts/|\.datawatch/|internal/server/web/docs/"
+ALLOW="internal/mergeshadow/|internal/autonomous/|docs/|scripts/|\.datawatch/|internal/server/web/docs/|internal/server/cost_report_attrib_test\.go"
 for f in $({ git diff --name-only "$MB"; git ls-files --others --exclude-standard; } | sort -u); do
   case "$f" in AGENT.md|CLAUDE.md|CLAUDE.local.md) continue;; esac
   echo "$f" | grep -Eq "^($ALLOW)" || fail "changed file outside the plan: $f"

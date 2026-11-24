@@ -95,7 +95,9 @@ func TestMergeShadowCompareStoredPlan(t *testing.T) {
 }
 
 // TestMergeShadowCompareNoStoredPlan checks that an Automaton without a
-// stored plan does no landed read and writes no candidates.
+// stored plan does no landed read, writes no candidates, and still leaves a
+// comparison record in the comparisons store carrying the recorded reason
+// and zero counts, in place of nothing.
 func TestMergeShadowCompareNoStoredPlan(t *testing.T) {
 	dir, m, _, auto := newShippedFixture(t)
 	calls := shadowFakeReader(t, shadowLanded("1.2.2"))
@@ -116,6 +118,71 @@ func TestMergeShadowCompareNoStoredPlan(t *testing.T) {
 	}
 	if len(stored) != 0 {
 		t.Errorf("stored candidates = %d, want 0", len(stored))
+	}
+	cmp, err := mergeshadow.LoadComparison(dir, auto.ID)
+	if err != nil {
+		t.Fatalf("LoadComparison: %v", err)
+	}
+	if cmp.Reason != mergeshadow.ReasonNoPlanStored {
+		t.Errorf("comparison reason = %q, want %q", cmp.Reason, mergeshadow.ReasonNoPlanStored)
+	}
+	if cmp.Matched != 0 || cmp.Different != 0 || cmp.NotCompared != 0 {
+		t.Errorf("comparison counts = matched %d different %d not-compared %d, want 0/0/0", cmp.Matched, cmp.Different, cmp.NotCompared)
+	}
+	if len(cmp.Differences) != 0 {
+		t.Errorf("comparison differences = %v, want none", cmp.Differences)
+	}
+	// The enumerating surface (ListComparisons, what the read surfaces walk)
+	// must see the reason record in place of nothing.
+	all, err := mergeshadow.ListComparisons(dir)
+	if err != nil {
+		t.Fatalf("ListComparisons: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("stored comparisons = %d, want 1 reason record", len(all))
+	}
+	if all[0].AutomatonID != auto.ID || all[0].Reason != mergeshadow.ReasonNoPlanStored {
+		t.Errorf("listed comparison = %+v, want reason record for %s", all[0], auto.ID)
+	}
+}
+
+// TestMergeShadowCompareStoresComparison checks that a successful comparison
+// saves the comparison into the comparisons store in addition to the
+// candidates, and that a repeated run replaces the record rather than adding
+// a second one.
+func TestMergeShadowCompareStoresComparison(t *testing.T) {
+	dir, m, _, auto := newShippedFixture(t)
+	if err := mergeshadow.Save(dir, auto.ID, shadowPlan(auto.ID)); err != nil {
+		t.Fatalf("Save plan: %v", err)
+	}
+	shadowFakeReader(t, shadowLanded("1.2.2"))
+
+	if _, err := m.runMergeShadowCompare(context.Background(), auto.ID); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if _, err := m.runMergeShadowCompare(context.Background(), auto.ID); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+
+	all, err := mergeshadow.ListComparisons(dir)
+	if err != nil {
+		t.Fatalf("ListComparisons: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("stored comparisons = %d, want 1 after repeat", len(all))
+	}
+	got, err := mergeshadow.LoadComparison(dir, auto.ID)
+	if err != nil {
+		t.Fatalf("LoadComparison: %v", err)
+	}
+	if got.AutomatonID != auto.ID {
+		t.Errorf("automaton_id = %q, want %q", got.AutomatonID, auto.ID)
+	}
+	if got.Different != 1 || len(got.Differences) != 1 {
+		t.Errorf("stored comparison = different %d, differences %d, want 1/1", got.Different, len(got.Differences))
+	}
+	if got.Reason != "" {
+		t.Errorf("stored comparison reason = %q, want empty for a real comparison", got.Reason)
 	}
 }
 
