@@ -1751,6 +1751,8 @@
   "settings_observer_section": "Federated Observer",
   "settings_orphaned_tmux": "Orphaned tmux sessions",
   "settings_tmux_kill_guard": "When on, worker/verifier/judge sessions spawned by the daemon are blocked from killing the operator's tmux server. Off = no guard.",
+  "settings_restart_pending_badge": "Restart needed",
+  "settings_saved_restart_needed": "Saved. Restart the daemon to apply",
   "settings_finished_oneshots": "Finished one-shot sessions",
   "settings_finished_oneshots_none": "No finished one-shot sessions.",
   "settings_finished_oneshots_open": "finished one-shot session(s) still open.",

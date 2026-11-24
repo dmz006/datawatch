@@ -936,6 +936,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if d := ensureTmuxTmpdirEnv(expandHome(cfg.DataDir)); d != "" {
 		fmt.Printf("[tmux] TMUX_TMPDIR was unset — using dedicated socket %s\n", d)
 	}
+	fmt.Println(liveSettingsStartupLine())
 	// Zero encKey on exit (best-effort; GC will eventually collect it anyway).
 	defer zeroBytes(encKey)
 
@@ -12888,7 +12889,8 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		return nil
 	}
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
-	if err := putConfig(url, cfg.Server.Token, body); err != nil {
+	applyNote, err := putConfigNote(url, cfg.Server.Token, body)
+	if err != nil {
 		// A liveness, merge-pipeline release or attempt-cost value that is valid
 		// JSON and was refused keeps the daemon's message; quoting it again would
 		// replace it with a bad-JSON error.
@@ -12901,13 +12903,18 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 			return fmt.Errorf("config set: %s: %w", key, err)
 		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
-		if err2 := putConfig(url, cfg.Server.Token, bodyQuoted); err2 != nil {
+		var err2 error
+		if applyNote, err2 = putConfigNote(url, cfg.Server.Token, bodyQuoted); err2 != nil {
 			// The quoted attempt is the one that carries a value refusal, so its
 			// message is the daemon's text as every other surface shows it.
 			return fmt.Errorf("config set: %w", err2)
 		}
 	}
-	fmt.Printf("Set %s = %s\n", key, value)
+	if applyNote != "" {
+		fmt.Printf("Set %s = %s (%s)\n", key, value, applyNote)
+	} else {
+		fmt.Printf("Set %s = %s\n", key, value)
+	}
 	return nil
 }
 
@@ -12967,11 +12974,27 @@ func formatConfigGetOutput(full map[string]interface{}, key string, v interface{
 	return string(out)
 }
 
+// liveSettingsStartupLine is the one start-up log line that says which config
+// keys need a restart to change; every other key applies as soon as it is saved.
+// The list is config.RestartRequiredKeys, the same one PUT /api/config uses.
+func liveSettingsStartupLine() string {
+	return "[config] settings apply as soon as they are saved, except these, which need a restart: " +
+		strings.Join(config.RestartRequiredKeys(), ", ")
+}
+
 // putConfig POSTs/PUTs a single-field config update to the daemon.
 func putConfig(url, token, body string) error {
+	_, err := putConfigNote(url, token, body)
+	return err
+}
+
+// putConfigNote is putConfig that also returns the daemon's account of which
+// saved keys are live and which need a restart (config.PutConfigApplyNote), or
+// "" when the reply says nothing about it.
+func putConfigNote(url, token, body string) (string, error) {
 	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
@@ -12979,20 +13002,20 @@ func putConfig(url, token, body string) error {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("daemon not reachable: %w", err)
+		return "", fmt.Errorf("daemon not reachable: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode >= 400 {
 		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, raw)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, raw)
 	}
 	// A key the daemon skipped (an active profile that does not exist, a task
 	// routing block that fails validation) is reported, not confirmed.
 	raw, _ := io.ReadAll(resp.Body)
 	if note := config.PutConfigSkippedNote(raw); note != "" {
-		return errors.New(note)
+		return "", errors.New(note)
 	}
-	return nil
+	return config.PutConfigApplyNote(raw), nil
 }
 
 // lookupConfigKey walks dotted keys (a.b.c) into a nested map.

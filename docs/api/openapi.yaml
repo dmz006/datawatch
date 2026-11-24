@@ -1268,6 +1268,14 @@ paths:
                   status:
                     type: string
                     example: "ok"
+                  applied:
+                    type: array
+                    items: {type: string}
+                    description: "The saved keys that took effect immediately, sorted. Omitted when there are none."
+                  requires_restart:
+                    type: array
+                    items: {type: string}
+                    description: "The saved keys that are stored but only take effect after a daemon restart (for example server.port), sorted. Omitted when there are none. A key listed under skipped is in neither list."
         "400":
           description: Invalid request body
         "401":
