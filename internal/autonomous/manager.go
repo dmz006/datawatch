@@ -5071,6 +5071,7 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	emitReset(lastDecision(prd, kind))
 	if clearedHold {
 		m.withdrawAttemptCapQuestions(prdID, taskID, actor, "the operator force-reset the task")
+		m.withdrawAttemptCapSeedQuestion(prdID, actor, "the operator force-reset the held tasks one by one")
 	}
 	// A reset of a waiting-capacity task re-admits it: the task is pending
 	// again and its capacity wait must stay live. requeueQueuedCapacity moves
@@ -5283,6 +5284,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	emitCancelled()
 	m.withdrawInfraHoldQuestions(prdID, taskID, actor, "task cancelled without answering the question")
 	m.withdrawAttemptCapQuestions(prdID, taskID, actor, "task cancelled without answering the question")
+	m.withdrawAttemptCapSeedQuestion(prdID, actor, "the held tasks were cancelled or reset without answering the question")
 	// Operator cancel with a reason closes out the work it cancels. When the
 	// Automaton is blocked and this was the last outstanding task, reopen it
 	// the way the review-cancel path does, so the next Run can roll it up.
