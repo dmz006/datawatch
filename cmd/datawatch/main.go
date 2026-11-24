@@ -18,6 +18,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15886,7 +15887,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
 	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                            // BL357
 	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))              // BL358
-	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360
+	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360 (standalone stdio MCP: its own opener, safe through the locked re-read and merge in Put and Delete)
 	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
@@ -20320,30 +20321,31 @@ func newResultCmd() *cobra.Command {
 		Short: "Manage the structured agent result store (BL360)",
 	}
 
-	// put
+	// put and delete go through the daemon API so the daemon stays the single
+	// writer of the result store file; get and list only read the file, which is
+	// always written whole (temp file, sync, rename), so they work without the daemon.
 	putCmd := &cobra.Command{
 		Use:   "put <name> <json-payload>",
 		Short: "Store a named result payload (upsert)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			name := args[0]
-			payloadStr := args[1]
 			ttl, _ := c.Flags().GetInt("ttl")
 			var payload map[string]any
-			if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
+			if err := json.Unmarshal([]byte(args[1]), &payload); err != nil {
 				return fmt.Errorf("invalid JSON payload: %w", err)
 			}
-			rs, err := session.NewResultStore(resultStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open result store: %w", err)
+			if payload == nil {
+				return fmt.Errorf("invalid JSON payload: must be an object")
 			}
-			entry, err := rs.Put(name, payload, ttl)
+			body, err := daemonJSONBody(http.MethodPost, "/api/result-store", map[string]any{
+				"name": args[0], "payload": payload, "ttl_seconds": ttl,
+			})
 			if err != nil {
 				return err
+			}
+			var entry session.ResultEntry
+			if err := json.Unmarshal(body, &entry); err != nil {
+				return fmt.Errorf("parse daemon response: %w", err)
 			}
 			fmt.Printf("stored result %q (created=%s)\n", entry.Name, entry.CreatedAt.Format("15:04:05"))
 			return nil
@@ -20351,7 +20353,6 @@ func newResultCmd() *cobra.Command {
 	}
 	putCmd.Flags().Int("ttl", 0, "Time-to-live in seconds (0 = no expiry)")
 
-	// get
 	getCmd := &cobra.Command{
 		Use:   "get <name>",
 		Short: "Retrieve a named result",
@@ -20376,7 +20377,6 @@ func newResultCmd() *cobra.Command {
 		},
 	}
 
-	// list
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List stored results",
@@ -20409,21 +20409,12 @@ func newResultCmd() *cobra.Command {
 	}
 	listCmd.Flags().String("prefix", "", "Filter by name prefix")
 
-	// delete
 	deleteCmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a named result",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			rs, err := session.NewResultStore(resultStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open result store: %w", err)
-			}
-			if err := rs.Delete(args[0]); err != nil {
+			if _, err := daemonJSONBody(http.MethodDelete, "/api/result-store/"+url.PathEscape(args[0]), nil); err != nil {
 				return err
 			}
 			fmt.Printf("deleted result %q\n", args[0])
