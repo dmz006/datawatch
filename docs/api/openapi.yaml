@@ -4849,6 +4849,133 @@ paths:
               schema: {type: string, example: GET}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/prds/{id}/outcome:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Record an Automaton's outcome class
+      description: |
+        Record how a finished Automaton (completed, rejected, cancelled or
+        archived) ended: `delivered` (its work is on the base branch, by itself or
+        by the twin named in `delivered_via`, which must be a stored Automaton with
+        a shipped record), `superseded` (replaced by the Automaton named in
+        `delivered_via`, required), `dropped` (thrown away on purpose) or `held`
+        (waiting by decision; held work is never archived). The status does not
+        change. The same body, `{outcome, delivered_via, note}`, is accepted by
+        `POST /api/autonomous/prds/{id}/archive` (the outcome is recorded in the
+        archive step, which is refused when no outcome can be recorded or a hold
+        is not met) and `POST /api/autonomous/prds/{id}/cancel`; on
+        `DELETE /api/autonomous/prds/{id}` the same three fields are query
+        parameters. With no outcome given, cancel and archive derive it from the
+        record: delivered when the Automaton has a shipped record, dropped when it
+        was rejected or cancelled before its work finished. Audited as
+        `set_closed_outcome`. Needs the autonomous write capability when called by
+        a federated peer.
+      operationId: autonomousPRDSetOutcome
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: {type: string, enum: [delivered, superseded, dropped, held]}
+                delivered_via: {type: string, description: The twin that delivered the work, or the Automaton that replaced it}
+                note: {type: string}
+                actor: {type: string, description: Who records it (default operator)}
+      responses:
+        "200":
+          description: The Automaton as stored, with `closed_outcome`, `delivered_via`, `closed_outcome_note` and `closed_outcome_at`
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Unknown outcome, a missing or unusable twin, or the Automaton is not finished}
+        "404": {description: Automaton not found}
+        "405": {description: Method not allowed; only POST is served}
+
+  /api/autonomous/outcome-check:
+    get:
+      summary: Standing check of closed work
+      description: |
+        The live read of the standing check: Automata closed or archived with no
+        outcome (`closed_no_outcome`), completed with no shipped record and no
+        outcome (`completed_no_shipped`), shipped with no deploy record on a host
+        that deploys after ship (`shipped_no_deploy`), a deploy record older than
+        the shipped release (`deployed_older_than_shipped`), a running daemon older
+        than the newest shipped release (`daemon_older_than_shipped`), and work
+        closed as delivered whose intent proof no longer holds (`intent_unproven`;
+        the files and symbols its spec names must be on the base branch and every
+        task done, re-run once a day). `mode` is `autonomous.closed_outcome_check`:
+        `off` returns nothing, `shadow` (the default) records the findings, `on`
+        also raises one alert per finding. `findings` is never null. Read-only.
+        Needs the autonomous read capability when called by a federated peer.
+      operationId: autonomousOutcomeCheck
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The check report
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OutcomeCheckReport'}
+        "503": {description: Automata are disabled}
+    post:
+      summary: Run the standing check of closed work now
+      description: |
+        Runs the check now, the intent proof included, stores and persists the
+        report and, in mode `on`, raises one alert per new finding. It never
+        changes an Automaton. Audited as `outcome_check_run`. Needs the autonomous
+        write capability when called by a federated peer.
+      operationId: autonomousOutcomeCheckRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The check report
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OutcomeCheckReport'}
+        "503": {description: Automata are disabled}
+
+  /api/autonomous/deploy/record:
+    post:
+      summary: Record a release deploy
+      description: |
+        Writes the deploy record (`version`, time, `host`, `health` check result)
+        onto every Automaton shipped in `release`. The deploy-after-ship step
+        writes it by itself; use this when a deploy was done by hand or by your own
+        script. Idempotent for the same deploy. Never changes a status. Audited as
+        `record_deploy`. Needs the autonomous write capability when called by a
+        federated peer.
+      operationId: autonomousDeployRecord
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [release]
+              properties:
+                release: {type: string, description: The shipped release that was deployed}
+                version: {type: string, description: The version the host runs after the deploy (default the release)}
+                host: {type: string, description: The host deployed to (default the daemon's host name)}
+                health: {type: string, enum: [passed, failed, unchecked], description: The health check result (default unchecked)}
+                detail: {type: string}
+                at: {type: string, format: date-time, description: When the deploy finished (default now)}
+      responses:
+        "200":
+          description: The release and the Automata that got the record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  release: {type: string}
+                  version: {type: string}
+                  automata: {type: array, items: {type: string}}
+        "400": {description: Missing release or version, or an unknown health value}
+        "405": {description: Method not allowed; only POST is served}
+
   /api/autonomous/housekeeping-repairs:
     get:
       summary: Housekeeping repairs status
@@ -12939,6 +13066,34 @@ components:
             example: "unauthorized"
 
   schemas:
+    OutcomeCheckReport:
+      type: object
+      properties:
+        mode: {type: string, enum: [off, shadow, on]}
+        run_at: {type: string, format: date-time}
+        scanned: {type: integer}
+        counts: {type: object, additionalProperties: {type: integer}}
+        proof:
+          type: object
+          properties:
+            checked: {type: integer}
+            proven: {type: integer}
+            partial: {type: integer}
+            unproven: {type: integer}
+        deploys_after_ship: {type: boolean}
+        running_version: {type: string}
+        findings:
+          type: array
+          items:
+            type: object
+            properties:
+              automaton: {type: string, description: The Automaton id; empty for a finding about the daemon}
+              title: {type: string}
+              status: {type: string}
+              kind:
+                type: string
+                enum: [closed_no_outcome, completed_no_shipped, shipped_no_deploy, deployed_older_than_shipped, daemon_older_than_shipped, intent_unproven]
+              detail: {type: string}
     BurnGuardPaceDecision:
       type: object
       description: One pace policy decision with the evidence it was made on

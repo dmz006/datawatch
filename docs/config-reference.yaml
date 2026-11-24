@@ -3474,6 +3474,18 @@ autonomous:
   # operator runs shipped work anyway with `datawatch autonomous prd-run <id>
   # --force --reason "..."` (audited).
   shipped_refusal: on
+  # autonomous.closed_outcome_archive — the closed outcome rule. on (the
+  # default; empty reads as on) makes the archive step refuse a finished
+  # Automaton that has no outcome (delivered, superseded, dropped or held) and
+  # none the daemon can prove from its record, or that carries a hold that is
+  # not met; shadow only logs what it would refuse; off disables it. Applies
+  # live. Set it with config set, PUT /api/config, MCP config_set or
+  # autonomous_config_set, the chat configure verb or Settings, Automata.
+  closed_outcome_archive: on
+  # autonomous.closed_outcome_check — the standing check of closed work.
+  # shadow (the default) records findings for the read, on also raises one
+  # alert per finding, off does nothing. Same surfaces as above.
+  closed_outcome_check: shadow
   # Parallel tasks inside one Automaton (autonomous.parallel.*). Every default
   # below is the operator's choice for this installation; other users may
   # change any of them. Operator guide: docs/howto/automaton-parallel-tasks.md;

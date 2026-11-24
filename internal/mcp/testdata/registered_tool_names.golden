@@ -83,6 +83,7 @@ autonomous_defect_batches
 autonomous_defect_intake
 autonomous_defect_tinyfix_check
 autonomous_deploy_get
+autonomous_deploy_record
 autonomous_deploy_run
 autonomous_dormant_features
 autonomous_event_kinds
@@ -104,6 +105,7 @@ autonomous_merge_pipeline_get
 autonomous_merge_pipeline_set_record
 autonomous_merge_pipeline_validate
 autonomous_merge_shadow_status
+autonomous_outcome_check
 autonomous_overlap_search
 autonomous_peer_events
 autonomous_peer_events_control
@@ -165,6 +167,7 @@ autonomous_prd_set_llm
 autonomous_prd_set_memory_harvest
 autonomous_prd_set_memory_seed
 autonomous_prd_set_notify_events
+autonomous_prd_set_outcome
 autonomous_prd_set_priority
 autonomous_prd_set_project
 autonomous_prd_set_quality_gates

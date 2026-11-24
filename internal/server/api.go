@@ -6895,6 +6895,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_idle_nudge_stall_seconds":        s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
 			"capacity_enabled":                       s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"shipped_refusal":                        s.cfg.Autonomous.EffectiveShippedRefusal(),
+			"closed_outcome_archive":                 s.cfg.Autonomous.EffectiveClosedOutcomeArchive(),
+			"closed_outcome_check":                   s.cfg.Autonomous.EffectiveClosedOutcomeCheck(),
 			"capacity_wait_timeout_seconds":          s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"archive_grace_minutes":                  s.cfg.Autonomous.ArchiveGraceMinutesOrDefault(),
 			"archive_keep_unmerged":                  s.cfg.Autonomous.ArchiveKeepUnmergedOrDefault(),
@@ -8083,6 +8085,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if verr := config.ValidateShippedRefusal(mode); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
+		}
+	}
+	// The closed outcome modes are on, shadow or off. Anything else rejects the
+	// whole PUT before a value is applied.
+	for _, k := range []string{"autonomous.closed_outcome_archive", "autonomous.closed_outcome_check"} {
+		if v, ok := patch[k]; ok {
+			mode, isStr := v.(string)
+			if !isStr {
+				http.Error(w, k+": must be \"on\", \"shadow\" or \"off\"", http.StatusBadRequest)
+				return
+			}
+			if verr := config.ValidateClosedOutcomeMode(k, mode); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 	}
 	// The decision gate mode is shadow or on. Anything else rejects the whole
@@ -11049,6 +11066,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig to on, shadow, off or empty.
 			if mode, ok := v.(string); ok {
 				cfg.Autonomous.ShippedRefusal = strings.ToLower(strings.TrimSpace(mode))
+			}
+		case "autonomous.closed_outcome_archive":
+			// Validated in handlePutConfig to on, shadow, off or empty.
+			if mode, ok := v.(string); ok {
+				cfg.Autonomous.ClosedOutcomeArchive = strings.ToLower(strings.TrimSpace(mode))
+			}
+		case "autonomous.closed_outcome_check":
+			if mode, ok := v.(string); ok {
+				cfg.Autonomous.ClosedOutcomeCheck = strings.ToLower(strings.TrimSpace(mode))
 			}
 		case "autonomous.capacity_strict_node_limit":
 			if b, ok := v.(bool); ok {

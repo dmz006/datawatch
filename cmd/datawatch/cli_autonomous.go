@@ -68,6 +68,14 @@ Subcommands:
                                   the watched repositories, the last poll, and the stored records
                                   (repository, ref, workflow, status, classification, first seen,
                                   alerted), newest first
+  prd-set-outcome <id> --outcome delivered|superseded|dropped|held [--via <id>] [--note <text>] [--archive]
+                                  Record the outcome class of a finished Automaton; --archive also
+                                  archives it in the same step
+  outcome-check [--run] [--json]  Standing check of closed work: findings by kind (no outcome, no
+                                  shipped record, no deploy record, older deploy, unproven delivery);
+                                  --run runs it now
+  deploy-record --release R [--version V --host H --health passed|failed|unchecked --detail T]
+                                  Record a release deploy onto the Automata shipped in it
   housekeeping-repairs [--json]   Housekeeping repairs read: per group the mode (off, report, on),
                                   what it would do and what it did
   gate-repairs [--json]           Gate repair engine read: the mode (off, report, on), the repair records
@@ -186,7 +194,8 @@ Subcommands:
   prd-plan <id>                   Run the LLM planning phase for a PRD (alias: prd-decompose)
   prd-decompose <id>              Run the LLM planning phase for a PRD (alias: prd-plan)
   prd-run <id>                    Kick the executor for a PRD (--force --reason "..." runs shipped work anyway; audited)
-  prd-cancel <id>                 Cancel + archive a PRD
+  prd-cancel <id> [--outcome O --via ID --note T]
+                                  Cancel + archive a PRD, recording its outcome class
   failure-escalation show|set|clear|global  Show, set or clear the failure escalation policy (per Automaton, per task, or the daemon default)
   resolve-review <id> --task T --action retry|cancel|accept  Retry, cancel or accept a task held for operator review (status lists held tasks under review_needed)
   prd-delete <id>                 Hard-delete a PRD + descendants
@@ -337,6 +346,9 @@ Subcommands:
 		newAutonomousPRDSetBreakingChangeCmd(),
 		newAutonomousPRDSetLanePreferenceCmd(),
 		newAutonomousShippedCmd(),
+		newAutonomousPRDSetOutcomeCmd(),
+		newAutonomousOutcomeCheckCmd(),
+		newAutonomousDeployRecordCmd(),
 		newAutonomousCompletedMigrateCmd(),
 		newAutonomousPRDHoldCmd(),
 		newAutonomousPRDReleaseHoldCmd(),
@@ -1370,14 +1382,35 @@ func newAutonomousPRDRunCmd() *cobra.Command {
 }
 
 func newAutonomousPRDCancelCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "prd-cancel <id>",
+	var outcome, via, note string
+	c := &cobra.Command{
+		Use:   "prd-cancel <id> [--outcome delivered|superseded|dropped|held] [--via <id>] [--note <text>]",
 		Short: "Cancel + archive a PRD",
-		Args:  cobra.ExactArgs(1),
+		Long: `Cancel an Automaton. The outcome class is recorded in the same step: the one
+given with --outcome, else the one its own record proves (delivered when it has
+a shipped record, dropped when its work was left unfinished).`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return daemonJSON(http.MethodDelete, "/api/autonomous/prds/"+args[0], nil)
+			if err := checkOutcomeFlag(outcome); err != nil {
+				return err
+			}
+			path := "/api/autonomous/prds/" + args[0]
+			q := url.Values{}
+			for k, v := range map[string]string{"outcome": outcome, "delivered_via": via, "note": note} {
+				if v != "" {
+					q.Set(k, v)
+				}
+			}
+			if len(q) > 0 {
+				path += "?" + q.Encode()
+			}
+			return daemonJSON(http.MethodDelete, path, nil)
 		},
 	}
+	c.Flags().StringVar(&outcome, "outcome", "", "delivered, superseded, dropped or held (default: derived from the record)")
+	c.Flags().StringVar(&via, "via", "", "the twin Automaton that delivered the work, or the one that replaced it")
+	c.Flags().StringVar(&note, "note", "", "why, in a sentence")
+	return c
 }
 
 func newAutonomousLearningsCmd() *cobra.Command {

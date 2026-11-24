@@ -44,6 +44,11 @@ func NewSupervisorLoopHooks(mgr *autonomous.Manager, cfg *config.Config, setting
 		withGitHosts(cfg.Git.Hosts)(r)
 	}
 	h.Deploy = func(ctx context.Context) (string, error) { return supervisorLoopDeploy(ctx, mgr, dataDir, mergeCfg()) }
+	// A configured health check (autonomous.deploy.health_check) runs after a
+	// successful deploy and its result goes on the deploy record.
+	h.DeployHealth = func(ctx context.Context) (string, string) {
+		return supervisorLoopDeployHealth(ctx, mgr, dataDir, mergeCfg(), cfg.Autonomous.Deploy.HealthCheck)
+	}
 	h.MergeUntilConflict = func(ctx context.Context) (autonomous.SupervisorMergeResult, error) {
 		return supervisorLoopMerge(ctx, mgr, dataDir, mergeCfg(), popt)
 	}
@@ -80,6 +85,29 @@ func supervisorLoopDeploy(ctx context.Context, mgr *autonomous.Manager, dataDir 
 		return firstLineOf(out), nil
 	}
 	return "", autonomous.ErrSupervisorStepNotConfigured
+}
+
+// supervisorLoopDeployHealth runs the operator's health check command after a
+// deploy. No command set means unchecked; exit 0 is passed; anything else is
+// failed, with the command's first output line as the detail.
+func supervisorLoopDeployHealth(ctx context.Context, mgr *autonomous.Manager, dataDir string, cfg config.MergePipelineConfig, command string) (string, string) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return autonomous.DeployHealthUnchecked, ""
+	}
+	if mergepipeline.CallsUnscopedTmuxKill(command) {
+		return autonomous.DeployHealthFailed, "the health check calls an unscoped tmux kill and was not run"
+	}
+	repo := mgr.MergeBaseRepo()
+	if repo == "" {
+		return autonomous.DeployHealthUnchecked, ""
+	}
+	runner := newMergeRunner(mgr, cfg, repo, filepath.Base(repo), dataDir, mergepipeline.ExecShipRunner{})
+	out, err := runner.Ship.Hook(ctx, repo, mergepipeline.Step{Command: command})
+	if err != nil {
+		return autonomous.DeployHealthFailed, firstLineOf(err.Error())
+	}
+	return autonomous.DeployHealthPassed, firstLineOf(out)
 }
 
 func firstLineOf(s string) string {

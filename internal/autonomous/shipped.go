@@ -111,12 +111,18 @@ func (m *Manager) RecordPRDShipped(id, release string, mergedAt time.Time, commi
 	// store lock so the shipped fields are ordered against snapshot reads and
 	// persist. SavePRD takes Store.mu too (non-reentrant), so it stays out.
 	already := false
+	outcomeMode := m.Config().EffectiveClosedOutcomeArchive()
 	m.store.WithLock(func() {
 		if p.MergeCommit == c {
 			already = true // idempotent: already recorded with this commit
 			return
 		}
 		setPRDShipped(p, release, mergedAt, c, source)
+		// A finished Automaton that now carries a shipped record is delivered:
+		// label it in the same step (an outcome already recorded is kept).
+		if outcomeMode != ClosedOutcomeOff && closedWorkStatus(p.Status) && p.ClosedOutcome == "" {
+			m.setOutcomeLocked(p, OutcomeInput{}, "autonomous", m.holdNow(), outcomeMode)
+		}
 	})
 	if already {
 		return p, nil

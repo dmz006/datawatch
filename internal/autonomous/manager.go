@@ -689,6 +689,16 @@ type Config struct {
 	// ShippedRefusal mirrors autonomous.shipped_refusal: on (default, empty
 	// reads as on), shadow (log only) or off. See closed_work.go.
 	ShippedRefusal string `json:"shipped_refusal,omitempty"`
+	// ClosedOutcomeArchive mirrors autonomous.closed_outcome_archive: on
+	// (the archive step refuses a record with no outcome or an unmet hold),
+	// shadow (log only) or off. An empty value reads as on; DefaultConfig
+	// sets shadow so the manager-level fixtures that archive records with no
+	// outcome keep working, and the daemon hands the manager the resolved
+	// daemon value (default on). See closed_outcome.go. ClosedOutcomeCheck mirrors
+	// autonomous.closed_outcome_check: off, shadow (default; findings are
+	// recorded and read) or on (each finding also raises one alert).
+	ClosedOutcomeArchive string `json:"closed_outcome_archive,omitempty"`
+	ClosedOutcomeCheck   string `json:"closed_outcome_check,omitempty"`
 
 	// Parallel carries autonomous.parallel.*; read it through
 	// EffectiveReadOnlyTasks, never directly.
@@ -1199,7 +1209,10 @@ func DefaultConfig() Config {
 		// own tests set the block explicitly.
 		AttemptCap:     config.AttemptCapConfig{Enabled: attemptCapOff()},
 		AutoFixRetries: 1,
-		SecurityScan:   true,
+		// The closed outcome archive guard is on in the daemon (see
+		// ClosedOutcomeArchive); a manager built from this default only logs.
+		ClosedOutcomeArchive: ClosedOutcomeShadow,
+		SecurityScan:         true,
 		// Snapshot-never-stage defaults match the daemon config's (nil =
 		// reads these in both packages), so a fresh manager GETs the same
 		// effective list as the daemon's /api/config does.
@@ -1547,6 +1560,11 @@ type Manager struct {
 	// projects' lane_fill_* counts, (0,0) when unwired.
 	effectivePolicy atomic.Pointer[PolicyFn]
 	laneFillCaps    atomic.Pointer[laneFillPolicyCapFn]
+
+	// Closed-outcome standing check state (closed_outcome_check.go).
+	outcomeEnv     OutcomeCheckEnv
+	outcomeLast    *OutcomeCheckReport
+	outcomeAlerted map[string]bool
 
 	dataDir string // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
 	// mergePipeline is the merge_pipeline settings the post-ship merge-shadow
@@ -4351,6 +4369,7 @@ func (m *Manager) Reject(prdID, actor, reason string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q already completed; nothing to reject", prdID)
 	}
 	now := time.Now()
+	outcomeMode := m.Config().EffectiveClosedOutcomeArchive()
 	var old PRDStatus
 	m.store.WithLock(func() {
 		old = prd.Status
@@ -4358,6 +4377,9 @@ func (m *Manager) Reject(prdID, actor, reason string) (*PRD, error) {
 		prd.RejectionReason = reason
 		prd.UpdatedAt = now
 		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "reject", Actor: actor, Note: reason})
+		if outcomeMode != ClosedOutcomeOff {
+			m.setOutcomeLocked(prd, OutcomeInput{}, actor, now, outcomeMode)
+		}
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4441,67 +4463,6 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 		return nil, err
 	}
 	m.emitPRDStatus(prd, old, lastDecision(prd, "reset_to_draft"), nil)
-	updated, _ := m.store.GetPRD(id)
-	return updated, nil
-}
-
-// Archive moves a terminal PRD (completed/rejected/cancelled) to
-// PRDArchived status so it disappears from the active list without
-// being permanently deleted.
-func (m *Manager) Archive(id, actor string) (*PRD, error) {
-	if actor == "" {
-		return nil, fmt.Errorf("archive prd %q: actor is required", id)
-	}
-	prd, ok := m.store.GetPRD(id)
-	if !ok {
-		return nil, fmt.Errorf("prd %q not found", id)
-	}
-	terminal := map[PRDStatus]bool{
-		PRDCompleted: true, PRDRejected: true, PRDCancelled: true, PRDArchived: true,
-	}
-	if !terminal[prd.Status] {
-		return nil, fmt.Errorf("prd %q status %q is not terminal; cancel or complete it first", id, prd.Status)
-	}
-	if prd.Status == PRDArchived {
-		return prd, nil // idempotent
-	}
-	var pendingBranch string
-	m.readLocked(func() { pendingBranch = landingPendingBranch(prd) })
-	if pendingBranch != "" {
-		// The branch may have been merged since the record went pending: the
-		// read-only ancestor check flips the record to landed before the
-		// refusal, so an already-landed branch archives without the operator
-		// touching its landing record.
-		if m.CheckLandingAncestor(context.Background(), id) {
-			prd, ok = m.store.GetPRD(id)
-			if !ok {
-				return nil, fmt.Errorf("prd %q not found", id)
-			}
-		}
-		m.readLocked(func() { pendingBranch = landingPendingBranch(prd) })
-	}
-	if pendingBranch != "" {
-		return nil, fmt.Errorf("automaton %q cannot be archived: its branch %s has not landed on the default branch; merge it, or record keep or drop for its landing", id, pendingBranch)
-	}
-	now := time.Now()
-	var old PRDStatus
-	m.store.WithLock(func() {
-		old = prd.Status
-		prd.Status = PRDArchived
-		prd.UpdatedAt = now
-		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "archive", Actor: actor})
-	})
-	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
-	}
-	m.emitPRDStatus(prd, old, lastDecision(prd, "archive"), nil)
-	// Universal orphan-cleanup backstop: by the time a PRD reaches
-	// Archive, the operator has said "done with this forever" —
-	// whatever Decision 5's "keep for inspection" grace period on a
-	// cancelled/failed/blocked PRD was for has ended. A no-op for a
-	// completed PRD (Phase 2 already removed its worktree on success)
-	// or one that never had a worktree.
-	m.cleanupOrphanedWorktree(prd)
 	updated, _ := m.store.GetPRD(id)
 	return updated, nil
 }

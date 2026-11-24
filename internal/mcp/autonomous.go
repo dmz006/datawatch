@@ -298,6 +298,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("task_no_progress_seconds", mcpsdk.Description("Seconds one task attempt may go without progress (0 = off, the default; recommended 1800)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithString("closed_outcome_archive", mcpsdk.Enum("on", "shadow", "off"), mcpsdk.Description("Closed outcome archive guard (autonomous.closed_outcome_archive): on (default) makes the archive step refuse a finished Automaton that has no outcome (delivered, superseded, dropped or held) and none the daemon can prove from its record, or that carries a hold that is not met; shadow only logs what it would refuse; off disables it")),
+		mcpsdk.WithString("closed_outcome_check", mcpsdk.Enum("on", "shadow", "off"), mcpsdk.Description("Closed work standing check (autonomous.closed_outcome_check): shadow (default) records its findings for the autonomous_outcome_check read, on also raises one alert per finding, off does nothing")),
 		mcpsdk.WithString("shipped_refusal", mcpsdk.Description("Shipped-work rule: on (default) refuses to start, approve or decompose an Automaton whose own record says its work already shipped (release and merge commit both set) or that is archived, cancelled, completed or rejected, and marks shipped queued work delivered; shadow only logs what it would refuse; off disables it")),
 		mcpsdk.WithNumber("archive_grace_minutes", mcpsdk.Description("Whole minutes a cancelled Automaton is kept before the supervisor loop archives it (default 60; 0 archives at once; negative or fractional values are rejected)")),
 		mcpsdk.WithBoolean("archive_keep_unmerged", mcpsdk.Description("Keep a finished (completed, rejected or cancelled) Automaton whose work branch still holds commits not on the base branch from being archived (default true; false lets it archive; the branch itself is never deleted)")),
@@ -940,6 +942,11 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if v := req.GetString("shipped_refusal", ""); v != "" {
 		body["shipped_refusal"] = v
 	}
+	for _, k := range []string{"closed_outcome_archive", "closed_outcome_check"} {
+		if v := req.GetString(k, ""); v != "" {
+			body[k] = v
+		}
+	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {
 		body["capacity_wait_timeout_seconds"] = int(v)
 	}
@@ -1562,11 +1569,24 @@ func (s *Server) toolAutonomousPRDCancel() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_cancel",
 		mcpsdk.WithDescription("Cancel and archive an Automaton. Kills the PRD's worker sessions; the response JSON includes id, status, killed_sessions (count of sessions a kill was attempted on), killed_live_sessions (how many of those were still live when the cancel began) and killed_session_ids (array of the session IDs a kill was attempted on)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("outcome", mcpsdk.Enum("delivered", "superseded", "dropped", "held"), mcpsdk.Description("Outcome class recorded in the same step. Empty lets the daemon derive it: delivered when the Automaton has a shipped record, dropped when its work was left unfinished")),
+		mcpsdk.WithString("delivered_via", mcpsdk.Description("ID of the twin that delivered the work, or of the Automaton that replaced it (superseded)")),
+		mcpsdk.WithString("note", mcpsdk.Description("Why, in a sentence")),
 	)
 }
 func (s *Server) handleAutonomousPRDCancel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	out, err := s.proxyJSON(http.MethodDelete, "/api/autonomous/prds/"+id, nil)
+	path := "/api/autonomous/prds/" + id
+	q := url.Values{}
+	for _, k := range []string{"outcome", "delivered_via", "note"} {
+		if v := req.GetString(k, ""); v != "" {
+			q.Set(k, v)
+		}
+	}
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	out, err := s.proxyJSON(http.MethodDelete, path, nil)
 	if err != nil {
 		return nil, err
 	}

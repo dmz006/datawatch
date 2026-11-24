@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -92,6 +93,10 @@ type SupervisorLoopHooks struct {
 	// Deploy runs the operator's deploy step (mergepipeline ShipRunner.Deploy)
 	// and returns a short account. Nil records "not configured".
 	Deploy func(ctx context.Context) (string, error)
+	// DeployHealth runs the operator's health check after a successful deploy
+	// and returns passed or failed with a short account. Nil records the
+	// deploy's health as unchecked.
+	DeployHealth func(ctx context.Context) (health, detail string)
 	// Lanes is the operator's lane control. Nil records "not configured".
 	Lanes SupervisorLaneControl
 	// MergeUntilConflict runs the existing merge pipeline
@@ -128,6 +133,9 @@ type SupervisorLoopSteps struct {
 	// production runner; tests inject a fake.
 	mergeGit MergeGitRunner
 
+	// hostName names this host in deploy records; nil means os.Hostname.
+	hostName func() string
+
 	// wakes, when set, counts each real scheduled pass (RunScheduled).
 	wakes *supervisorloop.WakeRecord
 
@@ -136,6 +144,7 @@ type SupervisorLoopSteps struct {
 	infraRetried  map[string]bool      // held tasks already retried by the loop
 	cancelSeen    map[string]time.Time // first pass that saw a cancelled record with no cancel decision
 	lastDeployed  string               // newest shipped release already deployed
+	deployNoConf  bool                 // the deploy hook last said it is not configured
 	lastConflict  string               // newest merge conflict recorded
 	heldReasons   map[string]string    // transient: record id -> why the last close pass kept it
 }
@@ -310,6 +319,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 	closed := 0
 	held := 0
 	kept := 0
+	needOutcome := 0
 	keptBy := map[PRDStatus]int{}
 	reasons := map[string]string{}
 	keepUnmerged := s.archiveKeepUnmerged()
@@ -364,6 +374,14 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 			}
 		}
 		if _, err := s.c.m.Archive(p.ID, supervisorLoopActor); err != nil {
+			if errors.Is(err, ErrClosedOutcomeRefused) {
+				// No outcome, or a hold that is not met: the record stays as
+				// it is and the refusal is on its decision log, once.
+				needOutcome++
+				reasons[p.ID] = err.Error()
+				log.Printf("[autonomous] supervisor-loop: kept %s (%s): %v", p.ID, f.status, err)
+				continue
+			}
 			errs = append(errs, fmt.Errorf("archive %s: %w", p.ID, err))
 			continue
 		}
@@ -392,6 +410,9 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 				detail += fmt.Sprintf(" (kept %d %s with unmerged branch work)", n, st)
 			}
 		}
+	}
+	if needOutcome > 0 {
+		detail += fmt.Sprintf(" (kept %d with no outcome or an unmet hold: record an outcome to close them)", needOutcome)
 	}
 	return detail, errors.Join(errs...)
 }
@@ -474,16 +495,62 @@ func (s *SupervisorLoopSteps) deployAfterShip(ctx context.Context) (string, erro
 		return "nothing newly shipped", nil
 	}
 	detail, err := s.hooks.Deploy(ctx)
+	s.mu.Lock()
+	s.deployNoConf = errors.Is(err, ErrSupervisorStepNotConfigured)
+	s.mu.Unlock()
 	if errors.Is(err, ErrSupervisorStepNotConfigured) {
 		return stepNotConfigured, nil
 	}
 	if err != nil {
+		s.recordDeploy(release, DeployHealthFailed, err.Error())
 		return "", fmt.Errorf("deploy %s: %w", release, err)
 	}
+	health := DeployHealthUnchecked
+	if s.hooks.DeployHealth != nil {
+		h, d := s.hooks.DeployHealth(ctx)
+		if ValidDeployHealth(h) {
+			health = h
+		}
+		if d != "" {
+			detail += "; health: " + d
+		}
+	}
+	s.recordDeploy(release, health, detail)
 	s.mu.Lock()
 	s.lastDeployed = release
 	s.mu.Unlock()
 	return fmt.Sprintf("deployed %s: %s", release, detail), nil
+}
+
+// DeploysAfterShip says this host deploys after ship: the loop and its
+// deploy_after_ship step are on, a deploy hook is wired, and the hook has not
+// said it is not configured. The closed work check reads it.
+func (s *SupervisorLoopSteps) DeploysAfterShip() bool {
+	if s == nil || s.hooks.Deploy == nil {
+		return false
+	}
+	set := s.settings()
+	if !set.Enabled || !stepEnabled(set, stepDeployAfterShip) {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.deployNoConf
+}
+
+// recordDeploy writes the deploy record onto every Automaton shipped in release.
+func (s *SupervisorLoopSteps) recordDeploy(release, health, detail string) {
+	host := ""
+	if s.hostName != nil {
+		host = s.hostName()
+	} else if h, err := os.Hostname(); err == nil {
+		host = h
+	}
+	if _, err := s.c.m.RecordReleaseDeployed(DeployRecord{
+		Release: release, Version: release, At: s.now(), Host: host, Health: health, Detail: detail,
+	}); err != nil {
+		log.Printf("[autonomous] supervisor-loop: deploy record for %s: %v", release, err)
+	}
 }
 
 // newestShippedRelease is the release named by the most recently merged

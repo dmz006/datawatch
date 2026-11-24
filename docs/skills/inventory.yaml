@@ -168,6 +168,7 @@ entries:
   - autonomous_archive
   - autonomous_attention_list
   - autonomous_cleanup_status
+  - autonomous_deploy_record
   - autonomous_event_log
   - autonomous_events_pending
   - autonomous_held_questions
@@ -177,6 +178,7 @@ entries:
   - autonomous_merge_pipeline_set_record
   - autonomous_merge_pipeline_validate
   - autonomous_merge_shadow_status
+  - autonomous_outcome_check
   - autonomous_overlap_search
   - autonomous_prd_add_story
   - autonomous_prd_add_task
@@ -212,6 +214,7 @@ entries:
   - autonomous_prd_resolve_task_review
   - autonomous_prd_resume
   - autonomous_prd_run
+  - autonomous_prd_set_outcome
   - autonomous_progress
   - autonomous_progress_trend
   - autonomous_protected_paths

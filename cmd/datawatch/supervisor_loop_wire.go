@@ -129,6 +129,11 @@ func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Ma
 	hooks := server.NewSupervisorLoopHooks(amgr, cfg, settings, srv.PlanRecordStore)
 	steps := autonomouspkg.NewSupervisorLoopSteps(coord, engine, hooks)
 	coord.SetSupervisorLoopSteps(steps)
+	// The standing check of closed work reads this host's deploy facts.
+	amgr.SetOutcomeCheckEnv(autonomouspkg.OutcomeCheckEnv{
+		DeploysAfterShip: steps.DeploysAfterShip,
+		RunningVersion:   func() string { return Version },
+	})
 	wakeRecord := supervisorloop.NewWakeRecord(supervisorLoopClock{}, 0)
 	steps.SetWakeRecord(wakeRecord)
 	wireHousekeepingRepairs(coord, amgr, aAPI, cfg, steps, autonomouspkg.HousekeepingWiring{})
