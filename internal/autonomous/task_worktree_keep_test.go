@@ -15,15 +15,14 @@ import (
 )
 
 type keepFixture struct {
-	m         *Manager
-	audit     *recordedAudit
-	repo      string
-	wtDir     string
-	prd       *PRD
-	task      *Task
-	path      string // the task worktree
-	branch    string // the task branch
-	cleanedUp bool
+	m      *Manager
+	audit  *recordedAudit
+	repo   string
+	wtDir  string
+	prd    *PRD
+	task   *Task
+	path   string // the task worktree
+	branch string // the task branch
 }
 
 // newKeepFixture builds a throwaway repository (default branch main), an
@@ -381,6 +380,8 @@ func TestCancelRemovesWorktreeWithOnlyDaemonFiles(t *testing.T) {
 	for _, rel := range []string{".mcp.json", "worker-mcp.json", "worker-starting-context.md", "CHECKPOINT.md", ".datawatch/skills/a/SKILL.md"} {
 		keepWrite(t, f.path, rel, "daemon\n")
 	}
+	// The daemon's own lines added to the tracked ignore file.
+	keepWrite(t, f.path, ".gitignore", ".datawatch/\n# datawatch-managed\n.mcp.json\n")
 	f.cancel(t)
 	f.mustNotHaveWorktree(t)
 }
@@ -448,5 +449,54 @@ func TestKeptTaskBranchIsDeletedOnceItLands(t *testing.T) {
 	}
 	if got := f.backupSHAs(t); got != tip {
 		t.Fatalf("backup refs = %q, want %s", got, tip)
+	}
+}
+
+// No backup, no delete.
+func TestTaskBranchKeptWhenBackupCannotBeWritten(t *testing.T) {
+	f := newKeepFixture(t, config.CleanupModeOn)
+	f.commit(t, "feature.txt")
+	f.land(t)
+	// A ref at the backup folder's own name blocks every ref below it.
+	block := strings.TrimSuffix(reapBackupRefPrefix+sanitizeAttemptTaskKey(f.branch), "/")
+	gitRun(t, f.repo, "update-ref", block, "HEAD")
+	f.cancel(t)
+	if !f.hasBranch(t) {
+		t.Fatal("branch deleted without a backup ref")
+	}
+	if _, _, reasons := f.cleanupSummary(t); reasons["backup_failed"] != 1 {
+		t.Fatalf("reasons = %v", reasons)
+	}
+}
+
+func TestCancelKeepsWorktreeGitRefusesToRemove(t *testing.T) {
+	f := newKeepFixture(t, config.CleanupModeOn)
+	gitRun(t, f.repo, "worktree", "lock", f.path)
+	f.cancel(t)
+	f.mustHaveWorktree(t)
+	if !f.hasBranch(t) {
+		t.Fatal("branch of a kept worktree deleted")
+	}
+	if _, _, reasons := f.cleanupSummary(t); reasons["remove_failed"] != 1 {
+		t.Fatalf("reasons = %v", reasons)
+	}
+}
+
+// A folder that is gone is not a kept worktree, and its branch still follows
+// the branch rule.
+func TestCancelWithVanishedTaskFolderKeepsUnmergedBranch(t *testing.T) {
+	f := newKeepFixture(t, config.CleanupModeOn)
+	f.commit(t, "feature.txt")
+	if err := os.RemoveAll(f.path); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, f.repo, "worktree", "prune")
+	f.cancel(t)
+	if !f.hasBranch(t) {
+		t.Fatal("unmerged branch deleted")
+	}
+	kept, branches, reasons := f.cleanupSummary(t)
+	if kept != 0 || branches != 1 || reasons["unmerged_branch"] != 1 {
+		t.Fatalf("kept=%d branches=%d reasons=%v", kept, branches, reasons)
 	}
 }

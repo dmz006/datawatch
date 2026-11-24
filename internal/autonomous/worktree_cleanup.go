@@ -894,11 +894,13 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 	repo := m.cfg.WorktreeBaseRepo
 	mode := m.cfg.Automation.EffectiveCleanupMode()
 	m.mu.Unlock()
-	if mode == config.CleanupModeOff {
-		return // off does nothing
-	}
-	if repo == "" {
-		log.Printf("[autonomous] worktree-cleanup: cannot release %s: no base repository configured", prd.Git.Branch)
+	if mode == config.CleanupModeOff || repo == "" {
+		// Nothing is removed and git is not called; the Automaton record
+		// still says which task worktrees are kept and why.
+		m.cleanupTaskWorktrees(context.Background(), prd, taskCleanupRun{mode: mode})
+		if mode != config.CleanupModeOff {
+			log.Printf("[autonomous] worktree-cleanup: cannot release %s: no base repository configured", prd.Git.Branch)
+		}
 		return
 	}
 
@@ -916,9 +918,10 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), worktreeReleaseGitTimeout)
 	defer cancel()
-	// Task worktrees go first: the PRD branch cannot be released while
-	// they still hold it. A worktree with a live session stays.
-	m.CleanupTaskWorktrees(ctx, prd)
+	// Task worktrees go first. A worktree with a live session, uncommitted
+	// work or anything that cannot be checked stays, and so does a branch with
+	// commits that are not on the default branch (task_worktree_keep.go).
+	m.cleanupTaskWorktrees(ctx, prd, taskCleanupRun{mode: mode})
 	git := NewMergeGitRunner()
 	probe := &managerWorktreeProbe{m: m, repo: repo, git: git, ctx: ctx}
 

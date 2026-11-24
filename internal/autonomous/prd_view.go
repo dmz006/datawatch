@@ -15,8 +15,11 @@ type WriteView struct {
 	ChangedStoryStatus StoryStatus `json:"changed_story_status,omitempty"`
 	KilledSessions     int         `json:"killed_sessions,omitempty"`
 	KilledLiveSessions int         `json:"killed_live_sessions,omitempty"`
-	Message            string      `json:"message"`
-	Override           any         `json:"override,omitempty"`
+	// TaskWorktreeCleanup says how many task worktrees and branches closing
+	// the Automaton kept and why, without the per-task list.
+	TaskWorktreeCleanup *TaskWorktreeCleanup `json:"task_worktree_cleanup,omitempty"`
+	Message             string               `json:"message"`
+	Override            any                  `json:"override,omitempty"`
 	// Planning — the planning-requeue outcome for PRD-level set_llm calls
 	// that touched decomposition_profile / decomposition_model (nil on
 	// every other write; zero-valued so omitempty on a nil *PlanningRequeueResult
@@ -37,6 +40,11 @@ func BuildWriteView(prd *PRD, taskID, storyID, message string) WriteView {
 	view.ID = prd.ID
 	view.Status = prd.Status
 	view.Rev = prd.Rev
+	if c := prd.TaskWorktreeCleanup; c != nil {
+		counts := *c
+		counts.Kept = nil
+		view.TaskWorktreeCleanup = &counts
+	}
 
 	for i := range prd.Story {
 		story := &prd.Story[i]
