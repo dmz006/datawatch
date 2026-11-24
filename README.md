@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.184.0 (2026-11-23).** The control batch: an operator pause (global or per project), a daemon-owned attempt cap with backoff, and burn guard pace enforcement. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.185.0 (2026-11-24).** Capacity admission classes, shipped work never runs, schedule re-arm, daemon task delivery and follow-ups. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

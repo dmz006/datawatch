@@ -13,6 +13,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
 - **Lane fill no longer mis-gates proposal-writing and defect Automata.** The lane fill proposal gate now takes an Automaton's proposal to be the `docs/plans/<name>.md` path named on an explicit proposal field or line in its title or spec — a path that is merely mentioned elsewhere names no proposal, and the plan folder's README is never one. Defect, research, operational and personal Automata are exempt from the gate, as is any Automaton whose title or spec states that its own job is to write the proposal: such an Automaton is never gated on the `Confirmed: yes` line of the proposal it is producing. In particular, an authoring Automaton that states its job in its title alone is now exempt too, and an Automaton that names its proposal in its title alone is no longer refused as `proposal_missing`. No new keys, endpoints or settings; the gate and its reason codes are unchanged. Docs: the lane fill how-to, the lane fill operations notes, the Eligibility reason definition and the lane fill block of the config reference.
 
+## v9.185.0 — Capacity admission, shipped-work refusal, schedule re-arm, task delivery and follow-ups
+
+### Added
+
+- **Capacity admission.** Every session start is admitted by a class the daemon decides (worker, supervisor buffer, operator overage), with a removable supervisor credential for REST supervisor starts, an operator allowance above the host session cap, and restarted workers keeping their class and queueing at the head. Each host has its own local caps; the shared Claude account counts across peers only by a confirmed match or opt-in. Node engine pools are soft for operator starts unless the node sets `hard_limit` (a new per-node setting on REST, MCP, CLI, chat and the web node forms). Status and settings are on every surface.
+- **Closed and shipped work never runs.** An Automaton task whose work already shipped is refused, with a reason code, a setting and an audited force on run (REST, MCP, CLI, chat). An Automation now skips a member whose own record already shipped and goes on, recording it as completed with outcome `already_shipped`.
+- **Schedule re-arm.** A scheduled spawn refused at start is re-armed under a policy. Schedule rows show next fire, last result and re-arm state on every list surface, with a Scheduled Spawns settings card. A one-time schedule refused for capacity waits up to `schedule.one_time_max_wait_hours` (default 12), then fails.
+- **Safeguard alert.** The operator is alerted when a safeguard is lowered by a script or CLI caller; the web app marks its own calls, and a force reset takes a reason.
+- **Pause window picks a server**, and the pause is described as applying to automation work. The lane-fill eligibility reasons now include `operator_pause` (eleven reasons).
+
+### Changed
+
+- **Task delivery starts from the daemon** and is typed for interactive claude sessions; the task is delivered when the screen shows a ready input box whatever the state name, and a launch that ends without the task reaching the prompt says why.
+- **The operator's own retry starts at once**; back-off applies to automatic and session retries.
+- **Every task's attempt count is seeded from its history**, and unfinished tasks over the cap are held with one question per Automaton.
+
+### Fixed
+
+- The header pause badge no longer shows a raw locale key before the locale bundle loads; a page-wide raw-key scan guards the modules it found.
+- Shipped work is swept after the lane-fill snapshot; cancelled tasks take no lease or placement; adoption over the limit is reported.
+- Every session start path takes a capacity lease or is named in an audited list (one open gap is logged: restart of an ended session in place takes no lease).
+
+**Monitoring (B7):** see the per-feature how-tos and definitions added with each item; capacity, schedule and shipped-refusal state is on the existing status surfaces and in the audit log.
+
 ## v9.184.0 — Operator pause, attempt cap and burn guard enforcement
 
 ### Added
