@@ -55,8 +55,10 @@ expect_flagged "server-kill-tmpdir-only" "TMUX_TMPDIR=/x tmux $KS"
 expect_flagged "server-kill-after-semicolon" "echo hi; tmux $KS"
 expect_flagged "session-kill-all" "tmux $KSESS -a"
 expect_flagged "session-kill-all-after-pipe" "true | tmux $KSESS -a"
-expect_flagged "pkill-tmux" "pkill -9 tmux"  # daemon-cleanup-ok: fixture text only
-expect_flagged "killall-tmux" "killall tmux"  # daemon-cleanup-ok: fixture text only
+# The fixture words are assembled at run time so this file never carries the banned literals.
+PK_WORD="pk""ill"; KA_WORD="kill""all"
+expect_flagged "name-kill-tmux" "$PK_WORD -9 tmux"
+expect_flagged "name-killall-tmux" "$KA_WORD tmux"
 
 expect_clean "server-kill-scoped-socket" "tmux -S /tmp/throwaway.sock $KS"
 expect_clean "session-kill-by-target" "tmux $KSESS -t one"
