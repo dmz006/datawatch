@@ -1292,7 +1292,7 @@ func (s *Server) webDo(req *http.Request) (*http.Response, error) {
 	if s.token != "" {
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
-	return http.DefaultClient.Do(req)
+	return httpProxy.Do(req) // loopback client that accepts the daemon's self-signed cert
 }
 
 // SetFedPeerStore wires the federation peer registry for MCP SSE auth (BL317).
