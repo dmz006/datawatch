@@ -2343,6 +2343,8 @@
   "settings_api_gzip_min_bytes": "API compression threshold (bytes)",
   "settings_git_push_on_complete": "Push finished work to the remote",
   "settings_git_push_remote": "Push remote name",
+  "settings_git_push_before_teardown": "Push a killed session's own commits",
+  "settings_git_push_before_teardown_help": "When a session is killed, push the commits it made itself that are on no remote yet. Off by default. Commits that another local branch also holds are never pushed.",
   "settings_git_secret_scan_mode": "Pre-push secret scan mode",
   "settings_git_secret_scan_mode_help": "shadow reports findings without blocking the push; enforce blocks the push when a secret is found; off disables the scan.",
   "settings_git_secret_scan_detectors": "Secret scan detectors (comma-separated; empty = all built-in)",

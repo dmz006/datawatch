@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -16,20 +17,41 @@ import (
 // set once the Automata manager exists; nil means no task is recorded.
 var sessionEndReapRecorder atomic.Pointer[func(sessionID string, count int, commands []string) bool]
 
-// sessionEndReapEvidence builds the proof that a process belongs to sess: its
-// worktree and scratch folders and the session id in the process environment.
+// sessionEndReapEvidence builds the proof that a process belongs to sess: the
+// session id in the process environment (every process the daemon starts for a
+// session carries it) and the folders made for this one session alone. A
+// shared project folder is never evidence: other sessions and the operator's
+// own scripts live there too.
 func sessionEndReapEvidence(sess *session.Session) autonomouspkg.OrphanEvidence {
-	ev := autonomouspkg.OrphanEvidence{SessionID: sess.FullID, AdoptedBy: []int{os.Getppid()}}
-	if sess.ProjectDir != "" {
-		ev.Dirs = append(ev.Dirs, sess.ProjectDir)
+	return autonomouspkg.OrphanEvidence{
+		SessionID: sess.FullID,
+		AdoptedBy: []int{os.Getppid()},
+		Dirs:      sessionOwnedDirs(sess),
 	}
-	return ev
+}
+
+// sessionOwnedDirs returns the folders that exist for sess alone: its
+// tracking folder, and its project folder only when that is a linked git
+// worktree (a .git file, made per session or task). A plain folder or a
+// repository checkout is shared, so it is not listed.
+func sessionOwnedDirs(sess *session.Session) []string {
+	var dirs []string
+	if sess.ProjectDir != "" {
+		if fi, err := os.Lstat(filepath.Join(sess.ProjectDir, ".git")); err == nil && fi.Mode().IsRegular() {
+			dirs = append(dirs, sess.ProjectDir)
+		}
+	}
+	if sess.TrackingDir != "" {
+		dirs = append(dirs, sess.TrackingDir)
+	}
+	return dirs
 }
 
 // reapSessionEnd ends every process proven to belong to sess, records one
 // decision on its task (count and short commands) and writes one audit entry.
-// It does nothing when the session carries no evidence. Nothing is looked up
-// by name.
+// Only the session's own processes are ended (see sessionEndReapEvidence); a
+// process that merely runs or sits in the shared project folder survives.
+// Nothing is looked up by name.
 func reapSessionEnd(sess *session.Session, reaper *autonomouspkg.OrphanReaper,
 	record func(sessionID string, count int, commands []string) bool,
 	audit func(auditpkg.Entry)) autonomouspkg.OrphanReapResult {
@@ -37,9 +59,6 @@ func reapSessionEnd(sess *session.Session, reaper *autonomouspkg.OrphanReaper,
 		return autonomouspkg.OrphanReapResult{}
 	}
 	ev := sessionEndReapEvidence(sess)
-	if len(ev.Dirs) == 0 {
-		return autonomouspkg.OrphanReapResult{}
-	}
 	res := reaper.EndOrphans(ev)
 	if res.Count == 0 && len(res.Survivors) == 0 {
 		return res

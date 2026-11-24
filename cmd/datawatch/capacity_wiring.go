@@ -1359,6 +1359,14 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	}
 
 	verifiers := newVerifierRegistry()
+	// A killed or finished session frees its lease when it is ended, so the next
+	// start does not wait for the periodic reap below to notice it.
+	mgr.SetOnSessionLeaseRelease(func(sess *session.Session) {
+		for _, h := range releaseLeasesOfEndedSession(led, verifiers, sess) {
+			fmt.Printf("[capacity] released lease holder=%s session=%s at session end\n", h, sess.ID)
+			metrics.CapacityLeasesReaped.Inc()
+		}
+	})
 	verifierSessionStarted = func(name, sessionID string) {
 		if taskID, ok := verifierTaskFromSessionName(name); ok {
 			holder := autonomous.VerifyHolder(taskID)

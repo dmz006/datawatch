@@ -503,13 +503,14 @@ type Session struct {
 	// the exit status per the store's design (0 = complete, non-zero = failed).
 	FailureExitCode int `json:"failure_exit_code,omitempty"`
 
-	// EndedAt is the time a record was finalised because its process was
-	// gone. Nil for every session that has no such end time, so the field
-	// stays out of the JSON of those records.
+	// EndedAt is the time the session ended. Written on every end path (kill,
+	// natural complete or fail, gone-session finalise); the first end wins. Nil
+	// while the session runs, so the field stays out of its JSON.
 	EndedAt *time.Time `json:"ended_at,omitempty"`
 
-	// EndNote is the short note kept with EndedAt when a record is finalised
-	// because its process was gone. Empty when there is no note.
+	// EndNote is the short note kept with EndedAt: who ended the session and
+	// why for a kill, how it exited for a natural end, or "process gone,
+	// finalised" for a gone record. Empty while the session runs.
 	EndNote string `json:"end_note,omitempty"`
 }
 

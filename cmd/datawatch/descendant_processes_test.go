@@ -304,7 +304,13 @@ func TestSessionEndReapEndsFixtureAndRecords(t *testing.T) {
 	if err := os.Unsetenv("TMUX"); err != nil {
 		t.Fatal(err)
 	}
-	wt, pid := startReapFixture(t)
+	// The fixture is the session's own process: it carries the session id in
+	// its environment, as every process the daemon starts for a session does.
+	// (Before the scope fix the reap also ended any process running inside the
+	// shared project folder; that is now covered, as a survivor, by
+	// TestSessionEndReap_OutsideProcessWithProjectDirInArgvSurvives.)
+	wt := t.TempDir()
+	pid := startScopeFixture(t, wt, wt+"/fixture-sleep.sh", "DATAWATCH_SESSION_ID=host-ab12cd34")
 	sess := &session.Session{FullID: "host-ab12cd34", ProjectDir: wt}
 	var gotID string
 	var gotCount int

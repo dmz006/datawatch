@@ -27230,6 +27230,7 @@ const GENERAL_CONFIG_FIELDS = [
     // ws_session_list_default), so the raw values stay as the visible labels.
     { key: 'git.push_on_complete', label: 'Push finished work to the remote', labelKey: 'settings_git_push_on_complete', type: 'select', options: ['never', 'branch', 'default_branch'] },
     { key: 'git.push_remote', label: 'Push remote name', labelKey: 'settings_git_push_remote', type: 'text', placeholder: 'origin' },
+    { key: 'git.push_before_teardown', label: 'Push a killed session\'s own commits', labelKey: 'settings_git_push_before_teardown', helpKey: 'settings_git_push_before_teardown_help', type: 'toggle' },
     // Pre-push secret scan (v9.0.0) — git.secret_scan. Effective values are
     // reported by the daemon (unset mode shows shadow, unset detectors show
     // all built-ins), so saving the displayed values is always a no-op

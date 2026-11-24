@@ -2300,6 +2300,8 @@
   "settings_api_gzip_min_bytes": "Umbral de compresión de la API (bytes)",
   "settings_git_push_on_complete": "Empujar el trabajo finalizado al remoto",
   "settings_git_push_remote": "Nombre del remoto de push",
+  "settings_git_push_before_teardown": "Enviar los commits propios de una sesión terminada",
+  "settings_git_push_before_teardown_help": "Cuando se termina una sesión, se envían los commits que hizo ella misma y que aún no están en ningún remoto. Desactivado por defecto. Nunca se envían commits que otra rama local también contiene.",
   "settings_git_secret_scan_mode": "Modo de detección de secretos antes de push",
   "settings_git_secret_scan_mode_help": "shadow informa sin bloquear el push; enforce bloquea el push si se encuentra un secreto; off desactiva la detección.",
   "settings_git_secret_scan_detectors": "Detectores de secretos (separados por comas; vacío = integrados)",

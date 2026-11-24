@@ -2352,6 +2352,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetGitPushSettings(func() (policy, remote string) {
 		return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
 	})
+	// git.push_before_teardown: the kill-time save push is opt-in (default
+	// off), read live on every kill like the push policy above.
+	mgr.SetPushBeforeTeardown(func() bool { return cfg.Git.PushBeforeTeardown })
 	// Pre-push secret scan (git.secret_scan): the live policy is read on
 	// every push attempt by both one-shot paths (push-on-complete and
 	// push-before-teardown). The daemon default is shadow (see

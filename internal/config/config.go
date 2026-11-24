@@ -427,6 +427,12 @@ type GitConfig struct {
 	// PushRemote is the remote the finished branch is pushed to
 	// (default "origin").
 	PushRemote string `yaml:"push_remote" json:"push_remote"`
+	// PushBeforeTeardown turns on the last-resort save push: when a session
+	// is killed with commits that are on no remote ref, those commits are
+	// pushed first, but only when they are the session's own (never commits a
+	// task branch inherited from a local main that is ahead of the remote).
+	// Default false: nothing leaves the host at a kill unless asked. Read live.
+	PushBeforeTeardown bool `yaml:"push_before_teardown" json:"push_before_teardown"`
 	// SecretScan is the pre-push secret-scan block. See
 	// GitSecretScanConfig: the defaults (an unset or empty mode reads
 	// shadow — the first-release default, matching the shadow-first

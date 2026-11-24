@@ -35,6 +35,11 @@ func (m *Manager) SetGitPushSettings(fn func() (policy, remote string)) {
 	m.gitPushSettings = fn
 }
 
+// SetPushBeforeTeardown wires the live git.push_before_teardown reader.
+func (m *Manager) SetPushBeforeTeardown(fn func() bool) {
+	m.pushBeforeTeardown = fn
+}
+
 // SetPushAlertFn wires the operator-alert sink for one-shot push
 // failures. Called as fn("warn", title, body) — the daemon maps the level
 // string to the alert store's levels, like the autonomous manager's
@@ -210,7 +215,7 @@ type PushReport struct {
 	Reason    string // why nothing was pushed / why the push failed
 }
 
-// pushUnpushedBeforeTeardown saves a session's locally committed-but-
+// pushUnpushedBeforeTeardown saves a session's own locally committed-but-
 // unpushed work to its remote before the session is torn down (killed,
 // deleted, or reaped) — the remote is the durable copy, and a session's
 // ProjectDir clone may be reaped right after.
@@ -228,6 +233,11 @@ type PushReport struct {
 //     helper's bounded timeout;
 //   - it never force-pushes: the underlying push is plain
 //     fast-forward-only, same as the completion path;
+//   - it is opt-in: when the wired git.push_before_teardown reader says off
+//     (the daemon default) nothing is pushed or recorded;
+//   - it pushes only the session's own commits: when another local branch
+//     also holds some of the unpushed commits (a task branch cut from an
+//     ahead local main), the push is refused whole and the warning says so;
 //   - it never pushes the remote's DEFAULT branch at teardown: at kill
 //     time the final validation gates are unknown, so when the current
 //     branch IS the remote default branch and the policy is
@@ -251,6 +261,10 @@ func (m *Manager) pushUnpushedBeforeTeardown(sess *Session) PushReport {
 	if m.gitPushSettings == nil {
 		rep.Reason = "push-on-complete not wired"
 		return rep // unit test / CLI without the daemon's settings reader
+	}
+	if m.pushBeforeTeardown != nil && !m.pushBeforeTeardown() {
+		rep.Reason = "teardown push is off (git.push_before_teardown)"
+		return rep // opt-in: nothing leaves the host at a kill unless asked
 	}
 	policy, remote := m.gitPushSettings()
 	p, ok := git.ParsePolicy(policy)
@@ -280,6 +294,21 @@ func (m *Manager) pushUnpushedBeforeTeardown(sess *Session) PushReport {
 		rep.Reason = "detached HEAD: no branch to push"
 		m.recordTeardownPushFailure(sess, rep.Reason)
 		m.saveTeardownPushState(sess)
+		return rep
+	}
+
+	// Only the session's own commits may leave the host at a kill. A branch
+	// cut from a local main that is ahead of the remote also holds main's
+	// commits, and a push would carry them along, so refuse and say so.
+	if foreign, ferr := git.ForeignUnpushedCommits(ctx, dir, remote); ferr != nil || foreign > 0 {
+		if ferr != nil {
+			rep.Reason = "could not tell whether the commits are this session's own: " + ferr.Error()
+		} else {
+			rep.Reason = fmt.Sprintf("%d of the %d unpushed commit(s) on %s are not this session's own (another local branch holds them); push them yourself", foreign, count, branch)
+		}
+		m.recordTeardownPushRefused(sess, rep.Reason)
+		m.saveTeardownPushState(sess)
+		log.Printf("session %s: teardown push refused (%s), commits stay local", sess.ID, rep.Reason)
 		return rep
 	}
 
