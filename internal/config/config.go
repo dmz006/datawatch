@@ -1839,6 +1839,18 @@ type AuditConfig struct {
 	// forwarding to a SIEM (Splunk/QRadar/ArcSight/Sentinel). Opt-in —
 	// most operators don't run a SIEM and don't need the second file.
 	CEFMirrorEnabled bool `yaml:"cef_mirror_enabled,omitempty"`
+	// SafeguardAlert, default true, raises one alert each time a safeguard is
+	// lowered by a caller that is neither the web app nor a session credential:
+	// an operator pause resume, an attempt-count force reset or a shipped-work
+	// force run. The alert names the caller (address, user agent, claimed actor),
+	// the action, the target and the reason. Every such action is audited
+	// whether or not this is on; off only stops the alert.
+	SafeguardAlert *bool `yaml:"safeguard_alert,omitempty"`
+}
+
+// SafeguardAlertOrDefault returns the effective setting, true when unset.
+func (a AuditConfig) SafeguardAlertOrDefault() bool {
+	return a.SafeguardAlert == nil || *a.SafeguardAlert
 }
 
 // AccessLogEnabledOrDefault returns the effective access-log setting,
