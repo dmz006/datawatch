@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.186.0 — Scanner path hardening and the configuration audit tool
+
+### Fixed
+
+- Eight open code-scanning findings are closed in the code. Git runs in the file-drift check use fixed commands from an allow-list of subcommands; derived paths in the drift, uncommitted-work and cleanup checks are opened through a rooted file handle, so a link that points outside a worktree is refused; the quick-command panel in the web app is built with DOM calls instead of an interpolated select; and two web tests no longer use the flagged patterns. Behaviour is otherwise unchanged. Docs for the file-drift guardrail, uncommitted work, worktree cleanup and the local CodeQL scan describe the stricter rules.
+
+### Added
+
+- `config-audit`: a small stdlib-only program (`make config-audit`) that lists every configuration key and checks that each one is in the reference, the web Settings page, the config read and the config write, and that the chat, command-line and MCP forwarders still reach the config route. It takes an exemptions file (`scripts/config-audit-exemptions.txt`), prints a gap table, and runs inside a 60 second, 2 GB limit (it uses about 45 MB). The first run found 515 of 1,061 keys with at least one gap; nothing was fixed in this release.
+
 ## v9.185.1 — Held-task accept and judging a finished worker by its output
 
 
