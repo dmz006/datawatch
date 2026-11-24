@@ -548,3 +548,15 @@ hold that you chose to discard. The status read never runs git and never
 changes anything. In `off` it does not look at the worktree at all. The only
 file it ever deletes on its own is the exact `DATAWATCH_COMPLETE` marker at the
 root of a finished Automaton's worktree.
+
+### Path handling after the code-scanning fix
+
+The check reads and looks up each file through a handle opened on the
+Automaton's worktree, so a name is always resolved inside that folder and can
+never reach outside it, even through a symbolic link. Behavior you see does not
+change: files inside the worktree are listed and held exactly as before, and a
+path that tries to leave the worktree is treated as not part of the task.
+
+**Still needs your review:** if a file you expect in a hold never shows up and
+it is a symbolic link pointing outside the worktree, that is the new boundary
+at work, not a missing file. Move the real file into the worktree.

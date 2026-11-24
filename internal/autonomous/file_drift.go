@@ -27,10 +27,47 @@ type driftGitRunner func(ctx context.Context, dir string, args ...string) (strin
 // safeRevisionArg, so nothing here can turn an argument into an option
 // or a second command.
 var driftGitExec = func(ctx context.Context, argv []string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", argv...)
+	// argv layout (built only by defaultDriftGitRunner): a fixed hardening
+	// prefix of constants, "-C", the validated dir, the subcommand, then
+	// the subcommand's arguments.
+	const prefixLen = 7
+	if len(argv) <= prefixLen || !validDriftDir(argv[prefixLen-1]) {
+		return "", fmt.Errorf("invalid git invocation")
+	}
+	sub := argv[prefixLen]
+	if !driftGitSubcommands[sub] {
+		return "", fmt.Errorf("git subcommand %q not allowed", sub)
+	}
+	rest := argv[prefixLen+1:]
+	for _, a := range rest {
+		if strings.ContainsRune(a, 0) {
+			return "", fmt.Errorf("invalid git argument")
+		}
+	}
+	// The command itself is created from string constants only; the
+	// working directory is set through cmd.Dir, and the already-validated
+	// subcommand and arguments are appended afterwards.
+	cmd := exec.CommandContext(ctx, "git",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.hooksPath=",
+		"--no-optional-locks")
+	cmd.Dir = filepath.Clean(argv[prefixLen-1])
+	cmd.Args = append(cmd.Args, sub)
+	cmd.Args = append(cmd.Args, rest...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.Output()
 	return string(out), err
+}
+
+// driftGitSubcommands is the fixed enumeration of git subcommands this
+// package runs; most are read-only; add/rm/checkout/commit and friends are the calls the
+// daemon-section and protected-path code issue through the same runner.
+var driftGitSubcommands = map[string]bool{
+	"diff": true, "log": true, "show": true, "rev-parse": true,
+	"merge-base": true, "symbolic-ref": true, "ls-files": true,
+	"ls-tree": true, "status": true, "add": true, "rm": true,
+	"checkout": true, "commit": true,
+	"branch": true, "merge": true, "merge-file": true, "worktree": true,
 }
 
 // validDriftDir reports whether dir is safe to pass to git -C, checked
@@ -46,7 +83,18 @@ func validDriftDir(dir string) bool {
 	if !filepath.IsAbs(cleaned) {
 		return false
 	}
-	st, err := os.Stat(cleaned)
+	// Resolve against a fixed root: the parent directory is opened as a
+	// root and only the final element is statted through it.
+	base := filepath.Base(cleaned)
+	if !filepath.IsLocal(base) {
+		return false
+	}
+	parent, err := os.OpenRoot(filepath.Dir(cleaned))
+	if err != nil {
+		return false
+	}
+	defer func() { _ = parent.Close() }()
+	st, err := parent.Stat(base)
 	return err == nil && st.IsDir()
 }
 
@@ -73,8 +121,7 @@ func defaultDriftGitRunner(ctx context.Context, dir string, args ...string) (str
 	if !filepath.IsAbs(cleanDir) {
 		return "", fmt.Errorf("invalid git directory %q: not absolute", dir)
 	}
-	st, statErr := os.Stat(cleanDir)
-	if statErr != nil || !st.IsDir() {
+	if !validDriftDir(cleanDir) {
 		return "", fmt.Errorf("invalid git directory %q: not an existing directory", dir)
 	}
 	if len(args) == 0 {

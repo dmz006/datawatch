@@ -589,7 +589,8 @@ test('no project chips are drawn while no listed item has a project', () => {
 // ── settings rows ────────────────────────────────────────────────────────────
 
 function settingsField(sb, key) {
-  const json = vm.runInContext(`JSON.stringify(GENERAL_CONFIG_FIELDS.map(s => s.fields || []).reduce((a, b) => a.concat(b), []).find(f => f.key === ${JSON.stringify(key)}) || null)`, sb);
+  sb.__settingsFieldKey = key;
+  const json = vm.runInContext('JSON.stringify(GENERAL_CONFIG_FIELDS.map(s => s.fields || []).reduce((a, b) => a.concat(b), []).find(f => f.key === __settingsFieldKey) || null)', sb);
   return JSON.parse(json);
 }
 
