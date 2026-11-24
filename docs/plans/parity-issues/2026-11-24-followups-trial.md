@@ -30,3 +30,17 @@ Date: 2026-11-24. One draft for the four daemon changes that touch the mobile cl
   decisions; the daemon now documents eleven reasons. `work_closed` is never a lane fill chip. If the app maps
   reason codes to labels, add `operator_pause` ("Paused by the operator"); the PWA has no label for it yet
   (`lane_fill_eligibility_operator_pause` is missing from the locale bundles, noted in the report).
+
+## 4. Pause: automation work and the server picker
+
+- **Wording.** The pause control is for automation work. PWA strings changed in all five locales:
+  `pause_modal_title`, `pause_badge_title_paused`, `pause_badge_title_idle`, `pause_hint`. The header button title
+  and aria-label read "Pause automation work".
+- **Server picker.** `POST /api/pause` and `POST /api/pause/resume` already take `peers` and `all_peers`. The PWA
+  now offers a picker when the header server selector is on All: this server only (default, no extra fields), one
+  server (the same request sent to `/api/proxy/{name}/api/pause[/resume]`), or all servers (`all_peers: true`).
+  `GET /api/pause?peers=1` returns each peer's own state under `peers`; the window lists them.
+- **Strings:** `pause_target_label`, `pause_target_local`, `pause_target_all`, `pause_peer_paused`,
+  `pause_peer_clear` in `internal/server/web/locales/*.json`.
+- No new endpoint, setting or tool. A paused daemon stops placing work on federated hosts and on local and cloud
+  queues; it does not pause the federated host itself.

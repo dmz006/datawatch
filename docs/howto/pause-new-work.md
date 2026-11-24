@@ -11,9 +11,10 @@ exec_steps:
 
 # Pause new work
 
-A **pause** lets you stop new work without stopping anything else. While
-something is paused, datawatch admits no new Automaton start, no restart, no
-new worker task and no lane fill for the paused scope. Tasks that are already
+A **pause** lets you stop new automation work without stopping anything else.
+It is for the work datawatch runs itself: while something is paused, datawatch
+admits no new Automaton start, no restart, no new worker task and no lane fill
+for the paused scope. Tasks that are already
 running finish. Schedules, the daemon, the Automata manager, tabs, history,
 dashboards and reports stay up.
 
@@ -49,10 +50,34 @@ and written to the audit log with who and when.
 | REST | `POST /api/pause` `{scope, project?, reason}` | `POST /api/pause/resume` `{scope, project?}` or `{all: true}` | `GET /api/pause` |
 | MCP | `pause_set` | `pause_resume` | `pause_status` |
 | Chat | `pause <reason> [project=<p>]` | `resume [all] [project=<p>]` | `pause status` |
-| PWA | Header pause button, **Pause** | The same dialog, **Resume** or **Resume all** | The button turns amber and shows *Paused* |
+| PWA | Header pause button (**Pause automation work**), **Pause** | The same dialog, **Resume** or **Resume all** | The button turns amber and shows *Paused* |
 
 **Pause all** is the global pause. **Resume all** (`--all`, `all=true`, `resume all`)
 clears the global pause and every project pause in one action.
+
+## Which server a pause goes to
+
+A pause belongs to the daemon it is sent to. It stops that daemon from placing new
+automation work wherever the work would run: on its own host, in a local or cloud
+queue, or on a federated host it would send work to. It does **not** pause the
+federated host itself. That host may be doing its own work, and its own pause is set
+by connecting to it.
+
+By default a pause is for this daemon only, and there is no setting that spreads a
+pause by default. In the web app, when the header server selector is on **All**, the
+pause window shows a **Server** picker with *This server only* (the default), each
+server (the same enabled list the selector shows) and *All servers*:
+
+- *This server only* sends the request here, as before.
+- A single server is reached through the proxy, as if you had connected to it, so
+  only that server is paused or resumed.
+- *All servers* pauses or resumes here and sends the same request to every federation
+  peer (`all_peers`); the window then lists what each server answered, with an error
+  for one that could not be reached.
+
+With the selector on this server or on one remote server, the pause goes to the
+server you are looking at, as before, and the picker is not shown. The other surfaces
+choose peers with `--peers`, `all_peers` and `peers`, see Federation below.
 
 ## Only the operator can resume
 
