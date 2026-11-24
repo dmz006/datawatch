@@ -296,6 +296,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("task_no_progress_seconds", mcpsdk.Description("Seconds one task attempt may go without progress (0 = off, the default; recommended 1800)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithString("closed_outcome_archive", mcpsdk.Enum("on", "shadow", "off"), mcpsdk.Description("Closed outcome archive guard (autonomous.closed_outcome_archive): on (default) makes the archive step refuse a finished Automaton that has no outcome (delivered, superseded, dropped or held) and none the daemon can prove from its record, or that carries a hold that is not met; shadow only logs what it would refuse; off disables it")),
+		mcpsdk.WithString("closed_outcome_check", mcpsdk.Enum("on", "shadow", "off"), mcpsdk.Description("Closed work standing check (autonomous.closed_outcome_check): shadow (default) records its findings for the autonomous_outcome_check read, on also raises one alert per finding, off does nothing")),
 		mcpsdk.WithString("shipped_refusal", mcpsdk.Description("Shipped-work rule: on (default) refuses to start, approve or decompose an Automaton whose own record says its work already shipped (release and merge commit both set) or that is archived, cancelled, completed or rejected, and marks shipped queued work delivered; shadow only logs what it would refuse; off disables it")),
 		mcpsdk.WithNumber("archive_grace_minutes", mcpsdk.Description("Whole minutes a cancelled Automaton is kept before the supervisor loop archives it (default 60; 0 archives at once; negative or fractional values are rejected)")),
 		mcpsdk.WithBoolean("archive_keep_unmerged", mcpsdk.Description("Keep a finished (completed, rejected or cancelled) Automaton whose work branch still holds commits not on the base branch from being archived (default true; false lets it archive; the branch itself is never deleted)")),
@@ -937,6 +939,11 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetString("shipped_refusal", ""); v != "" {
 		body["shipped_refusal"] = v
+	}
+	for _, k := range []string{"closed_outcome_archive", "closed_outcome_check"} {
+		if v := req.GetString(k, ""); v != "" {
+			body[k] = v
+		}
 	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {
 		body["capacity_wait_timeout_seconds"] = int(v)

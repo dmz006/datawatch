@@ -105,5 +105,8 @@ func (c *Coordinator) HousekeepingPass(ctx context.Context) []RepairRecord {
 	c.mu.Lock()
 	r := c.hkRepairer
 	c.mu.Unlock()
+	// The standing check of closed work runs on the same schedule, at most
+	// once a day (closed_outcome_check.go).
+	c.m.OutcomeCheckIfDue(ctx)
 	return r.Run(ctx)
 }

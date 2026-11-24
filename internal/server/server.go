@@ -529,6 +529,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Shipped-state backfill: POST /api/autonomous/shipped/backfill
 	// [?dry_run=true] — one pass over the base repository's main branch.
 	apiMux.HandleFunc("/api/autonomous/shipped/backfill", api.handleAutonomousShippedBackfill)
+	// Closed work: GET /api/autonomous/outcome-check (the standing check) and
+	// POST (run it now); POST /api/autonomous/deploy/record (deploy record).
+	apiMux.HandleFunc("/api/autonomous/outcome-check", api.handleOutcomeCheck)
+	apiMux.HandleFunc("/api/autonomous/deploy/record", api.handleDeployRecord)
 	// Project link backfill: GET latest report, POST {"apply":bool}.
 	apiMux.HandleFunc("/api/autonomous/project-link-backfill", api.handleAutonomousProjectLinkBackfill)
 	// Shipped-state read: GET /api/autonomous/shipped/counts — the per-state

@@ -122,10 +122,11 @@ func resolveClosedOutcomeMode(v, def string) string {
 	return def
 }
 
-// EffectiveClosedOutcomeArchive returns the archive guard's mode. Empty reads
-// as shadow here; the daemon passes the resolved value (default on).
+// EffectiveClosedOutcomeArchive returns the archive guard's mode; empty reads
+// as on, the default (the same reading as the daemon config). A manager built
+// from DefaultConfig starts in shadow, like the other manager-level fixtures.
 func (c Config) EffectiveClosedOutcomeArchive() string {
-	return resolveClosedOutcomeMode(c.ClosedOutcomeArchive, ClosedOutcomeShadow)
+	return resolveClosedOutcomeMode(c.ClosedOutcomeArchive, ClosedOutcomeOn)
 }
 
 // EffectiveClosedOutcomeCheck returns the standing check's mode; empty reads

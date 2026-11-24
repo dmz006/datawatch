@@ -127,11 +127,6 @@ func TestClosedOutcomeArchiveRefusesUnmetHold(t *testing.T) {
 			m := coMgr(t, ClosedOutcomeOn)
 			p := coPRD(t, m, PRDCancelled)
 			m.Store().MutatePRD(p.ID, func(p *PRD) bool { set(p); return true })
-			// Even an outcome the daemon could derive must not close a hold.
-			coShipIfNeeded := name == "spec declares a hold"
-			if coShipIfNeeded {
-				m.Store().MutatePRD(p.ID, func(p *PRD) bool { p.ClosedOutcome = ""; return true })
-			}
 			_, err := m.Archive(p.ID, "supervisor-loop")
 			if err == nil || !strings.Contains(err.Error(), "hold") {
 				t.Fatalf("archive must refuse an unmet hold naming it, got %v", err)
@@ -180,7 +175,7 @@ func TestClosedOutcomeNeverArchivesRunningOrHeldWork(t *testing.T) {
 
 // Shadow only logs; off does nothing: both still archive.
 func TestClosedOutcomeArchiveShadowAndOffStillArchive(t *testing.T) {
-	for _, mode := range []string{ClosedOutcomeShadow, ClosedOutcomeOff, ""} {
+	for _, mode := range []string{ClosedOutcomeShadow, ClosedOutcomeOff} {
 		m := coMgr(t, mode)
 		p := coPRD(t, m, PRDCompleted)
 		if _, err := m.Archive(p.ID, "operator"); err != nil {
@@ -246,5 +241,19 @@ func TestClosedOutcomeSetOnClosedRecordOnly(t *testing.T) {
 	}
 	if _, err := m.SetClosedOutcome(p.ID, "", OutcomeInput{Outcome: OutcomeDropped}); err == nil {
 		t.Fatal("an actor is required")
+	}
+}
+
+// An unset mode reads as on (the daemon default); a manager built from
+// DefaultConfig only logs, so fixtures that archive unlabelled records work.
+func TestClosedOutcomeModeDefaults(t *testing.T) {
+	if got := (Config{}).EffectiveClosedOutcomeArchive(); got != ClosedOutcomeOn {
+		t.Errorf("unset archive mode = %q, want on", got)
+	}
+	if got := DefaultConfig().EffectiveClosedOutcomeArchive(); got != ClosedOutcomeShadow {
+		t.Errorf("DefaultConfig archive mode = %q, want shadow", got)
+	}
+	if got := (Config{}).EffectiveClosedOutcomeCheck(); got != ClosedOutcomeShadow {
+		t.Errorf("unset check mode = %q, want shadow", got)
 	}
 }

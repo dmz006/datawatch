@@ -3648,6 +3648,21 @@ type AutonomousConfig struct {
 	// delivered. "on" (the default; empty reads as on) enforces it, "shadow"
 	// only logs what it would refuse, "off" disables it.
 	ShippedRefusal string `yaml:"shipped_refusal,omitempty" json:"shipped_refusal,omitempty"`
+	// ClosedOutcomeArchive sets the closed outcome archive guard: the archive
+	// step refuses a finished Automaton that has no outcome class (delivered,
+	// superseded, dropped or held) and none the daemon can prove from its
+	// record, and one with a hold that is not met. "on" (the default; empty
+	// reads as on) enforces it, "shadow" only logs what it would refuse, "off"
+	// disables it.
+	ClosedOutcomeArchive string `yaml:"closed_outcome_archive,omitempty" json:"closed_outcome_archive,omitempty"`
+	// ClosedOutcomeCheck sets the standing check of closed work: it flags
+	// finished or archived Automata with no outcome, finished work with no
+	// shipped record, shipped work with no deploy record on a host that deploys
+	// after ship, and a deployed version older than the shipped one, and re-runs
+	// the intent proof once a day. "shadow" (the default; empty reads as shadow)
+	// records the findings for the read, "on" also raises one alert per finding,
+	// "off" does nothing.
+	ClosedOutcomeCheck string `yaml:"closed_outcome_check,omitempty" json:"closed_outcome_check,omitempty"`
 	// UsageBackoff controls automatic per-backend back-off after a rate or
 	// usage limit is detected: "pause_backend" (default) holds new work for
 	// the affected backend until its reset time; "off" disables it. An

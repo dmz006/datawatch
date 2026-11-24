@@ -687,9 +687,10 @@ type Config struct {
 	ShippedRefusal string `json:"shipped_refusal,omitempty"`
 	// ClosedOutcomeArchive mirrors autonomous.closed_outcome_archive: on
 	// (the archive step refuses a record with no outcome or an unmet hold),
-	// shadow (log only) or off. In this struct an empty value reads as shadow;
-	// the daemon always passes the resolved value, whose default is on. See
-	// closed_outcome.go. ClosedOutcomeCheck mirrors
+	// shadow (log only) or off. An empty value reads as on; DefaultConfig
+	// sets shadow so the manager-level fixtures that archive records with no
+	// outcome keep working, and the daemon hands the manager the resolved
+	// daemon value (default on). See closed_outcome.go. ClosedOutcomeCheck mirrors
 	// autonomous.closed_outcome_check: off, shadow (default; findings are
 	// recorded and read) or on (each finding also raises one alert).
 	ClosedOutcomeArchive string `json:"closed_outcome_archive,omitempty"`
@@ -1204,7 +1205,10 @@ func DefaultConfig() Config {
 		// own tests set the block explicitly.
 		AttemptCap:     config.AttemptCapConfig{Enabled: attemptCapOff()},
 		AutoFixRetries: 1,
-		SecurityScan:   true,
+		// The closed outcome archive guard is on in the daemon (see
+		// ClosedOutcomeArchive); a manager built from this default only logs.
+		ClosedOutcomeArchive: ClosedOutcomeShadow,
+		SecurityScan:         true,
 		// Snapshot-never-stage defaults match the daemon config's (nil =
 		// reads these in both packages), so a fresh manager GETs the same
 		// effective list as the daemon's /api/config does.
@@ -1552,6 +1556,11 @@ type Manager struct {
 	// projects' lane_fill_* counts, (0,0) when unwired.
 	effectivePolicy atomic.Pointer[PolicyFn]
 	laneFillCaps    atomic.Pointer[laneFillPolicyCapFn]
+
+	// Closed-outcome standing check state (closed_outcome_check.go).
+	outcomeEnv     OutcomeCheckEnv
+	outcomeLast    *OutcomeCheckReport
+	outcomeAlerted map[string]bool
 
 	dataDir string // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
 	// mergePipeline is the merge_pipeline settings the post-ship merge-shadow

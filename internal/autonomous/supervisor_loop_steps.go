@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -92,6 +93,10 @@ type SupervisorLoopHooks struct {
 	// Deploy runs the operator's deploy step (mergepipeline ShipRunner.Deploy)
 	// and returns a short account. Nil records "not configured".
 	Deploy func(ctx context.Context) (string, error)
+	// DeployHealth runs the operator's health check after a successful deploy
+	// and returns passed or failed with a short account. Nil records the
+	// deploy's health as unchecked.
+	DeployHealth func(ctx context.Context) (health, detail string)
 	// Lanes is the operator's lane control. Nil records "not configured".
 	Lanes SupervisorLaneControl
 	// MergeUntilConflict runs the existing merge pipeline
@@ -127,6 +132,9 @@ type SupervisorLoopSteps struct {
 	// mergeGit is the git runner the branch check uses. Nil means the
 	// production runner; tests inject a fake.
 	mergeGit MergeGitRunner
+
+	// hostName names this host in deploy records; nil means os.Hostname.
+	hostName func() string
 
 	// wakes, when set, counts each real scheduled pass (RunScheduled).
 	wakes *supervisorloop.WakeRecord
@@ -490,12 +498,39 @@ func (s *SupervisorLoopSteps) deployAfterShip(ctx context.Context) (string, erro
 		return stepNotConfigured, nil
 	}
 	if err != nil {
+		s.recordDeploy(release, DeployHealthFailed, err.Error())
 		return "", fmt.Errorf("deploy %s: %w", release, err)
 	}
+	health := DeployHealthUnchecked
+	if s.hooks.DeployHealth != nil {
+		h, d := s.hooks.DeployHealth(ctx)
+		if ValidDeployHealth(h) {
+			health = h
+		}
+		if d != "" {
+			detail += "; health: " + d
+		}
+	}
+	s.recordDeploy(release, health, detail)
 	s.mu.Lock()
 	s.lastDeployed = release
 	s.mu.Unlock()
 	return fmt.Sprintf("deployed %s: %s", release, detail), nil
+}
+
+// recordDeploy writes the deploy record onto every Automaton shipped in release.
+func (s *SupervisorLoopSteps) recordDeploy(release, health, detail string) {
+	host := ""
+	if s.hostName != nil {
+		host = s.hostName()
+	} else if h, err := os.Hostname(); err == nil {
+		host = h
+	}
+	if _, err := s.c.m.RecordReleaseDeployed(DeployRecord{
+		Release: release, Version: release, At: s.now(), Host: host, Health: health, Detail: detail,
+	}); err != nil {
+		log.Printf("[autonomous] supervisor-loop: deploy record for %s: %v", release, err)
+	}
 }
 
 // newestShippedRelease is the release named by the most recently merged
