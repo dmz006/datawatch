@@ -983,6 +983,10 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 		if err := a.M.refuseHeld(p); err != nil {
 			return false, err
 		}
+		// A paused project is refused the same way, before a slot is claimed.
+		if err := a.M.refusePaused(p); err != nil {
+			return false, err
+		}
 	}
 	execs := a.spawnFn != nil && a.verify != nil
 	var ctx context.Context

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/pause"
 	"log"
 	"path"
 	"path/filepath"
@@ -1843,6 +1844,12 @@ type Manager struct {
 	// re-checks the hold (see automation_budget_admit.go); zero means the
 	// default.
 	autoBudgetPoll time.Duration
+
+	// pauseGate is the read side of the operator pause service (see
+	// pause_gate.go); nil means nothing is ever paused. pausePoll is how often
+	// a task held by a pause re-checks it; zero means the default.
+	pauseGate pause.Gate
+	pausePoll time.Duration
 
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger
