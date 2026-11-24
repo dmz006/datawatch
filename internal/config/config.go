@@ -3957,6 +3957,11 @@ type AutonomousConfig struct {
 	// many tries, the backoff between them, and what happens when they run
 	// out. An unset key reads its default. See InfraRetryConfig.
 	InfraRetry InfraRetryConfig `yaml:"infra_retry,omitempty" json:"infra_retry,omitempty"`
+	// AttemptCap — the daemon-owned total attempt cap per task: how many
+	// attempts a task may be started for across failures, cancels, resets and
+	// restarts, the wait before each attempt after the free ones, and the
+	// hold at the cap. An unset key reads its default. See AttemptCapConfig.
+	AttemptCap AttemptCapConfig `yaml:"attempt_cap,omitempty" json:"attempt_cap,omitempty"`
 	// MergePipeline — where a project's merge pipeline comes from (its own
 	// file, the daemon's record, or the built-in default), what happens when
 	// the file is bad, and how a merge conflict is handled; each key can be

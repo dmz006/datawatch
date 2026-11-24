@@ -17752,6 +17752,11 @@ function docsLinkForLlmBackend(name) {
 const DOCS_INFRA_RETRY_LINK = DOCS_DEFINITIONS + '#infrastructure-retry';
 const DOCS_INFRA_RETRY_PREFIXES = ['autonomous.infra_retry.', 'settings_infra_retry_', 'infra_retry_'];
 
+// The attempt cap settings, the project policy field and the task badges share one
+// glossary section.
+const DOCS_ATTEMPT_CAP_LINK = DOCS_DEFINITIONS + '#attempt-cap';
+const DOCS_ATTEMPT_CAP_PREFIXES = ['autonomous.attempt_cap.', 'settings_attempt_cap_', 'attempt_cap_', 'project_policy_attempt_cap'];
+
 // The onboarding report settings and the Onboarding report card map to three
 // glossary sections: the report, its checks and its next-step suggestions. The
 // first matching prefix wins, so the specific ones come first.
@@ -17849,6 +17854,7 @@ function docsLinkForKey(key) {
   if (key.startsWith('cc_global_')) return docsLinkForChannelType(key.slice('cc_global_'.length));
   if (key.startsWith('dash_')) return DOCS_LINKS_BY_KEY['view_dashboard'];
   if (DOCS_INFRA_RETRY_PREFIXES.some(p => key.startsWith(p))) return DOCS_INFRA_RETRY_LINK;
+  if (DOCS_ATTEMPT_CAP_PREFIXES.some(p => key.startsWith(p))) return DOCS_ATTEMPT_CAP_LINK;
   // Post-ship hooks: before the merge pipeline array — the post-ship keys sit
   // under autonomous.merge_pipeline.post_ship. and the first match wins.
   for (const [prefixes, link] of DOCS_POST_SHIP_LINKS) {
@@ -24499,7 +24505,7 @@ function renderTask(prd, story, task, editable) {
     ? `<span class="prd-task-review-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${escHtml(t('task_status_review_needed'))}</span>`
     : '';
   // Infrastructure retry: "Retry n of max" and the hold cause, from the task's own record.
-  const infraRetryBadges = window.infraRetryTaskBadgesHtml(task, _infraRetryMaxTries());
+  const infraRetryBadges = window.infraRetryTaskBadgesHtml(task, _infraRetryMaxTries()) + window.attemptCapTaskBadgesHtml(task, window._attemptCapMax);
   const spawnBadge = task.spawn_prd
     ? `<span class="prd-task-spawn-badge" title="this task spec is a child automaton spec; executor will Plan + Approve + Run">&#8627; spawn</span>`
     : '';
@@ -24552,6 +24558,11 @@ function renderTask(prd, story, task, editable) {
     : '';
   const cancelTaskBtn = canCancelTask
     ? `<button class="prd-task-cancel-btn" onclick="event.stopPropagation();prdCancelTask(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))},${escHtml(JSON.stringify(task.title||''))})" title="${t('prd_cancel_task')||'Cancel this task'}">✕</button>`
+    : '';
+  // A task held at the attempt cap leaves the hold only through the operator's
+  // force reset, which also clears its attempt count.
+  const forceResetBtn = task.attempt_cap_held && task.status === 'review_needed' && editable
+    ? `<button class="prd-task-retry-btn attempt-cap-force-reset" onclick="event.stopPropagation();prdForceResetTask(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))})" title="${escHtml(t('attempt_cap_force_reset_title'))}">&#8635; ${escHtml(t('attempt_cap_force_reset'))}</button>`
     : '';
   const requeueBtn = canRequeue && editable
     ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdRequeueTask(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))})" title="${t('prd_requeue_task')||'Re-run this task'}">&#8635; ${t('prd_requeue_task_label')||'Re-run'}</button>`
@@ -24662,7 +24673,7 @@ function renderTask(prd, story, task, editable) {
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${window.taskRoutingDetailChipHtml(window.taskRoutingForTask(prd.id, taskID))}${taskKindBadge}${smokeVkBadge}${projDirBadge}${readOnlyBadge}${mergeStateBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
-      ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
+      ${approveTaskBtn}${retryBtn}${forceResetBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
     ${window.taskRoutingDetailLineHtml(window.taskRoutingForTask(prd.id, taskID))}
     ${taskMergeBlockedLineHtml(task)}
@@ -24695,6 +24706,21 @@ function prdRequeueTask(prdID, taskID) {
   }).catch(e => showToast((window._t && window._t('prd_task_requeue_fail')) || 'Re-queue failed: ' + e.message, 'error'));
 }
 window.prdRequeueTask = prdRequeueTask;
+
+// Attempt cap — the operator's force reset of a task held at the cap: clears the
+// attempt count and runs the task again. The daemon records the clear.
+function prdForceResetTask(prdID, taskID) {
+  if (typeof confirm === 'function' && !confirm(t('attempt_cap_force_reset_confirm'))) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/reset_task', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskID, actor: 'operator', force: true }),
+  }).then(() => {
+    showToast(t('attempt_cap_force_reset_ok'));
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(e => showToast(t('attempt_cap_force_reset_fail', [e.message]), 'error'));
+}
+window.prdForceResetTask = prdForceResetTask;
 
 // BL382 — cancel a single task.
 function prdCancelTask(prdID, taskID, title) {
@@ -27675,6 +27701,13 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.infra_retry.exhausted_action', label: 'Infrastructure retry when the tries are spent (hold or count, default hold)', labelKey: 'settings_infra_retry_exhausted_action', hintKey: 'settings_infra_retry_exhausted_action_hint', docsKey: 'autonomous.infra_retry.exhausted_action', type: 'select', options: ['hold', 'count'], optionLabelKeys: { hold: 'settings_infra_retry_exhausted_hold', count: 'settings_infra_retry_exhausted_count' }, default: 'hold' },
     { key: 'autonomous.infra_retry.retry_dependents', label: 'Infrastructure retry also retries blocked dependents (on by default)', labelKey: 'settings_infra_retry_retry_dependents', hintKey: 'settings_infra_retry_retry_dependents_hint', docsKey: 'autonomous.infra_retry.retry_dependents', type: 'toggle' },
     { key: 'autonomous.infra_retry.raise_question', label: 'Infrastructure retry raises a question when the tries are spent (on by default)', labelKey: 'settings_infra_retry_raise_question', hintKey: 'settings_infra_retry_raise_question_hint', docsKey: 'autonomous.infra_retry.raise_question', type: 'toggle' },
+    // Attempt cap — the daemon-owned total attempt count per task, the wait between later
+    // attempts and the hold at the cap. The delay list is comma separated.
+    { label: 'Attempt cap', labelKey: 'settings_attempt_cap_group', docsKey: 'autonomous.attempt_cap.enabled', type: 'group' },
+    { key: 'autonomous.attempt_cap.enabled', label: 'Attempt cap (on by default)', labelKey: 'settings_attempt_cap_enabled', hintKey: 'settings_attempt_cap_enabled_hint', docsKey: 'autonomous.attempt_cap.enabled', type: 'toggle' },
+    { key: 'autonomous.attempt_cap.max_total', label: 'Attempts per task in all (whole number, minimum 1, default 6)', labelKey: 'settings_attempt_cap_max_total', hintKey: 'settings_attempt_cap_max_total_hint', docsKey: 'autonomous.attempt_cap.max_total', type: 'number', placeholder: '6', min: 1, step: 1, default: '6' },
+    { key: 'autonomous.attempt_cap.free_attempts', label: 'Attempts that start at once (whole number, minimum 1, default 3)', labelKey: 'settings_attempt_cap_free_attempts', hintKey: 'settings_attempt_cap_free_attempts_hint', docsKey: 'autonomous.attempt_cap.free_attempts', type: 'number', placeholder: '3', min: 1, step: 1, default: '3' },
+    { key: 'autonomous.attempt_cap.backoff_minutes', label: 'Wait before each later attempt (minutes, comma separated, default 5, 15, 45)', labelKey: 'settings_attempt_cap_backoff_minutes', hintKey: 'settings_attempt_cap_backoff_minutes_hint', docsKey: 'autonomous.attempt_cap.backoff_minutes', type: 'text', placeholder: '5, 15, 45', csv: true },
     // Merge pipeline — where a project's merge pipeline comes from and how a merge conflict is
     // handled. The lists are comma separated; the daemon validates every value.
     { label: 'Merge pipeline', labelKey: 'settings_merge_pipeline_group', docsKey: 'merge_pipeline_card_title', type: 'group' },
@@ -39926,6 +39959,7 @@ const PROJECT_POLICY_GROUPS = [
     { key: 'retry_ceiling_total', kind: 'int', min: 0 },
     { key: 'auto_fix_retries', kind: 'int', min: 0 },
     { key: 'infra_retry_escalate_after', kind: 'int', min: 0 },
+    { key: 'attempt_cap', kind: 'int', min: 1 },
     { key: 'failure_escalation', kind: 'escalation' },
   ] },
   { labelKey: 'project_policy_group_git', fields: [
@@ -40734,6 +40768,26 @@ window.infraRetryTaskBadgesHtml = function(task, maxTries) {
   if (window.infraRetryTaskHeld(task)) {
     const cause = task.failure_reason.detail ? t('infra_retry_held_cause', [task.failure_reason.detail]) : '';
     out += `<span class="prd-task-review-badge infra-retry-held"${cause ? ` title="${escHtml(cause)}"` : ''}>&#9873; ${escHtml(t('infra_retry_held_label'))}</span>`;
+  }
+  return out;
+};
+// Attempt cap: the task's total attempt count (the daemon keeps it across cancels,
+// resets and restarts), a badge while the task is held at the cap, and the wait
+// before its next attempt. The count reads "n of cap" when the cap is known.
+window.attemptCapTaskBadgesHtml = function(task, cap) {
+  if (!task || typeof task !== 'object') return '';
+  let out = '';
+  const n = Number(task.attempts_total) || 0;
+  if (n > 0) {
+    const text = Number(cap) > 0 ? t('attempt_cap_count_of', [n, Number(cap)]) : t('attempt_cap_count', [n]);
+    out += `<span class="prd-task-llm-badge attempt-cap-badge">${escHtml(text)}</span>`;
+  }
+  if (task.attempt_cap_held) {
+    out += `<span class="prd-task-review-badge attempt-cap-held">&#9873; ${escHtml(t('attempt_cap_held_label'))}</span>`;
+  }
+  const nb = task.attempt_not_before ? new Date(task.attempt_not_before) : null;
+  if (nb && !isNaN(nb.getTime()) && nb.getTime() > Date.now()) {
+    out += `<span class="prd-task-llm-badge attempt-cap-next">${escHtml(t('attempt_cap_next', [nb.toLocaleTimeString()]))}</span>`;
   }
   return out;
 };

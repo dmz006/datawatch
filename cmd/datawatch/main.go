@@ -4793,6 +4793,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			GateDisagreement:                 acfgIn.GateDisagreement,
 			FailureEscalation:                failureEscalationFromConfig(acfgIn.FailureEscalation),
 			InfraRetry:                       acfgIn.InfraRetry.Clone(),
+			AttemptCap:                       acfgIn.AttemptCap.Clone(),
 			RequestWatch:                     acfgIn.RequestWatch.Clone(),
 			PlanningBackend:                  acfgIn.PlanningBackend,
 			PlanningRouting:                  acfgIn.PlanningRouting,

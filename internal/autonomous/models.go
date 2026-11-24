@@ -1420,6 +1420,21 @@ type Task struct {
 	// action; it indexes the policy's steps and is compared with
 	// max_failures.
 	EscalationFailures int `json:"escalation_failures,omitempty"`
+	// AttemptsTotal is the number of attempts the task has been started for in
+	// all: every launch of a worker for it, across failures, cancels, resets,
+	// retries and daemon restarts. Unlike EscalationFailures, no reset, cancel
+	// or review retry clears it; only an operator's force reset does (see
+	// attempt_cap.go). A relaunch that costs the task no attempt (an
+	// infrastructure retry, a session that never started, a restart) and an
+	// adopted session after a restart are not counted again.
+	AttemptsTotal int `json:"attempts_total,omitempty"`
+	// AttemptNotBefore is the earliest time the next attempt may start, set
+	// when an attempt ends and the attempt cap's back-off applies. Nil means
+	// no wait. It is stored, so a daemon restart does not shorten the wait.
+	AttemptNotBefore *time.Time `json:"attempt_not_before,omitempty"`
+	// AttemptCapHeld is true while the task is held for having reached the
+	// attempt cap. Only an operator's force reset clears the hold.
+	AttemptCapHeld bool `json:"attempt_cap_held,omitempty"`
 	// ReviewSummary is the plain-text report written when the task is held
 	// in TaskReviewNeeded.
 	ReviewSummary *ReviewSummary `json:"review_summary,omitempty"`

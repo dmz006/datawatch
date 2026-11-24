@@ -1108,6 +1108,28 @@ When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold
 
 A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel or the web app is refused and nothing is written; the refusal names the key and the valid values. A bad value written by hand into `config.yaml` is not checked on load: a try limit below 1 reads as 3, an unknown `exhausted_action` reads as `hold`, a negative delay waits no time and an unknown class is never retried. Changes made through the write surfaces apply at once, with no restart.
 
+### Attempt cap
+
+A task keeps a total count of the attempts the daemon has started for it, across failures, cancels, resets, review retries and daemon restarts, so a model that cancels and retries a task cannot loop for ever. The failure ladder (`autonomous.failure_escalation`) still counts failed attempts since the last operator action and starts over on every reset; the attempt count never starts over except through the operator's force reset. The first `autonomous.attempt_cap.free_attempts` attempts start at once and each later attempt waits the next delay of `autonomous.attempt_cap.backoff_minutes` after the previous attempt ended (a cancel counts as an end). At `autonomous.attempt_cap.max_total` the task is held in `review_needed` with the failure source `attempt-cap-hold`, one error alert "Automaton task reached its attempt cap" is raised and, when `autonomous.questions.enabled` is on, one question offers to clear the count and run again or cancel (the default is to stay held). A review retry, a plain reset and a force reset made by a session do not start a held task. The operator's force reset (`reset_task` with `force`, made as the operator) clears the count and the hold, writes an `attempt_cap_cleared` decision and an audit entry with `clears_attempt_count`. A start that failed on the infrastructure and is retried, a session that never started, a restart and a session adopted after a restart are not counted. The operator guide is [howto/attempt-cap.md](howto/attempt-cap.md).
+
+| Method | How |
+|--------|-----|
+| **YAML** | `config.yaml` → `autonomous.attempt_cap:` with `enabled`, `max_total`, `free_attempts` and `backoff_minutes`; a project's `policy:` block takes `attempt_cap` |
+| **CLI** | `datawatch config set autonomous.attempt_cap.max_total 8`; `datawatch autonomous tasks <id>` shows `attempts_total`; `datawatch autonomous prd-reset-task <id> <task> --force` is the operator's force reset |
+| **Web UI** | Settings → Automata → Attempt cap; the project policy field **Attempt cap**; each task row shows the count, the hold and the wait, and a held task has a **Force reset** button |
+| **REST API** | `PUT /api/config` with the dotted keys; `GET /api/config` shows the block under `autonomous.attempt_cap`; tasks carry `attempts_total`, `attempt_cap_held`, `attempt_not_before`; `POST /api/autonomous/prds/{id}/reset_task` with `force` |
+| **Comm channel** | `configure autonomous.attempt_cap.max_total=8`; `autonomous reset-task <id> <task> force` |
+| **MCP** | `autonomous_config_set` with the `attempt_cap_*` arguments, `config_set`, `autonomous_prd_get`, `autonomous_prd_tasks`, `autonomous_prd_reset_task` with `force` |
+
+| Key | Default | Allowed values and effect |
+|-----|---------|---------------------------|
+| `autonomous.attempt_cap.enabled` | `true` | `true` or `false`. `false` restores the earlier behaviour: only the failure ladder limits a task. |
+| `autonomous.attempt_cap.max_total` | `6` | Whole number from 1 to 1000. Attempts a task may be started for in all. |
+| `autonomous.attempt_cap.free_attempts` | `3` | Whole number from 1 to 1000. Attempts that start at once. |
+| `autonomous.attempt_cap.backoff_minutes` | `[5, 15, 45]` | List of whole minutes (0 to 10080 each, at most 100 entries), as a JSON array or a comma list; the last entry repeats; an empty list means no wait. |
+
+A bad value is refused and nothing is written; the refusal names the key.
+
 ### Completion review block recovery
 
 When an Automaton's work is done, the completion review judges it against the operator's rules before it is reported finished. A block whose problem is with the work itself is content: `autonomous.auto_fix_retries` (default 1, 0 turns it off) is the number of content auto-fix retries each Automaton gets. Each retry is one corrective task created from the review's findings; the retry budget is consumed only after that task exists, and the total retry ceiling (`autonomous.retry_ceiling_total`) applies on top of the per-category budgets.
