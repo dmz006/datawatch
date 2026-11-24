@@ -39,3 +39,24 @@ func TestScheduleAlertText_NamesTheOutcome(t *testing.T) {
 		t.Fatalf("an unnamed schedule falls back to its id: %q", title)
 	}
 }
+
+func TestScheduleRearmPolicy_CarriesOneTimeMaxWait(t *testing.T) {
+	if p := scheduleRearmPolicy(config.ScheduleConfig{}); p.OneTimeMaxWait != 12*time.Hour {
+		t.Fatalf("zero config must give a 12 hour one-time wait limit: %v", p.OneTimeMaxWait)
+	}
+	if p := scheduleRearmPolicy(config.ScheduleConfig{OneTimeMaxWaitHours: 3}); p.OneTimeMaxWait != 3*time.Hour {
+		t.Fatalf("configured one-time wait limit not carried over: %v", p.OneTimeMaxWait)
+	}
+}
+
+func TestScheduleAlertText_WaitLimitSaysItWaitedTooLong(t *testing.T) {
+	sc := session.ScheduledCommand{ID: "ab12", ScheduleName: "nightly"}
+	lvl, title, body := scheduleAlertText(session.ScheduleAlert{Schedule: sc, Err: errors.New("gave up waiting for capacity after 12 hours: max sessions (20) reached"),
+		Outcome: session.StartFailure{GaveUp: true, WaitLimit: true, Waits: 40}})
+	if lvl != alertspkg.LevelError || !strings.Contains(title, "gave up waiting for capacity: nightly") {
+		t.Fatalf("wait-limit alert: %v %q", lvl, title)
+	}
+	if strings.Contains(body, "times in a row") || !strings.Contains(body, "12 hours") || !strings.Contains(body, "schedule.one_time_max_wait_hours") {
+		t.Fatalf("body must name the wait and the setting, not claim failed starts: %q", body)
+	}
+}

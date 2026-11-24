@@ -27215,6 +27215,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'schedule.rearm_max_retries', label: 'Retries before giving up (0 = never)', labelKey: 'settings_schedule_rearm_max_retries', type: 'number', min: 0, placeholder: '0' },
     { key: 'schedule.rearm_backoff_seconds', label: 'First retry pause (sec)', labelKey: 'settings_schedule_rearm_backoff', type: 'number', min: 1, placeholder: '30' },
     { key: 'schedule.rearm_backoff_max_seconds', label: 'Longest retry pause (sec)', labelKey: 'settings_schedule_rearm_backoff_max', type: 'number', min: 1, placeholder: '900' },
+    { key: 'schedule.one_time_max_wait_hours', label: 'Wait limit for one-time schedules (hours)', labelKey: 'settings_schedule_one_time_max_wait', helpKey: 'settings_schedule_one_time_max_wait_help', type: 'number', min: 1, placeholder: '12' },
   ]},
   // v4.0.1 — feature toggles for autonomous / plugins / orchestrator.
   // Pi (worker backend) — knobs for pi-based autonomous workers. See
@@ -56884,6 +56885,7 @@ function _scheduleRearmSummary(sc) {
   }
   if (sc.rearm_state === 'waiting_capacity') parts.push(t('schedule_rearm_waiting', [sc.consecutive_waits || 0]));
   else if (sc.rearm_state === 'retrying') parts.push(t('schedule_rearm_retrying', [sc.consecutive_failures || 0]));
+  else if (sc.rearm_state === 'gave_up' && !sc.consecutive_failures && sc.consecutive_waits) parts.push(t('schedule_rearm_gave_up_waiting', [sc.consecutive_waits]));
   else if (sc.rearm_state === 'gave_up') parts.push(t('schedule_rearm_gave_up', [sc.consecutive_failures || 0]));
   return parts.join(' · ');
 }

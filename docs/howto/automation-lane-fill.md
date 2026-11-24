@@ -337,7 +337,7 @@ A bad value is refused, and nothing is written. An explicit `0` is kept. `stalle
 ## Why lane fill skips an Automaton
 
 Before it hands a lane to a queued Automaton (a draft, an approved one or one
-waiting for review), lane fill checks it against ten rules. The first rule
+waiting for review), lane fill checks it against eleven rules. The first rule
 that refuses it gives the **eligibility reason**, a short fixed code with a
 sentence of detail. A refused Automaton is never started in any mode, and it
 does not count as eligible work: not in the queued counts, not in the idle-lane
@@ -350,6 +350,7 @@ The rules run in this order:
 |---|---|---|
 | `operator_hold` | The Automaton's status is `held`: an operator put it on hold. The detail reads "on hold by the operator: <reason>; look again at <time>". This is checked first and applies to every status lane fill would otherwise consider. | Release the hold (see [Put an Automaton on hold](automaton-hold.md)). Until then this is the rule working. |
 | `already_shipped` | The Automaton's own record says its work already shipped: a release and a merge commit are both set. The detail names the release and the commit. It never starts, and the daemon marks it delivered (completed, never cancelled) and drops it from the queue; the reason is kept on the Automaton. Only the Automaton's own record counts: a shipped record on another Automaton, for example one it is sequenced after, never refuses it. | Nothing to clear: the work is done. If it must run again, run it with `--force` and a reason (see "Shipped work never runs"). |
+| `operator_pause` | The operator has paused new work, globally or for this Automaton's project (see [Pause new work](pause-new-work.md)). The detail reads "paused by operator (...): <reason> (by <who> since <time>); the operator resumes it". It is checked right after `already_shipped`, so shipped work is dropped as delivered and never waits on a pause. Lane fill neither starts nor decomposes it. | Resume the pause (all work, or that project's). Nothing else clears it. |
 | `held` | The title or spec has a line that starts with `HOLD`, says "do not run" or "sequenced last", or the judge timed out on every backend while the Automaton needed review. | Remove the line from the spec if the hold is over. If the hold is right, leave it: this is the rule working. |
 | `sequenced_after_unshipped` | The spec says it is "sequenced after" another Automaton, and that one is not completed, or the reference matches no Automaton at all (an unknown reference counts as unfinished). | Finish the other Automaton, or fix the reference so it names the right one (an 8-character id is the most reliable). |
 | `stale` | The Automaton has had no change for longer than `stale_after_hours` (72 by default). Old probes and forgotten drafts end up here. | If it still matters, edit it, which refreshes its last-updated time; if it does not, cancel it. To change the limit, set `stale_after_hours`; `0` turns the rule off. |
@@ -540,6 +541,34 @@ Closed work (archived, cancelled, rejected) cannot be forced.
 The refusal reason shows wherever a start error shows (the CLI error, the chat
 reply, the MCP result, the REST 400 body and the web app's error toast), and
 `already_shipped` shows as the eligibility reason on a lane fill decision.
+
+### An Automation goes past a delivered member
+
+When an Automation reaches a member whose own record says its work already
+shipped (a release and a merge commit, with the member queued, failed or blocked),
+it does not start that member and does not block. The coordinator marks the member
+**delivered**, writes why, and goes on to the next member as if it had finished:
+
+- the member ends `completed` with outcome `already_shipped` and no start time, and
+  the Automation follows its `on_complete` edge (a delivered last member lets the
+  Automation complete; a delivered fork branch counts as a finished branch for the
+  join);
+- the Automation records a `member_delivered` decision naming the member, the
+  release and the commit, and an `automation_member_delivered` audit entry;
+- the member's own Automaton ends delivered too (`shipped_refusal` on it), the same
+  as when a lane fill poll drops it.
+
+This is the same on every daemon that runs the Automation, and several delivered
+members in a row are all passed. It follows the rule's setting: with
+`autonomous.shipped_refusal` on it skips, with `shadow` or `off` the member starts as
+before, and an operator force that covers the record starts it.
+
+**One case is never skipped on its own.** When another member of the Automation that
+has not started builds on the delivered member's branch (its Automaton's base branch
+is that member's branch), the output is still needed. The Automation blocks with a
+message that names both members and the branch, nothing is marked delivered, and
+nothing starts. Skip the member yourself (`datawatch automation skip`, MCP `automation_skip_member`, or the Skip member button) or force-run it
+with a reason.
 
 ## Which lane a task takes
 

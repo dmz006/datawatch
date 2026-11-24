@@ -7275,6 +7275,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"rearm_max_retries":         s.cfg.Schedule.EffectiveRearmMaxRetries(),
 			"rearm_backoff_seconds":     s.cfg.Schedule.EffectiveRearmBackoffSeconds(),
 			"rearm_backoff_max_seconds": s.cfg.Schedule.EffectiveRearmBackoffMaxSeconds(),
+			"one_time_max_wait_hours":   s.cfg.Schedule.EffectiveOneTimeMaxWaitHours(),
 		},
 	}
 	// Model-to-node collisions: two different models configured on one
@@ -11625,6 +11626,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "schedule.rearm_backoff_max_seconds":
 			if n, ok := toInt(v); ok && n >= 1 {
 				cfg.Schedule.RearmBackoffMaxSeconds = n
+			}
+		case "schedule.one_time_max_wait_hours":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Schedule.OneTimeMaxWaitHours = n
 			}
 		default:
 			// autonomous.defect_queue.*; validated in handlePutConfig, Set

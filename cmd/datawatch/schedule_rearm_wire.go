@@ -17,6 +17,8 @@ func scheduleRearmPolicy(c config.ScheduleConfig) session.RearmPolicy {
 		MaxRetries: c.EffectiveRearmMaxRetries(),
 		Backoff:    time.Duration(c.EffectiveRearmBackoffSeconds()) * time.Second,
 		BackoffMax: time.Duration(c.EffectiveRearmBackoffMaxSeconds()) * time.Second,
+		// One-time schedules refused for capacity wait this long, then fail.
+		OneTimeMaxWait: time.Duration(c.EffectiveOneTimeMaxWaitHours()) * time.Hour,
 	}
 }
 
@@ -28,6 +30,10 @@ func scheduleAlertText(a session.ScheduleAlert) (level alertspkg.Level, title, b
 		name = a.Schedule.ID
 	}
 	switch {
+	case a.Outcome.WaitLimit:
+		return alertspkg.LevelError, "Scheduled spawn gave up waiting for capacity: " + name,
+			fmt.Sprintf("Schedule %s is a one-time schedule and was refused for capacity until its wait limit ran out (%v). It is now failed. Re-create it to run it again, or raise schedule.one_time_max_wait_hours.",
+				a.Schedule.ID, a.Err)
 	case a.Outcome.GaveUp:
 		return alertspkg.LevelError, "Scheduled spawn gave up: " + name,
 			fmt.Sprintf("Schedule %s could not start its session %d times in a row (%v). The re-arm policy gave up, so it stays failed until you re-create or re-enable it.",

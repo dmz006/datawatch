@@ -8396,6 +8396,7 @@ const (
 const (
 	DefaultScheduleRearmBackoffSeconds    = 30
 	DefaultScheduleRearmBackoffMaxSeconds = 900
+	DefaultScheduleOneTimeMaxWaitHours    = 12
 )
 
 // ScheduleConfig says what a scheduled spawn does after a start that failed
@@ -8415,6 +8416,10 @@ type ScheduleConfig struct {
 	RearmBackoffSeconds int `yaml:"rearm_backoff_seconds,omitempty" json:"rearm_backoff_seconds,omitempty"`
 	// RearmBackoffMaxSeconds caps the pause. Unset = 900.
 	RearmBackoffMaxSeconds int `yaml:"rearm_backoff_max_seconds,omitempty" json:"rearm_backoff_max_seconds,omitempty"`
+	// OneTimeMaxWaitHours is how long a one-time schedule refused for capacity
+	// keeps waiting before it fails with the reason. Recurring schedules wait
+	// without a limit. Unset = 12.
+	OneTimeMaxWaitHours int `yaml:"one_time_max_wait_hours,omitempty" json:"one_time_max_wait_hours,omitempty"`
 }
 
 // EffectiveRearmMode returns the mode, defaulting an unknown or empty value to
@@ -8446,6 +8451,15 @@ func (c ScheduleConfig) EffectiveRearmBackoffMaxSeconds() int {
 		m = first
 	}
 	return m
+}
+
+// EffectiveOneTimeMaxWaitHours returns how many hours a one-time schedule
+// refused for capacity waits before it fails (default 12, never below 1).
+func (c ScheduleConfig) EffectiveOneTimeMaxWaitHours() int {
+	if c.OneTimeMaxWaitHours < 1 {
+		return DefaultScheduleOneTimeMaxWaitHours
+	}
+	return c.OneTimeMaxWaitHours
 }
 
 // EffectiveRearmMaxRetries returns the retry limit (0 = never give up).
