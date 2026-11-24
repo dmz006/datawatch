@@ -3156,6 +3156,18 @@ global default. Web surface: settings card *Pi (worker backend)*
   `DetectLoop` turn window. Web surface: the autonomous settings card
   (`GENERAL_CONFIG_FIELDS`, `internal/server/web/app.js`) with label
   `settings_loop_detect_turns` in all 5 locales.
+- **`autonomous.tmux_kill_guard`** (`Autonomous.TmuxKillGuard *bool`,
+  `TmuxKillGuardEnabled()` in `internal/config/config.go`; `nil` → on). The guard
+  is `internal/session/tmux_guard_shim.sh`, embedded in
+  `internal/session/tmux_kill_guard.go` and written to `<data_dir>/tmux-guard/tmux`
+  by `ensureTmuxGuardShim`. `Manager.scrubPaneTmuxEnv` — the single step both the
+  first launch and the restart of a worker pane go through, for every backend —
+  calls `installPaneTmuxGuard`, which types an `export PATH=<dir>:$PATH` (and
+  `DATAWATCH_TMUX_GUARD_PROTECTED=<socket dir>`) into the pane shell after the
+  `unset TMUX TMUX_TMPDIR` line. Off, or no data dir: nothing is installed.
+  Tests: `internal/session/tmux_kill_guard_test.go`,
+  `tests/integration/tmux_scoped_kill_regression.sh`,
+  `tests/integration/unsafe_tmux_call_check_negative.sh`.
 - **`autonomous.unlanded_alert_enabled`** / **`autonomous.unlanded_alert_threshold`**
   (`Autonomous.UnlandedAlertEnabled *bool` / `UnlandedAlertThreshold *int` in
   `internal/config/config.go`; `internal/config/unlanded_alert.go`: `nil` →

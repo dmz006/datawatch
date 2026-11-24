@@ -1389,6 +1389,13 @@ autonomous:
   # threshold reads 3; 0 alerts on any pending branch; negative is refused.
   unlanded_alert_enabled: true
   unlanded_alert_threshold: 3
+  # Worker tmux kill guard. On (the default; unset reads true), a worker,
+  # verifier or judge pane started by the daemon finds a guard "tmux" first on
+  # its PATH that refuses a server-wide kill (the server kill, or the session
+  # kill with -a) unless the call names a throwaway socket with -S or -L.
+  # false is an operator opt-out and installs nothing. Applies to every
+  # backend; see docs/operations.md.
+  tmux_kill_guard: true
   # ── Shadow merge plan (autonomous.merge_shadow) ──
   # What these keys enable, and every way they are set and read, is in
   # docs/howto/merge-shadow.md.

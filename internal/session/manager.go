@@ -2026,6 +2026,7 @@ func (m *Manager) scrubPaneTmuxEnv(sess *Session) {
 	if err := m.tmux.SendKeys(sess.TmuxSession, scrubTmuxEnvCommand); err != nil {
 		fmt.Printf("[warn] scrub tmux env for %s: %v\n", sess.ID, err)
 	}
+	m.installPaneTmuxGuard(sess)
 }
 
 // Ceiling paths recorded on Session.CeilingPath.
