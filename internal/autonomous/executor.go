@@ -1496,6 +1496,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// failed verification; it lets the next attempt consider resuming that
 	// session (see tryRetryResume). Stalls, start and infra failures never set it.
 	verifierRetryPending := false
+	// gatedIdx and countedIdx are the loop index the attempt cap last gated and
+	// last counted. A pass with the same index is a relaunch that costs the task
+	// no attempt (an infrastructure retry, a session that never started, a
+	// daemon restart), so the cap neither gates nor counts it again.
+	gatedIdx, countedIdx := -1, -1
 	for attempt := 0; attempt < budget; attempt++ {
 		// Ceiling step of the retry policy: a second ceiling failure in a row
 		// moves the task to review instead of another attempt.
@@ -1624,6 +1629,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 		}
 
+		// Attempt cap: before a new attempt starts, hold the task when it has
+		// used every attempt the cap allows, else wait out the back-off the
+		// previous attempt left. An adopted session and a relaunch pass through.
+		if !skipSpawn && attempt != gatedIdx {
+			if stop, gerr := m.attemptCapGate(ctx, prd, t); stop {
+				return gerr
+			}
+			gatedIdx = attempt
+		}
 		// prevNode is the node the previous attempt's lease named, passed to
 		// admission as the tie breaker for this attempt's placement.
 		// Retry after a verifier failure: resume the previous session with the
@@ -1637,6 +1651,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if run.Resumed {
 			skipSpawn = true
 			run.SessionID, run.Adopted = t.SessionID, false
+			if attempt != countedIdx {
+				m.noteAttemptStarted(prd, t)
+				countedIdx = attempt
+			}
 			m.adoptCapacity(prd, t)
 			now := m.attemptNow()
 			oldStatus := t.Status
@@ -1679,7 +1697,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				if retried {
 					// Offset the loop's post-iteration attempt++: the restart
 					// costs the task no attempt. The next pass spawns the
-					// replacement (inherited is false by then).
+					// replacement (inherited is false by then). The attempt the
+					// restart cut short was counted when it started, so the
+					// replacement is not counted again.
+					countedIdx = attempt
 					attempt--
 					continue
 				}
@@ -2048,6 +2069,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			run.SessionID = sr.SessionID
 			run.Adopted = false
+			if attempt != countedIdx {
+				m.noteAttemptStarted(prd, t)
+				countedIdx = attempt
+			}
 			if sr.ProfileFallbackReason != "" {
 				m.noteProfileFallback(&run, sr.ProfileFallbackReason)
 			}

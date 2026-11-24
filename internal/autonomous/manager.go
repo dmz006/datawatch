@@ -660,6 +660,11 @@ type Config struct {
 	// Effective* accessors; the live config round-trip carries the block so
 	// a config write takes effect without a restart.
 	InfraRetry config.InfraRetryConfig `json:"infra_retry"`
+	// AttemptCap mirrors autonomous.attempt_cap: the total attempt cap and
+	// back-off per task. Unset keys read their defaults through the
+	// Effective* accessors; the live config round-trip carries the block so a
+	// config write takes effect without a restart.
+	AttemptCap config.AttemptCapConfig `json:"attempt_cap"`
 	// RequestWatch mirrors autonomous.request_watch: the policy of the
 	// request watch. Unset keys read their defaults through the Effective*
 	// accessors; the live config round-trip carries the block so a config
@@ -1152,6 +1157,9 @@ func (c AutomationConfig) EffectiveDiskAlertPercent() int {
 	return p
 }
 
+// attemptCapOff returns a pointer to false, for AttemptCapConfig.Enabled.
+func attemptCapOff() *bool { off := false; return &off }
+
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
 func DefaultConfig() Config {
 	return Config{
@@ -1163,8 +1171,16 @@ func DefaultConfig() Config {
 		GateDrainMinutes:         config.DefaultGateDrainMinutes,
 		GateDisagreement:         "warn",
 		FailureEscalation:        defaultFailureEscalationPolicy(),
-		AutoFixRetries:           1,
-		SecurityScan:             true,
+		// The attempt cap is on in the daemon: an unset autonomous.attempt_cap
+		// block reads on, and the daemon hands the manager that block (see
+		// cmd/datawatch/main.go). A manager built straight from this default, as
+		// the manager-level fixtures are, keeps the earlier behaviour (only the
+		// failure ladder limits a task, and a retry starts at once), so a test of
+		// the ladder or of a review retry does not wait out the back-off. The cap's
+		// own tests set the block explicitly.
+		AttemptCap:     config.AttemptCapConfig{Enabled: attemptCapOff()},
+		AutoFixRetries: 1,
+		SecurityScan:   true,
 		// Snapshot-never-stage defaults match the daemon config's (nil =
 		// reads these in both packages), so a fresh manager GETs the same
 		// effective list as the daemon's /api/config does.
@@ -4836,6 +4852,11 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	// has not started yet, so a reset re-admits it (after the save below)
 	// rather than clearing a finished attempt.
 	wasWaiting := false
+	// operatorClear is true for the one reset that clears the attempt count:
+	// a force reset the operator makes. A reset by a doer, a supervisor session,
+	// a housekeeping repair or a review retry keeps the count.
+	operatorClear := force && review == nil && isOperatorActor(actor)
+	clearedAttempts, clearedHold := 0, false
 	// prd is the shared stored pointer (Store.GetPRD): the task, story and PRD
 	// writes below run under the store lock so they are ordered against
 	// readers (EmitPRDUpdate, snapshots) and persist. SavePRD takes Store.mu
@@ -4848,6 +4869,11 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 					// A task waiting for capacity has not started: resetting it re-admits
 					// it (after the save, below) and needs no force, unlike a finished task.
 					isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked || t.Status == TaskWaitingCapacity || (review != nil && t.Status == TaskReviewNeeded)
+					// A task held at the attempt cap leaves the hold only through
+					// the operator's force reset.
+					if operatorClear && t.Status == TaskReviewNeeded && t.AttemptCapHeld {
+						isRetryable = true
+					}
 					isRequeue := force && (t.Status == TaskCompleted || t.Status == TaskCancelled)
 					if !isRetryable && !isRequeue {
 						if force {
@@ -4916,6 +4942,22 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 					// A human reset starts a new count of failed attempts for the
 					// failure escalation policy, so the ladder restarts at step 1.
 					t.EscalationFailures = 0
+					// The attempt cap's hold describes a task in review; a reset
+					// ends that status. The total attempt count is kept unless the
+					// operator's force reset clears it: no other reset path may.
+					clearedHold = t.AttemptCapHeld
+					t.AttemptCapHeld = false
+					if operatorClear {
+						clearedAttempts = t.AttemptsTotal
+						t.AttemptsTotal = 0
+						t.AttemptNotBefore = nil
+						if clearedHold {
+							t.ReviewSummary = nil
+							if t.FailureReason != nil && t.FailureReason.Source == attemptCapHoldSource {
+								t.FailureReason = nil
+							}
+						}
+					}
 					// v9.2.1 — a manual (operator) reset is the strongest "this is a
 					// retry" signal: to reach this block the task already reached a
 					// terminal-ish status (failed/blocked, or completed/cancelled
@@ -4992,6 +5034,14 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 			prd.BlockedReason = ""
 		}
 		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: decActor, Note: note})
+		if operatorClear && (clearedAttempts > 0 || clearedHold) {
+			prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: attemptCapClearedDecisionKind, Actor: actor,
+				Note: fmt.Sprintf("task %s: the operator's force reset cleared the attempt count (%d attempts started)", taskID, clearedAttempts)})
+			if clearedHold {
+				// The block reason named the held task, which is no longer held.
+				prd.BlockedReason = ""
+			}
+		}
 		return nil
 	}
 	var lockedErr error
@@ -5006,6 +5056,9 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 		m.emitPRDStatus(prd, resetOld, lastDecision(prd, kind), nil)
 	}
 	emitReset(lastDecision(prd, kind))
+	if clearedHold {
+		m.withdrawAttemptCapQuestions(prdID, taskID, actor, "the operator force-reset the task")
+	}
 	// A reset of a waiting-capacity task re-admits it: the task is pending
 	// again and its capacity wait must stay live. requeueQueuedCapacity moves
 	// the task's single live ledger request to the pool the task now resolves
@@ -5216,6 +5269,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	m.releaseCapacity(taskID)
 	emitCancelled()
 	m.withdrawInfraHoldQuestions(prdID, taskID, actor, "task cancelled without answering the question")
+	m.withdrawAttemptCapQuestions(prdID, taskID, actor, "task cancelled without answering the question")
 	// Operator cancel with a reason closes out the work it cancels. When the
 	// Automaton is blocked and this was the last outstanding task, reopen it
 	// the way the review-cancel path does, so the next Run can roll it up.

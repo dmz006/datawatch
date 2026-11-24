@@ -207,6 +207,7 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 	}
 
 	endReason := deriveAttemptEndReason(f, adopted)
+	capCfg, _ := m.attemptCapConfig(prd)
 	rec := TaskAttempt{
 		Backend:               backend,
 		Model:                 model,
@@ -260,6 +261,12 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		t.Attempts = append(t.Attempts, rec)
 		if !f.Requeue {
 			t.EscalationFailures++
+		}
+		// Attempt cap back-off: the next attempt waits the delay the cap's
+		// schedule names for it. A relaunch that costs no attempt waits for
+		// nothing; an operator cancellation counts, so cancel-and-retry waits.
+		if !f.Requeue || endReason == attemptEndCancelledByOperator {
+			t.AttemptNotBefore = attemptBackoffNotBefore(capCfg, t.AttemptsTotal, ended)
 		}
 	})
 	if err := m.store.SaveTask(t); err != nil {

@@ -1611,6 +1611,9 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	if a.resolveInfraHoldAnswer(c) {
 		return
 	}
+	if a.resolveAttemptCapAnswer(c) {
+		return
+	}
 	// The answer to a stuck model request question is only recorded on the
 	// decision log; it never changes a task (request_watch_question.go).
 	if a.M.recordRequestWatchAnswer(c) {

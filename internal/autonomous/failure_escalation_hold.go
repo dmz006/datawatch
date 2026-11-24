@@ -138,6 +138,12 @@ func (m *Manager) parkTaskForReview(prd *PRD, t *Task, p reviewParking) (*TaskAt
 // the Automaton, and one error alert is raised. It returns the error from
 // saving the task; the other side effects are best effort.
 func (m *Manager) holdTaskForReview(prd *PRD, t *Task, lastCategory, detail string) error {
+	// A task that has also used every attempt the cap allows is held at the
+	// cap, with the cap's alert and question, not as an ordinary review hold:
+	// the operator's retry would otherwise only meet the cap one pass later.
+	if m.attemptCapReached(prd, t) {
+		return m.holdAtAttemptCap(prd, t, lastCategory, detail)
+	}
 	var failures int
 	m.store.WithLock(func() { failures = t.EscalationFailures })
 	last, err := m.parkTaskForReview(prd, t, reviewParking{

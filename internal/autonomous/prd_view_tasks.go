@@ -1,6 +1,10 @@
 package autonomous
 
-import "github.com/dmz006/datawatch/internal/requestwatch"
+import (
+	"time"
+
+	"github.com/dmz006/datawatch/internal/requestwatch"
+)
 
 // TasksView is a read-only view of a PRD for task-level listings. It embeds
 // SummaryView, so its JSON carries the summary fields plus a flat list of
@@ -31,8 +35,15 @@ type TaskEntry struct {
 	// EscalationFailures counts failed attempts since the last operator action.
 	EscalationFailures int `json:"escalation_failures,omitempty"`
 	// AttemptCount is the number of recorded attempts of the task.
-	AttemptCount  int    `json:"attempt_count,omitempty"`
-	ReviewSummary string `json:"review_summary,omitempty"`
+	AttemptCount int `json:"attempt_count,omitempty"`
+	// AttemptsTotal is the total number of attempts the task was started for,
+	// kept across cancels, resets and restarts. AttemptCapHeld is true while the
+	// task is held at the attempt cap; AttemptNotBefore is the earliest start of
+	// its next attempt while the cap's back-off applies.
+	AttemptsTotal    int        `json:"attempts_total,omitempty"`
+	AttemptCapHeld   bool       `json:"attempt_cap_held,omitempty"`
+	AttemptNotBefore *time.Time `json:"attempt_not_before,omitempty"`
+	ReviewSummary    string     `json:"review_summary,omitempty"`
 	// LastAttemptSessionID, LastAttemptTmuxSession, LastAttemptEndReason and
 	// LastAttemptEndDetail describe how the most recent recorded attempt ended.
 	LastAttemptSessionID   string `json:"last_attempt_session_id,omitempty"`
@@ -115,6 +126,11 @@ func buildTaskEntry(task *Task) TaskEntry {
 	}
 	entry.EscalationFailures = task.EscalationFailures
 	entry.AttemptCount = len(task.Attempts)
+	entry.AttemptsTotal, entry.AttemptCapHeld = task.AttemptsTotal, task.AttemptCapHeld
+	if task.AttemptNotBefore != nil {
+		nb := *task.AttemptNotBefore
+		entry.AttemptNotBefore = &nb
+	}
 	if n := len(task.Attempts); n > 0 {
 		a := task.Attempts[n-1]
 		entry.LastAttemptSessionID, entry.LastAttemptTmuxSession = a.SessionID, a.TmuxSession
