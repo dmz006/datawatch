@@ -2,10 +2,10 @@
 //
 // Every path that ends a session, or closes its tmux pane, records who did it
 // and why. The record goes to the daemon journal and to the session's
-// timeline.md, and those two still hold who ended a session. The only session
-// fields about an end are EndedAt and EndNote, set when a record is finalised
-// because its process is gone; no other session field, config key or endpoint
-// carries end attribution.
+// timeline.md, and the session record carries the result too: EndedAt and
+// EndNote are written on every end path (a kill with its caller and reason, a
+// natural complete or fail, a gone-session finalise), first end wins. No other
+// session field, config key or endpoint carries end attribution.
 //
 // A terminal state is sticky. Once a session is complete, failed or killed,
 // a later end keeps that state and is recorded in the journal only, so the
@@ -131,9 +131,15 @@ func (m *Manager) EndSession(fullID string, why EndReason) error {
 			sess.UpdatedAt = time.Now()
 		}
 		newState = sess.State
+		stampEnd(sess, time.Now(), endNoteFor(oldState, newState, why))
 	})
 	if err := m.store.Save(sess); err != nil {
 		return fmt.Errorf("save session: %w", err)
+	}
+	// The session holds no slot a moment after it is ended. The periodic reap
+	// stays as the safety net for a lease this call could not name.
+	if m.onLeaseRelease != nil {
+		m.onLeaseRelease(sess)
 	}
 
 	m.upsertLedger(sess)
@@ -172,6 +178,29 @@ func (m *Manager) EndSession(fullID string, why EndReason) error {
 	}
 
 	return nil
+}
+
+// stampEnd records the end time and the exit note on a session record that has
+// none yet. The first end wins: a later end of a finished session keeps what the
+// record already says.
+func stampEnd(sess *Session, at time.Time, note string) {
+	if sess.EndedAt != nil {
+		return
+	}
+	ended := at
+	sess.EndedAt = &ended
+	if sess.EndNote == "" {
+		sess.EndNote = note
+	}
+}
+
+// endNoteFor is the exit note an end through EndSession leaves on the record:
+// who ended it and why, or that a finished session was only closed again.
+func endNoteFor(from, to State, why EndReason) string {
+	if from.IsTerminal() {
+		return fmt.Sprintf("%s; closed by %s: %s", to, why.Caller, why.Reason)
+	}
+	return fmt.Sprintf("%s by %s: %s", to, why.Caller, why.Reason)
 }
 
 // cascadeReason is the reason a child carries when its parent's end takes it

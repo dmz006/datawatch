@@ -28,20 +28,21 @@ out from this transition.
 `state` is the true state of the session. A record is not left in `running`
 (or another non-final state) once its terminal session and process are gone.
 
-Two optional fields in the session JSON say a record was finalised:
+Two optional fields in the session JSON say how and when a session ended.
+They are written on every end path, and the first end wins:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `ended_at` | RFC 3339 time | When the record was finalised because its process was gone. |
-| `end_note` | string | Always `process gone, finalised`. |
+| `ended_at` | RFC 3339 time | When the session ended. |
+| `end_note` | string | How it ended: `killed by <caller>: <reason>` for a kill, `session process exited: complete` or `session process exited: failed` for a session that ended on its own, `process gone, finalised` for a record finalised because its process was gone. |
 
-Both fields are omitted on every session that was not finalised this way.
+Both fields are omitted while the session runs, and on a record that ended
+before the fields were written.
 
 A record whose process is gone is finalised as `complete` (its output
 ends with a `DATAWATCH_COMPLETE:` line) or `killed` (anything else).
-Only such a record carries `ended_at` (RFC 3339 time it was finalised)
-and `end_note` (`process gone, finalised`) in the session JSON; both
-are omitted on every other session. The finaliser applies the rule to
+Such a record carries `ended_at` and the `end_note` `process gone, finalised`
+in the session JSON. The finaliser applies the rule to
 both the records the daemon holds and the saved `session.json` files. The
 daemon starts it at boot and runs it every `session.finalise_interval_minutes`
 (default 10; 0 = no scheduled runs; set it through `PUT /api/config`, and

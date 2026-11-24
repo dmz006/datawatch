@@ -141,9 +141,11 @@ vanishing before it finished. The record also gets two fields in
 | `ended_at` | When the record was finalised. |
 | `end_note` | `process gone, finalised` |
 
-Both fields are absent on every session that was not finalised this way. To
-see how any other session ended, read the daemon journal and the session's
-`timeline.md`, as before.
+Every other end also writes both fields now: a kill leaves `killed by <caller>: <reason>`,
+a session that ended on its own leaves `session process exited: complete` or
+`session process exited: failed`. They are absent only while a session runs and
+on records that ended before this was added. The daemon journal and the
+session's `timeline.md` still hold the same story.
 
 ### The finaliser
 

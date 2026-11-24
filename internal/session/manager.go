@@ -564,6 +564,10 @@ type Manager struct {
 	// serves normal completion).
 	onSessionReap func(sess *Session)
 
+	// onLeaseRelease frees the capacity lease bound to a session as soon as
+	// the session is ended (EndSession), instead of at the next periodic reap.
+	onLeaseRelease func(sess *Session)
+
 	// traceIngest feeds trace events into the trace store and the session
 	// timeline (see trace_ingest.go). nil until wired; observe only.
 	traceIngest *TraceIngestor
@@ -1305,6 +1309,13 @@ func (m *Manager) SetOnSessionReap(fn func(*Session)) {
 	m.onSessionReap = fn
 }
 
+// SetOnSessionLeaseRelease sets the callback that frees the capacity lease
+// bound to a session. EndSession calls it on every end, so a killed session
+// holds no slot a moment after it is killed.
+func (m *Manager) SetOnSessionLeaseRelease(fn func(*Session)) {
+	m.onLeaseRelease = fn
+}
+
 // SetOnSessionEnd sets a callback invoked when a session reaches a terminal state.
 func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
@@ -1371,6 +1382,15 @@ func (m *Manager) SetScratchReleaser(fn func(*Session)) {
 // unchanged in behaviour. Every end path (complete, failed, killed,
 // interrupted-after-restart, ...) funnels through here.
 func (m *Manager) emitSessionEnd(sess *Session) {
+	// Every end path funnels here: write the end time and exit note when the
+	// record has none (a kill already wrote them), so a finished record always
+	// says when and how it ended.
+	if sess.EndedAt == nil {
+		m.store.Mutate(func() {
+			stampEnd(sess, time.Now(), fmt.Sprintf("session process exited: %s", sess.State))
+		})
+		_ = m.store.Save(sess)
+	}
 	if m.onSessionReap != nil {
 		// Normal completion: the reap may wait out a grace period, so it
 		// never blocks the state transition that called us.

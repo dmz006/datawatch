@@ -153,3 +153,33 @@ func verifierTaskFromSessionName(name string) (string, bool) {
 	}
 	return name[len(p):], true
 }
+
+// releaseLeasesOfEndedSession frees every capacity lease bound to the ended
+// session at once and returns the freed holders. A lease is the session's when
+// its recorded session is the full or short id, or, for a verifier lease, when
+// the verifier registry maps its holder to that session. Leases of other
+// sessions are never touched; a lease that changed since it was read is left
+// alone (ReleaseIf).
+func releaseLeasesOfEndedSession(led *capacity.Ledger, reg *verifierRegistry, sess *session.Session) []string {
+	if led == nil || sess == nil || (sess.FullID == "" && sess.ID == "") {
+		return nil
+	}
+	ours := func(id string) bool { return id != "" && (id == sess.FullID || id == sess.ID) }
+	var freed []string
+	for _, ls := range led.Leases() {
+		sid := ls.SessionID
+		if reg != nil {
+			if v := reg.sessionOf(ls.Holder); v != "" {
+				sid = v
+			} else if strings.HasPrefix(ls.Holder, autonomous.VerifyHolder("")) && reg.isActive(ls.Holder) {
+				// A lease handed to a verifier that has no session yet is the
+				// verifier's, not the worker session's it still names.
+				continue
+			}
+		}
+		if ours(sid) && led.ReleaseIf(ls.Holder, ls.Acquired) {
+			freed = append(freed, ls.Holder)
+		}
+	}
+	return freed
+}

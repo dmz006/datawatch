@@ -15009,11 +15009,11 @@ components:
         ended_at:
           type: string
           format: date-time
-          description: When the daemon finalised the record because its process was gone. Present only on a session that was finalised this way; omitted on every other session.
+          description: When the session ended. Written on every end path (a kill, a natural complete or fail, a record finalised because its process was gone); the first end wins. Omitted while the session runs, and on a record that ended before this field was written.
         end_note:
           type: string
-          description: Why the record was finalised. Always `process gone, finalised` when present; omitted on a session that was not finalised this way.
-          example: "process gone, finalised"
+          description: How the session ended, in one short note. `killed by <caller>: <reason>` for a kill, `session process exited: complete` or `session process exited: failed` for a session that ended on its own, `process gone, finalised` for a record finalised because its process was gone. Omitted while the session runs.
+          example: "killed by task-respawn: task respawned"
 
     SessionState:
       type: string
@@ -15022,7 +15022,7 @@ components:
         The true state of the session. A record is never left in `running` or
         another non-final state after its terminal session and process are gone:
         the daemon finalises it as `killed`, or `complete` when its output ends
-        with the completion marker, and sets `ended_at` and `end_note`.
+        with the completion marker. Every end sets `ended_at` and `end_note`.
 
         - `running`: claude-code is actively running
         - `waiting_input`: claude-code is waiting for user response
