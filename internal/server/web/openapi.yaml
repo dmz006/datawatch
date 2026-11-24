@@ -5462,6 +5462,10 @@ paths:
                     type: integer
                     minimum: 0
                     description: Operator-set worker count (0 = derive from observer GPU data, one slot per GPU limited by free GPU memory). Capped by max_concurrent_sessions when that is set.
+                  hard_limit:
+                    type: boolean
+                    default: false
+                    description: Operator-set flag, default false. Off, an operator start may go over the node's engine slots and the overage is recorded; on, the slots are a physical limit and an operator start waits for a free engine. Workers wait either way.
                   verifier_slots:
                     type: integer
                     minimum: 0
@@ -5495,6 +5499,7 @@ paths:
               properties:
                 max_concurrent_sessions: {type: integer, minimum: 0}
                 session_slots: {type: integer, minimum: 0, description: Operator-set worker count; 0 derives the count from observer GPU data.}
+                hard_limit: {type: boolean, default: false, description: "Operator-set flag, default false. Off, an operator start may go over the node's engine slots and the overage is recorded; on, the slots are a physical limit and an operator start waits for a free engine. Workers wait either way. Omitting it on a replace turns it off."}
                 verifier_slots: {type: integer, minimum: 0, nullable: true, description: Worker slots for verifiers on the node; absent = unset (1 if the node hosts a local engine, else 0), 0 = no verifier slots.}
                 verifier_min_free_mem_mb: {type: integer, minimum: 0, nullable: true, description: Free GPU MB required before a new verifier slot starts; absent = 1024 MB, 0 = check off.}
                 verifier_context_mb: {type: integer, minimum: 0, description: Extra context MB one verifier slot holds, used to size the advice figure (0 = none).}

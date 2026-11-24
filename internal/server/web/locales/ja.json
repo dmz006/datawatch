@@ -2359,6 +2359,8 @@
   "capacity_rate_window_seconds_help": "レート上限のスライディングウィンドウの長さ。上限を設定した場合のみ有効で、0 は 3600 秒を使用します。",
   "compute_field_max_sessions": "Max concurrent sessions (0 = unlimited)",
   "compute_field_session_slots": "Session slots (0 = derive from GPU data)",
+  "compute_field_hard_limit": "ハード制限：エンジンスロットは物理的な上限",
+  "compute_hard_limit_hint": "オフ（既定）：オペレーターによる開始はスロットを超えて実行でき、超過分は記録されます。オン：空きエンジンを待ちます。ワーカーはどちらの場合も待機します。",
   "llm_field_max_inflight": "Max in-flight autonomous sessions (0 = unlimited)",
   "llm_field_fallthrough_target": "Allowed fall-through target",
   "llm_fallthrough_target_hint": "When capacity fall-through is on and a worker's requested pool is full, the daemon may run it on this LLM instead.",

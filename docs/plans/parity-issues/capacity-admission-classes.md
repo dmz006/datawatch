@@ -80,6 +80,25 @@ A restarted worker session (rate-limit fallback, exit hook) keeps the worker cla
 of other waiting workers, still respecting the cap. This is daemon behaviour only: it adds no field and no
 setting. The apps need nothing beyond showing the wait reason of a waiting task as they already do.
 
+## Node engine slots are soft; the node `hard_limit` setting
+
+A compute node's engine slots (the `node:<name>` and `node-verify:<name>` pools) are no longer a physical limit
+for operator starts: an operator start over them is admitted and the lease records the overage, shown on the
+pool line as "N over the limit: operator" like any other pool. Workers still wait. A new per-node setting
+`hard_limit` (boolean, default false) turns the old behaviour back on for that node: an operator start waits for
+a free engine there.
+
+- Node record: `hard_limit` on `GET /api/compute/nodes`, `GET /api/compute/nodes/{name}` and
+  `PUT/POST /api/compute/nodes`. A `PUT` replaces the whole node, so the app must send the current value on
+  every save or the node turns soft again (the same rule as `session_slots` and `allow_model_swap`).
+- Locale keys `compute_field_hard_limit` (label) and `compute_hard_limit_hint` (one-line help), in every file
+  under internal/server/web/locales. The PWA places the checkbox in both node forms (`fe_compute_hard_limit` in
+  `buildComputeNodeForm`, `computeNewHardLimit` in `openComputeAddPanel`).
+- Federation: a peer's node setting is its own. The app edits the node of the server it is connected to and
+  never copies a setting between servers.
+- The capacity view needs nothing new: node pools already show `over`, and the lease `overage` list now may
+  name a `node:` pool.
+
 ## Acceptance
 
 - [ ] Settings has the five rows, labels from the locale keys in every shipped language.
@@ -89,3 +108,6 @@ setting. The apps need nothing beyond showing the wait reason of a waiting task 
 - [ ] `unmapped` backends show as a warning.
 - [ ] The cluster view shows each host at its own limits, the Claude account total and a pending shared account
       note; a peer that is not reachable shows as such.
+- [ ] The node edit form has a *Hard limit* switch with the label and hint from the locale keys, off by default.
+- [ ] A node save sends `hard_limit` every time; an edit that does not touch it leaves it unchanged.
+- [ ] A node pool above its limit reads "N over the limit: operator" in the capacity view.

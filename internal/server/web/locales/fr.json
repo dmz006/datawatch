@@ -2359,6 +2359,8 @@
   "capacity_rate_window_seconds_help": "Durée de la fenêtre glissante des plafonds de débit. N'a d'effet que si un plafond est défini ; 0 utilise 3600 secondes.",
   "compute_field_max_sessions": "Max concurrent sessions (0 = unlimited)",
   "compute_field_session_slots": "Session slots (0 = derive from GPU data)",
+  "compute_field_hard_limit": "Limite stricte : les emplacements du moteur sont une limite physique",
+  "compute_hard_limit_hint": "Désactivé (par défaut) : un démarrage opérateur peut dépasser les emplacements et le dépassement est enregistré. Activé : il attend un moteur libre. Les workers attendent dans les deux cas.",
   "llm_field_max_inflight": "Max in-flight autonomous sessions (0 = unlimited)",
   "llm_field_fallthrough_target": "Allowed fall-through target",
   "llm_fallthrough_target_hint": "When capacity fall-through is on and a worker's requested pool is full, the daemon may run it on this LLM instead.",

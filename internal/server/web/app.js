@@ -20210,6 +20210,11 @@ function buildComputeNodeForm(n) {
     <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${escHtml(n.max_concurrent_sessions||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_session_slots')||'Session slots (0 = derive from GPU data)')}</label>
     <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${escHtml(n.session_slots||'')}" />
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:6px;">
+      <input id="fe_compute_hard_limit" type="checkbox" ${n.hard_limit ? 'checked' : ''} />
+      ${escHtml(t('compute_field_hard_limit')||'Hard limit: engine slots are a physical limit')}
+    </label>
+    <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_hard_limit_hint')||'Off (default): an operator start may go over the slots and the overage is recorded. On: it waits for a free engine. Workers wait either way.')}</div>
     <!-- PRD 35070001 — verifier slots: empty = daemon default, an integer
          as typed, so the three fields round-trip through the collector. -->
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_slots')||'Verifier slots (empty = default, 0 = none)')}</label>
@@ -20260,6 +20265,7 @@ function collectComputeNodeForm(originalRecord) {
   out.declared_capacity.max_concurrent_models = parseInt((document.getElementById('fe_compute_max_models')||{}).value || '0', 10) || 0;
   out.max_concurrent_sessions = parseInt((document.getElementById('fe_compute_max_sessions')||{}).value || '0', 10) || 0;
   out.session_slots = parseInt((document.getElementById('fe_compute_session_slots')||{}).value || '0', 10) || 0;
+  out.hard_limit = !!((document.getElementById('fe_compute_hard_limit')||{}).checked);
   // PRD 35070001 — verifier settings: an empty field saves null (the daemon
   // side decodes it as unset → default) and a number saves as that whole
   // number, so "empty = default, 0 = off/none" reads straight off the form.
@@ -21497,6 +21503,13 @@ window.openComputeAddPanel = function(existingNode, prefill) {
         </label>
         <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_pin_hint')||'Requests with no model run on the pin. An explicit request for another model is refused unless swap is allowed.')}</div>
       </div>
+      <div class="wizard-field">
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);">
+          <input id="computeNewHardLimit" type="checkbox" ${existingNode && existingNode.hard_limit ? 'checked' : ''} />
+          ${escHtml(t('compute_field_hard_limit')||'Hard limit: engine slots are a physical limit')}
+        </label>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_hard_limit_hint')||'Off (default): an operator start may go over the slots and the overage is recorded. On: it waits for a free engine. Workers wait either way.')}</div>
+      </div>
       ${isEdit && existingNode && existingNode.kind === 'ollama' ? `
       <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
@@ -21754,6 +21767,7 @@ window.computeAddNode = function() {
       observer_peer: ((document.getElementById('computeNewObserverPeer')||{}).value || '').trim(),
       node_pinned_model: ((document.getElementById('computeNewPinnedModel')||{}).value || '').trim(),
       allow_model_swap: !!((document.getElementById('computeNewAllowSwap')||{}).checked),
+      hard_limit: !!((document.getElementById('computeNewHardLimit')||{}).checked),
       // Sent even when empty/false: PUT replaces the whole node, so this is
       // how an edit clears a CA file, a pin or the opt-out. Skipping
       // verification excludes the other two.

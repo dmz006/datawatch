@@ -109,7 +109,7 @@ Other channels:
 - **PWA:** Settings > Compute > node edit > *Max concurrent sessions* and
   *Session slots*; LLM edit > *Max in flight*; Settings > General > Automata >
   capacity fields; Automata > Capacity card shows pools and the queue.
-- **MCP:** `compute_node_update` (`session_slots`, `max_concurrent_sessions`),
+- **MCP:** `compute_node_update` (`session_slots`, `max_concurrent_sessions`, `hard_limit`),
   `llm_update` (`max_inflight`), `config_set` for
   `autonomous.capacity_*` and `session.reserved_interactive`,
   `capacity_status` to view, `autonomous_prd_set_priority`.
@@ -203,6 +203,38 @@ without a restart. A derived count never drops below the workers already running
 on the node, but that floor is capped at the GPU count. Running workers are not
 stopped. A node that hosts no local engine takes no slot count at all; it keeps
 its `max_concurrent_sessions` limit.
+
+### Soft node slots and hard_limit
+
+Node slots are not a physical limit by default. A local engine can often run
+several models at once, only slower, and a machine with a lot of memory may run
+many; how many is up to the user and the hardware. So an operator start (a
+session you start yourself) over the `node:<name>` or `node-verify:<name>` pool
+of a node is admitted like it would be on any other pool, and its lease records
+the overage: the pool, its limit and how far over. It shows on the pool line of
+`datawatch capacity`, in the chat `capacity` verb, in the Capacity card, and in
+`GET /api/capacity`, and raises an alert when
+`autonomous.capacity_operator_overage_alert` is on.
+
+Nothing else changes. Workers still wait for a free slot on a node pool, the
+supervisor class does not use node pools, and the node a worker is placed on is
+picked by the same rules as before (least loaded first, then priority); an
+operator's overage lease counts as load on that node, so a worker goes to a node
+with room.
+
+If you know a node's engine truly cannot take more, turn `hard_limit` on for that
+node (default off). With it on, that node's pools keep the old behaviour for every
+class: an operator start waits for a free engine and is refused with the usual
+capacity message if none frees up in time. The setting is per node and read live;
+a peer's node setting is its own, because each daemon reads only its own nodes.
+
+- **PWA:** Settings > Compute > node edit > *Hard limit*.
+- **CLI:** `datawatch compute node update <name> --hard-limit` (update replaces
+  the whole node, so pass it again to keep it).
+- **MCP:** `compute_node_update` / `compute_node_add` with `hard_limit`.
+- **Chat channels:** `compute node update <name> hard_limit=true`.
+- **REST:** `PUT /api/compute/nodes/{name}` with `"hard_limit": true`.
+- **YAML:** `hard_limit: true` on a `compute_nodes` entry.
 
 ### Verifier slots
 
@@ -1448,7 +1480,7 @@ When a worker session is restarted (a rate-limit fallback to another profile, or
 
 ### Operator overage
 
-An operator start is never refused. When `llm:claude-code` is full, the session still starts, and its lease records the overage: the pool, who, how far over. The overage counts in the pool's used figure and shows as `N over the limit: operator` on the pool line of `datawatch capacity`, in the chat `capacity` verb, in the Capacity card of the web app, and as `over` on the pool and `class` and `overage` on the lease in `GET /api/capacity`. Autonomous work waits until the pool is back under its limit. Turn on `autonomous.capacity_operator_overage_alert` to get an alert each time. A compute node's engine limit is a hardware limit and still holds for an operator start.
+An operator start is never refused. When `llm:claude-code` is full, the session still starts, and its lease records the overage: the pool, who, how far over. The overage counts in the pool's used figure and shows as `N over the limit: operator` on the pool line of `datawatch capacity`, in the chat `capacity` verb, in the Capacity card of the web app, and as `over` on the pool and `class` and `overage` on the lease in `GET /api/capacity`. Autonomous work waits until the pool is back under its limit. Turn on `autonomous.capacity_operator_overage_alert` to get an alert each time. A compute node's engine slots are soft in the same way: an operator start over the slots of a node is admitted and the overage is recorded (pool `node:<name>`, its limit, how far over). Set `hard_limit` on a node whose engine cannot take more; see [Soft node slots and hard_limit](#soft-node-slots-and-hard_limit).
 
 ### The operator allowance above the session cap
 
