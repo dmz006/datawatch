@@ -417,6 +417,18 @@ func isNilPRD(v any) bool {
 	return ok && p == nil
 }
 
+// withTaskCleanup adds to a close reply how many task worktrees and branches
+// the Automaton kept and why, when it had any to look at.
+func withTaskCleanup(reply map[string]any, prd any) map[string]any {
+	if isNilPRD(prd) {
+		return reply
+	}
+	if p, err := toPRD(prd); err == nil && p.TaskWorktreeCleanup != nil {
+		reply["task_worktree_cleanup"] = p.TaskWorktreeCleanup
+	}
+	return reply
+}
+
 // toPRD returns v as a PRD for the compact view. A *autonomous.PRD is used as
 // it is. Any other value takes a JSON round trip, so a test double's shape
 // still gets a summary.

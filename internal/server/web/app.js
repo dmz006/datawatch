@@ -35780,6 +35780,16 @@ window.toggleAutomataSelectAll = toggleAutomataSelectAll;
 // an archive because the branch holds commits that are not on the default
 // branch, ask for a keep or drop decision and a reason, then repeat the call
 // with the decision. Any other error is passed on unchanged.
+// Closing an Automaton keeps every task worktree and branch that holds work.
+// When the reply of a cancel or an archive says some were kept, say how many
+// and why; otherwise say nothing.
+function _automataKeptNotice(res) {
+  const c = res && res.task_worktree_cleanup;
+  if (!c || !((c.worktrees_kept || 0) + (c.branches_kept || 0))) return res;
+  const why = Object.keys(c.reasons || {}).sort().map(k => tOr('task_keep_reason_' + k, k) + ' (' + c.reasons[k] + ')').join(', ');
+  showToast(t('automata_task_worktrees_kept', [c.worktrees_kept || 0, c.branches_kept || 0, why]), 'warning', 8000);
+  return res;
+}
 function _automataPostWithDecision(url) {
   return apiFetch(url, { method: 'POST' }).catch(err => {
     const msg = String((err && err.message) || err);
@@ -35789,7 +35799,7 @@ function _automataPostWithDecision(url) {
     const reason = String(window.prompt(t('finished_work_reason_prompt'), '') || '').trim();
     if (!reason) throw err;
     return apiFetch(url, { method: 'POST', body: JSON.stringify({ decision: d, reason }) });
-  });
+  }).then(_automataKeptNotice);
 }
 window.batchAutomataAction = function(action) {
   // v6.12.4 — operator: "click acts on those". Filter the selected

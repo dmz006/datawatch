@@ -1399,6 +1399,11 @@ func newAutonomousPRDCancelCmd() *cobra.Command {
 given with --outcome, else the one its own record proves (delivered when it has
 a shipped record, dropped when its work was left unfinished).
 
+The reply's task_worktree_cleanup says how many task worktrees and task branches
+were kept and why. A worktree with uncommitted or untracked files is never
+removed, and a task branch with commits that are not on the default branch is
+never deleted.
+
 Finished work must never sit unmerged: when autonomous.finished_work is on (the
 default) an Automaton whose branch holds commits that are not on the default
 branch is refused unless --decision is given. --decision keep records that the
