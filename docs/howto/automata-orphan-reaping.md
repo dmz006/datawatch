@@ -82,8 +82,13 @@ when a task spec asks for unbounded CPU stress.
 
 **When it runs.** Every session end: finished, cancelled,
 failed, or the daemon itself stopping. It runs after the session is
-recorded ended, and only against that one session's worktree and scratch
-folders.
+recorded ended, and only against that one session: the process environment
+carries its id, or the process lives in a folder made for that session alone
+(its scratch folder, and its project folder only when that is a linked git
+worktree). A shared project folder (a plain folder or a repository checkout
+that other sessions and your own scripts use) is never evidence, so ending one
+session never ends another session's script, watcher or commit hook that
+happens to sit in the same folder.
 
 **How a process is matched.** A process is attributed to a session only by
 evidence read from `/proc` — never by command name. A process of another
@@ -92,7 +97,7 @@ of evidence are:
 
 | Evidence | What proves it | Strong or weak |
 |----------|---------------|----------------|
-| `exe` | The executable lives inside the session's worktree or scratch folder | strong — counts whatever the parent is |
+| `exe` | The executable lives inside a folder made for this session alone (its worktree or scratch folder) | strong — counts whatever the parent is |
 | `script` | A script run directly, or through a known interpreter (`sh`, `bash`, `python3`, `node`, …), lives inside the session folders | strong |
 | `cwd` | The working directory is inside the session folders **and** the process was orphaned (its parent is `init` or a service that adopts orphans) | weak — an operator's live shell or editor sitting in the folder is never touched |
 | `ancestry` | The process's parent chain reaches one of the session's known root pids | direct |
