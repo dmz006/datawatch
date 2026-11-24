@@ -286,7 +286,22 @@ type Lease struct {
 	// usedLocked), so new work sees the node as full. It clears, and the lease
 	// joins the node pool, once the pool has room.
 	NodeOverflow bool `json:"node_overflow,omitempty"`
+	// Adopted marks a lease recorded by Adopt: work that survived a restart
+	// rather than work admitted through the queue.
+	Adopted bool `json:"adopted,omitempty"`
+	// OverLimit, OverLimitCode and OverLimitReason are set by Snapshot, never
+	// stored: an adopted worker lease that sits in a pool or node holding more
+	// than its limit, the code (OverLimitAdopted) and a readable reason naming
+	// the pool or node, what it holds and its limit. All three are absent when
+	// the lease is not over a limit.
+	OverLimit       bool   `json:"over_limit,omitempty"`
+	OverLimitCode   string `json:"over_limit_code,omitempty"`
+	OverLimitReason string `json:"over_limit_reason,omitempty"`
 }
+
+// OverLimitAdopted is the OverLimitCode of an adopted worker lease that sits
+// in a pool or node holding more than its limit.
+const OverLimitAdopted = "adopted_over_limit"
 
 // Waiter is a queued request as reported by Snapshot.
 type Waiter struct {
@@ -776,6 +791,59 @@ func (l *Ledger) usedLocked(pool string) int {
 		used += l.opt.External(pool)
 	}
 	return used
+}
+
+// flagOverLimitLocked sets the over-limit fields on the copies of leases a
+// Snapshot returns. A limited pool or node is over when what admission counts
+// in it, less the overage of operator leases (an operator start is allowed over
+// the cap and records that on its own lease), is above its limit. Only adopted
+// worker leases are flagged: normal admission never grants over a limit, so a
+// lease that was admitted is never the one that put a pool over. Caller holds l.mu.
+func (l *Ledger) flagOverLimitLocked(leases []Lease) {
+	over := map[string]int{}
+	for p, lim := range l.limits {
+		if lim <= 0 {
+			continue
+		}
+		used := l.usedLocked(p)
+		for _, ls := range l.leases {
+			for _, o := range ls.Overage {
+				if o.Pool == p {
+					used--
+				}
+			}
+		}
+		if used > lim {
+			over[p] = used
+		}
+	}
+	if len(over) == 0 {
+		return
+	}
+	for i := range leases {
+		ls := &leases[i]
+		if !ls.Adopted || (ls.Class != "" && ls.Class != ClassWorker) {
+			continue
+		}
+		pools := append([]string(nil), ls.Pools...)
+		if ls.NodeOverflow && ls.Node != "" {
+			pools = append(pools, "node:"+ls.Node)
+		}
+		sort.Strings(pools)
+		for _, p := range pools {
+			used, ok := over[p]
+			if !ok {
+				continue
+			}
+			kind, name := "pool", p
+			if n, isNode := strings.CutPrefix(p, "node:"); isNode {
+				kind, name = "node", n
+			}
+			ls.OverLimit, ls.OverLimitCode = true, OverLimitAdopted
+			ls.OverLimitReason = fmt.Sprintf("adopted at restart over the limit: %s %s holds %d, limit %d; new work waits until it is back under the limit", kind, name, used, l.limits[p])
+			break
+		}
+	}
 }
 
 // promoteOverflowLocked moves an adopted lease that was held outside a full node
@@ -1629,7 +1697,7 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 		Holder: req.Holder, PRDID: req.PRDID, Role: req.Role,
 		Pools: append([]string(nil), req.Pools...),
 		Model: req.Model, Acquired: now, SessionID: sessionID,
-		NodeUnknown: req.NodeUnknown && req.Node == "",
+		NodeUnknown: req.NodeUnknown && req.Node == "", Adopted: true,
 	}
 	if req.Node != "" {
 		// The session occupies this node whether or not it is still among the
@@ -1908,6 +1976,7 @@ func (l *Ledger) Snapshot() Status {
 			names[p] = true
 		}
 	}
+	l.flagOverLimitLocked(st.Leases)
 	for _, w := range l.waiters {
 		// Recompute the reason as a dispatch pass would (refresh, then
 		// resolve) without granting, reordering or recording rate use, so a
@@ -2072,6 +2141,11 @@ func FormatText(st Status) string {
 	for _, ls := range st.Leases {
 		for _, o := range ls.Overage {
 			fmt.Fprintf(&b, "Operator session %s: %s is %d over its limit of %d\n", ls.Holder, o.Pool, o.Over, o.Limit)
+		}
+	}
+	for _, ls := range st.Leases {
+		if ls.OverLimit {
+			fmt.Fprintf(&b, "Worker %s over the limit: %s\n", ls.Holder, ls.OverLimitReason)
 		}
 	}
 	if len(st.Waiting) == 0 {

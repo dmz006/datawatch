@@ -1514,6 +1514,8 @@ Ask the daemon what a start would do with `datawatch capacity admission --backen
 
 If the work re-adopted at a restart leaves a pool above its limit, the daemon raises one alert per pool. The sessions keep running; new work waits until the pool is back under its limit. A cancelled task never takes a lease, runs no placement and loads no model on a node.
 
+The capacity read tells you which workers are over the limit and why. Each adopted worker lease that sits in a pool or node holding more than its limit carries `over_limit: true`, `over_limit_code: adopted_over_limit` and an `over_limit_reason` that names the pool or node, what it holds and its limit (`GET /api/capacity`, the `capacity` MCP tool, `datawatch capacity`). The text view adds a `Worker <id> over the limit: ...` line for each, and the web Capacity card marks the holder **over the limit** with the reason as a tooltip. A worker admitted through the queue is never flagged, and an operator session that was started over a limit keeps its own overage line instead. The flag clears when the pool or node is back at its limit.
+
 ## Common pitfalls
 
 - **Everything queues behind one big model.** That is the node limit
