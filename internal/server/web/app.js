@@ -27641,6 +27641,7 @@ const GENERAL_CONFIG_FIELDS = [
     // warning state only, block = gate approval (server display default is
     // block when unset). Min ratio 0..1 (server default 1.0).
     { key: 'autonomous.plan_coverage_check', label: 'Plan coverage check (off | warn | block, default block)', labelKey: 'settings_plan_coverage', type: 'select', options: ['off', 'warn', 'block'], default: 'block' },
+    { key: 'autonomous.drift_mode', label: 'File drift mode (block | warn, default block)', labelKey: 'settings_drift_mode', type: 'select', options: ['block', 'warn'], default: 'block' },
     { key: 'autonomous.undeclared_edit_mode', label: 'Undeclared edit mode (off | warn | block, default warn)', labelKey: 'settings_undeclared_edit_mode', type: 'select', options: ['off', 'warn', 'block'], default: 'warn' },
     { key: 'autonomous.plan_coverage_min_ratio', label: 'Plan coverage min ratio (requirement coverage 0-1, default 1.0)', labelKey: 'settings_plan_coverage_min_ratio', type: 'number', placeholder: '1.0', min: 0.1, max: 1, step: 0.1, default: '1' },
     // Plan-coverage filters (both on by default): suppress findings for
@@ -38317,6 +38318,20 @@ function renderTaskUndeclaredEdits(task) {
     <ul style="margin:4px 0 0 16px;font-size:11px;">${edits.map(e => `<li><code>${escHtml(e.path)}</code> (${Number(e.lines_changed) || 0})</li>`).join('')}</ul></div>`;
 }
 
+// Files a run left behind in the project folder (the daemon's end-of-run
+// cleanup check puts them in leftover_warnings on the Automaton). Warn-only
+// and informational; every entry is escaped plain text. Empty when none.
+function renderDetailLeftoverWarnings(prd) {
+  const warns = (prd && prd.leftover_warnings) || [];
+  if (!warns.length) return '';
+  const title = t('prd_leftover_warnings_title') || 'Files left behind';
+  const body = t('prd_leftover_warnings_body') || 'The run left these files in the project folder. Review them and remove or commit them.';
+  return `<div style="margin-top:10px;padding:8px;border:1px solid var(--warning,#d90);border-radius:4px;font-size:11px;">
+      <strong>${escHtml(title)} (${warns.length})</strong> — ${escHtml(body)}
+      <ul style="margin:4px 0 0 16px;">${warns.map(w => `<li><code>${escHtml(String(w))}</code></li>`).join('')}</ul></div>`;
+}
+window.renderDetailLeftoverWarnings = renderDetailLeftoverWarnings;
+
 // Automaton's own record of whether CI passed for the commit it pushed
 // (ci-watch completion guardrail). Absent when ci-watch never ran.
 function renderDetailCIWatch(prd) {
@@ -47672,6 +47687,7 @@ function _renderDetailOverview(prd) {
     ${_renderDetailCost(prd)}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
+    ${renderDetailLeftoverWarnings(prd)}
     ${renderLandingState(prd)}
     ${rulesContextPlanningHtml(prd.rules_context)}
     <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>

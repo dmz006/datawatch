@@ -4,14 +4,14 @@ docs:
   topics: [git, guardrails, autonomous, automata]
 exec_params:
   - {name: automaton_id, required: true, description: "Automaton ID whose tasks you want to inspect for foreign_file_drift"}
-  - {name: drift_mode, required: false, default: "block", description: "Daemon-wide enforcement for pre-existing drift: block (the default) stops the task; warn records the finding and the task completes. Only block or warn are accepted. The MCP set tool does not take this key; set it via CLI/REST/YAML."}
+  - {name: drift_mode, required: false, default: "block", description: "Daemon-wide enforcement for pre-existing drift: block (the default) stops the task; warn records the finding and the task completes. Only block or warn are accepted. Set it with the MCP autonomous_config_set tool (drift_mode), the CLI, REST, YAML, or the web Settings row."}
 exec_steps:
   - tool: autonomous_config_get
     description: Read the current autonomous.drift_mode (block = default, warn = flag-only) and block_on_file_drift settings
     args: {}
-  - tool: shell
+  - tool: autonomous_config_set
     description: Set the daemon-wide drift_mode (block or warn). Per-Automaton opt-out to warn-only is instead block_on_file_drift=false on the Automaton or its guardrail profile (see per_automaton_guardrails_set / guardrail_profile_update)
-    args: {command: "datawatch config set autonomous.drift_mode {{params.drift_mode}}"}
+    args: {drift_mode: "{{params.drift_mode}}"}
   - tool: autonomous_prd_get
     description: Read the Automaton; each task carries foreign_file_drift when its commit swept in a pre-existing uncommitted file, and the decision log has a file_drift_detected entry (in-run edits by the task's own worker get one too)
     args: {id: "{{params.automaton_id}}"}
@@ -238,8 +238,15 @@ datawatch config set autonomous.drift_mode warn
 Read it back with `autonomous_config_get` (or `GET /api/config`, key
 `autonomous.drift_mode`) — it shows the effective value, so an unset
 setting reads as `block`. Set it to `block` the same way to return to
-the enforced default. Note the MCP `autonomous_config_set` tool does not
-take this key yet; use YAML, REST, or the CLI for it.
+the enforced default.
+
+MCP: `autonomous_config_set` with `drift_mode` set to `block` or `warn`
+(the tool lists only those two values and the daemon refuses anything
+else). Web: Settings → General → Autonomous Automata, row *File drift
+mode* (a block / warn select). Chat: `configure
+autonomous.drift_mode=warn`. The datawatch-app mobile client does not
+have this row yet; its parity draft is
+[`docs/plans/parity-issues/drift-mode-setting-parity.md`](../plans/parity-issues/drift-mode-setting-parity.md).
 
 ### For a guardrail profile (opt-out)
 

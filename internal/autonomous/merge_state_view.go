@@ -26,6 +26,30 @@ type mergeStateCacheEntry struct {
 	computed time.Time
 }
 
+// SetMergeStateCacheWindow sets how long a derived merge_state is cached per
+// record; a value of zero or less restores the one-minute default.
+func (m *Manager) SetMergeStateCacheWindow(d time.Duration) {
+	m.mu.Lock()
+	m.mergeStateCacheWindow = d
+	m.mu.Unlock()
+}
+
+// MergeStateCacheWindow returns the lifetime of a cached derived merge_state:
+// the value set with SetMergeStateCacheWindow, else one minute. Views that
+// cache a body holding merge_state use it as the longest age the body may
+// reach while no record is written.
+func (m *Manager) MergeStateCacheWindow() time.Duration {
+	if m == nil {
+		return mergeStateCacheWindowDefault
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.mergeStateCacheWindow <= 0 {
+		return mergeStateCacheWindowDefault
+	}
+	return m.mergeStateCacheWindow
+}
+
 // AutomatonMergeState returns the derived merge_state for views of p:
 // MergeStateFinishedNotMerged when p is completed or archived and its branch
 // is ahead of the base branch, "" otherwise (active records, no branch, a

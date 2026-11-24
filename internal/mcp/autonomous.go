@@ -66,6 +66,7 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked. "+
 			"snapshot_never_stage lists the path patterns the autonomous snapshot must never `git add` (an explicit empty list = nothing is protected; unset = the built-in default list). "+
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. "+
+			"drift_mode (block = the default, or warn) sets what happens when a task's commit swept in files that were already uncommitted before it started: block stops the task, warn only records the finding and the task completes. "+
 			"gate_disagreement (default \"warn\") covers verifier/quality-gate disagreement: when the verifier passed a task but the quality gate found a regression, \"warn\" records task.gate_disagreement and a PRD decision-log entry and the task still completes, while \"block\" fails the task with a \"gate_disagreement: …\" error. An invalid gate never blocks. "+
 			"default_quality_gates (BL367) is the gate config applied to new automata: enabled, test_command, timeout, block_on_regression, scope (full | touched-plus-smoke | touched; how much of the suite a gate task runs) and smoke_packages (package patterns for the touched-plus-smoke scope). "+
 			"priority_by_kind (kind → integer table) sets how high in the capacity queue an automaton waits per PRD kind — the higher the number, the closer to the front; unset rows read the daemon defaults bug=80, maintenance=70, feature=20, other=0 (the last is the fallback row for any kind with no row of its own). "+
@@ -175,6 +176,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 			"override_queued_tasks (default on; unset = on) is the master switch for those overrides on a locked Automaton status: when on, a story- or task-level set-llm call applies to the tasks that are still queued and lists the ones left alone (running/finished); when off, the same call is refused on a locked status. " +
 			"snapshot_never_stage sets the path patterns the autonomous snapshot must never `git add` (e.g. secret files, out-of-scope vendor trees); blank patterns are rejected, and when unset the built-in default list applies. " +
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. " +
+			"drift_mode (block = the default, or warn) sets what happens when a task's commit swept in files that were already uncommitted before it started: block stops the task, warn only records the finding and the task completes; any other value is refused. " +
 			"The verifier_policy_* arguments set autonomous.verifier_policy, which chooses the backend that runs each verification; they take effect on the next verification with no restart. " +
 			"The attempt-cost arguments are checked before anything is written, and a refused value changes nothing: first_attempt (object of task kind implementation, docs, note or final_gate → {backend, model}; replaces the whole map; backends pi, pi-prompt and ollama need a model), first_attempt_escalate_after_failures (whole number 0 to 20, default 1) and retry_resume_max_context_tokens (whole number 0 to 2000000, default 150000; 0 = every retry starts a fresh session)."),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
@@ -324,6 +326,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("continue_on_story_failure", mcpsdk.Description("Daemon-wide default: false (halt) stops a PRD as soon as any story fails instead of continuing into later, independent stories; true restores the old continue-regardless behavior. Per-PRD override takes precedence.")),
 		mcpsdk.WithString("gate_disagreement", mcpsdk.Description("Policy for verifier/quality-gate disagreement: applies when the verifier passed a task but the quality gate found a regression. Only \"warn\" (the default; records task.gate_disagreement and a PRD decision-log entry, task still completes) or \"block\" (fails the task with a \"gate_disagreement: …\" error) are accepted. An invalid gate never blocks.")),
 		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Daemon-wide default for foreign-file-drift enforcement. false (the default) only flags a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files (warn-only, recorded as task foreign_file_drift and a file_drift_detected decision); true blocks that task instead. An automaton's own setting or its guardrail profile overrides this; worktree-mode automata are never checked.")),
+		mcpsdk.WithString("drift_mode", mcpsdk.Description("Daemon-wide enforcement for pre-existing file drift (a task whose commit swept in files that were already uncommitted before it started): block = stop the task (the default), warn = record the finding and let the task complete. Any other value is refused. An Automaton's own block_on_file_drift=false still opts that Automaton out of blocking."), mcpsdk.Enum("block", "warn")),
 		mcpsdk.WithString("undeclared_edit_mode", mcpsdk.Description("Daemon-wide default for undeclared edits (a task editing files outside its declared scope): off = skip the check, warn = record + alert (the default), block = hold the task.")),
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
@@ -967,6 +970,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 		if _, ok := args["block_on_file_drift"]; ok {
 			body["block_on_file_drift"] = req.GetBool("block_on_file_drift", false)
+		}
+		if _, ok := args["drift_mode"]; ok {
+			body["drift_mode"] = req.GetString("drift_mode", "")
 		}
 		if _, ok := args["undeclared_edit_mode"]; ok {
 			body["undeclared_edit_mode"] = req.GetString("undeclared_edit_mode", "")
