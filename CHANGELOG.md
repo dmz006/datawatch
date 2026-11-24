@@ -13,6 +13,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
 - **Lane fill no longer mis-gates proposal-writing and defect Automata.** The lane fill proposal gate now takes an Automaton's proposal to be the `docs/plans/<name>.md` path named on an explicit proposal field or line in its title or spec — a path that is merely mentioned elsewhere names no proposal, and the plan folder's README is never one. Defect, research, operational and personal Automata are exempt from the gate, as is any Automaton whose title or spec states that its own job is to write the proposal: such an Automaton is never gated on the `Confirmed: yes` line of the proposal it is producing. In particular, an authoring Automaton that states its job in its title alone is now exempt too, and an Automaton that names its proposal in its title alone is no longer refused as `proposal_missing`. No new keys, endpoints or settings; the gate and its reason codes are unchanged. Docs: the lane fill how-to, the lane fill operations notes, the Eligibility reason definition and the lane fill block of the config reference.
 
+## v9.183.0 — Archived work landed: finished-not-merged review, planning guard, escalation fixes, voice timeout
+
+### Added
+
+- Finished, not merged is shown on every surface for Automata whose work is finished but never reached main, derived read-only from the work branch; the review now runs for finished unmerged Automata and clears a stale block after an auto-fix merge; a one-time repair (group `unarchive`, default report) lists Automata that were archived with unmerged work so they can be restored.
+- `whisper.timeout_seconds` sets the voice transcription deadline for long recordings. The default 0 keeps the automatic deadline (5 minutes or twice the audio length, capped at 30 minutes); a value of 30 or more replaces it.
+
+### Changed
+
+- Changing the worker LLM or the guardrail LLM of an Automaton while it is planning is refused with HTTP 409; a planning-LLM change stays allowed.
+- Failure escalation: a claude-code ladder step with no model now gets the explicit non-Opus model, and a step whose backend is in usage back-off is skipped. The how-tos and the config reference describe both.
+
 ## v9.182.94 — Deploy after ship: a configured post-ship build, install, restart and health check
 
 ### Changed
