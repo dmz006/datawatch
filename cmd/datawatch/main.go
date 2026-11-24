@@ -15887,7 +15887,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
 	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                            // BL357
 	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))              // BL358
-	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360 — standalone stdio MCP: independent opener, safe via the locked re-read-and-merge in Put/Delete
+	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360 (standalone stdio MCP: its own opener, safe through the locked re-read and merge in Put and Delete)
 	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
@@ -20321,8 +20321,9 @@ func newResultCmd() *cobra.Command {
 		Short: "Manage the structured agent result store (BL360)",
 	}
 
-	// Every subcommand goes through the daemon API so the daemon stays the
-	// single writer of the result store file.
+	// put and delete go through the daemon API so the daemon stays the single
+	// writer of the result store file; get and list only read the file, which is
+	// always written whole (temp file, sync, rename), so they work without the daemon.
 	putCmd := &cobra.Command{
 		Use:   "put <name> <json-payload>",
 		Short: "Store a named result payload (upsert)",
@@ -20357,17 +20358,18 @@ func newResultCmd() *cobra.Command {
 		Short: "Retrieve a named result",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			body, err := daemonGetBody("/api/result-store/" + url.PathEscape(args[0]))
+			cfg, err := loadConfig()
 			if err != nil {
-				if strings.HasPrefix(err.Error(), "HTTP 404") {
-					fmt.Printf("not found: %s\n", args[0])
-					return nil
-				}
 				return err
 			}
-			var entry session.ResultEntry
-			if err := json.Unmarshal(body, &entry); err != nil {
-				return fmt.Errorf("parse daemon response: %w", err)
+			rs, err := session.NewResultStore(resultStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open result store: %w", err)
+			}
+			entry, ok := rs.Get(args[0])
+			if !ok {
+				fmt.Printf("not found: %s\n", args[0])
+				return nil
 			}
 			b, _ := json.MarshalIndent(entry, "", "  ")
 			fmt.Println(string(b))
@@ -20379,19 +20381,16 @@ func newResultCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List stored results",
 		RunE: func(c *cobra.Command, _ []string) error {
-			prefix, _ := c.Flags().GetString("prefix")
-			path := "/api/result-store"
-			if prefix != "" {
-				path += "?prefix=" + url.QueryEscape(prefix)
-			}
-			body, err := daemonGetBody(path)
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			var entries []*session.ResultEntry
-			if err := json.Unmarshal(body, &entries); err != nil {
-				return fmt.Errorf("parse daemon response: %w", err)
+			prefix, _ := c.Flags().GetString("prefix")
+			rs, err := session.NewResultStore(resultStorePath(cfg))
+			if err != nil {
+				return fmt.Errorf("open result store: %w", err)
 			}
+			entries := rs.List(prefix)
 			if len(entries) == 0 {
 				fmt.Println("No result entries found.")
 				return nil

@@ -510,6 +510,8 @@ A named key-value store for passing structured results between agents.
 
 Entries with a TTL are automatically expired. Data survives daemon restarts.
 
+**How the store is protected.** The store is one file, and more than one process can open it (the daemon, a standalone `datawatch mcp` server, the `datawatch result` command). Every put, delete and expiry takes a lock on a sidecar `<file>.lock` file, re-reads the file and applies the change to what it finds, so a copy that is out of date can no longer erase entries another process wrote. Every save writes a temporary file in the same folder, syncs it, renames it over the old file and syncs the folder, so a crash or a full disk leaves the previous file whole. `datawatch result put` and `delete` go through the running daemon; `get` and `list` only read the file and work without the daemon.
+
 > Note: this is a generic named key-value store. The **scheduled-job result
 > panel** (below) is a different thing — structured per-session run results
 > with per-schedule history.
