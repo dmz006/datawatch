@@ -60,10 +60,17 @@ await runStory(async (page) => {
       return { id, shortId: r.json.id || id };
     };
     const stalled = await start('ts-844-stalled');
-    const running = await start('ts-844-running');
+    // New output returns a stalled session to running, so set the state only
+    // once the shell's start-up output is over: the daemon then reports the
+    // session as waiting for input.
+    await page.waitForFunction(
+      (id) => ((typeof state !== 'undefined' && state.sessions) || []).some((s) => (s.full_id === id || s.id === id) && s.state === 'waiting_input'),
+      stalled.id, { timeout: 45000 });
 
     const set = await api('/api/sessions/state', { id: stalled.id, state: 'stalled' });
     if (!set.ok) throw new Error(`set stalled failed: ${set.status} ${set.text}`);
+    // Started after the wait, so it is still running when the list is filtered.
+    await start('ts-844-running');
 
     // Both sessions reach the client, the first one as stalled.
     await page.waitForFunction(
@@ -82,13 +89,14 @@ await runStory(async (page) => {
       throw new Error(`bundles do not differ: en="${enText}" de="${deText}"`);
     }
 
-    // chipLabel opens the state filter and reads the Stalled chip's text.
+    // chipLabel opens the Filters sheet, where the state chips are, and reads
+    // the Stalled chip's text.
     const chipLabel = async () => {
       await page.evaluate(() => {
-        state._stateFilterOpen = true;
         state.sessionStateChip = 'all';
         renderSessionsView();
       });
+      await page.click('#sessionsFiltersBtn');
       await page.waitForSelector('.state-filter-chips button[onclick*="\'stalled\'"]', { timeout: 10000 });
       return page.evaluate(() => {
         const b = document.querySelector('.state-filter-chips button[onclick*="\'stalled\'"]');
@@ -125,7 +133,8 @@ await runStory(async (page) => {
 
     const listed = await page.evaluate(() => {
       const stateById = new Map((state.sessions || []).map((s) => [s.full_id, s.state]));
-      const cards = [...document.querySelectorAll('[data-session-id], [data-full-id], .session-card')];
+      // List cards, or the session tiles a wide window shows by default.
+      const cards = [...document.querySelectorAll('[data-session-id], [data-full-id], [data-sess-id], .session-card')];
       return { cards: cards.map((c) => c.textContent.replace(/\s+/g, ' ').trim().slice(0, 120)), states: [...stateById.values()] };
     });
     await saveLog('filtered-list', JSON.stringify(listed));
