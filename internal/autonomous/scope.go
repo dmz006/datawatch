@@ -36,7 +36,9 @@ func (m *Manager) planScopeWarnings(prd *PRD, stories []Story) []string {
 	if m.effectiveScopeLint(prd) == scopeLintOff {
 		return nil
 	}
-	return LintPlanScope(prd, stories)
+	// Plan-path lint (plan_paths.go): non-blocking, so it joins the warnings in
+	// every mode but off and never changes the decompose outcome.
+	return append(LintPlanScope(prd, stories), LintPlanPaths(prd, stories)...)
 }
 
 // recordScopeLintWarn appends a scope_lint_warn Decision for a task that the
