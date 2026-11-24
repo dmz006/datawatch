@@ -209,3 +209,23 @@ func TestPeerUsageRefreshAllSkipsPeersNotOptedIn(t *testing.T) {
 		t.Fatalf("not-opted-in peer got %d requests, want 0", got)
 	}
 }
+
+// Pools returns each pool a peer reported with that peer's own limit, so a
+// cluster view shows every host at its own size.
+func TestPeerUsageCachePoolsCarryThePeersOwnLimits(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"pools":[{"name":"llm:pi","limit":7,"held":3,"external":1,"over":0},{"name":"node:gpu","limit":2,"held":2}]}`))
+	}))
+	defer srv.Close()
+	c := &PeerUsageCache{}
+	if err := c.Refresh(context.Background(), PeerRef{Name: "p", URL: srv.URL, OptedIn: true}); err != nil {
+		t.Fatal(err)
+	}
+	pools, ok := c.Pools("p")
+	if !ok || len(pools) != 2 || pools[0].Name != "llm:pi" || pools[0].Limit != 7 || pools[0].Held != 3 || pools[0].External != 1 {
+		t.Fatalf("pools = %+v ok %v", pools, ok)
+	}
+	if _, ok := c.Pools("nobody"); ok {
+		t.Fatal("an unknown peer has no pools")
+	}
+}

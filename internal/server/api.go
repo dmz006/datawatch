@@ -416,11 +416,12 @@ type Server struct {
 	// the same backend+model — nil when capacity isn't wired at all.
 	// Autonomous task spawns skip this (they already admit via the
 	// executor's own m.admit()); see handleStartSession's req.OneShot check.
-	capacityUnmapped func() []CapacityUnmapped
-	capacityAdmit    CapacityAdmitFn
-	capacityBind     CapacityBindFn
-	capacityRelease  CapacityReleaseFn
-	inferenceDisp    *inference.Dispatcher
+	capacityUnmapped   func() []CapacityUnmapped
+	capacityFederation func(local []capacity.PoolStatus) *CapacityFederation
+	capacityAdmit      CapacityAdmitFn
+	capacityBind       CapacityBindFn
+	capacityRelease    CapacityReleaseFn
+	inferenceDisp      *inference.Dispatcher
 
 	// summarizerSvc is the response summarizer (nil when disabled).
 	// Wired from main.go after daemon init via SetSummarizerSvc.

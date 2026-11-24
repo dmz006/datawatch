@@ -28,7 +28,14 @@ And the capacity read, `GET /api/capacity`, which gained fields:
   `limit`); both are absent when zero;
 - on a lease: `class` (`worker`, `supervisor`, `operator`) and, on an operator lease granted over a limit,
   `overage` (a list of `pool`, `limit`, `over`);
-- a top-level `unmapped` list: subscription backends a start named that resolve to no LLM entry.
+- a top-level `federation` object (only when a peer is opted in, in a `peer_window` or matched): `hosts`
+  (each host at its own pools: `name`, `self`, `reachable`, `pools`, `llm_limit`, `llm_held`, `node_limit`,
+  `node_held`, `shared_account` self | confirmed | opted_in | pending | none, `counted_held`, `note`), `cluster`
+  sums, `account` (`limit`, `local_held`, `peer_held`, `total`) and `pending_shared_accounts` (matches awaiting
+  confirmation: they count nothing). Locale keys `capacity_fed_*` in every locale file; renderer
+  `capacityFederationHtml` in internal/server/web/app.js. The apps show the cluster line, one line per host with
+  its own sizes, and the pending note "possible shared account, awaiting your confirmation".
+- a top-level `session_cap` and a top-level `unmapped` list: subscription backends a start named that resolve to no LLM entry.
 
 Where they live:
 
@@ -80,3 +87,5 @@ setting. The apps need nothing beyond showing the wait reason of a waiting task 
 - [ ] A refused value shows the daemon's 400 text unchanged.
 - [ ] The capacity view shows the over and reserve notes and the account pool name.
 - [ ] `unmapped` backends show as a warning.
+- [ ] The cluster view shows each host at its own limits, the Claude account total and a pending shared account
+      note; a peer that is not reachable shows as such.

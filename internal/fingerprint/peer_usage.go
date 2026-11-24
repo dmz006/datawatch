@@ -23,6 +23,7 @@ const (
 // pool's held count and when it was fetched.
 type peerUsageEntry struct {
 	held    map[string]int
+	pools   []PoolUsage
 	fetched time.Time
 }
 
@@ -107,6 +108,19 @@ func (c *PeerUsageCache) Held(peer, pool string) (int, bool) {
 	return n, ok
 }
 
+// Pools returns the pools peer last reported, each at that peer's own limit
+// and held count, in the order the peer listed them. A missing or too-old entry
+// gives (nil, false). It never does I/O.
+func (c *PeerUsageCache) Pools(peer string) ([]PoolUsage, bool) {
+	c.mu.Lock()
+	e, ok := c.entries[peer]
+	c.mu.Unlock()
+	if !ok || c.now().Sub(e.fetched) > c.maxAge() {
+		return nil, false
+	}
+	return append([]PoolUsage(nil), e.pools...), true
+}
+
 // stale reports whether peer has no entry or one older than the TTL.
 func (c *PeerUsageCache) stale(peer string) bool {
 	c.mu.Lock()
@@ -149,7 +163,7 @@ func (c *PeerUsageCache) Refresh(ctx context.Context, peer PeerRef) error {
 // fetch runs a claimed fetch and releases the claim.
 func (c *PeerUsageCache) fetch(ctx context.Context, peer PeerRef) error {
 	defer c.release(peer.Name)
-	held, err := c.get(ctx, peer)
+	held, pools, err := c.get(ctx, peer)
 	if err != nil {
 		c.failOnce(peer.Name, err)
 		return err
@@ -158,46 +172,48 @@ func (c *PeerUsageCache) fetch(ctx context.Context, peer PeerRef) error {
 	if c.entries == nil {
 		c.entries = make(map[string]peerUsageEntry)
 	}
-	c.entries[peer.Name] = peerUsageEntry{held: held, fetched: c.now()}
+	c.entries[peer.Name] = peerUsageEntry{held: held, pools: pools, fetched: c.now()}
 	delete(c.unreachable, peer.Name)
 	c.mu.Unlock()
 	return nil
 }
 
 // get performs the HTTP request and parses the pools.
-func (c *PeerUsageCache) get(ctx context.Context, peer PeerRef) (map[string]int, error) {
+func (c *PeerUsageCache) get(ctx context.Context, peer PeerRef) (map[string]int, []PoolUsage, error) {
 	url := strings.TrimSuffix(peer.URL, "/") + "/api/capacity"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if peer.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+peer.Token)
 	}
 	resp, err := c.clientFor(peer).Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("status %d", resp.StatusCode)
+		return nil, nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var view struct {
 		Pools []capacityPoolView `json:"pools"`
 	}
 	if err := json.Unmarshal(body, &view); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	held := make(map[string]int, len(view.Pools))
+	pools := make([]PoolUsage, 0, len(view.Pools))
 	for _, p := range view.Pools {
 		held[p.Name] = p.Held
+		pools = append(pools, PoolUsage{Name: p.Name, Limit: p.Limit, Held: p.Held, External: p.External, Over: p.Over})
 	}
-	return held, nil
+	return held, pools, nil
 }
 
 // RefreshAll refreshes every opted-in peer; peers not opted in get no call.

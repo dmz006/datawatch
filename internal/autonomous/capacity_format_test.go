@@ -353,3 +353,22 @@ func TestFormatCapacityText_ShowsHostSessionCapOver(t *testing.T) {
 		t.Fatalf("within the cap nothing is shown: %q", out)
 	}
 }
+
+func TestFormatCapacityText_ShowsClusterHostsAndSharedAccount(t *testing.T) {
+	body := []byte(`{"pools":[],"leases":[],"waiting":[],"tasks":{"waiting":[],"running":[],"verifying":[]},
+"federation":{"hosts":[
+ {"name":"alpha","self":true,"reachable":true,"llm_limit":1,"llm_held":1,"node_limit":2,"node_held":0,"shared_account":"self"},
+ {"name":"beta","reachable":true,"llm_limit":5,"llm_held":3,"shared_account":"confirmed","counted_held":1},
+ {"name":"gamma","reachable":false,"shared_account":"pending","note":"possible shared account, awaiting your confirmation"}],
+ "cluster":{"llm_limit":6,"llm_held":4,"node_limit":2,"node_held":0},
+ "account":{"limit":2,"local_held":1,"peer_held":1,"total":2}}}`)
+	out, err := FormatCapacityText(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Cluster, 3 hosts, each at its own limits: LLM 4/6 in use", "Claude account 2/2 (this host 1, peers 1)", "alpha (this host): LLM 1/1", "beta: LLM 3/5, nodes 0/no limit; shares the Claude account (confirmed), 1 counted here", "gamma (not reachable, counted as 0)", "possible shared account, awaiting your confirmation"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+}

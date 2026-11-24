@@ -221,10 +221,19 @@ except the adoption wait, which is read once as the ledger starts):
   the `account:claude` pool every claude-code entry also draws on (`capacityResolver`,
   `syncAdmissionPools`). A subscription backend with no LLM entry and no compute node gets
   an `llm:<backend>` pool limited to 1 and is listed under `unmapped` on `GET /api/capacity`.
-- Federation: `cmd/datawatch/capacity_peer_account.go` (`peerAccountPool`) reads each peer named in
-  a claude-code entry's budget `peer_window` from its `GET /api/capacity` (`pools[account:claude].held`,
-  never `external`) on the 10 s tick and feeds the sum to the ledger as the `account:claude` external
-  count; an unreachable peer counts 0 and is logged once.
+- Federation: `cmd/datawatch/capacity_federation.go` (`federationAccount`). Each host keeps its own
+  local pools; a peer's `llm:`/`node:` pools never feed this daemon's external counts. The account pool's
+  external count is the peers' share of the Claude account, read from memory (the ledger calls it under its
+  lock): for a peer named in a claude-code entry's budget `peer_window` its whole `account:claude` held
+  count; for a peer with a CONFIRMED `billing_group` fingerprint match its held count on each matched
+  entry (`llm:<peer entry>`, each counted once; a window peer is counted once through the account pool).
+  Pending and rejected matches count nothing. `Refresh` (10 s tick) rebuilds the snapshot and refreshes
+  `fingerprint.PeerUsageCache` (one `GET /api/capacity` per opted-in or window peer; the cache now keeps
+  each peer's pools with its own limits, `PeerUsageCache.Pools`); an unreachable peer counts 0 and is shown
+  not reachable. `View` builds `GET /api/capacity` `federation`: `hosts` (this host, then each related peer
+  with its pools, llm and node sums, `shared_account` self | confirmed | opted_in | pending | none,
+  `counted_held`, `note`), `cluster` sums, `account` (limit, local, peer, total) and
+  `pending_shared_accounts`.
 - `autonomous.capacity_supervisor_reserve_claude` (unset = 1), `_pi` (unset = 1) and `_host`
   (unset = 4) (ints >= 0): the supervisor buffers above a pool's limit. The host buffer also
   raises the session manager's hard session cap for the supervisor class

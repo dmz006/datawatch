@@ -15,6 +15,7 @@ import (
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/fingerprint"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/server"
@@ -1071,23 +1072,27 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	servedModel := map[string]uint64{}
 	servedCPUModel := map[string]uint64{}
 
-	// Peers sharing the Claude account hold some of its slots: their leases
-	// count against account:claude here (opt-in through a claude-code entry's
-	// budget peer_window). Refreshed on the slow tick; admission reads the cache.
-	peerAccount := &peerAccountPool{
-		peers: claudeAccountPeers(httpServer.InferenceRegistry),
-		lookup: func(name string) (string, string, bool) {
-			st := httpServer.ServerStore()
-			if st == nil {
-				return "", "", false
+	// The Claude account can span hosts: a peer's leases count against
+	// account:claude here only for a confirmed billing-group match or a
+	// peer_window opt-in (see capacity_federation.go). A peer's own llm: and
+	// node: pools are its own and never count against this daemon's.
+	fedAccount := newFederationAccount(
+		func() *fingerprint.PeerGate { return fingerprintPeerGate },
+		claudeAccountPeers(httpServer.InferenceRegistry))
+	httpServer.SetCapacityFederation(func(local []capacity.PoolStatus) *server.CapacityFederation {
+		localAcct := 0
+		for _, p := range local {
+			if p.Name == accountClaudePool {
+				localAcct = p.Held
 			}
-			return st.GetByName(name)
-		},
-	}
+		}
+		v := fedAccount.View(cfg.Hostname, local, cfg.Autonomous.CapacityAccountClaudeLimit(), localAcct)
+		return &v
+	})
 	hostExternal := hostExternalCount(mgr)
 	external := func(pool string) int {
 		if pool == accountClaudePool {
-			return peerAccount.Held()
+			return fedAccount.Held()
 		}
 		return hostExternal(pool)
 	}
@@ -1634,7 +1639,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				// Peer spend is fetched off the tick so a slow peer never
 				// delays pool syncing; admission reads only the cache.
 				go peerBudget.Refresh(ctx)
-				go peerAccount.Refresh(ctx)
+				go fedAccount.Refresh(ctx)
 				auditBudgetTransitions(autonomousBudget, budgetFull, emitBackoffAudit)
 				// Review-reserve verdicts queued on a ledger decision are emitted
 				// here, outside every lock.

@@ -15,6 +15,7 @@ import (
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/fingerprint"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -314,6 +315,9 @@ type capacityResponse struct {
 	// operator allowance and supervisor slots above it; over is set while
 	// operator sessions run above the cap.
 	SessionCap *session.SessionCapStatus `json:"session_cap,omitempty"`
+	// Federation is the cluster view, present when a peer is opted in, in a
+	// peer_window or matched.
+	Federation *CapacityFederation `json:"federation,omitempty"`
 }
 
 // CapacityUnmapped is one subscription backend with no LLM entry and so no pool
@@ -323,6 +327,81 @@ type CapacityUnmapped struct {
 	Model    string    `json:"model,omitempty"`
 	Count    int       `json:"count"`
 	LastSeen time.Time `json:"last_seen"`
+}
+
+// CapacityFederation is the cluster view: this host first, then each federated
+// peer that is opted in, named in a peer_window or matched, each shown at its
+// own pools and sizes (a peer's local llm: and node: pools are its own and add
+// to the federated capacity), with per-host and cluster sums and how the Claude
+// account is shared.
+type CapacityFederation struct {
+	Hosts   []CapacityHost       `json:"hosts"`
+	Cluster CapacityCluster      `json:"cluster"`
+	Account CapacityAccountShare `json:"account"`
+	// PendingSharedAccounts are billing-group matches awaiting the operator's
+	// confirmation. They count nothing.
+	PendingSharedAccounts []CapacityPendingShare `json:"pending_shared_accounts,omitempty"`
+}
+
+// CapacityHost is one host in the cluster view.
+type CapacityHost struct {
+	Name      string `json:"name"`
+	Self      bool   `json:"self,omitempty"`
+	Reachable bool   `json:"reachable"`
+	// Pools are the pools the host reported, at its own limits.
+	Pools []fingerprint.PoolUsage `json:"pools,omitempty"`
+	// Sums of the host's llm: and node: pools (limits count only pools that
+	// have one; UnlimitedPools counts the rest).
+	LLMLimit       int `json:"llm_limit"`
+	LLMHeld        int `json:"llm_held"`
+	NodeLimit      int `json:"node_limit"`
+	NodeHeld       int `json:"node_held"`
+	UnlimitedPools int `json:"unlimited_pools,omitempty"`
+	// SharedAccount: self | confirmed | opted_in | pending | none.
+	SharedAccount string `json:"shared_account"`
+	// CountedHeld is how much of this host's holding counts against this
+	// daemon's account:claude pool.
+	CountedHeld int    `json:"counted_held"`
+	Note        string `json:"note,omitempty"`
+}
+
+// CapacityCluster sums the hosts.
+type CapacityCluster struct {
+	LLMLimit       int `json:"llm_limit"`
+	LLMHeld        int `json:"llm_held"`
+	NodeLimit      int `json:"node_limit"`
+	NodeHeld       int `json:"node_held"`
+	UnlimitedPools int `json:"unlimited_pools,omitempty"`
+}
+
+// CapacityAccountShare is the Claude account as this daemon counts it.
+type CapacityAccountShare struct {
+	Limit     int `json:"limit"`
+	LocalHeld int `json:"local_held"`
+	PeerHeld  int `json:"peer_held"`
+	Total     int `json:"total"`
+}
+
+// CapacityPendingShare is one match awaiting confirmation.
+type CapacityPendingShare struct {
+	ID         string `json:"id"`
+	Peer       string `json:"peer"`
+	LocalEntry string `json:"local_entry"`
+	PeerEntry  string `json:"peer_entry"`
+	Message    string `json:"message"`
+}
+
+// SetCapacityFederation wires the cluster view builder: it is given this host's
+// pool snapshot and returns the view (nil = no federation to show).
+func (s *Server) SetCapacityFederation(fn func(local []capacity.PoolStatus) *CapacityFederation) {
+	s.capacityFederation = fn
+}
+
+// SetCapacityFederation wires the cluster view builder.
+func (s *HTTPServer) SetCapacityFederation(fn func(local []capacity.PoolStatus) *CapacityFederation) {
+	if s.api != nil {
+		s.api.SetCapacityFederation(fn)
+	}
 }
 
 // SetCapacityUnmapped wires the report of subscription backends with no pool.
@@ -709,6 +788,11 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.capacityUnmapped != nil {
 		out.Unmapped = s.capacityUnmapped()
+	}
+	if s.capacityFederation != nil {
+		if fed := s.capacityFederation(st.Pools); fed != nil && len(fed.Hosts) > 1 {
+			out.Federation = fed
+		}
 	}
 	if s.manager != nil {
 		if sc := s.manager.SessionCap(); sc.Max > 0 {

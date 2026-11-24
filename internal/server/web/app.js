@@ -38535,6 +38535,31 @@ function capacityVerifyingHtml(cap) {
   });
   return `<div style="margin-top:6px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(t('capacity_verifying_title')||'Verifying')} (${list.length})</div>` + rows.join('');
 }
+// The cluster view: this host first, then each federated peer, each at its own
+// pools and sizes (a peer's local models are its own and add to the federated
+// capacity), with the Claude account sharing and any possible shared account
+// awaiting the operator's confirmation. Empty when this host is alone.
+function capacityFederationHtml(cap) {
+  const fed = cap && cap.federation;
+  if (!fed || !Array.isArray(fed.hosts) || fed.hosts.length < 2) return '';
+  const lim = n => (n > 0 ? String(n) : (t('capacity_fed_no_limit')||'no limit'));
+  const acct = fed.account || {};
+  const head = (t('capacity_fed_cluster')||'Cluster: LLM {0}/{1}, nodes {2}/{3}; Claude account {4}/{5}')
+    .replace('{0}', (fed.cluster||{}).llm_held||0).replace('{1}', lim((fed.cluster||{}).llm_limit))
+    .replace('{2}', (fed.cluster||{}).node_held||0).replace('{3}', lim((fed.cluster||{}).node_limit))
+    .replace('{4}', acct.total||0).replace('{5}', lim(acct.limit));
+  const rows = fed.hosts.map(h => {
+    let share = '';
+    if (h.shared_account === 'confirmed') share = (t('capacity_fed_shared_confirmed')||'shares the Claude account (confirmed), {0} counted here').replace('{0}', h.counted_held||0);
+    else if (h.shared_account === 'opted_in') share = (t('capacity_fed_shared_opted_in')||'shares the Claude account (opted in), {0} counted here').replace('{0}', h.counted_held||0);
+    else if (h.shared_account === 'pending') share = t('capacity_fed_pending')||'possible shared account, awaiting your confirmation';
+    const state = h.self ? ' (' + (t('capacity_fed_this_host')||'this host') + ')' : (h.reachable ? '' : ' (' + (t('capacity_fed_unreachable')||'not reachable, counted as 0') + ')');
+    const line = `${h.name}${state}: LLM ${h.llm_held||0}/${lim(h.llm_limit)}, ${t('capacity_fed_nodes')||'nodes'} ${h.node_held||0}/${lim(h.node_limit)}` + (share ? ' · ' + share : '');
+    return `<div class="cap-fed-host" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(line)}</div>`;
+  }).join('');
+  return `<div class="cap-federation" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(head)}</div>${rows}</div>`;
+}
+window.capacityFederationHtml = capacityFederationHtml;
 // capacityCardHtml(cap, opts): cap is the decoded /api/capacity response.
 // opts.now (ms) pins the clock for wait times; opts.showEmpty renders a
 // placeholder instead of an empty string when there is nothing to show.
@@ -38544,10 +38569,11 @@ window.capacityCardHtml = function(cap, opts) {
   const backoff = capacityBackoffHtml(cap && cap.backoff);
   const budgetLines = budgetCapacityLines(cap && cap.budgets);
   const queue = capacityWaitingHtml(cap && cap.waiting, opts.now) + capacityVerifyingHtml(cap);
-  if (!pools && !backoff && !budgetLines && !queue) {
+  const federation = capacityFederationHtml(cap);
+  if (!pools && !backoff && !budgetLines && !queue && !federation) {
     return opts.showEmpty ? `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div><div style="color:var(--text2);">${escHtml(t('capacity_card_empty')||'No capacity limits, back-offs or budgets to show')}</div></div>` : '';
   }
-  return `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${pools}${backoff}${budgetLines}${queue}</div>`;
+  return `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${pools}${federation}${backoff}${budgetLines}${queue}</div>`;
 };
 
 // Polled every 5s; the interval lives on window so re-renders never stack

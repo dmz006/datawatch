@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -61,5 +62,27 @@ func TestHandleCapacity_ShowsOperatorOverageReserveAndUnmapped(t *testing.T) {
 	}
 	if len(got.Unmapped) != 1 || got.Unmapped[0].Backend != "claude-code" {
 		t.Fatalf("unmapped = %+v", got.Unmapped)
+	}
+}
+
+// The capacity read carries the cluster view when a peer is in it, and nothing
+// when this host is alone.
+func TestHandleCapacity_CarriesClusterViewOnlyWithPeers(t *testing.T) {
+	s := &Server{}
+	s.SetCapacity(capacity.New(capacity.Options{}))
+	view := &CapacityFederation{Hosts: []CapacityHost{{Name: "alpha", Self: true, Reachable: true, SharedAccount: "self"}}}
+	s.SetCapacityFederation(func([]capacity.PoolStatus) *CapacityFederation { return view })
+	rec := httptest.NewRecorder()
+	s.handleCapacity(rec, httptest.NewRequest(http.MethodGet, "/api/capacity", nil))
+	if bytes.Contains(rec.Body.Bytes(), []byte(`"federation"`)) {
+		t.Fatalf("a host alone shows no cluster view: %s", rec.Body.String())
+	}
+	view.Hosts = append(view.Hosts, CapacityHost{Name: "beta", Reachable: true, SharedAccount: "pending", Note: "possible shared account, awaiting your confirmation"})
+	rec = httptest.NewRecorder()
+	s.handleCapacity(rec, httptest.NewRequest(http.MethodGet, "/api/capacity", nil))
+	for _, want := range []string{`"federation"`, `"hosts"`, `"shared_account":"pending"`, `awaiting your confirmation`} {
+		if !bytes.Contains(rec.Body.Bytes(), []byte(want)) {
+			t.Fatalf("missing %s in %s", want, rec.Body.String())
+		}
 	}
 }

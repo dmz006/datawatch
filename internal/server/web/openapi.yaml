@@ -5780,6 +5780,36 @@ paths:
                               limit: {type: integer}
                               over: {type: integer, description: "Used count after the grant minus the limit"}
                   waiting: {type: array, items: {type: object}}
+                  federation:
+                    type: object
+                    description: The cluster view, present when a peer is opted in for fingerprint sync, named in a peer_window or matched. Each host is shown at its own pools and limits; a peer's local llm and node pools are its own and add to the federated capacity. Only the Claude account can span hosts - a peer's leases count against this daemon's account:claude pool for a confirmed billing_group match or a peer_window opt-in; a pending match counts nothing.
+                    properties:
+                      hosts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name: {type: string}
+                            self: {type: boolean}
+                            reachable: {type: boolean}
+                            pools: {type: array, items: {type: object, properties: {name: {type: string}, limit: {type: integer}, held: {type: integer}, external: {type: integer}, over: {type: integer}}}}
+                            llm_limit: {type: integer}
+                            llm_held: {type: integer}
+                            node_limit: {type: integer}
+                            node_held: {type: integer}
+                            unlimited_pools: {type: integer}
+                            shared_account: {type: string, enum: [self, confirmed, opted_in, pending, none]}
+                            counted_held: {type: integer, description: "How much of this host's holding counts against this daemon's account:claude pool"}
+                            note: {type: string, description: "possible shared account, awaiting your confirmation, for a pending match"}
+                      cluster:
+                        type: object
+                        properties: {llm_limit: {type: integer}, llm_held: {type: integer}, node_limit: {type: integer}, node_held: {type: integer}, unlimited_pools: {type: integer}}
+                      account:
+                        type: object
+                        properties: {limit: {type: integer}, local_held: {type: integer}, peer_held: {type: integer}, total: {type: integer}}
+                      pending_shared_accounts:
+                        type: array
+                        items: {type: object, properties: {id: {type: string}, peer: {type: string}, local_entry: {type: string}, peer_entry: {type: string}, message: {type: string}}}
                   session_cap:
                     type: object
                     description: The host session cap (session.max_sessions) with the allowances above it. Absent when no cap is set. over is how far running sessions are above max (operator sessions started into the operator allowance).
