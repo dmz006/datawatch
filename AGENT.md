@@ -685,6 +685,22 @@ Strings not yet keyed render in English (the harness returns the raw key on
 miss; English fallback bundle catches it). Coverage gaps are visible, not
 crashing.
 
+**A module that starts before the bundle is ready uses the guard.** `t(key)` returns
+the key itself when the bundle lacks it, and a key is truthy, so `t(key) || 'English'`
+never falls back. The page boot waits for `initI18n()` before it renders, so
+`app.js` code that paints from a view is safe. Code that polls or paints on its own
+at `DOMContentLoaded` (a header control, a separate `app-*.js` module) is not: use
+`tOr(key, 'English default')` for every string it draws, and register a repaint with
+`onI18nReady(fn)` so what it drew is redrawn in the active locale when the bundle
+loads. `navigate()` draws nothing while the bundle is loading (it remembers the choice for
+the boot). The page-wide raw-key scan (`scripts/test-stories/pwa/raw-key-scan.mjs`, story
+TS-856: `bash scripts/e2e-pwa.sh raw-key-scan`, or the PWA suite) delays `/locales/*.json`
+by 3 s, reads every visible string, title, `aria-label` and `placeholder` of the header,
+the bottom navigation, the pause window and every view and sub-tab, and fails a module
+that ships without the guard. A string that is shown on purpose and looks like a key is
+either in the story's allow-list with its reason or inside an element tagged
+`data-raw-key-ok="<reason>"`.
+
 **Why "always file a datawatch-app issue"** — the Android client is the
 source-of-truth for translations because Compose Multiplatform routes them
 through real-user UX feedback. Machine-translating ad hoc on the PWA side

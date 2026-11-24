@@ -319,6 +319,14 @@ func (a *API) resumeRunningPRDs() {
 		fmt.Printf("[autonomous] boot-resume: released %d false-positive protected-paths hold(s)\n", n)
 	}
 
+	// Tasks that ran before the attempt cap existed are counted from their
+	// recorded history once, and the unfinished ones over the cap are held with
+	// one question per Automaton, before any task resumes.
+	if rep := a.M.SeedAttemptCounts(); rep.Ran {
+		fmt.Printf("[autonomous] boot-resume: seeded %d attempt count(s) from history, held %d task(s) in %d Automaton(s) at the attempt cap\n",
+			rep.Seeded, rep.HeldTasks, rep.HeldAutomata)
+	}
+
 	// B165 — counts for the per-PRD decision log + summary line.
 	resumed, parked := 0, 0
 

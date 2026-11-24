@@ -32,8 +32,9 @@ test('pauseSummary reads global and project pauses', () => {
 test('badge text is empty when nothing is paused and counts when several are', () => {
   const sb = load();
   assert.equal(sb.window.pauseBadgeText({ paused: false }), '');
-  assert.equal(sb.window.pauseBadgeText({ paused: true, global: { reason: 'x' } }), 'pause_badge_paused');
-  assert.equal(sb.window.pauseBadgeText({ paused: true, global: { reason: 'x' }, projects: [{}] }), 'pause_badge_paused 2');
+  // t() here returns the key (an empty bundle): the badge must show the English text, not the key.
+  assert.equal(sb.window.pauseBadgeText({ paused: true, global: { reason: 'x' } }), 'Paused');
+  assert.equal(sb.window.pauseBadgeText({ paused: true, global: { reason: 'x' }, projects: [{}] }), 'Paused 2');
 });
 
 test('set body needs a reason and a project makes it a project pause', () => {
@@ -65,7 +66,7 @@ test('the body lists each pause with who, why and a resume button, escaped', () 
   assert.match(html, /&lt;b&gt;freeze/);
   assert.doesNotMatch(html, /<b>freeze/);
   assert.match(html, /\/work\/web/);
-  assert.equal((html.match(/pause_action_resume'?"?[^<]*<\/button>/g) || []).length >= 2, true);
+  assert.equal((html.match(/>Resume<\/button>/g) || []).length >= 2, true);
 });
 
 test('every key the module and the page use exists in all locales', () => {

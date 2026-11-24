@@ -18,6 +18,7 @@
 //   node run-all.mjs --group automation       — run the automation sub-tabs group (TS-833)
 //   node run-all.mjs --group priority-source — run the priority-by-kind + defect-intake settings group (TS-841)
 //   node run-all.mjs --group automaton-detail-tabs — run the phone-width Automaton detail tab story (TS-850)
+//   node run-all.mjs --group raw-key          — run the page-wide raw locale key scan (TS-856)
 
 import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
@@ -43,10 +44,12 @@ const GROUPS = {
   'automaton-detail-tabs': ['automaton-detail-tabs-mobile'],
   // automaton-detail: alias of automaton-detail-tabs
   'automaton-detail': ['automaton-detail-tabs-mobile'],
+  // raw-key: raw-key-scan.mjs (no raw locale key on screen, with the locale bundle delayed, TS-856)
+  'raw-key': ['raw-key-scan'],
 };
 
 // Scenarios outside the TS-*.mjs naming that the default run also discovers.
-const EXTRA_SCENARIOS = ['shared-nav-mobile-fit.mjs', 'automaton-detail-tabs-mobile.mjs'];
+const EXTRA_SCENARIOS = ['shared-nav-mobile-fit.mjs', 'automaton-detail-tabs-mobile.mjs', 'raw-key-scan.mjs'];
 
 let groupName = null;
 const groupIndex = argv.indexOf('--group');

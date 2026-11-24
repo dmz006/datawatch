@@ -344,3 +344,90 @@ func TestAttemptCap_InfraRetryDoesNotCount(t *testing.T) {
 		t.Fatalf("attempts_total = %d after two infrastructure retries and one real attempt, want 1", got.AttemptsTotal)
 	}
 }
+
+// recordBackoffWaits replaces the back-off sleep with a recorder for one test
+// and returns a reader of the waits recorded so far.
+func recordBackoffWaits(t *testing.T) func() []time.Duration {
+	t.Helper()
+	var mu sync.Mutex
+	var waits []time.Duration
+	old := attemptCapSleep
+	attemptCapSleep = func(_ context.Context, d time.Duration) error {
+		mu.Lock()
+		defer mu.Unlock()
+		waits = append(waits, d)
+		return nil
+	}
+	t.Cleanup(func() { attemptCapSleep = old })
+	return func() []time.Duration {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]time.Duration(nil), waits...)
+	}
+}
+
+// retryAs is a review retry by actor, then waits until the task settles.
+func (r *capRig) retryAs(t *testing.T, actor string) {
+	t.Helper()
+	if _, err := r.api.ResolveTaskReview(r.prd.ID, r.task(t).ID, ReviewResolution{Action: reviewActionRetry}, actor); err != nil {
+		t.Fatalf("review retry as %s: %v", actor, err)
+	}
+	pollEscalationSettled(t, r.m, r.prd.ID, 10*time.Second)
+	waitExecutorGone(t, r.api, r.prd.ID, 10*time.Second)
+}
+
+// TestAttemptCap_OperatorRetryStartsAtOnce: the operator's own retry inside the
+// back-off window starts the next attempt at once. The waits that follow inside
+// the new ladder are automatic retries and still apply, and the retry still
+// counts toward the cap.
+func TestAttemptCap_OperatorRetryStartsAtOnce(t *testing.T) {
+	waitsSoFar := recordBackoffWaits(t)
+	r := newCapRig(t, t.TempDir(), config.AttemptCapConfig{MaxTotal: 12, FreeAttempts: 1, BackoffMinutes: []int{5, 15, 45}})
+	r.m.attemptClock = newFakeAttemptClock().Now
+	r.addPRD(t)
+	r.run(t) // attempts 1 to 3: waits of 5 and 15 minutes, then 45 minutes owed before attempt 4
+	if got := waitsSoFar(); len(got) != 2 {
+		t.Fatalf("setup: waits after the first ladder = %v, want two", got)
+	}
+	if r.task(t).AttemptNotBefore == nil {
+		t.Fatalf("setup: no back-off owed after the first ladder")
+	}
+
+	r.retryAs(t, "operator") // attempts 4 to 6
+	got := waitsSoFar()[2:]
+	if len(got) != 2 || got[0] != 45*time.Minute || got[1] != 45*time.Minute {
+		t.Fatalf("waits during the operator's ladder = %v, want [45m0s 45m0s]: attempt 4 starts at once, attempts 5 and 6 are automatic retries", got)
+	}
+	if n := r.task(t).AttemptsTotal; n != 6 {
+		t.Fatalf("attempts_total = %d after the operator retry, want 6: the retry still counts", n)
+	}
+}
+
+// TestAttemptCap_SessionRetryStillWaits: a retry by a doer or supervisor
+// session, and the automatic retries of its ladder, all wait their back-off.
+func TestAttemptCap_SessionRetryStillWaits(t *testing.T) {
+	waitsSoFar := recordBackoffWaits(t)
+	r := newCapRig(t, t.TempDir(), config.AttemptCapConfig{MaxTotal: 12, FreeAttempts: 1, BackoffMinutes: []int{5, 15, 45}})
+	r.m.attemptClock = newFakeAttemptClock().Now
+	r.addPRD(t)
+	r.run(t)
+
+	r.retryAs(t, "doer")
+	got := waitsSoFar()[2:]
+	if len(got) != 3 || got[0] != 45*time.Minute {
+		t.Fatalf("waits during the session's ladder = %v, want three waits of 45m0s: attempt 4 waits too", got)
+	}
+}
+
+// TestAttemptCap_OperatorRetryAtCapStillHeld: the operator's plain retry gets no
+// way round the cap: at the cap it is refused and only the force reset clears.
+func TestAttemptCap_OperatorRetryAtCapStillHeld(t *testing.T) {
+	r := newCapRig(t, t.TempDir(), noBackoff(4))
+	r.addPRD(t)
+	r.run(t)
+	r.supervisorRetry(t) // the fourth attempt: held at the cap
+	_, err := r.api.ResolveTaskReview(r.prd.ID, r.task(t).ID, ReviewResolution{Action: reviewActionRetry}, "operator")
+	if err == nil || !strings.Contains(err.Error(), "attempt cap") {
+		t.Fatalf("operator review retry at the cap: err = %v, want a refusal naming the attempt cap", err)
+	}
+}

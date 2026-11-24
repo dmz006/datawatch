@@ -39,7 +39,20 @@ alert and a question, and nothing starts the task again until you do.
   (`autonomous.failure_escalation`) still counts failed attempts since the last
   operator action; the attempt count is a second, separate number.
 
-A task that already ran before the cap existed starts counting from zero.
+## Tasks that ran before the cap existed
+
+At the first start after the cap shipped, the daemon sets every task's count to
+the number of attempts recorded in its history, completed tasks too, so the
+record is accurate (a record of an attempt that cost no attempt, such as an
+infrastructure requeue, is counted here). It then holds every unfinished task
+that is already over the cap, in the same way as a task that reaches the cap,
+and asks you ONE question per Automaton that lists all of its held tasks: clear
+their counts and run them again, or keep them held (the default). Only your
+answer clears them; the answer from a session does not. Completed and cancelled
+tasks are counted but never held. A task that is running, being tested or being
+verified at that start is not interrupted; it meets the cap at its next attempt.
+The sweep runs once: force-resetting a task afterwards sets its count to zero and
+nothing counts it from the history again.
 
 ## The wait between attempts
 
@@ -50,6 +63,12 @@ end of the previous attempt. A cancel by you or by a session counts as the end
 of an attempt, so cancel-and-retry waits too. The wait is stored on the task as
 `attempt_not_before`, so a daemon restart does not shorten it, and the task
 shows "Next attempt not before ..." while it waits.
+
+The wait applies to automatic retries and to retries and resets made by
+sessions. Your own retry starts at once: when you retry or reset a task as the
+operator, the wait that was owed is dropped and the next attempt starts
+immediately. It still counts toward the cap, and the automatic retries that
+follow inside that run still wait. Only your force reset also clears the count.
 
 With the defaults a task can run six attempts: three at once, then one after 5
 minutes, one after 15, one after 45. The numbers are the failure ladder run

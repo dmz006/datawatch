@@ -23,12 +23,20 @@ window.pauseSummary = function (state) {
 window.pauseBadgeText = function (state) {
   const sum = window.pauseSummary(state);
   if (!sum.paused) return '';
-  const tr = (typeof t === 'function' ? t : k => k);
-  return (tr('pause_badge_paused') || 'Paused') + (sum.count > 1 ? ' ' + sum.count : '');
+  return _pauseT('pause_badge_paused', 'Paused') + (sum.count > 1 ? ' ' + sum.count : '');
 };
 
 function _pauseEsc(v) { return typeof escHtml === 'function' ? escHtml(v) : String(v); }
-function _pauseT(k, d) { return (typeof t === 'function' && t(k)) || d; }
+// _pauseT looks a string up with the English default. The poll starts at
+// DOMContentLoaded, before the locale bundle has loaded, and t() returns the key
+// itself for a key the bundle lacks, so `t(k) || d` would show the raw key: tOr
+// treats a returned key as missing. The repaint on ready (below) redraws the
+// text in the active locale.
+function _pauseT(k, d) {
+  if (typeof window.tOr === 'function') return window.tOr(k, d);
+  const s = typeof t === 'function' ? t(k) : k;
+  return s && s !== k ? s : d;
+}
 
 window.pauseEntryHtml = function (e, isGlobal) {
   if (!e) return '';
@@ -150,6 +158,10 @@ window.openPauseModal = function () {
   window.pauseRefresh();
 };
 
+// pauseRepaintAll redraws the badge and an open pause window from the state
+// already fetched, in the language now loaded.
+window.pauseRepaintAll = function () { _pausePaintBadge(); _pauseRepaintModal(); };
+
 window.pauseStartPolling = function () {
   if (window._pauseInterval) return;
   window.pauseRefresh();
@@ -157,5 +169,10 @@ window.pauseStartPolling = function () {
 };
 
 if (typeof document !== 'undefined' && document.addEventListener) {
-  document.addEventListener('DOMContentLoaded', () => { if (document.getElementById('headerPauseBtn')) window.pauseStartPolling(); });
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!document.getElementById('headerPauseBtn')) return;
+    // The first poll can land before the locale bundle has loaded: repaint when it is ready.
+    if (typeof window.onI18nReady === 'function') window.onI18nReady(window.pauseRepaintAll);
+    window.pauseStartPolling();
+  });
 }

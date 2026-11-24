@@ -190,13 +190,31 @@ func (m *Manager) attemptCapGate(ctx context.Context, prd *PRD, t *Task) (stop b
 // is on, one question. lastCategory and detail describe the last failure and
 // may be empty. It returns the error from saving the task.
 func (m *Manager) holdAtAttemptCap(prd *PRD, t *Task, lastCategory, detail string) error {
-	_, maxTotal := m.attemptCapConfig(prd)
-	var total int
+	last, total, maxTotal, err := m.parkAtAttemptCap(prd, t, detail, "")
+	if err != nil {
+		return err
+	}
+	m.raiseAttemptCapAlert(prd, t, total, maxTotal, last)
+	m.raiseAttemptCapQuestion(prd, t, total, maxTotal)
+	return nil
+}
+
+// parkAtAttemptCap is the hold of holdAtAttemptCap without the alert and the
+// question: it parks t in TaskReviewNeeded with AttemptCapHeld, the report, the
+// FailureReason and the attempt_cap_hold decision. detail is the failure detail
+// (a default naming the count when empty); decisionNote replaces the decision's
+// text when set. It returns the last attempt (or nil), the count and the cap.
+func (m *Manager) parkAtAttemptCap(prd *PRD, t *Task, detail, decisionNote string) (last *TaskAttempt, total, maxTotal int, err error) {
+	_, maxTotal = m.attemptCapConfig(prd)
 	m.store.WithLock(func() { total = t.AttemptsTotal })
 	if detail == "" {
 		detail = fmt.Sprintf("%d attempts were started, the cap is %d", total, maxTotal)
 	}
-	last, err := m.parkTaskForReview(prd, t, reviewParking{
+	if decisionNote == "" {
+		decisionNote = fmt.Sprintf("task %s reached the attempt cap (%d of %d); no attempt starts until the operator force-resets it",
+			t.ID, total, maxTotal)
+	}
+	last, err = m.parkTaskForReview(prd, t, reviewParking{
 		reason: FailureReason{Category: attemptCapCategory, Detail: detail, Source: attemptCapHoldSource},
 		describe: func(t *Task) (string, string) {
 			t.AttemptCapHeld = true
@@ -209,16 +227,10 @@ func (m *Manager) holdAtAttemptCap(prd *PRD, t *Task, lastCategory, detail strin
 		extraDecisions: []Decision{{
 			Kind:  attemptCapHoldDecisionKind,
 			Actor: "autonomous",
-			Note: fmt.Sprintf("task %s reached the attempt cap (%d of %d); no attempt starts until the operator force-resets it",
-				t.ID, total, maxTotal),
+			Note:  decisionNote,
 		}},
 	})
-	if err != nil {
-		return err
-	}
-	m.raiseAttemptCapAlert(prd, t, total, maxTotal, last)
-	m.raiseAttemptCapQuestion(prd, t, total, maxTotal)
-	return nil
+	return last, total, maxTotal, err
 }
 
 // buildAttemptCapSummary renders the operator's report for t held at the cap.
@@ -342,6 +354,9 @@ func attemptCapResolution(c QuestionChange) (prdID, taskID, option, actor string
 // Automaton; a cancel answer cancels the held task. It reports whether the
 // change was such an answer.
 func (a *API) resolveAttemptCapAnswer(c QuestionChange) bool {
+	if a.resolveAttemptCapSeedAnswer(c) {
+		return true
+	}
 	prdID, taskID, option, actor, ok := attemptCapResolution(c)
 	if !ok {
 		return false
