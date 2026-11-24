@@ -461,3 +461,11 @@ const (
 	// Details: scope, project, note.
 	ActionPauseResumeRefused = "pause_resume_refused"
 )
+
+// ActionSafeguardAction — a safeguard was lowered by a call that is not a
+// session: a pause resume, an attempt-count force reset or a shipped-work
+// force run. Subject: the action name. Details: action, target, reason,
+// claimed_actor, caller_kind, credential (a description, never the token),
+// remote_addr, user_agent, fetch_site, client_marker (when the request carried
+// the web app marker), alert_raised, alert_id, alert_skipped.
+const ActionSafeguardAction = "safeguard_action"

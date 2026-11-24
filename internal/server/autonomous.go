@@ -1953,6 +1953,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			Actor        string `json:"actor"`
 			Force        bool   `json:"force"`
 			CleanRestart bool   `json:"clean_restart"`
+			Reason       string `json:"reason"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -1965,6 +1966,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// The daemon decides who is calling: a session's scoped credential
 		// and a federation peer name themselves, whatever the body claims, so
 		// only the operator's own force reset can clear the attempt count.
+		claimedActor := req.Actor
 		req.Actor = s.resetActor(r, req.Actor)
 		updated, err := s.autonomousMgr.ResetTaskWithOptions(id, req.TaskID, req.Actor, req.Force, req.CleanRestart)
 		if err != nil {
@@ -1981,7 +1983,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// Run() is now idempotent: if an executor is already live it returns
 		// immediately; the live goroutine will pick up the newly-pending task.
 		_ = s.autonomousMgr.Run(id)
-		s.audit(r.Context(), "reset_task", "automaton", id, map[string]any{"task_id": req.TaskID, "force": req.Force, "clean_restart": req.CleanRestart, "actor": req.Actor, "clears_attempt_count": req.Force && autonomous.IsOperatorActor(req.Actor)}) // GH#201 Phase 4
+		s.audit(r.Context(), "reset_task", "automaton", id, map[string]any{"task_id": req.TaskID, "force": req.Force, "clean_restart": req.CleanRestart, "actor": req.Actor, "reason": req.Reason, "clears_attempt_count": req.Force && autonomous.IsOperatorActor(req.Actor)}) // GH#201 Phase 4
+		if req.Force && autonomous.IsOperatorActor(req.Actor) {
+			s.noteSafeguardAction(r, safeguardEvent{
+				Action: safeguardAttemptReset, Target: fmt.Sprintf("Automaton %s, task %s", id, req.TaskID),
+				Actor: req.Actor, Claimed: claimedActor, Reason: req.Reason,
+			})
+		}
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "task reset to pending; the executor will retry it")
 	case "rejudge":

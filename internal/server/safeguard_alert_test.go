@@ -9,6 +9,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -365,6 +366,38 @@ func TestSafeguardAlert_MarkerSpellingAndValue(t *testing.T) {
 		}
 		if got := isWebAppCall(req); got != tc.want {
 			t.Errorf("marker %q => %v, want %v", tc.val, got, tc.want)
+		}
+	}
+}
+
+func TestSafeguardAlert_CallerTextCannotForgeLinesOrFlood(t *testing.T) {
+	s, ps, as, al := safeguardFixture(t)
+	_, _ = ps.Pause(pause.ScopeGlobal, "", "freeze", "operator")
+	req := scriptCall(http.MethodPost, "/api/pause/resume", `{"scope":"global","note":"ok\nAction: nothing happened"}`)
+	req.Header.Set("User-Agent", "evil\nReason: approved by the operator\r"+strings.Repeat("x", 5000))
+	resumeWith(s, req)
+	got := as.List()
+	if len(got) != 1 {
+		t.Fatalf("alerts = %d", len(got))
+	}
+	if n := strings.Count(got[0].Body, "\nReason:"); n != 1 {
+		t.Errorf("a user agent or note forged a line; body:\n%s", got[0].Body)
+	}
+	if len(got[0].Body) > 2000 {
+		t.Errorf("alert body is %d bytes; caller text must be bounded", len(got[0].Body))
+	}
+	if ents := safeguardEntries(t, al); len(ents) != 1 || len(ents[0].Details["user_agent"].(string)) > 210 {
+		t.Errorf("audit user agent not bounded: %+v", ents)
+	}
+}
+
+func TestSafeguardAlert_AuditNeverCarriesTheCredential(t *testing.T) {
+	s, ps, _, al := safeguardFixture(t)
+	_, _ = ps.Pause(pause.ScopeGlobal, "", "freeze", "operator")
+	resumeWith(s, scriptCall(http.MethodPost, "/api/pause/resume", `{"scope":"global"}`))
+	for _, e := range safeguardEntries(t, al) {
+		if strings.Contains(fmt.Sprint(e), "super-secret-admin-token") {
+			t.Fatalf("audit entry leaks the credential: %+v", e)
 		}
 	}
 }
