@@ -685,6 +685,16 @@ Strings not yet keyed render in English (the harness returns the raw key on
 miss; English fallback bundle catches it). Coverage gaps are visible, not
 crashing.
 
+**A module that starts before the bundle is ready uses the guard.** `t(key)` returns
+the key itself when the bundle lacks it, and a key is truthy, so `t(key) || 'English'`
+never falls back. The page boot waits for `initI18n()` before it renders, so
+`app.js` code that paints from a view is safe. Code that polls or paints on its own
+at `DOMContentLoaded` (a header control, a separate `app-*.js` module) is not: use
+`tOr(key, 'English default')` for every string it draws, and register a repaint with
+`onI18nReady(fn)` so what it drew is redrawn in the active locale when the bundle
+loads. The page-wide raw-key test (`test/e2e`, run by `scripts/e2e-pwa.sh`) fails a
+module that ships without it.
+
 **Why "always file a datawatch-app issue"** — the Android client is the
 source-of-truth for translations because Compose Multiplatform routes them
 through real-user UX feedback. Machine-translating ad hoc on the PWA side

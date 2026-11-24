@@ -6213,3 +6213,4 @@ An Automation's limit on members running at once, its stage gate and its decisio
 | CLI `datawatch pause`, `pause status`, `resume` | **Yes** (`cmd/datawatch/cli_pause_test.go`) | **No** | Body builders and flags |
 | Comm verbs `pause`, `pause status`, `resume` | **Yes** (`internal/router/pause_test.go`) | **No** | Fake REST loopback |
 | PWA header button and dialog, locales en de es fr ja | **Yes** (`internal/server/web/app-pause.test.js`) | **No** | Stubbed browser; a live look at the header is still to do |
+| PWA badge and dialog before the locale bundle loads (English text, never the raw key; repaint in the active locale when the bundle is ready) and the guard helpers `tOr` and `onI18nReady` | **Yes** (`internal/server/web/app-i18n-guard.test.js`) | **No** | Stubbed browser; the page-wide check in a real browser is the raw-key test in `test/e2e` |

@@ -154,6 +154,7 @@ window._i18n = {
   bundle: {},               // { key: translated string }
   fallback: {},             // English bundle for fallback when a key is missing
   ready: false,
+  readyHooks: [],           // functions run once the bundle has loaded (see onI18nReady)
 };
 function detectLocale() {
   const stored = localStorage.getItem('datawatch.locale') || '';
@@ -190,7 +191,25 @@ async function initI18n() {
   }
   window._i18n.ready = true;
   applyI18nDOM(document);
+  // Modules that painted before the bundle was ready repaint now.
+  window._i18n.readyHooks.forEach(fn => {
+    try { fn(); } catch (e) { _dbg('I18N', 'ready hook failed: ' + (e && e.message)); }
+  });
 }
+// onI18nReady runs fn once the locale bundle has loaded, or at once when it
+// already has. A module that starts its own polling or paints on its own before
+// the page's boot (so possibly before the bundle is ready) registers its repaint
+// here, so the text it drew with the English defaults is redrawn in the active
+// locale.
+function onI18nReady(fn) {
+  if (typeof fn !== 'function') return;
+  if (window._i18n.ready) {
+    try { fn(); } catch (e) { _dbg('I18N', 'ready hook failed: ' + (e && e.message)); }
+    return;
+  }
+  window._i18n.readyHooks.push(fn);
+}
+window.onI18nReady = onI18nReady;
 // applyI18nDOM walks elements with `data-i18n="<key>"` and replaces their
 // textContent with t(key). Variants:
 //   data-i18n-attr="title"   → updates the named attribute instead of text
@@ -214,11 +233,7 @@ function applyI18nDOM(root) {
   });
 }
 window.applyI18nDOM = applyI18nDOM;
-function t(key, vars) {
-  const b = window._i18n.bundle || {};
-  let s = b[key];
-  if (s === undefined) s = window._i18n.fallback[key];
-  if (s === undefined) return key; // last-resort: show the key so misses are visible
+function _i18nFill(s, vars) {
   if (vars) {
     // Android-style %1$s / %1$d / %2$s placeholders → vars[0..n].
     s = s.replace(/%(\d+)\$[sd]/g, (_, n) => {
@@ -228,7 +243,25 @@ function t(key, vars) {
   }
   return s;
 }
+function t(key, vars) {
+  const b = window._i18n.bundle || {};
+  let s = b[key];
+  if (s === undefined) s = window._i18n.fallback[key];
+  if (s === undefined) return key; // last-resort: show the key so misses are visible
+  return _i18nFill(s, vars);
+}
 window.t = t; // expose for inline-onclick handlers + dev console
+// tOr is t() for a module that can paint before the locale bundle has loaded.
+// t() returns the KEY when the bundle does not carry it, and a key is truthy, so
+// `t(k) || 'English'` never falls back: the raw key shows. tOr treats a returned
+// key as missing and uses def (the English text) instead, with the same
+// placeholders filled in. Use it, with onI18nReady, in any module that starts its
+// own polling or paints before initI18n has finished.
+function tOr(key, def, vars) {
+  const s = t(key, vars);
+  return s === key ? _i18nFill(def === undefined ? key : def, vars) : s;
+}
+window.tOr = tOr;
 // Setting the locale override persists it and reloads the page so every
 // rendered surface picks up the new bundle in one go.
 //
