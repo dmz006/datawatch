@@ -177,6 +177,8 @@ func (r *Router) replyHeldForReview(status []byte) {
 			LastModel      string `json:"last_model"`
 			HeldAt         string `json:"held_at"`
 			HeldCause      string `json:"held_cause"`
+			AttemptsTotal  int    `json:"attempts_total"`
+			AttemptCapHeld bool   `json:"attempt_cap_held"`
 		} `json:"review_needed"`
 	}
 	if json.Unmarshal(status, &st) != nil || len(st.ReviewNeeded) == 0 {
@@ -192,6 +194,12 @@ func (r *Router) replyHeldForReview(status []byte) {
 			h.AutomatonID, h.AutomatonTitle, h.TaskID, h.TaskTitle, h.FailureCount, worker, h.HeldAt)
 		if h.HeldCause != "" {
 			line += "; held after infrastructure retries: " + h.HeldCause
+		}
+		if h.AttemptsTotal > 0 {
+			line += fmt.Sprintf("; %d attempts started in all", h.AttemptsTotal)
+		}
+		if h.AttemptCapHeld {
+			line += fmt.Sprintf("; held at the attempt cap, only your force reset starts it again: autonomous reset-task %s %s force", h.AutomatonID, h.TaskID)
 		}
 		lines = append(lines, line)
 	}

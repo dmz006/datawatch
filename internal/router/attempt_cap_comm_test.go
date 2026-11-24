@@ -3,7 +3,9 @@ package router
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 )
 
 // TestCommResetTaskForce: the comm channel is the operator's, so a reset sent
@@ -34,5 +36,29 @@ func TestCommResetTaskForce(t *testing.T) {
 		if m["task_id"] != "t1" || m["actor"] != "operator" || force != c.wantForce || clean != c.wantClean {
 			t.Errorf("%q: body = %v, want task t1, actor operator, force %v, clean_restart %v", c.msg, m, c.wantForce, c.wantClean)
 		}
+	}
+}
+
+// TestCommHeldForReviewShowsAttemptCount: the held-for-review lines carry the
+// total attempt count and, for a task held at the cap, the force reset to use.
+func TestCommHeldForReviewShowsAttemptCount(t *testing.T) {
+	sent := make(chan string, 4)
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: func(m string) { sent <- m }}}
+	r.replyHeldForReview([]byte(`{"review_needed":[
+		{"automaton_id":"a1","automaton_title":"A","task_id":"t1","task_title":"T","failure_count":3,"attempts_total":6,"attempt_cap_held":true},
+		{"automaton_id":"a1","automaton_title":"A","task_id":"t2","task_title":"U","failure_count":3,"attempts_total":3}]}`))
+	var out string
+	select {
+	case out = <-sent: // the reply is sent from a goroutine
+	case <-time.After(5 * time.Second):
+		t.Fatal("no reply was sent")
+	}
+	for _, want := range []string{"6 attempts started in all", "held at the attempt cap", "autonomous reset-task a1 t1 force", "3 attempts started in all"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("reply lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Count(out, "held at the attempt cap") != 1 {
+		t.Errorf("only the cap-held task names the cap:\n%s", out)
 	}
 }
