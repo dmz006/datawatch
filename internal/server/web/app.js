@@ -46635,7 +46635,7 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
     'scope_warning', 'guardrail_warn', 'automaton.stuck_running', 'automaton.merge_ready',
     'automaton.tasks_done_or_cancelled', 'task.capacity_wait_too_long',
     'burn_guard.rung_changed', 'judge.verdict_block', 'judge.verdict_warn',
-    'judge.verdict_pass', 'task.final_gate_failed']],
+    'judge.verdict_pass', 'task.final_gate_failed', 'priority_stall']],
 ];
 const _LIFECYCLE_SUB_KINDS = _LIFECYCLE_SUB_KIND_GROUPS.reduce((all, g) => all.concat(g[2]), []);
 // The kinds the checkboxes stand for, in render order. It starts as the

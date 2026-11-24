@@ -96,6 +96,9 @@ type SupervisorWatchWork struct {
 	PRDs     SupervisorWatchPRDLister
 	LaneFill SupervisorWatchLaneFillStatuser
 	CI       SupervisorWatchCILister
+	// Stall, when set, names the blocker and action of each priority stall
+	// finding. Nil leaves the finding without them.
+	Stall LaneFillDecisionSource
 
 	mu     sync.Mutex
 	raised map[string]bool
@@ -359,11 +362,17 @@ func (w *SupervisorWatchWork) CheckPriorityStall(now time.Time, cfg SupervisorWa
 		if w.isRaised(SupervisorWatchPriorityStall, p.ID) {
 			continue
 		}
+		var btext, action string
+		if w.Stall != nil {
+			_, btext, action = NewStallDetector(w.Stall, nil).blockerFor(p)
+		}
 		out = append(out, SupervisorWatchFinding{
 			Kind:    SupervisorWatchPriorityStall,
 			Subject: p.ID,
 			Text: SupervisorWatchPriorityStallText(p.ID, p.Priority, age,
-				cfg.EffectiveStallThresholdMinutes(), cfg.EffectivePriorityFloor()),
+				cfg.EffectiveStallThresholdMinutes(), cfg.EffectivePriorityFloor(), btext, action),
+			BlockerText: btext,
+			Action:      action,
 		})
 	}
 	w.markRaised(out)

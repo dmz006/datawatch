@@ -4128,6 +4128,46 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: The daemon configuration is not available}
 
+  /api/autonomous/priority-stalls:
+    get:
+      summary: Current priority stalls
+      description: |
+        The Automata at or above the priority floor that have waited past the stall
+        threshold, high priority first. Each row names the Automaton
+        (`automaton_id`), its `priority`, `waiting_minutes`, the blocker code
+        (`blocker_code`), the blocker text (`blocker_text`) and the one `action`
+        that clears it. An empty `stalls` array means nothing is stalled. Read-only:
+        it never wakes the supervisor and never approves, runs or acknowledges an
+        Automaton; the wake itself is switched by
+        `autonomous.automation.supervisor_watch.stall_wake`. Needs the autonomous
+        read capability when called by a federated peer.
+      operationId: autonomousPriorityStalls
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Current priority stalls
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stalls:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        automaton_id: {type: string}
+                        priority: {type: integer}
+                        waiting_minutes: {type: integer}
+                        blocker_code: {type: string}
+                        blocker_text: {type: string}
+                        action: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/repo-ci-watch:
     get:
       summary: Repo CI watch state

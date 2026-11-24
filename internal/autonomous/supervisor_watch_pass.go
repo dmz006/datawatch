@@ -138,6 +138,9 @@ func (m *Manager) supervisorWatchRawFindings(now time.Time, cfg SupervisorWatchC
 		supervisorWatchLaneFill{m: m},
 		supervisorWatchCISnapshot{recs: m.supervisorWatchCIRecords()},
 	)
+	stallSrc := supervisorWatchStallSource{m: m}
+	work.Stall = stallSrc
+	m.supervisorWatchStallScan(stallSrc, prds, cfg, now)
 	out = append(out, work.CheckTaskFailed()...)
 	out = append(out, work.CheckTaskReviewNeeded()...)
 	out = append(out, work.CheckAutomatonNotMerged()...)

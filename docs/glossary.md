@@ -180,3 +180,7 @@ the allowance readings (the default `claude-code` entry), priced per model;
 `metered` — a dollar spend figure against the rate-based projection, using the
 per-model rates. An entry with `usage_source: none` is never held. See
 [howto/burn-guard.md](howto/burn-guard.md#guarding-several-paid-llm-entries-entries).
+
+## Priority stall
+
+A high-priority Automaton (at or above the `priority_floor`, default 80) that has waited in the queue longer than `stall_threshold_minutes` (default 30) with a blocker lane fill will not clear: the blocker is one of `lane_full`, `plan_coverage_blocked`, `held`, `stale`, `proposal_not_confirmed`, `judge_timed_out`, `merge_pending` or `other_refusal`. The watch names it as a `priority_stall` finding and the daemon publishes one `priority_stall` event per Automaton per blocker, which can wake the supervisor. The detector only reads; it never approves or acknowledges. See [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md#priority-stall-wakes-the-supervisor).

@@ -39,7 +39,7 @@ func TestWakeSettingsDefaults(t *testing.T) {
 		"prd.blocked", "task.review_needed", "task.failed", "task.final_gate_failed",
 		"judge.verdict_block", "judge.verdict_warn", "judge.verdict_pass",
 		"automaton.tasks_done_or_cancelled", "automaton.stuck_running",
-		"task.capacity_wait_too_long", "burn_guard.rung_changed",
+		"task.capacity_wait_too_long", "burn_guard.rung_changed", "priority_stall",
 	}
 	if !reflect.DeepEqual(w.Kinds, want) {
 		t.Fatalf("default kinds %v", w.Kinds)

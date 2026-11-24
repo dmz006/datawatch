@@ -523,6 +523,7 @@ plugin_widget_list
 plugins_list
 plugins_reload
 post_result
+priority_stalls
 profile_create
 profile_delete
 profile_get

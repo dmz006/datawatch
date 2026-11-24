@@ -32,7 +32,7 @@ func (s *Server) toolSupervisorWatchStats() mcpsdk.Tool {
 
 // SupervisorWatchToolNames lists the supervisor watch tools, for the parity test.
 func SupervisorWatchToolNames() []string {
-	return []string{"supervisor_watch_list", "supervisor_watch_stats"}
+	return []string{"supervisor_watch_list", "supervisor_watch_stats", "priority_stalls"}
 }
 
 func (s *Server) handleSupervisorWatchList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -65,6 +65,30 @@ func (s *Server) handleSupervisorWatchStats(_ context.Context, req mcpsdk.CallTo
 	out, err := s.proxyGet("/api/autonomous/supervisor-watch/stats", nil)
 	if err != nil {
 		return toolError("supervisor_watch_stats", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolPriorityStalls() mcpsdk.Tool {
+	return mcpsdk.NewTool("priority_stalls",
+		mcpsdk.WithDescription("Read the current priority stalls: each waiting Automaton at or above the priority floor that has waited past the stall threshold, with its id (\"automaton_id\"), priority, wait in minutes, the blocker code (\"blocker_code\"), the blocker text (\"blocker_text\") and the one action that clears it (\"action\"), high priority first. Takes no arguments; any argument is refused. Read-only: it never wakes the supervisor and never approves, runs or acknowledges an Automaton. The same object as GET /api/autonomous/priority-stalls."),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+func (s *Server) handlePriorityStalls(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if args := req.GetArguments(); len(args) > 0 {
+		names := make([]string, 0, len(args))
+		for k := range args {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		return toolError("priority_stalls",
+			fmt.Errorf("unknown argument(s): %s; this tool takes no arguments", strings.Join(names, ", "))), nil
+	}
+	out, err := s.proxyGet("/api/autonomous/priority-stalls", nil)
+	if err != nil {
+		return toolError("priority_stalls", err), nil
 	}
 	return textOK(string(out)), nil
 }

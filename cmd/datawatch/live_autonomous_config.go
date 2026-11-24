@@ -150,6 +150,10 @@ func supervisorWatchFromYAML(in config.SupervisorWatchConfig) autonomouspkg.Supe
 		stall := *in.StallThresholdMinutes
 		out.StallThresholdMinutes = &stall
 	}
+	if in.StallWake != nil {
+		wake := *in.StallWake
+		out.StallWake = &wake
+	}
 	if in.PriorityFloor != nil {
 		floor := *in.PriorityFloor
 		out.PriorityFloor = &floor

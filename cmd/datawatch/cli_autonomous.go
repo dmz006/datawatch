@@ -80,6 +80,8 @@ Subcommands:
   supervisor-watch [--json]       Supervisor watch read: the mode, the last poll, one line per finding
                                   (kind, state, last seen, the operator line) and the comparison
                                   against the supervisor script's output
+  priority-stalls [--json]        Priority stalls read: each stalled Automaton with its blocker code,
+                                  blocker text and the one action that clears it (read only)
   merge [--json]                  Merge state: the mode, the alert threshold and the finished Automata whose
                                   work branch is not on main yet (read only)
   merged-members [automation-id] [--json]
@@ -390,6 +392,7 @@ Subcommands:
 		newAutonomousRepoCIWatchCmd(),
 		newAutonomousSecurityFailureCmd(),
 		newAutonomousSupervisorWatchCmd(),
+		newAutonomousPriorityStallsCmd(),
 		newAutonomousHousekeepingRepairsCmd(),
 		newAutonomousGateRepairsCmd(),
 		newAutonomousGateRepairCmd(),
@@ -2332,7 +2335,7 @@ Valid kinds:
   question.answered question.withdrawn
   automaton.merge_ready automaton.stuck_running automaton.tasks_done_or_cancelled
   burn_guard.rung_changed judge.verdict_block judge.verdict_pass judge.verdict_warn
-  task.capacity_wait_too_long task.final_gate_failed
+  task.capacity_wait_too_long task.final_gate_failed priority_stall
 
 Opt-in kinds (off by default, list them to turn them on):
   task.session_started task.session_cleared scope_warning guardrail_warn

@@ -6241,6 +6241,19 @@ type SupervisorWatchConfig struct {
 	// registered compute node. Empty (unset) turns the model_not_resident
 	// check off; there is no default working model.
 	WorkingModel string `yaml:"working_model,omitempty" json:"working_model,omitempty"`
+
+	// StallWake turns the priority_stall wake on or off. A *bool so an unset
+	// key (nil) reads on while an explicit false stays off.
+	StallWake *bool `yaml:"stall_wake,omitempty" json:"stall_wake,omitempty"`
+}
+
+// EffectiveStallWake reports whether the priority_stall wake is on: an unset
+// key reads on.
+func (c SupervisorWatchConfig) EffectiveStallWake() bool {
+	if c.StallWake == nil {
+		return true
+	}
+	return *c.StallWake
 }
 
 // EffectiveMode returns the supervisor watch mode in effect: an empty (unset) value reads

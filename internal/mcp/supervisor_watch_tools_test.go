@@ -235,3 +235,47 @@ func TestSupervisorWatchToolsPriorityBands(t *testing.T) {
 		t.Errorf("result differs from the daemon body: %s", text)
 	}
 }
+
+func TestPriorityStallsMCPTool(t *testing.T) {
+	tool := (&Server{}).toolPriorityStalls()
+	if tool.Name != "priority_stalls" {
+		t.Fatalf("name = %q", tool.Name)
+	}
+	if tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
+		t.Error("priority_stalls must be marked read-only")
+	}
+	if len(tool.InputSchema.Properties) != 0 {
+		t.Errorf("takes no arguments, schema has %v", tool.InputSchema.Properties)
+	}
+	if got := federation.MCPToolCap["priority_stalls"]; got != federation.CapAutonomousRead {
+		t.Errorf("federation capability = %q, want %q", got, federation.CapAutonomousRead)
+	}
+	found := false
+	for _, n := range SupervisorWatchToolNames() {
+		found = found || n == "priority_stalls"
+	}
+	if !found {
+		t.Error("priority_stalls missing from SupervisorWatchToolNames")
+	}
+
+	var path, method string
+	body := `{"stalls":[{"automaton_id":"a1","blocker_code":"held","blocker_text":"on hold","action":"release the hold"}]}`
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		path, method = r.URL.Path, r.Method
+		_, _ = w.Write([]byte(body))
+	})
+	res, err := s.handlePriorityStalls(context.Background(), callReq(nil))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	if method != http.MethodGet || path != "/api/autonomous/priority-stalls" {
+		t.Errorf("proxied %s %s", method, path)
+	}
+	if text := automationText(t, res); text != body {
+		t.Errorf("result differs from the daemon body: %s", text)
+	}
+	res, err = s.handlePriorityStalls(context.Background(), callReq(map[string]any{"x": 1}))
+	if err != nil || res == nil || !res.IsError {
+		t.Fatalf("an argument must be refused: err=%v res=%+v", err, res)
+	}
+}

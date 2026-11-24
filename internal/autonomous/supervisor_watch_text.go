@@ -23,10 +23,18 @@ const SupervisorWatchBacklogSubject = "backlog"
 // how long it has been waiting, the stall threshold and the floor, and
 // says it is not being picked up. One line, the Automaton name, never a
 // tracker id.
-func SupervisorWatchPriorityStallText(subject string, priority, ageMinutes, thresholdMinutes, floor int) string {
-	return fmt.Sprintf(
+//
+// blockerText and action, when both are non-empty, extend the line with the
+// same blocker and action text the priority_stall wake carries; empty values
+// give the line without them.
+func SupervisorWatchPriorityStallText(subject string, priority, ageMinutes, thresholdMinutes, floor int, blockerText, action string) string {
+	s := fmt.Sprintf(
 		"Automaton %s at priority %d has been waiting %d minutes (stall threshold %d minutes, priority floor %d) without being picked up",
 		subject, priority, ageMinutes, thresholdMinutes, floor)
+	if blockerText != "" && action != "" {
+		s += fmt.Sprintf(": %s. To clear it: %s", blockerText, action)
+	}
+	return s
 }
 
 // SupervisorWatchBacklogText builds the operator line for the
