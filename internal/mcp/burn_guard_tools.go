@@ -18,7 +18,7 @@ import (
 
 func (s *Server) toolBurnGuardStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("burn_guard_status",
-		mcpsdk.WithDescription("The burn guard's state: enabled, state (off, idle, guarding or waiting), the rung in force and the rungs applied, the last projection (projected weekly percent, burn per hour, the pace line and the margin), the last decision, the fitted cost coefficients, the last error and the counters. The guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes when the projection runs over; it never ends a running session."),
+		mcpsdk.WithDescription("The burn guard's state: enabled, state (off, idle, guarding or waiting), the rung in force and the rungs applied, the last projection (projected weekly percent, burn per hour, the pace line and the margin), the last decision, the fitted cost coefficients, the last error and the counters, and the pace block: the pace policy's mode (off, shadow or on), whether new work is held now and on which rule (window_pause_line or weekly_pace_line), and the recent decisions that changed the verdict or the hold, each with the evidence it was made on. The guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes when the projection runs over; it never ends a running session."),
 	)
 }
 
@@ -72,7 +72,7 @@ func (s *Server) toolBurnGuardConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("retry_limit_claude", mcpsdk.Description("Most retries of one task on Claude, a whole number from 0 to 20")),
 		mcpsdk.WithBoolean("ask_on_change", mcpsdk.Description("When false (default) the guard sends one alert per change and no question; when true it keeps at most one open question")),
 		mcpsdk.WithNumber("max_projection_gap_points", mcpsdk.Description("Points of disagreement between the guard and the usage advice before the guard takes the lower projection; 0 never compares; default 25; see the burn guard how-to")),
-		mcpsdk.WithString("mode", mcpsdk.Description("The pace_line policy mode: off, shadow or on; an unset mode reads shadow. Shadow first, then on")),
+		mcpsdk.WithString("mode", mcpsdk.Description("The pace_line policy mode: off decides nothing; shadow records the decision with its evidence and holds nothing; on holds new work at the window pause line (window_stop_percent) and at the weekly pace line plus week_tolerance, and lifts the hold when the reading drops or the window or the week resets. Running sessions always finish, and operator and supervisor sessions are never held. An unset mode reads shadow. Shadow first, then on")),
 		mcpsdk.WithNumber("week_tolerance", mcpsdk.Description("Whole number from 0 to 10, default 2: how many points the week reading may run over the pace line and still be ok")),
 		mcpsdk.WithNumber("points_to_week_factor", mcpsdk.Description("Number from 1 to 10, default 1.3: one point of ledger burn counts as this many points of the weekly allowance")),
 		mcpsdk.WithNumber("window_percent_per_point", mcpsdk.Description("Number from 1 to 25, default 4: one point burned is this percent of the current window")),

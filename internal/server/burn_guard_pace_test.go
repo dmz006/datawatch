@@ -65,6 +65,7 @@ type paceRig struct {
 	session float64 // newest session (window) reading, read at 19:30
 	buckets []burnguard.Bucket
 	logPath string
+	readErr error
 }
 
 func newPaceRig(t *testing.T, mode string) *paceRig {
@@ -89,6 +90,9 @@ func (r *paceRig) build(t *testing.T) *BurnGuard {
 	in := BurnGuardInputs{
 		Config: func() config.BurnGuardConfig { return *r.cfg },
 		Readings: func(context.Context) ([]usagecalc.Reading, float64, usagecalc.ResetSpec, error) {
+			if r.readErr != nil {
+				return nil, 0, usagecalc.ResetSpec{}, r.readErr
+			}
 			at := r.now.Add(-30 * time.Minute)
 			if at.After(time.Date(2026, 10, 30, 19, 30, 0, 0, time.UTC)) {
 				at = time.Date(2026, 10, 30, 19, 30, 0, 0, time.UTC)
@@ -368,5 +372,29 @@ func TestPaceEnforceWithoutASeamReportsAnError(t *testing.T) {
 	st := g.Status()
 	if st.Pace == nil || st.Pace.Entries[0].Held || !strings.Contains(st.LastError, "pace") {
 		t.Fatalf("status = %+v, last error %q", st.Pace, st.LastError)
+	}
+}
+
+// TestPaceReadingsUnavailableKeepsTheHold: when the readings cannot be read the policy
+// neither lifts a hold nor adds one, and the hold is still renewed so it does not lapse.
+func TestPaceReadingsUnavailableKeepsTheHold(t *testing.T) {
+	r := newPaceRig(t, "on")
+	r.week = 97
+	r.tick()
+	if !r.adm.holdOn() {
+		t.Fatal("not held")
+	}
+	before := r.adm.callCount()
+	r.readErr = os.ErrDeadlineExceeded
+	r.now = r.now.Add(time.Hour)
+	r.tick()
+	if !r.adm.holdOn() {
+		t.Fatal("an unreadable reading lifted the hold")
+	}
+	if got := r.pace(t).Entries[0]; !got.Held || !strings.Contains(got.Last.Reason, "unavailable") {
+		t.Fatalf("entry = %+v", got)
+	}
+	if r.adm.callCount() != before+1 || !r.adm.calls[before].on {
+		t.Fatalf("the hold was not renewed: %+v", r.adm.calls)
 	}
 }

@@ -342,7 +342,7 @@ func loadPaceLog(path string) []burnguard.PaceDecision {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var out []burnguard.PaceDecision
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
