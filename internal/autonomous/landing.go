@@ -41,6 +41,10 @@ type Landing struct {
 	Actor  string       `json:"actor,omitempty"`
 	At     time.Time    `json:"at"`
 	Reason string       `json:"reason,omitempty"`
+	// ReaskAt is the date the daemon asks again about a branch that was left
+	// alone (a keep decision or the answer "leave it alone"). Nil means no
+	// re-ask date: the decision stands until someone changes it.
+	ReaskAt *time.Time `json:"reask_at,omitempty"`
 }
 
 // markLandingPendingLocked sets a pending record when the Automaton has a

@@ -25,6 +25,20 @@ type FinishedWorkFinding struct {
 	Cause     string `json:"cause"`
 	Action    string `json:"action"`
 	At        string `json:"at"`
+	// Owner is who owns getting the work landed: the operator who last acted
+	// on the record, or "operator" when nobody did.
+	Owner string `json:"owner,omitempty"`
+	// Branch and Ahead name the work: the branch and how many of its commits
+	// are not on the default branch.
+	Branch string `json:"branch,omitempty"`
+	Ahead  int    `json:"ahead,omitempty"`
+	// Since is when the daemon first saw the finished work waiting, so its
+	// age survives restarts and the daemon's own decisions on the record.
+	Since string `json:"since,omitempty"`
+	// QuestionID is the open question asking the owner what to do.
+	QuestionID string `json:"question_id,omitempty"`
+	// ReaskAt is the date a left-alone branch is asked about again.
+	ReaskAt string `json:"reask_at,omitempty"`
 }
 
 // FinishedWorkSweep is the bounded, persisted findings of the finished-work
