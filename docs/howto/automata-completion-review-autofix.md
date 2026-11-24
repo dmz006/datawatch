@@ -104,7 +104,9 @@ head (a stale pass after the work moved on). Every read derives
 badge in the list and detail views, the Projects cards and the Gantt row —
 and the archive guard holds it there: the supervisor loop's close step does
 not archive a finished Automaton while its work is unmerged (a rebased or
-squashed landing counts), and your own archive is always honored as the
+squashed landing counts, and so does a hand port: the badge is not shown when
+the record's shipped record names a commit on the default branch or every file
+the branch changed has the same content there), and your own archive is always honored as the
 explicit "abandon the work" decision. An Automaton that was
 wrongly archived before that guard existed is restored by the one-time
 [unarchive repair](automaton-housekeeping-repairs.md#unarchive-repair-one-time).

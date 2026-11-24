@@ -591,7 +591,10 @@ see it. The list therefore also checks the Automaton's shipped record (release
 and merge commit; the commit must be on the default branch) and the file
 content, and shows such a branch as `landed` with the reason. A branch whose
 landing record says kept or dropped (see the landing record how-to) is settled
-on record and is not listed.
+on record and is not listed, until the branch moves past the commit it pointed
+at when you decided: then it is listed again with the reason "new commits after
+the decision". The archived-unmerged list and the finished-not-merged badge use
+the same shipped-record and content check.
 
 Each entry shows the Automaton, its title, the branch, the number of commits not
 landed, the last activity, the recommendation and a one-line reason. The list is

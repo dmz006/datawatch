@@ -108,6 +108,12 @@ The rules every surface applies the same way:
 - An Automaton with **no branch** is refused — there is nothing to keep or drop.
 - A record that is already `landed` is refused — a landed landing is never
   rewritten.
+- The record keeps the branch tip (`tip`, a commit id) at the moment of the
+  decision, read from the base repository. The unlanded work list leaves a
+  kept or dropped branch out only while the branch still points at that tip;
+  once new commits land on it, it is listed again with the reason "new commits
+  after the decision". When the tip could not be read (no base repository),
+  the decision is recorded without a tip and keeps hiding the branch.
 - A record that is already `kept` can be re-decided with `dropped`, and vice
   versa: the record takes the newest decision, and each decision writes one
   more entry on the record's decision log (`landing_keep` or `landing_drop`,

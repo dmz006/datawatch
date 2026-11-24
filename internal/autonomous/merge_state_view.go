@@ -36,13 +36,21 @@ func (m *Manager) AutomatonMergeState(p *PRD) string {
 	if p == nil {
 		return ""
 	}
-	return m.AutomatonMergeStateOf(p.ID, p.Status, p.Git.Branch, p.Git.BaseBranch)
+	return m.automatonMergeState(p.ID, p.Status, p.Git.Branch, p.Git.BaseBranch, p)
 }
 
 // AutomatonMergeStateOf is AutomatonMergeState from the fields it needs, so
 // the list, roll-up and Gantt can derive it from a summary-index entry without
 // reading the full record. An empty base resolves from the repository.
 func (m *Manager) AutomatonMergeStateOf(id string, status PRDStatus, branch, base string) string {
+	return m.automatonMergeState(id, status, branch, base, nil)
+}
+
+// automatonMergeState derives the value. A branch ahead of the base is then
+// checked for delivery (shipped record, same file content): a hand-ported
+// branch reads empty. p is the record when the caller has it; otherwise it is
+// read from the store, and only when the branch is ahead.
+func (m *Manager) automatonMergeState(id string, status PRDStatus, branch, base string, p *PRD) string {
 	if m == nil || (status != PRDCompleted && status != PRDArchived) || branch == "" {
 		return ""
 	}
@@ -64,7 +72,14 @@ func (m *Manager) AutomatonMergeStateOf(id string, status PRDStatus, branch, bas
 
 	ctx, cancel := context.WithTimeout(context.Background(), mergePendingGitTimeout)
 	defer cancel()
-	state, _, _ := checkBranchAhead(ctx, m.archivedUnmergedGitRunner(), repo, branch, base)
+	git := m.archivedUnmergedGitRunner()
+	state, _, _ := checkBranchAhead(ctx, git, repo, branch, base)
+	if state == branchCheckAhead {
+		if p == nil && m.store != nil {
+			p, _ = m.store.GetPRD(id)
+		}
+		state, _, _ = checkBranchAheadDelivered(ctx, git, repo, branch, base, p)
+	}
 	value := ""
 	if state == branchCheckAhead {
 		value = MergeStateFinishedNotMerged

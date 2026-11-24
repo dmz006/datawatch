@@ -4544,7 +4544,9 @@ paths:
         port is `landed` when the Automaton's shipped record names a commit on
         the default branch or the branch's files have the same content there.
         Branches the operator chose to keep, and branches whose landing record
-        says kept or dropped, are left out. `branches` is an empty list,
+        says kept or dropped, are left out until the branch moves past the tip
+        recorded with the decision; they are then listed with the reason
+        "new commits after the decision". `branches` is an empty list,
         never null, when nothing is unlanded or no base repository is
         configured. Read-only; a federated peer needs the autonomous read
         capability.

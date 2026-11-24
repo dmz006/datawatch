@@ -705,7 +705,7 @@ func (m *Manager) supervisorWatchArchivedUnmerged(now time.Time) []SupervisorWat
 			}
 			checks++
 			ctx, cancel := context.WithTimeout(context.Background(), archiveBranchGitTimeout)
-			state, ahead, _ := checkBranchAhead(ctx, git, repo, p.Git.Branch, p.Git.BaseBranch)
+			state, ahead, _ := checkBranchAheadDelivered(ctx, git, repo, p.Git.Branch, p.Git.BaseBranch, p)
 			cancel()
 			c = supervisorWatchArchivedCheck{state: state, ahead: ahead, at: now, branch: p.Git.Branch, base: p.Git.BaseBranch}
 			m.mu.Lock()

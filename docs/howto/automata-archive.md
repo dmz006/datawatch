@@ -88,7 +88,10 @@ released its guard — the unmerged work is still on the branch. The
 archived-unmerged finder lists every archived record whose branch still holds
 commits that are not on the base branch (newest archive first), each with its
 title, former status, branch and how many commits are ahead; a branch the
-comparison could not make is listed with its reason. It is a read — git is
+comparison could not make is listed with its reason. A branch whose work is
+already on the base although no commit matches (a hand port) is left out: the
+record's shipped record names a commit on the base, or every file the branch
+changed has the same content there. It is a read — git is
 only read, and it changes nothing, deletes nothing and merges nothing.
 
 | Surface | How |

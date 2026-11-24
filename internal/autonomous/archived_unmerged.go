@@ -95,7 +95,8 @@ func archivedAtOf(p *PRD) time.Time {
 
 // ArchivedUnmerged lists archived records whose branch still holds commits
 // that are not on the base branch, newest archive first. Records with no
-// branch, a dropped branch or a branch fully on the base are left out; a
+// branch, a dropped branch, a branch fully on the base or a hand-ported branch
+// (its shipped record or file content is on the base) are left out; a
 // comparison that cannot be made is listed with state "unknown".
 func (m *Manager) ArchivedUnmerged(ctx context.Context) []ArchivedUnmergedEntry {
 	git := m.archivedUnmergedGitRunner()
@@ -123,7 +124,7 @@ func (m *Manager) ArchivedUnmerged(ctx context.Context) []ArchivedUnmergedEntry 
 			continue
 		}
 		cctx, cancel := context.WithTimeout(ctx, archiveBranchGitTimeout)
-		state, ahead, detail := checkBranchAhead(cctx, git, repo, p.Git.Branch, p.Git.BaseBranch)
+		state, ahead, detail := checkBranchAheadDelivered(cctx, git, repo, p.Git.Branch, p.Git.BaseBranch, p)
 		cancel()
 		switch state {
 		case branchCheckAhead:
