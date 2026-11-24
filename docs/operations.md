@@ -6122,7 +6122,7 @@ applies to the next push without a restart.
 
 | Method | How |
 |--------|-----|
-| **YAML** | `~/.datawatch/config.yaml` → `git:` block — `push_on_complete: never \| branch \| default_branch`, `push_remote: origin` |
+| **YAML** | `~/.datawatch/config.yaml` → `git:` block — `push_on_complete: never \| branch \| default_branch`, `push_remote: origin`, `push_before_teardown: false` (opt-in save push when a session is killed) |
 | **CLI** | `datawatch config set git.push_on_complete branch` |
 | **Web UI** | Settings → General → *Push finished work to the remote* (select) and *Push remote name* (text) |
 | **REST API** | `PUT /api/config` with `{"git.push_on_complete": "branch"}`; read back via `GET /api/config` (the `git` block also reports the effective values) |
@@ -6158,7 +6158,7 @@ Empty or an unrecognised value behaves as `branch`.
 - **PRD work, `branch`** — after each task that passes validation, and once more when the PRD completes. Per-PRD serialised; repeated calls are safe.
 - **PRD work, `default_branch`** — once, at PRD completion, strictly after the final gates passed.
 - **One-shot (non-PRD) sessions** — right after the session's own validated commit, per the same policy, subject to the session having ended with a commit.
-- **Before teardown (last-resort save)** — when a session or worker container is about to be torn down with committed-but-unpushed work, that work branch is pushed first so the commits survive the teardown. This step only ever pushes a *work branch*: at teardown time the final gates' outcome is unknown, so if the current branch *is* the remote's default branch it is deliberately not pushed — the commits stay local with a `not pushed` note explaining the default-branch push waits for the final gates. It never runs under `never`, and it is strictly best-effort: a failure does not block the teardown.
+- **Before teardown (last-resort save)** — when a worker container is about to be torn down, or a session is killed with `git.push_before_teardown` on (it is **off by default**: a kill pushes nothing unless you turn it on), committed-but-unpushed work is pushed first so the commits survive the teardown. For a session the push carries only the session's *own* commits: when another local branch also holds some of the unpushed commits (a task branch cut from a local main that is ahead of the remote), nothing is pushed and the session record says `not pushed: ... not this session's own ... push them yourself`. Turn it on with `datawatch config set git.push_before_teardown true`, `configure git.push_before_teardown=true`, `PUT /api/config`, the MCP `config_set` tool, or Settings → General → *Push a killed session's own commits*. This step only ever pushes a *work branch*: at teardown time the final gates' outcome is unknown, so if the current branch *is* the remote's default branch it is deliberately not pushed — the commits stay local with a `not pushed` note explaining the default-branch push waits for the final gates. It never runs under `never`, and it is strictly best-effort: a failure does not block the teardown.
 
 ### The never-force rule
 

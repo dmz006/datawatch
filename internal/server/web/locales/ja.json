@@ -2300,6 +2300,8 @@
   "settings_api_gzip_min_bytes": "API 圧縮しきい値 (バイト)",
   "settings_git_push_on_complete": "完了した作業をリモートにプッシュする",
   "settings_git_push_remote": "プッシュ先リモート名",
+  "settings_git_push_before_teardown": "終了したセッション自身のコミットをプッシュ",
+  "settings_git_push_before_teardown_help": "セッションを終了するとき、そのセッションが作成した未プッシュのコミットをプッシュします。既定ではオフです。他のローカルブランチも保持しているコミットはプッシュされません。",
   "settings_git_secret_scan_mode": "プッシュ前シークレットスキャンモード",
   "settings_git_secret_scan_mode_help": "shadow は発見を検査してプッシュをブロックしない。enforce はシークレット発見時にプッシュをブロックする。off はスキャンを無効化する。",
   "settings_git_secret_scan_detectors": "シークレット検出器（カンマ区切り。空欄=すべて組み込み）",

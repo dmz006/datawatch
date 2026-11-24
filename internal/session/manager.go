@@ -568,6 +568,12 @@ type Manager struct {
 	// the session is ended (EndSession), instead of at the next periodic reap.
 	onLeaseRelease func(sess *Session)
 
+	// pushBeforeTeardown reads git.push_before_teardown: whether a session's
+	// own unpushed commits are pushed when it is killed. Nil (an unwired
+	// manager in a unit test or the CLI) keeps the older always-push behaviour;
+	// the daemon always wires it, and its default is off.
+	pushBeforeTeardown func() bool
+
 	// traceIngest feeds trace events into the trace store and the session
 	// timeline (see trace_ingest.go). nil until wired; observe only.
 	traceIngest *TraceIngestor

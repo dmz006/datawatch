@@ -6518,6 +6518,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"git": map[string]interface{}{
 			"push_on_complete":          s.cfg.Git.EffectivePushOnComplete(),
 			"push_remote":               s.cfg.Git.EffectivePushRemote(),
+			"push_before_teardown":      s.cfg.Git.PushBeforeTeardown,
 			"release_ci_window_minutes": s.cfg.Git.ReleaseCIWindowMinutes,
 			// git.secret_scan — pre-push secret scan (v9.0.0). Effective
 			// values, mirroring push_* above: an unset config shows its
@@ -9203,6 +9204,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else {
 				fmt.Fprintf(os.Stderr, "[config] git.push_on_complete: invalid value %q (allowed: never, branch, default_branch); ignored\n", toString(v))
 			}
+		case "git.push_before_teardown":
+			cfg.Git.PushBeforeTeardown = toBool(v)
 		case "git.push_remote":
 			// Trimmed; empty resets to the built-in default (origin),
 			// resolved via GitConfig.EffectivePushRemote.

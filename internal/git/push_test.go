@@ -292,3 +292,48 @@ func TestDefaultBranch(t *testing.T) {
 		t.Errorf("DefaultBranch = %q, want main", got)
 	}
 }
+
+// ForeignUnpushedCommits counts the unpushed commits on HEAD that another local
+// branch also holds: work the session did not make. A task branch cut from a
+// local main that is ahead of the remote carries all of main's unpushed
+// commits, and only its own commits are the session's.
+func TestForeignUnpushedCommits(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, work := testRepo(t, ctx)
+
+	// Nothing unpushed: nothing foreign.
+	if n, err := ForeignUnpushedCommits(ctx, work, "origin"); err != nil || n != 0 {
+		t.Fatalf("clean clone: got (%d, %v), want (0, nil)", n, err)
+	}
+
+	// main gets two local commits the remote lacks, then a task branch is cut
+	// from it and gets one commit of its own.
+	workCommit(t, ctx, work, "m1.txt", "main one")
+	workCommit(t, ctx, work, "m2.txt", "main two")
+	mustGit(t, ctx, work, "checkout", "-q", "-b", "task")
+	workCommit(t, ctx, work, "t1.txt", "task one")
+
+	if total, _, _ := UnpushedCommits(ctx, work, "origin"); total != 3 {
+		t.Fatalf("unpushed total = %d, want 3", total)
+	}
+	if n, err := ForeignUnpushedCommits(ctx, work, "origin"); err != nil || n != 2 {
+		t.Fatalf("task branch: foreign = (%d, %v), want 2 (main's commits)", n, err)
+	}
+
+	// On main itself no other branch holds main's commits except task, which
+	// also contains them: still foreign to main's session? No: they are
+	// reachable from task, so they count as shared.
+	mustGit(t, ctx, work, "checkout", "-q", "main")
+	if n, err := ForeignUnpushedCommits(ctx, work, "origin"); err != nil || n != 2 {
+		t.Fatalf("main with a task branch on top: foreign = (%d, %v), want 2", n, err)
+	}
+
+	// A branch with commits no other branch holds is all its own.
+	mustGit(t, ctx, work, "checkout", "-q", "--orphan", "lone")
+	mustGit(t, ctx, work, "rm", "-rfq", ".")
+	workCommit(t, ctx, work, "l1.txt", "lone one")
+	if n, err := ForeignUnpushedCommits(ctx, work, "origin"); err != nil || n != 0 {
+		t.Fatalf("own branch: foreign = (%d, %v), want 0", n, err)
+	}
+}

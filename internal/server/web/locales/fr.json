@@ -2300,6 +2300,8 @@
   "settings_api_gzip_min_bytes": "Seuil de compression de l'API (octets)",
   "settings_git_push_on_complete": "Pousser le travail terminé vers le remote",
   "settings_git_push_remote": "Nom du remote de push",
+  "settings_git_push_before_teardown": "Pousser les commits propres d'une session arrêtée",
+  "settings_git_push_before_teardown_help": "Quand une session est arrêtée, ses propres commits qui ne sont sur aucun remote sont poussés. Désactivé par défaut. Les commits qu'une autre branche locale contient aussi ne sont jamais poussés.",
   "settings_git_secret_scan_mode": "Mode de détection de secrets avant push",
   "settings_git_secret_scan_mode_help": "shadow signale sans bloquer le push ; enforce bloque le push en cas de secret ; off désactive la détection.",
   "settings_git_secret_scan_detectors": "Détecteurs de secrets (séparés par des virgules ; vide = intégrés)",

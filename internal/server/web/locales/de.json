@@ -2300,6 +2300,8 @@
   "settings_api_gzip_min_bytes": "API-Komprimierungsschwelle (Bytes)",
   "settings_git_push_on_complete": "Beendete Arbeit auf den Remote pushen",
   "settings_git_push_remote": "Remote-Name zum Pushen",
+  "settings_git_push_before_teardown": "Eigene Commits einer beendeten Sitzung pushen",
+  "settings_git_push_before_teardown_help": "Wenn eine Sitzung beendet wird, werden ihre eigenen Commits gepusht, die noch auf keinem Remote liegen. Standardmäßig aus. Commits, die auch ein anderer lokaler Branch enthält, werden nie gepusht.",
   "settings_git_secret_scan_mode": "Secret-Scan-Modus vor Push",
   "settings_git_secret_scan_mode_help": "shadow meldet Funde, blockiert den Push aber nicht; enforce blockiert den Push bei gefundenem Secret; off deaktiviert den Scan.",
   "settings_git_secret_scan_detectors": "Secret-Scanner (kommagetrennt; leer = alle eingebauten)",

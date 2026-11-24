@@ -312,6 +312,15 @@ git:
   push_on_complete: branch
   # Remote name the finished branch is pushed to (default: origin).
   push_remote: origin
+  # Last-resort save push when a session is killed (default false). On: the
+  # commits the session made itself that are on no remote ref are pushed
+  # before the pane closes, under the same push_on_complete policy (never
+  # skips it; a session on the remote's default branch is never pushed here).
+  # Only the session's own commits are pushed: when another local branch also
+  # holds some of the unpushed commits (a task branch cut from a local main
+  # that is ahead of the remote), nothing is pushed and the session records a
+  # "not pushed" warning. Read live on every kill.
+  push_before_teardown: false
   # How long the release CI is waited for (in minutes) after the daemon
   # pushes the release commit and tag; applies only when
   # autonomous.push_and_tag is on. 0 or unset reads as the 60-minute

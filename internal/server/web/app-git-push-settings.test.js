@@ -46,3 +46,23 @@ test('both git push settings label keys exist in all five locale bundles', () =>
       'settings_git_push_remote missing or empty in ' + locale + ' locale');
   }
 });
+
+test('general settings expose git.push_before_teardown as a toggle with a label in every locale', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const json = vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'sess') || {fields: []}).fields.filter(f => f.key === 'git.push_before_teardown'))",
+    sandbox);
+  const field = JSON.parse(json)[0];
+  assert.ok(field, 'git.push_before_teardown missing from general settings fields');
+  assert.equal(field.type, 'toggle');
+  assert.equal(field.labelKey, 'settings_git_push_before_teardown');
+  assert.equal(field.helpKey, 'settings_git_push_before_teardown_help');
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const k of ['settings_git_push_before_teardown', 'settings_git_push_before_teardown_help']) {
+      assert.ok(typeof bundle[k] === 'string' && bundle[k].length > 0, k + ' missing or empty in ' + locale + ' locale');
+    }
+  }
+});

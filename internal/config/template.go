@@ -53,6 +53,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	b.WriteString("git:\n")
 	fieldi(&b, "push_on_complete", cfg.Git.PushOnComplete, `What to push when work completes: never (no push, with a visible not-pushed warning), branch (push the finished work branch, default), or default_branch`)
 	fieldi(&b, "push_remote", cfg.Git.PushRemote, "Remote the finished branch is pushed to (default origin)")
+	fieldi(&b, "push_before_teardown", cfg.Git.PushBeforeTeardown, "Push a killed session's own unpushed commits before it is torn down (default false; never carries commits another branch holds)")
 	ss := cfg.Git.SecretScan
 	if ss.Mode != "" || len(ss.Detectors) > 0 || len(ss.AllowList.Paths) > 0 || len(ss.AllowList.Fingerprints) > 0 {
 		b.WriteString("  # Pre-push secret scan of the commits about to be pushed: mode off|shadow|enforce (unset = shadow; shadow logs/records without refusing), detectors (unset = all built-ins), allow_list paths (globs) and fingerprints (16-hex or 64-hex SHA-256)\n")

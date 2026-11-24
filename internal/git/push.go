@@ -395,3 +395,47 @@ func UnpushedCommits(ctx context.Context, dir, remote string) (count int, branch
 	}
 	return count, branch, nil
 }
+
+// ForeignUnpushedCommits counts the commits on HEAD that are on no ref of the
+// remote and are also held by another local branch. Those are commits the
+// current branch inherited (a task branch cut from a local main that is ahead
+// of the remote), not work done on it. Pushing the branch would carry them to
+// the remote, so a caller that may push only its own commits refuses when the
+// count is not zero. A detached HEAD has no current branch, so every other
+// branch is considered. A remote that is not configured yields zero (the push
+// itself fails with its own reason); a non-repository yields an error.
+func ForeignUnpushedCommits(ctx context.Context, dir, remote string) (int, error) {
+	if remote == "" {
+		remote = "origin"
+	}
+	if _, err := runGit(ctx, dir, "remote", "get-url", remote); err != nil {
+		// No such remote: a push fails on its own with a clear reason and
+		// nothing can be carried anywhere, so there is nothing foreign to refuse.
+		return 0, nil
+	}
+	args := []string{"rev-list", "--count", "HEAD", "--not", "--remotes=" + remote}
+	if sym, err := runGit(ctx, dir, "symbolic-ref", "--short", "HEAD"); err == nil {
+		if b := strings.TrimSpace(sym); b != "" {
+			args = append(args, "--exclude="+b)
+		}
+	}
+	args = append(args, "--branches")
+	out, err := runGit(ctx, dir, args...)
+	if err != nil {
+		return 0, fmt.Errorf("count foreign unpushed commits vs %q: %s", remote, tailReason(out))
+	}
+	// rev-list HEAD --not <other branches> counts what only HEAD holds; the
+	// foreign ones are the unpushed total minus that.
+	own, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("parse own unpushed count %q: %w", out, err)
+	}
+	total, _, err := UnpushedCommits(ctx, dir, remote)
+	if err != nil {
+		return 0, err
+	}
+	if own > total {
+		return 0, nil
+	}
+	return total - own, nil
+}
