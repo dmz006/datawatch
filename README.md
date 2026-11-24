@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.0 (2026-11-24).** Adds the daemon priority stall wake with blocker and action, treats merged Automaton branches as landed, counts change records from the merge base, and fixes decompose parsing of a plain-string verification. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.1 (2026-11-24).** Finished Automaton work from the cleanup lands: a dormant-features read, a refusal ledger store, result store protection, per-worker capacity over-limit flags and four decompose and planning fixes. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

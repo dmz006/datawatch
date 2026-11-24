@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.1 — Landed finished Automaton work: dormant features read, result store protection, capacity over-limit flags
+
+### Added
+- A read of the shipped settings that are off or in shadow (dormant features), on REST, MCP, the command line and chat, plus a refusal ledger and a finished-work findings store with reads on the same surfaces. The loop does not write into the ledger or the findings store yet, so both read empty until the sweep step lands.
+- Capacity: every leased worker over its pool or node limit is flagged with a reason on every surface, with a chip in the web app and locale strings in five languages.
+- Decompose lint: a smoke-task rule that blocks a code-changing plan with no smoke task (blocking by default when decompose lint is on), and a plan-path warning for planned paths that do not exist.
+- A merge-only Automaton skips the docs set task, and a docs set task that ends with an empty diff finishes as nothing to document.
+- Scheduled supervisor sessions now resolve and record their worker profile, like an interactive start.
+- A reviewed product-term allowlist data file and matcher for the staged-skill leak check (not wired into the check yet).
+
+### Fixed
+- The result store no longer loses entries when the daemon, the MCP server and the command line write at once: writers re-read under a file lock, and every save is atomic. `result put` and `result delete` now go through the running daemon.
+- The web app shows the plain error text when a new session fails to start.
+- The worker profile status read now uses the daemon's own certificate.
+
+### Documentation
+- The definitions page explains that a completed worker is judged by its output, and the capacity guide states that operator starts are admitted over the limit and lists what can still refuse them.
+
 ## v9.187.0 — Priority stall wake, ancestor landing and merge-base change records
 
 ### Added
