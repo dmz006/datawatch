@@ -406,3 +406,38 @@ func (m *Manager) fireDueSession(ctx context.Context, sc *ScheduledCommand) {
 	_ = m.schedStore.RecordFire(sc.ID, newSess.FullID, "spawned")
 	fmt.Printf("[schedule] spawned session %s (%s type=%s)\n", newSess.FullID, ds.Name, sc.Type)
 }
+
+// RearmText is the one-line account of a schedule's next fire, last result and
+// re-arm state, shared by the comm channel, the MCP list and the CLI:
+//
+//	next 21:05:00 · last deferred 21:00 (max sessions (20) reached) · waiting_capacity x3
+func (sc *ScheduledCommand) RearmText() string {
+	var parts []string
+	switch {
+	case sc.State == SchedFailed:
+		parts = append(parts, "no next fire (failed)")
+	case sc.State != SchedPending:
+		parts = append(parts, sc.State)
+	case sc.RunAt.IsZero():
+		parts = append(parts, "next on input")
+	default:
+		parts = append(parts, "next "+sc.RunAt.Local().Format("2006-01-02 15:04:05"))
+	}
+	if sc.LastFireResult != "" {
+		last := "last " + sc.LastFireResult
+		if !sc.LastFireAt.IsZero() {
+			last += " " + sc.LastFireAt.Local().Format("15:04")
+		}
+		if sc.LastError != "" && sc.LastFireResult != "spawned" {
+			last += " (" + sc.LastError + ")"
+		}
+		parts = append(parts, last)
+	}
+	switch sc.RearmState {
+	case RearmStateWaiting:
+		parts = append(parts, fmt.Sprintf("%s x%d", sc.RearmState, sc.ConsecutiveWaits))
+	case RearmStateRetrying, RearmStateGaveUp:
+		parts = append(parts, fmt.Sprintf("%s x%d", sc.RearmState, sc.ConsecutiveFailures))
+	}
+	return strings.Join(parts, " · ")
+}

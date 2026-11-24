@@ -3543,7 +3543,7 @@ func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest)
 	if s.schedStore == nil {
 		return toolErrorf("schedule_list", "Schedule store not available."), nil
 	}
-	pending := s.schedStore.List("pending")
+	pending := s.schedStore.List("pending", "failed")
 	if len(pending) == 0 {
 		return mcpsdk.NewToolResultText("No pending scheduled commands."), nil
 	}
@@ -3564,6 +3564,9 @@ func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest)
 			extra += " sched-name:" + sc.ScheduleName
 		}
 		fmt.Fprintf(&sb, "[%s] session:%s%s %s — %q\n", sc.ID, sc.SessionID, extra, runDesc, sc.Command)
+		if sc.LastFireResult != "" || sc.State == "failed" {
+			fmt.Fprintf(&sb, "    %s\n", sc.RearmText())
+		}
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil
 }

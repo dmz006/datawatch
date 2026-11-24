@@ -2265,6 +2265,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open schedule store: %w", err)
 	}
 	mgr.SetScheduleStore(schedStore)
+	wireScheduleRearm(mgr, cfg)
 	mgr.StartScheduleTimer(ctx)
 
 	// BL356 — exit hook store + config seeding.
@@ -14854,11 +14855,11 @@ func runScheduleList(cfg *config.Config) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tTYPE\tSESSION/TARGET\tSCHED-NAME\tSTATE\tWHEN\tCRON\tFIRES\tLAST-FIRE\tLAST-RESULT\tTASK/COMMAND")
+	_, _ = fmt.Fprintln(w, "ID\tTYPE\tSESSION/TARGET\tSCHED-NAME\tSTATE\tWHEN\tCRON\tFIRES\tLAST-FIRE\tLAST-RESULT\tREARM\tTASK/COMMAND")
 	for _, sc := range entries {
 		when := "on input"
 		if !sc.RunAt.IsZero() {
-			when = sc.RunAt.Format("15:04")
+			when = sc.RunAt.Local().Format("01-02 15:04")
 		}
 		typ := sc.Type
 		if typ == "" {
@@ -14879,10 +14880,14 @@ func runScheduleList(cfg *config.Config) error {
 			lastFire = sc.LastFireAt.Local().Format("01-02 15:04")
 			lastResult = sc.LastFireResult
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		rearm := sc.RearmState
+		if rearm != "" && sc.LastError != "" {
+			rearm += ": " + truncate(sc.LastError, 40)
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			sc.ID, typ, target, sc.ScheduleName,
 			sc.State, when, sc.CronExpr,
-			fires, lastFire, lastResult,
+			fires, lastFire, lastResult, rearm,
 			truncate(sc.Command, 40))
 	}
 	return w.Flush()
@@ -15203,63 +15208,10 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 					}
 				}
 			}
-			// GH#128: spawn/new_session schedules — start a fresh independent session.
-			// DuePending excludes these types; they must be processed here via DuePendingSessions.
-			for _, sc := range store.DuePendingSessions(t) {
-				ds := sc.DeferredSession
-				if ds == nil {
-					_ = store.MarkDone(sc.ID, true)
-					fmt.Printf("[scheduler] spawn [%s] has no DeferredSession, marking failed\n", sc.ID)
-					continue
-				}
-				// Overlap guard: skip if the previous spawn is still running.
-				if sc.ActiveSpawnID != "" {
-					if prior, ok := mgr.GetSession(sc.ActiveSpawnID); ok &&
-						prior.State != session.StateComplete &&
-						prior.State != session.StateFailed &&
-						prior.State != session.StateKilled {
-						fmt.Printf("[scheduler] spawn [%s] skip: prior run %s still %s\n", sc.ID, sc.ActiveSpawnID, prior.State)
-						_ = store.SkipFire(sc.ID)
-						continue
-					}
-				}
-				opts := &session.StartOptions{
-					Name:               ds.Name,
-					Backend:            ds.Backend,
-					LLMRef:             ds.LLMRef,
-					Model:              ds.Model,
-					Effort:             ds.Effort,
-					OneShot:            ds.OneShot,
-					EphemeralWorkspace: ds.Ephemeral,
-					Subprocess:         ds.Subprocess,
-					Git:                ds.Git,
-				}
-				sess, err := mgr.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
-				if err != nil {
-					// A failed start must not end a recurring schedule: re-arm it
-					// for the next fire and alert (first failure, then daily).
-					n, rearmed, _ := store.RecordSpawnFailure(sc.ID)
-					fmt.Printf("[scheduler] failed to spawn session (type=%s sched=%s, %d in a row, rearmed=%v): %v\n", sc.Type, sc.ID, n, rearmed, err)
-					if n == 1 || n%24 == 0 || !rearmed {
-						next := "it will retry at the next scheduled time"
-						if !rearmed {
-							next = "it is one-time or out of recurrences and is now marked failed"
-						}
-						alertspkg.EmitSystem(alertspkg.LevelWarn, "Scheduled spawn failed: "+sc.ScheduleName,
-							fmt.Sprintf("Schedule %s could not start its session (%d in a row): %v — %s.", sc.ID, n, err, next))
-					}
-				} else {
-					// Stamp the requested launch role (e.g. the lean
-					// supervisor profile) on the spawned session, server-side.
-					if ds.LaunchRole != "" && sess.LaunchRole == "" {
-						sess.LaunchRole = ds.LaunchRole
-						_ = mgr.SaveSession(sess) //nolint:errcheck // best-effort metadata
-					}
-					_ = store.MarkDone(sc.ID, false)
-					_ = store.RecordFire(sc.ID, sess.FullID, "spawned")
-					fmt.Printf("[scheduler] spawned session (type=%s sched=%s sess=%s task=%q)\n", sc.Type, sc.ID, sess.FullID, ds.Task)
-				}
-			}
+			// GH#128: spawn/new_session schedules — start a fresh independent
+			// session. The same path as the manager's own schedule loop; a
+			// refused start is re-armed under the schedule re-arm policy.
+			mgr.FireDueSessions(ctx, t)
 		}
 	}
 }

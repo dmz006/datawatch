@@ -1175,6 +1175,11 @@ func Parse(text string) Command {
 		// GH#128 spawn format: "schedule spawn task=<t> [dir=<d>] [backend=<b>] [cron=<c>] [name=<n>] [session-name=<n>]"
 		rest := text[9:]
 		lowerRest := strings.ToLower(strings.TrimSpace(rest))
+		// "schedule list": every pending and failed schedule with its next
+		// fire, last result and re-arm state.
+		if lowerRest == "list" {
+			return Command{Type: CmdSchedule, Text: "list"}
+		}
 		// GH#128: session-independent ephemeral spawn
 		if strings.HasPrefix(lowerRest, "spawn") {
 			spawnRest := strings.TrimSpace(rest[5:])

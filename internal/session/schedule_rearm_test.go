@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -291,5 +292,25 @@ func TestFireDueSessions_AlertsOnWaitsAndOnGiveUp(t *testing.T) {
 	defer mu.Unlock()
 	if last := alerts[len(alerts)-1]; !last.Outcome.GaveUp || last.Schedule.ScheduleName != "bad" {
 		t.Fatalf("an alert must be raised when the policy gives up: %+v", last)
+	}
+}
+
+func TestRearmText_ShowsNextLastAndState(t *testing.T) {
+	store, sc := cronSched(t)
+	if got, _ := store.Get(sc.ID); !strings.HasPrefix(got.RearmText(), "next ") || strings.Contains(got.RearmText(), "last") {
+		t.Fatalf("fresh schedule shows only the next fire: %q", got.RearmText())
+	}
+	_, _ = store.RecordStartFailure(sc.ID, fmt.Errorf("%w (20) reached", ErrMaxSessions), rearmNow, DefaultRearmPolicy())
+	got, _ := store.Get(sc.ID)
+	txt := got.RearmText()
+	for _, want := range []string{"next ", "last deferred", "max sessions (20) reached", "waiting_capacity x1"} {
+		if !strings.Contains(txt, want) {
+			t.Fatalf("%q missing %q", txt, want)
+		}
+	}
+	_, _ = store.RecordStartFailure(sc.ID, errors.New("boom"), rearmNow, rearmPolicy(RearmStayFailed, 0))
+	got, _ = store.Get(sc.ID)
+	if txt := got.RearmText(); !strings.Contains(txt, "no next fire (failed)") || !strings.Contains(txt, "gave_up x1") {
+		t.Fatalf("a schedule the policy gave up on must say so: %q", txt)
 	}
 }
