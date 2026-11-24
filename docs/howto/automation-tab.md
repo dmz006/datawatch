@@ -32,7 +32,7 @@ to its tab without changing the other tabs.
 
 | Sub-tab | What is on it |
 |---|---|
-| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting; see [What the Inbox counts](#what-the-inbox-counts). |
+| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. The count badge on the tab counts only what awaits your action — it never counts the read-only cards; see [What the Inbox counts](#what-the-inbox-counts). |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release plan and its stages appear here when they ship. A **Focus** button in the header of an Automation's page opens its timeline (see [projects-tab.md](projects-tab.md#focus-on-one-automation)). |
 | **Resources** | The **Usage calculator** card at the top — one card: a verdict sentence and three fixed-size graphs (weekly allowance, pace line, burn per day) — then the capacity and queue card, the lane fill rows with their node, and the Automata ship status card; see [automata-resources.md](automata-resources.md) and [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
 | **Progress and cost** | The Progress card (the kind table, work left and completion range; see [automata-progress.md](automata-progress.md)), the three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the four titled cost chart cards (cost over time, tool usage, retries and failure categories, combined report; see [cost-report.md](cost-report.md#the-chart-cards-on-the-automata-page)). The all-projects Gantt and the cost and billing report appear here when they ship. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
@@ -131,18 +131,34 @@ the CLI and the comm channel return everything.
 
 ### What the Inbox counts
 
-The badge on the Inbox tab and the lists under it always agree, because both are cut
-by the same scope. The scope is the header scope; on the Projects sub-tab it is the
+The badge on the Inbox tab counts only what awaits your action, and the lists under
+it are cut by the same scope, so the badge and the cards always agree.
+
+**What counts toward the badge.**
+
+- **Triage records** — only the ones whose card carries an action button (**Retry**,
+  **Resolve review**, **Cancel**). The **merge blocked** card is read-only: its
+  next action (commit or discard the worktree's edits, after which the merge is
+  retried automatically) is text on the card, not a button, so those records do
+  not count.
+- **Open questions** — every open question in the list.
+- **Held questions** — only the open held entries. In shadow mode the would-be
+  holds still render beneath them, but they never count.
+- **Never counted** — the security failure report and the supervisor watch findings
+  are read-only cards. They still render (the watch findings on the Events tab),
+  but they add nothing to the badge.
+
+**The badge also follows the scope.** The scope is the header scope; on the Projects sub-tab it is the
 same thing as the **Project** picker, so choosing a project in either place gives
 the same Inbox:
 
 - **All (the Overview).** Nothing is cut. The badge counts everything
   waiting on you in every project, and its tooltip and screen-reader label read
-  *N waiting on you across all projects*.
+  *N waiting on you to act across all projects*.
 - **One project in scope.** The badge and each card (open
   questions, held questions, Triage, security failure report and the supervisor
   watch findings) keep only the items that belong to that project, and the label
-  reads *N waiting on you*. This holds on every sub-tab, not just the Projects
+  reads *N waiting on you to act*. This holds on every sub-tab, not just the Projects
   sub-tab. Changing the scope, or the `#projects` address, recounts from the data
   already loaded; nothing is fetched again.
 - **One plan in scope.** The same, narrowed to the items that name the plan's
@@ -155,7 +171,7 @@ item, or on the Automaton the item names. Only when no such tag exists is the
 directory used: the item's own project directory, the Automaton's, or, for a
 security failure, the repository name matched against the project directory's name.
 An item with neither a link nor a directory belongs to no project, so it shows only
-in Overview. If a selected project has nothing waiting, the badge is hidden.
+in Overview. If a selected project has nothing waiting on you, the badge is hidden.
 
 This is a display rule of the web app only. REST, MCP, the CLI and the comm channel
 still return every item, unfiltered.
@@ -172,21 +188,39 @@ Each card shows:
 
 - **Headline.** What happened, in one line: *Stopped: the task "…" failed*,
   *Blocked: …*, or *Ready to merge: branch … is waiting*.
-- **Reason.** The reason recorded for it, cut to two lines. Open details to read
-  the whole record.
+- **Reason.** The reason recorded for it. A **blocked** card shows the whole
+  reason — the block reason is the decision you are waiting on — and, under
+  it, a small line naming where the reason came from: *the Automaton set this
+  reason for itself* (`blocked_reason`), *from a guardrail verdict (decision
+  note or policy guard)* (`verdict`), *from a task error or an ended session*
+  (`task_error`) or *a task is held for operator review* (`task_review`). A
+  **failed** card and a ready-to-merge card keep the reason cut to two lines —
+  the full text is in the detail panel.
+- **Next step.** The failed card and a blocked card with a reason both carry
+  one concrete line saying how to unblock, picked by the reason's kind:
+  *resolve the review and it runs again*, *fix the error, then reset the task
+  to run it again — or cancel the Automaton*, *read the verdict, clear the
+  block, then reset the task — or cancel the Automaton*, or *clear the cause
+  named in the reason, then reset the task — or cancel the Automaton*. A card
+  with no reason text at all (a failed one with no error, a blocked one with
+  no recorded reason) gets the plain line instead, which already says what to
+  do: open the details, check the task output, then reset the task or cancel
+  the Automaton.
 - **Automaton and Automation.** An **Automaton** chip, and an **in Automation
   *name*** chip when the Automaton belongs to an Automation.
 - **Wait time.** *waiting …*, how long the Automaton has been waiting on you.
 
-The card has up to four buttons:
+The card has up to four buttons, and on the card each action button carries a
+short line naming what it does:
 
-- **Open details** opens the detail panel. A click anywhere on the card, outside
-  a button, does the same.
-- **Retry** resets the failed task so it runs again. It appears only when the
-  record names a task.
-- **Resolve review** sends a task that is held for review back to its worker. It
+- **Open details** opens the detail panel — the whole record, the full reason,
+  notes and retry budget. A click anywhere on the card, outside a button, does
+  the same.
+- **Retry** (*resets the task and runs it again from where it failed*). It
+  appears only when the record names a task.
+- **Resolve review** (*answers the review so the held task runs again*). It
   appears when a task is held for review or the branch is ready to merge.
-- **Cancel** cancels the Automaton.
+- **Cancel** (*stops the Automaton and archives it*).
 
 Open questions and held questions sit above the Triage card on Inbox, so they
 are the first things you see. You answer an open question in place, on its own
@@ -195,20 +229,31 @@ questions, Triage, security failure report, supervisor watch.
 
 ### The held-questions card
 
-The held-questions card lists tasks that an Automaton has held for an operator
-decision. An Automaton holds a task when it names a question it cannot settle
-itself while the task is in one of the held states: by default `review_held`,
-`decompose_blocked`, `decompose_stalled`, `decompose_failed` and
-`decompose_rejected`. The card's badge shows the mode the feature is in:
+The held-questions card lists Automata that are held for an operator
+decision. The daemon raises a question when an Automaton sits in one of the
+held states: by default `blocked`, `review_held`, `revision_requested`,
+`awaiting_decision` and `pending_insert` (the pass covers whichever subset
+`autonomous.questions.held_states` names). The card's badge shows the mode
+the feature is in:
 
 - **shadow** (the default) records the questions it would have held as *would-be*
   questions, and holds no task.
 - **on** holds the task and lists it here until you answer.
 - **off** turns the feature off.
 
-Each held entry shows the recommended option, *Held on the default: hold* (what
-happens if you do nothing), a link to open the Automaton or task, and an
-**Answer** button, which opens the question so you can respond.
+Each held entry shows the Automaton's title and id, the question's id, and the
+held task and held-state chips when there is one, the **question's own text** (what
+is being asked), cut to three lines — click the row to open the full question and
+read it in whole — the one-line reason, the recommended option, the default
+(*Default: …* from the record, or *Held on the default: hold* when the record
+carries none), a link that opens the Automaton detail (labelled *Open task in
+Automaton* when the entry names a task, *Open Automaton* otherwise), an open
+row's **Answer** button, and a small line
+naming where the hold's mode and states are set (**Settings**). For an open
+entry a click anywhere on the row, outside a button or link, opens the same
+full question the **Answer** button opens. A **shadow** entry is read-only:
+same facts, but no answer button and no row click — it is a would-be hold,
+not an open question.
 
 To view or change the mode or the held states, open **Settings** under **Automata**
 and look at **Held questions mode** (`autonomous.questions.held_mode`) or **Held
@@ -227,7 +272,8 @@ never blanks the cards.
 - **Inbox:** the needs-attention card above, the open questions (see
   [Questions](#questions-rest-only-for-now)), the held-question card and the
   security failure card. The supervisor watch card is in the Events tab. The badge on the tab
-  counts what is waiting on you.
+  counts only what is waiting on you to act — the read-only cards (the security
+  failure report, the merge-blocked card) still render but never add to it.
 - **Resources:** the **Usage calculator** card at the top — one card: a
   verdict sentence and three fixed-size graphs (weekly allowance, pace line,
   burn per day; see

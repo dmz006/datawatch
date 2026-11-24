@@ -155,8 +155,10 @@ The report carries the same facts on every surface:
 - the **held states** covered by the pass;
 - the **open held questions** (in `on` mode): the question id, the held
   state, the held Automaton's title and id, the task when there is one, the
-  owning Automation, the reason it is held, the **recommended option** and
-  the **default** (always `hold`), and when it was raised;
+  owning Automation, the reason it is held, the **question's own text** —
+  what is being asked, from the question record, capped and elided when it is
+  long —, the **recommended option** and the **default** (always `hold`), and
+  when it was raised;
 - the **shadow entries** (in `shadow` mode): each hold the daemon logged
   instead of raising — the Automaton, the held state, the option it would
   have recommended, and when.
@@ -167,7 +169,7 @@ The report carries the same facts on every surface:
 | MCP | `autonomous_held_questions`, with the same optional `prd_id` and `state` arguments. Read-only. Answer with the standard `question_answer` tool (`chosen_option_id`, or `quote`; `supersedes` for a changed mind). |
 | CLI | `datawatch question held [--prd <id>] [--state <id>] [--json]` — the same report, human-readable or raw JSON. Answer with `datawatch question answer <id> --option <option id> [--text "…"]`. |
 | Chat | `question held [prd <id> \| state <held state id>]` — read-only. `question answer <id> <option number or id> [quote…]` answers; a bare reply still answers the single open question, as with worker questions. |
-| PWA | The **Held-question** card on the Automation view (Inbox sub-tab), directly beneath the open-questions card: the mode badge, every open held entry with its recommendation, the forced default line, a link that opens the Automaton detail, and the usual answer sheet. In shadow mode the would-be holds are listed beneath them. |
+| PWA | The **Held-question** card on the Automation view (Inbox sub-tab), directly beneath the open-questions card: the mode badge, every open held entry with the question's own text (three lines, the row opens the full question), its recommendation, the default line, a link that opens the Automaton detail (labelled *Open task in Automaton* when the entry names a task, *Open Automaton* otherwise), and the usual answer sheet. In shadow mode the would-be holds are listed beneath them. |
 
 ## Shadow dogfood, then switch to on
 
