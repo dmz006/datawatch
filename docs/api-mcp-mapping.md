@@ -82,7 +82,7 @@ documenting coverage gaps and the reasoning behind them.
 
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
-| `GET /api/schedules` | `schedule_list` | Complete | |
+| `GET /api/schedules` | `schedule_list` | Complete | the REST list carries `last_fire_result` (`spawned`, `skipped`, `failed`, `deferred`), `last_error`, `rearm_state`, `consecutive_failures`, `consecutive_waits` and `fire_history`; the tool lists pending and failed entries with a next fire, last result and re-arm line. Settings `schedule.rearm_*` through `config_set` / `PUT /api/config`. CLI `datawatch schedule list`, comm `schedule list`. See [howto/schedule-rearm](howto/schedule-rearm.md) |
 | `POST /api/schedules` | `schedule_add` | Complete | |
 | `DELETE /api/schedules` | `schedule_cancel` | Complete | |
 

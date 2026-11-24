@@ -99,6 +99,23 @@ type ScheduledCommand struct {
 	// ConsecutiveFailures counts spawn fires that failed to start in a row;
 	// reset by a successful spawn.
 	ConsecutiveFailures int `json:"consecutive_failures,omitempty"`
+	// ConsecutiveWaits counts starts in a row that were refused for capacity
+	// (session cap, cooldown, draining). A wait is not a failure.
+	ConsecutiveWaits int `json:"consecutive_waits,omitempty"`
+	// RearmState is "", "retrying", "waiting_capacity" or "gave_up".
+	RearmState string `json:"rearm_state,omitempty"`
+	// LastError is the reason of the last refused or failed start.
+	LastError string `json:"last_error,omitempty"`
+	// FireHistory is the newest fires and attempts, oldest first, bounded.
+	FireHistory []ScheduleFire `json:"fire_history,omitempty"`
+}
+
+// ScheduleFire is one fire or start attempt of a schedule.
+type ScheduleFire struct {
+	At        time.Time `json:"at"`
+	Result    string    `json:"result"` // spawned, skipped, failed, deferred
+	SessionID string    `json:"session_id,omitempty"`
+	Error     string    `json:"error,omitempty"`
 }
 
 // DeferredSession holds parameters for creating a new session at a scheduled time.
@@ -647,7 +664,8 @@ func (s *ScheduleStore) MarkDone(id string, failed bool) error {
 // RecordFire updates run-history fields on a spawn/new_session schedule entry.
 // Call after MarkDone (which re-arms the cron) so the new RunAt is preserved.
 // sessionID is the FullID of the spawned session (empty on failure/skip).
-// result is "spawned", "skipped", or "failed".
+// result is "spawned", "skipped", or "failed". A spawned fire clears the
+// failure and wait counters and the re-arm state.
 func (s *ScheduleStore) RecordFire(id, sessionID, result string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -659,52 +677,26 @@ func (s *ScheduleStore) RecordFire(id, sessionID, result string) error {
 			sc.FireCount++
 			if result == "spawned" {
 				sc.ConsecutiveFailures = 0
+				sc.ConsecutiveWaits = 0
+				sc.RearmState = ""
+				sc.LastError = ""
 			}
+			sc.appendFire(ScheduleFire{At: sc.LastFireAt, Result: result, SessionID: sessionID})
 			return s.save()
 		}
 	}
 	return fmt.Errorf("scheduled command %q not found", id)
 }
 
-// RecordSpawnFailure records a spawn fire that failed to start a session. A
-// recurring schedule (cron or fixed interval) is re-armed for its next fire and
-// stays pending, so one transient start failure (session cap, tmux error, global
-// cooldown) does not silently end an hourly job; a one-time schedule becomes
-// failed. Returns the number of consecutive failures and whether the schedule was
-// re-armed.
+// RecordSpawnFailure records a spawn fire that failed to start a session under
+// the default re-arm policy: a recurring schedule (cron or fixed interval) is
+// re-armed for its next fire and stays pending, so one transient start failure
+// does not silently end an hourly job; a one-time schedule becomes failed.
+// Returns the number of consecutive failures and whether the schedule was
+// re-armed. RecordStartFailure takes a cause and a policy.
 func (s *ScheduleStore) RecordSpawnFailure(id string) (consecutive int, rearmed bool, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, sc := range s.entries {
-		if sc.ID != id {
-			continue
-		}
-		if sc.State == SchedCancelled {
-			return sc.ConsecutiveFailures, false, nil
-		}
-		now := time.Now()
-		sc.LastFireAt = now
-		sc.LastFireResult = "failed"
-		sc.FireCount++
-		sc.ConsecutiveFailures++
-		switch {
-		case sc.CronExpr != "":
-			if next, cerr := CronNext(sc.CronExpr, now); cerr == nil && (sc.RecurUntil.IsZero() || !next.After(sc.RecurUntil)) {
-				sc.RunAt, sc.State, rearmed = next, SchedPending, true
-			}
-		case sc.RecurEverySeconds > 0:
-			next := now.Add(time.Duration(sc.RecurEverySeconds) * time.Second)
-			if sc.RecurUntil.IsZero() || !next.After(sc.RecurUntil) {
-				sc.RunAt, sc.State, rearmed = next, SchedPending, true
-			}
-		}
-		if !rearmed {
-			sc.State = SchedFailed
-			sc.DoneAt = now
-		}
-		return sc.ConsecutiveFailures, rearmed, s.save()
-	}
-	return 0, false, fmt.Errorf("scheduled command %q not found", id)
+	out, err := s.RecordStartFailure(id, nil, time.Now(), DefaultRearmPolicy())
+	return out.Consecutive, out.Rearmed, err
 }
 
 // SkipFire advances the cron RunAt without spawning (overlap guard).
@@ -717,6 +709,7 @@ func (s *ScheduleStore) SkipFire(id string) error {
 			sc.LastFireAt = time.Now()
 			sc.LastFireResult = "skipped"
 			sc.FireCount++
+			sc.appendFire(ScheduleFire{At: sc.LastFireAt, Result: "skipped", SessionID: sc.ActiveSpawnID})
 			if sc.CronExpr != "" {
 				next, err := CronNext(sc.CronExpr, time.Now())
 				if err == nil {

@@ -27143,6 +27143,14 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'results', section: 'Scheduled Job Results', fields: [
     { key: 'results.schedule_history_limit', label: 'Results kept per schedule (min 1, default 20)', type: 'number', min: 1, placeholder: '20' },
   ]},
+  // scheduled spawns: how a schedule is re-armed after a start that failed.
+  // A full session cap or cooldown is a wait, never a failure, in every mode.
+  { id: 'schedule', section: 'Scheduled Spawns', docs: 'howto/schedule-rearm.md', fields: [
+    { key: 'schedule.rearm_mode', label: 'Failed start policy', labelKey: 'settings_schedule_rearm_mode', helpKey: 'settings_schedule_rearm_mode_help', helpDocs: 'howto/schedule-rearm.md', type: 'select', options: ['next_fire', 'backoff', 'stay_failed'] },
+    { key: 'schedule.rearm_max_retries', label: 'Retries before giving up (0 = never)', labelKey: 'settings_schedule_rearm_max_retries', type: 'number', min: 0, placeholder: '0' },
+    { key: 'schedule.rearm_backoff_seconds', label: 'First retry pause (sec)', labelKey: 'settings_schedule_rearm_backoff', type: 'number', min: 1, placeholder: '30' },
+    { key: 'schedule.rearm_backoff_max_seconds', label: 'Longest retry pause (sec)', labelKey: 'settings_schedule_rearm_backoff_max', type: 'number', min: 1, placeholder: '900' },
+  ]},
   // v4.0.1 — feature toggles for autonomous / plugins / orchestrator.
   // Pi (worker backend) — knobs for pi-based autonomous workers. See
   // "Pi worker observability" in docs/operations.md. pi.thinking_level is
@@ -56779,6 +56787,27 @@ function removeDetPattern(key, index) {
     .catch(err => showToast('Failed: ' + err.message, 'error'));
 }
 
+// _scheduleRearmSummary is the one-line account under a schedule row: next
+// fire, last result with its reason, and the re-arm state. Empty when the
+// schedule has never fired or been refused.
+function _scheduleRearmSummary(sc) {
+  if (!sc.last_fire_result && !sc.rearm_state) return '';
+  const parts = [];
+  if (sc.state === 'pending' && sc.run_at) parts.push(t('schedule_row_next', [_fmtScheduleTime(sc.run_at)]));
+  else if (sc.state === 'failed') parts.push(t('schedule_row_no_next'));
+  if (sc.last_fire_result) {
+    const rk = 'schedule_result_' + sc.last_fire_result;
+    let last = t(rk);
+    if (last === rk) last = sc.last_fire_result;
+    if (sc.last_error && sc.last_fire_result !== 'spawned') last += ' (' + sc.last_error + ')';
+    parts.push(t('schedule_row_last', [last]));
+  }
+  if (sc.rearm_state === 'waiting_capacity') parts.push(t('schedule_rearm_waiting', [sc.consecutive_waits || 0]));
+  else if (sc.rearm_state === 'retrying') parts.push(t('schedule_rearm_retrying', [sc.consecutive_failures || 0]));
+  else if (sc.rearm_state === 'gave_up') parts.push(t('schedule_rearm_gave_up', [sc.consecutive_failures || 0]));
+  return parts.join(' · ');
+}
+
 function loadSchedulesList() {
   const el = document.getElementById('schedulesList');
   if (!el) return;
@@ -56807,6 +56836,7 @@ function loadSchedulesList() {
       const label = sc.type === 'new_session' && sc.deferred_session
         ? 'NEW: ' + escHtml(sc.deferred_session.name || sc.command)
         : sessionRef + schedRef + ': ' + escHtml(sc.command) + cronBadge;
+      const rearm = _scheduleRearmSummary(sc);
       const actions = [];
       if (sc.state === 'pending') {
         actions.push(`<button class="btn-icon obs-tap" style="font-size:10px;" onclick="editSchedulePrompt('${escJsAttr(sc.id)}','${escJsAttr(sc.command)}','${escJsAttr(sc.run_at||'')}')" title="Edit">&#9998;</button>`);
@@ -56814,7 +56844,7 @@ function loadSchedulesList() {
       actions.push(`<button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${escJsAttr(sc.id)}')" title="Delete">&#128465;</button>`);
       return `<div class="settings-row obs-sched-row" style="justify-content:space-between;font-size:12px;">
         ${hasMultiple ? `<input type="checkbox" class="sched-checkbox" data-id="${sc.id}" style="margin-right:6px;">` : ''}
-        <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(sc.command)}">${label}</div>
+        <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(sc.command)}">${label}${rearm ? `<div class="obs-sched-rearm" style="font-size:10px;color:${sc.rearm_state === 'gave_up' ? 'var(--error)' : 'var(--text2)'};overflow:hidden;text-overflow:ellipsis;" title="${escHtml(rearm)}">${escHtml(rearm)}</div>` : ''}</div>
         <div class="obs-sched-meta" style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:10px;color:var(--text2);">${when}</span>
           <span style="font-size:10px;${stateClass};font-weight:600;text-transform:uppercase;">${escHtml(sc.state)}</span>

@@ -2397,7 +2397,7 @@ func (s *Server) toolScheduleSpawn() mcpsdk.Tool {
 
 func (s *Server) toolScheduleList() mcpsdk.Tool {
 	return mcpsdk.NewTool("schedule_list",
-		mcpsdk.WithDescription("List all pending scheduled commands. Includes session_name, cron_expr, and schedule_name (BL353)."),
+		mcpsdk.WithDescription("List pending and failed scheduled commands. Includes session_name, cron_expr and schedule_name, and for each schedule that has fired or been refused: the next fire, the last result with its reason, and the re-arm state (retrying, waiting_capacity or gave_up)."),
 	)
 }
 
@@ -3546,7 +3546,7 @@ func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest)
 	if s.schedStore == nil {
 		return toolErrorf("schedule_list", "Schedule store not available."), nil
 	}
-	pending := s.schedStore.List("pending")
+	pending := s.schedStore.List("pending", "failed")
 	if len(pending) == 0 {
 		return mcpsdk.NewToolResultText("No pending scheduled commands."), nil
 	}
@@ -3567,6 +3567,9 @@ func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest)
 			extra += " sched-name:" + sc.ScheduleName
 		}
 		fmt.Fprintf(&sb, "[%s] session:%s%s %s — %q\n", sc.ID, sc.SessionID, extra, runDesc, sc.Command)
+		if sc.LastFireResult != "" || sc.State == "failed" {
+			fmt.Fprintf(&sb, "    %s\n", sc.RearmText())
+		}
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil
 }

@@ -7267,6 +7267,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"results": map[string]interface{}{
 			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),
 		},
+		// scheduled spawns: how a failed start is re-armed.
+		"schedule": map[string]interface{}{
+			"rearm_mode":                s.cfg.Schedule.EffectiveRearmMode(),
+			"rearm_max_retries":         s.cfg.Schedule.EffectiveRearmMaxRetries(),
+			"rearm_backoff_seconds":     s.cfg.Schedule.EffectiveRearmBackoffSeconds(),
+			"rearm_backoff_max_seconds": s.cfg.Schedule.EffectiveRearmBackoffMaxSeconds(),
+		},
 	}
 	// Model-to-node collisions: two different models configured on one
 	// ollama node. Omitted when there are none, so the PWA shows the banner
@@ -11575,6 +11582,26 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "results.schedule_history_limit":
 			if n, ok := toInt(v); ok && n >= 1 {
 				cfg.Results.ScheduleHistoryLimit = n
+			}
+		// Schedule re-arm policy. Read live at every failed start, so a patched
+		// value applies to the next failure without a restart. An unknown mode
+		// or a value below the minimum is rejected, leaving the setting as is.
+		case "schedule.rearm_mode":
+			switch m := toString(v); m {
+			case config.ScheduleRearmNextFire, config.ScheduleRearmBackoff, config.ScheduleRearmStayFailed:
+				cfg.Schedule.RearmMode = m
+			}
+		case "schedule.rearm_max_retries":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Schedule.RearmMaxRetries = n
+			}
+		case "schedule.rearm_backoff_seconds":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Schedule.RearmBackoffSeconds = n
+			}
+		case "schedule.rearm_backoff_max_seconds":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Schedule.RearmBackoffMaxSeconds = n
 			}
 		default:
 			// autonomous.defect_queue.*; validated in handlePutConfig, Set

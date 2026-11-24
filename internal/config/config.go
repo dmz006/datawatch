@@ -875,6 +875,10 @@ type Config struct {
 	// the oldest ones are evicted.
 	Results ResultsConfig `yaml:"results,omitempty" json:"results,omitempty"`
 
+	// Schedule holds the re-arm policy for scheduled spawns that fail to
+	// start. See ScheduleConfig.
+	Schedule ScheduleConfig `yaml:"schedule,omitempty" json:"schedule,omitempty"`
+
 	// CostReport — knobs for the cost report (internal/costreport), the
 	// one view over recorded spend grouped by automaton, automation,
 	// backend, release or week. Every key is a pointer so an absent key reads
@@ -8359,6 +8363,78 @@ func (c ResultsConfig) EffectiveScheduleHistoryLimit() int {
 		return DefaultScheduleHistoryLimit
 	}
 	return c.ScheduleHistoryLimit
+}
+
+// Schedule re-arm modes. A start refused for capacity (full session cap,
+// cooldown, draining) is a wait in every mode and never fails a schedule.
+const (
+	ScheduleRearmNextFire   = "next_fire"
+	ScheduleRearmBackoff    = "backoff"
+	ScheduleRearmStayFailed = "stay_failed"
+)
+
+// Schedule re-arm defaults.
+const (
+	DefaultScheduleRearmBackoffSeconds    = 30
+	DefaultScheduleRearmBackoffMaxSeconds = 900
+)
+
+// ScheduleConfig says what a scheduled spawn does after a start that failed
+// for a real reason (not a wait for capacity).
+type ScheduleConfig struct {
+	// RearmMode is "next_fire" (default: a recurring schedule tries again at
+	// its next time and never gives up; a one-time schedule fails), "backoff"
+	// (retry sooner with a growing pause, up to rearm_max_retries failures in
+	// a row, then stay failed and alert) or "stay_failed" (the first failure
+	// marks the schedule failed and alerts).
+	RearmMode string `yaml:"rearm_mode,omitempty" json:"rearm_mode,omitempty"`
+	// RearmMaxRetries is the failures in a row after which backoff mode gives
+	// up. 0 = never give up.
+	RearmMaxRetries int `yaml:"rearm_max_retries,omitempty" json:"rearm_max_retries,omitempty"`
+	// RearmBackoffSeconds is the first pause before a retry; it doubles each
+	// time. Unset = 30. The same pause is used for waits for capacity.
+	RearmBackoffSeconds int `yaml:"rearm_backoff_seconds,omitempty" json:"rearm_backoff_seconds,omitempty"`
+	// RearmBackoffMaxSeconds caps the pause. Unset = 900.
+	RearmBackoffMaxSeconds int `yaml:"rearm_backoff_max_seconds,omitempty" json:"rearm_backoff_max_seconds,omitempty"`
+}
+
+// EffectiveRearmMode returns the mode, defaulting an unknown or empty value to
+// next_fire.
+func (c ScheduleConfig) EffectiveRearmMode() string {
+	switch c.RearmMode {
+	case ScheduleRearmBackoff, ScheduleRearmStayFailed:
+		return c.RearmMode
+	}
+	return ScheduleRearmNextFire
+}
+
+// EffectiveRearmBackoffSeconds returns the first backoff pause (default 30).
+func (c ScheduleConfig) EffectiveRearmBackoffSeconds() int {
+	if c.RearmBackoffSeconds < 1 {
+		return DefaultScheduleRearmBackoffSeconds
+	}
+	return c.RearmBackoffSeconds
+}
+
+// EffectiveRearmBackoffMaxSeconds returns the backoff ceiling (default 900,
+// never below the first pause).
+func (c ScheduleConfig) EffectiveRearmBackoffMaxSeconds() int {
+	m := c.RearmBackoffMaxSeconds
+	if m < 1 {
+		m = DefaultScheduleRearmBackoffMaxSeconds
+	}
+	if first := c.EffectiveRearmBackoffSeconds(); m < first {
+		m = first
+	}
+	return m
+}
+
+// EffectiveRearmMaxRetries returns the retry limit (0 = never give up).
+func (c ScheduleConfig) EffectiveRearmMaxRetries() int {
+	if c.RearmMaxRetries < 0 {
+		return 0
+	}
+	return c.RearmMaxRetries
 }
 
 // DefaultConfig returns a Config with sensible defaults.

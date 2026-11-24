@@ -1879,6 +1879,34 @@ func isNewerSemver(latest, current string) bool {
 	return false
 }
 
+// sendScheduleList replies with every pending and failed schedule, each with
+// its next fire, last result and re-arm state.
+func (r *Router) sendScheduleList() {
+	pending := r.schedStore.List(session.SchedPending, session.SchedFailed)
+	if len(pending) == 0 {
+		r.send(fmt.Sprintf("[%s] No pending scheduled items.", r.hostname))
+		return
+	}
+	lines := []string{fmt.Sprintf("[%s] Schedules (pending and failed):", r.hostname)}
+	for _, sc := range pending {
+		when2 := "on input"
+		if !sc.RunAt.IsZero() {
+			when2 = sc.RunAt.Format("2006-01-02 15:04")
+		}
+		label := sc.SessionID
+		if sc.Type == session.SchedTypeNewSession && sc.DeferredSession != nil {
+			label = "NEW: " + sc.DeferredSession.Name
+		} else if sc.Type == session.SchedTypeSpawn && sc.DeferredSession != nil {
+			label = "SPAWN: " + sc.DeferredSession.Name
+		}
+		lines = append(lines, fmt.Sprintf("  [%s] %s @ %s: %s", sc.ID, label, when2, sc.Command))
+		if sc.LastFireResult != "" || sc.State == session.SchedFailed {
+			lines = append(lines, "      "+sc.RearmText())
+		}
+	}
+	r.send(strings.Join(lines, "\n"))
+}
+
 func (r *Router) handleSchedule(cmd Command) {
 	if r.schedStore == nil {
 		r.send(fmt.Sprintf("[%s] Scheduling is not available (no schedule store).", r.hostname))
@@ -1890,6 +1918,12 @@ func (r *Router) handleSchedule(cmd Command) {
 	command := ""
 	if len(parts) >= 2 {
 		command = strings.TrimSpace(parts[1])
+	}
+
+	// "schedule list" needs no session target.
+	if when == "list" {
+		r.sendScheduleList()
+		return
 	}
 
 	// BL353: sessionless cancel-by-schedule-name doesn't need a session target.
@@ -1924,31 +1958,6 @@ func (r *Router) handleSchedule(cmd Command) {
 
 	if command == "" {
 		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>", r.hostname))
-		return
-	}
-
-	// Handle "list" to show pending schedules
-	if when == "list" {
-		pending := r.schedStore.List(session.SchedPending)
-		if len(pending) == 0 {
-			r.send(fmt.Sprintf("[%s] No pending scheduled items.", r.hostname))
-			return
-		}
-		lines := []string{fmt.Sprintf("[%s] Pending schedules:", r.hostname)}
-		for _, sc := range pending {
-			when2 := "on input"
-			if !sc.RunAt.IsZero() {
-				when2 = sc.RunAt.Format("2006-01-02 15:04")
-			}
-			label := sc.SessionID
-			if sc.Type == session.SchedTypeNewSession && sc.DeferredSession != nil {
-				label = "NEW: " + sc.DeferredSession.Name
-			} else if sc.Type == session.SchedTypeSpawn && sc.DeferredSession != nil {
-				label = "SPAWN: " + sc.DeferredSession.Name
-			}
-			lines = append(lines, fmt.Sprintf("  [%s] %s @ %s: %s", sc.ID, label, when2, sc.Command))
-		}
-		r.send(strings.Join(lines, "\n"))
 		return
 	}
 

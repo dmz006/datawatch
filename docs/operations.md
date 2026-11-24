@@ -3554,6 +3554,8 @@ View and manage schedules in:
 - **Sessions page** — badge showing pending schedule count with dropdown
 - **Settings** — collapsible paginated list of all scheduled events
 
+**Restarts and refused starts.** Schedules are saved on every change and survive a daemon restart. A scheduled spawn that is refused for capacity (full session cap, global cooldown, draining daemon, capacity wait timeout) is never marked failed: it stays pending and retries with a doubling pause (`schedule.rearm_backoff_seconds` to `schedule.rearm_backoff_max_seconds`), never later than its next scheduled time, and raises one warn alert after 5 waits in a row. Any other start failure follows `schedule.rearm_mode` (`next_fire`, `backoff`, `stay_failed`); when the policy gives up the schedule stays failed and an error alert is raised. Each list shows the next fire, last result and re-arm state. See [howto/schedule-rearm](howto/schedule-rearm.md).
+
 ### Detection Filters
 
 Prompt, completion, rate-limit, and input-needed patterns are configurable via the `detection` config section. Defaults match the built-in patterns; customize per deployment via config file or API.

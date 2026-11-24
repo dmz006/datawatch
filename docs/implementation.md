@@ -1532,6 +1532,10 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `web_search.url` | string | `""` | Base URL of the SearXNG instance (required when enabled). |
 | `web_search.engine` | string | `bing` | SearXNG engine to use. Only `bing` is reliable; others trigger CAPTCHA/rate-limiting. |
 | `web_search.num_results` | int | `10` | Maximum results returned per query. |
+| `schedule.rearm_mode` | string | `next_fire` | What a scheduled spawn does after a start that failed for a real reason: `next_fire` (recurring tries again at its next time, one-time fails), `backoff` (retry sooner with a doubling pause, give up after `rearm_max_retries`), `stay_failed` (fail at once). A refusal for capacity is a wait in every mode and never fails a schedule. Read at every failed start. |
+| `schedule.rearm_max_retries` | int | `0` | Failures in a row after which `backoff` gives up. 0 = never. |
+| `schedule.rearm_backoff_seconds` | int | `30` | First pause before a retry; doubles each time. Also the pause for waits. Values below 1 rejected. |
+| `schedule.rearm_backoff_max_seconds` | int | `900` | Longest pause; never below `rearm_backoff_seconds`. |
 | `audit.access_log_enabled` | bool | `true` | Log every HTTP request/response, auth failure, and WS connect/disconnect to `access.log` (method, path, status, remote IP, user agent, resolved principal — never the token). |
 | `audit.retention_days` | int | `30` | Prune entries older than this from both `audit.log` and `access.log`. Negative = never prune. |
 | `audit.cef_mirror_enabled` | bool | `false` | Additionally write a CEF-formatted line (`<file>.cef`) alongside every entry, for SIEM forwarding. |
