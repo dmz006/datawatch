@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.185.1 — Held-task accept and judging a finished worker by its output
+
+
 ### Fixed
 
 - **The daemon's stderr stays in the service journal, and the crash log keeps its job.** The daemon no longer redirects its stderr (fd 2) into `<data>/daemon-crash.log` at start — before this fix the journal received nothing from the daemon after boot and its ordinary log lines landed in the crash log. Stderr is left untouched, so the journal (and any other stderr consumer) keeps receiving everything as before; the runtime's fatal crash output is additionally written to the crash log with Go 1.23+ `debug.SetCrashOutput` (`GOTRACEBACK=crash` unchanged, all-goroutine dump on a fatal). `<data>/daemon-crash.log` therefore now holds the per-start header and the crash dumps only, not the daemon's ordinary log lines; a SIGABRT core image is still recovered with `coredumpctl`. Docs: the decompose-async how-to, the decompose-abort operations section and the definitions glossary entry.
