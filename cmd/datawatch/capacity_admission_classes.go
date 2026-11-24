@@ -192,3 +192,15 @@ func operatorOverageNotice(cfg *config.Config, alertFn func(title, body string))
 		alertFn("Operator session started over a capacity limit", fmt.Sprintf("Session %s was admitted as an operator start: %s. Autonomous work waits until the pool is back under its limit.", ls.Holder, strings.Join(parts, "; ")))
 	}
 }
+
+// adoptOverLimitNotice is the ledger's OnAdoptOverLimit hook: one alert per
+// pool the work re-adopted at a restart left above its limit. The sessions keep
+// running; new work waits until the pool is back under its limit.
+func adoptOverLimitNotice(alertFn func(title, body string)) func(pool string, held, limit int) {
+	return func(pool string, held, limit int) {
+		if alertFn == nil {
+			return
+		}
+		alertFn("Pool over its limit after the restart", fmt.Sprintf("%s holds %d sessions against a limit of %d after the restart re-adopted running work. The sessions keep running; new work waits until the pool is back under its limit.", pool, held, limit))
+	}
+}

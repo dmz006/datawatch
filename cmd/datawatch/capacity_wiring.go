@@ -1115,6 +1115,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		HeldBackpressure:            sharedNodeBackpressure(),
 		VerifierHeadroom:            verifierHeadroom.blocked,
 		OnOverage:                   operatorOverageNotice(cfg, alertFn),
+		OnAdoptOverLimit:            adoptOverLimitNotice(alertFn),
 	}
 	applyNodeLimitOptions(&opts, cfg)
 	led := capacity.New(opts)

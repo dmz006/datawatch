@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,5 +178,30 @@ func TestManagerStartAdmitterOperatorOverCapRecordsOverage(t *testing.T) {
 	cfg.Session.CapacityWaitSeconds = 1
 	if _, _, err := admit(context.Background(), session.StartAdmission{Class: "worker", Backend: "claude-code"}); err == nil {
 		t.Fatal("a worker start over the cap must be refused after its wait")
+	}
+}
+
+func TestAdoptOverLimitNoticeRaisesOneAlertText(t *testing.T) {
+	var title, body string
+	adoptOverLimitNotice(func(ti, bo string) { title, body = ti, bo })("llm:pi-prompt", 8, 3)
+	if title == "" || !strings.Contains(body, "llm:pi-prompt") || !strings.Contains(body, "8") || !strings.Contains(body, "3") {
+		t.Fatalf("alert = %q / %q", title, body)
+	}
+	adoptOverLimitNotice(nil)("p", 2, 1) // no alert function: no panic
+}
+
+func TestOperatorOverageNoticeHonoursSetting(t *testing.T) {
+	cfg := config.DefaultConfig()
+	n := 0
+	notice := operatorOverageNotice(cfg, func(string, string) { n++ })
+	ls := capacity.Lease{Holder: "start-1", Overage: []capacity.Overage{{Pool: "llm:claude-code", Limit: 1, Over: 1}}}
+	notice(ls)
+	if n != 0 {
+		t.Fatal("the alert is off by default")
+	}
+	cfg.Autonomous.CapacityOperatorOverageAlert = true
+	notice(ls)
+	if n != 1 {
+		t.Fatalf("alerts = %d, want 1 with the setting on", n)
 	}
 }

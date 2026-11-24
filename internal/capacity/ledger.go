@@ -395,6 +395,12 @@ type Options struct {
 	// requests marked Interactive skip it. Called under the lock: in-memory
 	// state only.
 	AutonomousBackpressure func(pool string) (blocked bool, reason string)
+	// OnAdoptOverLimit is called, on its own goroutine and with no ledger lock
+	// held, once per pool that the work adopted after a restart left above its
+	// limit (held leases, limit). It runs when the adoption hold ends. The
+	// adopted sessions are real and keep their leases; new work waits until the
+	// pool is back under its limit. Nil means no finding.
+	OnAdoptOverLimit func(pool string, held, limit int)
 	// OnOverage is called, on its own goroutine and with no ledger lock held,
 	// each time an operator lease is granted over a pool's limit. Nil means
 	// no notice. The lease is a copy.
@@ -779,12 +785,31 @@ func (l *Ledger) BeginAdoption() {
 func (l *Ledger) MarkAdoptionComplete() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.reportAdoptOverLimitLocked()
 	if !l.adopting {
 		return
 	}
 	l.adopting = false
 	l.signalChangedLocked()
 	l.dispatchLocked()
+}
+
+// reportAdoptOverLimitLocked raises one finding per pool whose held leases are
+// above its limit when the adoption hold ends.
+func (l *Ledger) reportAdoptOverLimitLocked() {
+	if l.opt.OnAdoptOverLimit == nil {
+		return
+	}
+	pools := make([]string, 0, len(l.limits))
+	for p := range l.limits {
+		pools = append(pools, p)
+	}
+	sort.Strings(pools)
+	for _, p := range pools {
+		if held, lim := l.heldLocked(p), l.limits[p]; lim > 0 && held > lim {
+			go l.opt.OnAdoptOverLimit(p, held, lim)
+		}
+	}
 }
 
 // adoptionPendingLocked returns the reason requests are held back for adoption,

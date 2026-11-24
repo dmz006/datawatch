@@ -440,6 +440,13 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 // capacity off), the gate has no opinion and admission is unchanged: the
 // ledger picks the node and loadWorkerNode makes the model resident on it.
 func (m *Manager) admitPreferring(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role, prefer string) error {
+	// A cancelled task takes nothing: no budget wait, no placement question,
+	// no model load on a node and no lease. The ledger only checks the cancel
+	// flag while a request waits, so without this a free pool admitted the
+	// cancelled worker at once.
+	if m.taskCancelled(t.ID) {
+		return errCancelledWhileWaiting
+	}
 	if role != capacity.RoleWorker {
 		return m.acquireLease(ctx, prd, t, backend, model, role, nil, prefer)
 	}
@@ -515,6 +522,9 @@ func (m *Manager) capacityPriorityOf(prd *PRD) int {
 func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role, exclude []string, prefer string) error {
 	if !m.capacityOn() {
 		return nil
+	}
+	if m.taskCancelled(t.ID) {
+		return errCancelledWhileWaiting
 	}
 	m.mu.Lock()
 	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
