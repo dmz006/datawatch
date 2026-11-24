@@ -345,7 +345,7 @@ func TestLaunch_WorkerProfileMinimal(t *testing.T) {
 	cmd := recordedCmd(t, argvFile)
 
 	// MCP: strict per-session config with zero servers.
-	mcpPath := filepath.Join(d, channel.WorkerMCPConfigFileName)
+	mcpPath := launchedPath(t, cmd, "--mcp-config")
 	if want := "--strict-mcp-config --mcp-config '" + mcpPath + "'"; !strings.Contains(cmd, want) {
 		t.Errorf("command must pin the session MCP config strictly (want %q), got:\n%s", want, cmd)
 	}
@@ -378,7 +378,7 @@ func TestLaunch_WorkerProfileMinimal(t *testing.T) {
 
 	// Starting context: file in the working directory, appended to the
 	// system prompt by reading the file at launch time.
-	ctxPath := filepath.Join(d, WorkerStartingContextFileName)
+	ctxPath := launchedPath(t, cmd, "--append-system-prompt")
 	if want := `--append-system-prompt "$(cat '` + ctxPath + `')"`; !strings.Contains(cmd, want) {
 		t.Errorf("command must append the starting context file (want %s), got:\n%s", want, cmd)
 	}
@@ -433,7 +433,7 @@ func TestLaunch_WorkerProfileFull(t *testing.T) {
 	cmd := recordedCmd(t, argvFile)
 
 	// MCP: the single allowed server, pinned strictly.
-	mcpPath := filepath.Join(d, channel.WorkerMCPConfigFileName)
+	mcpPath := launchedPath(t, cmd, "--mcp-config")
 	if want := "--strict-mcp-config --mcp-config '" + mcpPath + "'"; !strings.Contains(cmd, want) {
 		t.Errorf("command must pin the session MCP config strictly (want %q), got:\n%s", want, cmd)
 	}
@@ -472,7 +472,7 @@ func TestLaunch_WorkerProfileFull(t *testing.T) {
 
 	// Starting context: full level carries the rules digest and the full
 	// rules text, with the profile line reflecting the profile itself.
-	ctxPath := filepath.Join(d, WorkerStartingContextFileName)
+	ctxPath := launchedPath(t, cmd, "--append-system-prompt")
 	if !strings.Contains(cmd, `--append-system-prompt "$(cat '`+ctxPath+`')"`) {
 		t.Fatalf("command must append the starting context file, got:\n%s", cmd)
 	}
@@ -557,13 +557,15 @@ func TestLaunchResume_WorkerProfileApplied(t *testing.T) {
 	if orIdx < 0 {
 		t.Fatalf("resume/fallback halves not joined by ||, got:\n%s", cmd)
 	}
+	mcpFile := launchedPath(t, cmd, "--mcp-config")
+	ctxFile := launchedPath(t, cmd, "--append-system-prompt")
 	for name, half := range map[string]string{"resume": cmd[:orIdx], "fallback": cmd[orIdx:]} {
 		for _, want := range []string{
 			"--strict-mcp-config",
-			"--mcp-config '" + filepath.Join(d, channel.WorkerMCPConfigFileName) + "'",
+			"--mcp-config '" + mcpFile + "'",
 			"--allowedTools",
 			`--settings '{"skills":false}'`,
-			`--append-system-prompt "$(cat '` + filepath.Join(d, WorkerStartingContextFileName) + `')"`,
+			`--append-system-prompt "$(cat '` + ctxFile + `')"`,
 		} {
 			if !strings.Contains(half, want) {
 				t.Errorf("%s half missing %q, got:\n%s", name, want, half)
@@ -576,7 +578,7 @@ func TestLaunchResume_WorkerProfileApplied(t *testing.T) {
 	if !strings.Contains(cmd, "--resume ") || !strings.Contains(cmd, "--session-id ") {
 		t.Errorf("profiled resume must keep the --resume || --session-id shape, got:\n%s", cmd)
 	}
-	for _, p := range []string{filepath.Join(d, channel.WorkerMCPConfigFileName), filepath.Join(d, WorkerStartingContextFileName)} {
+	for _, p := range []string{mcpFile, ctxFile} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("profile file %s must exist after a profiled resume: %v", p, err)
 		}
@@ -624,7 +626,7 @@ func TestLaunchWithProfile_PerCallIsolation(t *testing.T) {
 	if strings.Contains(cmdFull, "--allowedTools") || strings.Contains(cmdFull, "--settings") {
 		t.Errorf("full launch picked up the minimal profile's arguments:\n%s", cmdFull)
 	}
-	if !strings.Contains(cmdMin, filepath.Join(dMin, WorkerStartingContextFileName)) || !strings.Contains(cmdFull, filepath.Join(dFull, WorkerStartingContextFileName)) {
+	if launchedPath(t, cmdMin, "--append-system-prompt") == launchedPath(t, cmdFull, "--append-system-prompt") {
 		t.Errorf("each launch must reference its own starting context file:\nmin: %s\nfull: %s", cmdMin, cmdFull)
 	}
 	if got := b.WorkerProfileName(); got != "" {

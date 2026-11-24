@@ -7151,6 +7151,19 @@ func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, con
 	return m.matchPromptLines(lines, n, true)
 }
 
+// inputRowIndex returns the index of the last input row ("❯" alone, or "❯"
+// then a space and text) in lines, or -1. The gap is a plain space or the
+// no-break space Claude Code 2.1.331 draws.
+func inputRowIndex(lines []string) int {
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := strings.TrimSpace(lines[i])
+		if l == "❯" || strings.HasPrefix(l, "❯ ") || strings.HasPrefix(l, "❯\u00a0") {
+			return i
+		}
+	}
+	return -1
+}
+
 // matchPromptLines is matchPromptInLines with control over needs-input
 // markers. A line that merely mentions a marker (task text, wrapped
 // placeholder, shell echo) is never a prompt; a real standalone marker is
@@ -7169,14 +7182,7 @@ func (m *Manager) matchPromptLines(lines []string, n int, markersTrusted bool) (
 	// Check whether Claude is actively processing by looking for tool execution
 	// indicators in the lines just above the input area (❯ prompt). Claude's
 	// layout: output/spinner above separator, ❯ prompt, separator, status bar.
-	promptIdx := -1
-	for i := len(lines) - 1; i >= 0; i-- {
-		l := strings.TrimSpace(lines[i])
-		if l == "❯" || strings.HasPrefix(l, "❯ ") {
-			promptIdx = i
-			break
-		}
-	}
+	promptIdx := inputRowIndex(lines)
 	if promptIdx > 0 {
 		// Check up to 10 content lines above the ❯ prompt for active indicators.
 		checked := 0

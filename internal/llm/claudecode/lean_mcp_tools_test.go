@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -45,7 +44,7 @@ func TestLeanSupervisorLaunch_MCPToolsReachableAndContextSmall(t *testing.T) {
 	}
 	cmd := recordedCmd(t, argv)
 
-	raw, err := os.ReadFile(filepath.Join(d, channel.WorkerMCPConfigFileName))
+	raw, err := os.ReadFile(launchedPath(t, cmd, "--mcp-config"))
 	if err != nil {
 		t.Fatalf("worker-mcp.json not written: %v", err)
 	}
@@ -74,7 +73,7 @@ func TestLeanSupervisorLaunch_MCPToolsReachableAndContextSmall(t *testing.T) {
 		}
 	}
 
-	ctx, err := os.ReadFile(filepath.Join(d, WorkerStartingContextFileName))
+	ctx, err := os.ReadFile(launchedPath(t, cmd, "--append-system-prompt"))
 	if err != nil {
 		t.Fatalf("starting context not written: %v", err)
 	}
