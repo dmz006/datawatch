@@ -512,6 +512,8 @@ type Manager struct {
 	// schedAlertHook and schedRearmPolicy are guarded by mu.
 	schedAlertHook   func(ScheduleAlert)
 	schedRearmPolicy func() RearmPolicy
+	// scheduledSpawnProfile resolves the worker profile for a scheduled spawn.
+	scheduledSpawnProfile func(ds DeferredSession, opts *StartOptions) *string
 
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
@@ -1229,6 +1231,16 @@ func (m *Manager) SetScheduledSpawnTaskHook(fn func(ds DeferredSession) string) 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.scheduledSpawnTask = fn
+}
+
+// SetScheduledSpawnProfileFn sets the hook that resolves the worker profile
+// for a scheduled spawn at the moment it fires. It fills opts.LaunchFn and
+// opts.WorkerProfile and returns a pointer to the fallback reason the launch
+// writes (may be nil); the manager records it on the session.
+func (m *Manager) SetScheduledSpawnProfileFn(fn func(ds DeferredSession, opts *StartOptions) *string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.scheduledSpawnProfile = fn
 }
 
 // StateChangeHandler returns the currently registered state-change callback (may be nil).

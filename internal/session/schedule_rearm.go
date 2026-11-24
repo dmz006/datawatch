@@ -413,10 +413,28 @@ func (m *Manager) fireDueSession(ctx context.Context, sc *ScheduledCommand) {
 			}
 		}
 	}
+	// A launch-role spawn resolves its worker profile the way an interactive
+	// start of the same session kind does, so a scheduled supervisor pass
+	// starts on the lean profile and records the profile or why it fell back.
+	var profileFallback *string
+	if ds.LaunchRole != "" {
+		m.mu.Lock()
+		pfn := m.scheduledSpawnProfile
+		m.mu.Unlock()
+		if pfn != nil {
+			profileFallback = pfn(*ds, opts)
+		}
+	}
 	newSess, err := m.Start(ctx, task, "", ds.ProjectDir, opts)
 	if err != nil {
 		m.RecordScheduleStartFailure(sc, err)
 		return
+	}
+	if profileFallback != nil && *profileFallback != "" {
+		newSess.ProfileFallbackReason = *profileFallback
+		if serr := m.store.Save(newSess); serr != nil {
+			fmt.Printf("[schedule] persist profile fallback on %s: %v\n", newSess.FullID, serr)
+		}
 	}
 	// Spawn schedules must NOT store the launched session's ID: CancelBySession
 	// fires when the spawned session is deleted, which would cancel the

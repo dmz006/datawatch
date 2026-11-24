@@ -40,6 +40,21 @@ func (s *Server) workerProfileLaunchFn(p *workerprofile.WorkerProfile, backendNa
 	}
 }
 
+// scheduledSpawnProfile resolves the worker profile for a scheduled spawn
+// (same resolution and launch function as the interactive start) and sets
+// opts.WorkerProfile and opts.LaunchFn. It returns the fallback-reason
+// pointer the launch fills in.
+func (s *Server) scheduledSpawnProfile(ds session.DeferredSession, opts *session.StartOptions) *string {
+	kind := sessionKindForLaunch(ds.LaunchRole, "", ds.OneShot)
+	p, reason := resolveStartWorkerProfile(s.cfg, "", kind)
+	fallback := reason
+	if p != nil {
+		opts.WorkerProfile = *p
+	}
+	opts.LaunchFn = s.workerProfileLaunchFn(p, ds.Backend, &fallback)
+	return &fallback
+}
+
 // workerProfileResumeLaunchFn is the resume counterpart of
 // workerProfileLaunchFn: a per-session resume launch function that applies
 // the worker profile to this one claude-code resume (a start with a resume

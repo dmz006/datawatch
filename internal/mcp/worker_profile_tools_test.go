@@ -8,6 +8,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/workerprofile"
@@ -348,5 +350,51 @@ func TestAutonomousPRDSetWorkerProfile_ForwardsAndRefuses(t *testing.T) {
 	res, _ = s.handleAutonomousPRDSetWorkerProfile(context.Background(), subUpdateReq("autonomous_prd_set_worker_profile", map[string]any{"worker_profile": "digest"}))
 	if !res.IsError {
 		t.Fatalf("missing id not refused")
+	}
+}
+
+// TestWorkerProfileStatus_ReadsStatsFromTLSServer: the daemon serves TLS with
+// a self-signed certificate (httptest's), and a plain-HTTP front on the web
+// port redirects to it the way the real daemon does. worker_profile_status
+// must still read the stats block through that redirect, not report an error.
+func TestWorkerProfileStatus_ReadsStatsFromTLSServer(t *testing.T) {
+	stamp := time.Now().UnixNano()
+	tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/stats":
+			_, _ = fmt.Fprintf(w, `{"worker_startup":{"average_startup_tokens_by_profile":{"tls-marker":%d}}}`, stamp)
+		case "/api/config":
+			_, _ = w.Write([]byte(`{"autonomous":{}}`))
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(tlsSrv.Close)
+	// Sanity: the certificate really is self-signed, i.e. untrusted by default.
+	if _, err := (&http.Client{Timeout: 5 * time.Second}).Get(tlsSrv.URL + "/api/stats"); err == nil {
+		t.Fatal("test server certificate is unexpectedly trusted")
+	}
+
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, tlsSrv.URL+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(front.Close)
+
+	s := &Server{webPort: bl427Port(t, front)}
+	res, err := s.handleWorkerProfileStatus(context.Background(), subUpdateReq("worker_profile_status", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("worker_profile_status failed against a self-signed TLS daemon: %+v", res.Content)
+	}
+	text := ""
+	for _, c := range res.Content {
+		if tc, ok := c.(mcpsdk.TextContent); ok {
+			text += tc.Text
+		}
+	}
+	if !strings.Contains(text, "tls-marker") || !strings.Contains(text, fmt.Sprint(stamp)) {
+		t.Fatalf("startup stats from the TLS server missing in result:\n%s", text)
 	}
 }
