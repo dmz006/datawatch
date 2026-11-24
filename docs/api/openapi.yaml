@@ -4540,8 +4540,11 @@ paths:
       description: |
         The Housekeeping action list: archived Automata whose branch carries
         commits that are not on the default branch, each with a recommendation
-        (`landed`, `superseded` or `needs_decision`) and the reason. Branches
-        the operator chose to keep are left out. `branches` is an empty list,
+        (`landed`, `superseded` or `needs_decision`) and the reason. A hand
+        port is `landed` when the Automaton's shipped record names a commit on
+        the default branch or the branch's files have the same content there.
+        Branches the operator chose to keep, and branches whose landing record
+        says kept or dropped, are left out. `branches` is an empty list,
         never null, when nothing is unlanded or no base repository is
         configured. Read-only; a federated peer needs the autonomous read
         capability.

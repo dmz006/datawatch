@@ -10,6 +10,7 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -61,6 +62,9 @@ func ListUnlandedBranches(ctx context.Context, git MergeGitRunner, baseRepo stri
 		if p == nil || NormalizePRDStatus(p.Status) != PRDArchived {
 			continue
 		}
+		if landingDecided(p) {
+			continue // the operator kept or dropped this branch on record
+		}
 		branch := p.Git.Branch
 		if branch == "" {
 			branch = automatonBranchPrefix + p.ID
@@ -92,6 +96,14 @@ func ListUnlandedBranches(ctx context.Context, git MergeGitRunner, baseRepo stri
 			e.LastActivity, _ = time.Parse(time.RFC3339, strings.TrimSpace(ts))
 		}
 		e.Recommendation, e.Reason = classifyUnlanded(ctx, git, baseRepo, base, branch, unlanded)
+		if e.Recommendation != UnlandedLanded {
+			// A hand port shares no commit with its branch, so the commit
+			// comparison above cannot see it. The shipped record, or the
+			// same file content on the default branch, proves it landed.
+			if why, ok := deliveredOnBase(ctx, git, baseRepo, base, branch, p); ok {
+				e.Recommendation, e.Reason = UnlandedLanded, why
+			}
+		}
 		out = append(out, e)
 	}
 	rank := map[string]int{UnlandedNeedsDecision: 0, UnlandedSuperseded: 1, UnlandedLanded: 2}
@@ -158,4 +170,61 @@ func classifyUnlanded(ctx context.Context, git MergeGitRunner, repo, base, branc
 		return needs("")
 	}
 	return UnlandedSuperseded, fmt.Sprintf("%d commits are not on %s, but all %d files they change were changed on %s since the branch forked", unlanded, base, n, base)
+}
+
+// landingDecided reports whether the Automaton's landing record carries an
+// operator decision (kept or dropped). Those branches are settled on record,
+// with actor and reason, so they are not listed as work waiting to land.
+func landingDecided(p *PRD) bool {
+	return p != nil && p.Landing != nil &&
+		(p.Landing.State == LandingKept || p.Landing.State == LandingDropped)
+}
+
+var shippedCommitRe = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
+
+// maxContentMatchFiles bounds the content comparison: a branch that changed
+// more files than this is left to the operator.
+const maxContentMatchFiles = 500
+
+// deliveredOnBase says whether the work of an archived Automaton's branch is
+// already on the default branch although git cherry sees no matching commit
+// (a hand port). Two proofs, both read-only:
+//
+//  1. the Automaton's shipped record (release and merge commit) names a commit
+//     that is an ancestor of the default branch;
+//  2. every file the branch changed since it forked has identical content at
+//     the branch tip and on the default branch.
+//
+// Anything else, including a git error, is not proof.
+func deliveredOnBase(ctx context.Context, git MergeGitRunner, repo, base, branch string, p *PRD) (string, bool) {
+	if hasShippedRecord(p) {
+		commit := strings.TrimSpace(p.MergeCommit)
+		if shippedCommitRe.MatchString(commit) {
+			if _, err := git.Run(ctx, repo, "merge-base", "--is-ancestor", commit, base); err == nil {
+				return fmt.Sprintf("delivered: its shipped record (%s, commit %s) is on %s", strings.TrimSpace(p.MergedInRelease), shortCommit(commit), base), true
+			}
+		}
+	}
+	mb, err := git.Run(ctx, repo, "merge-base", base, branch)
+	if err != nil {
+		return "", false
+	}
+	out, err := git.Run(ctx, repo, "diff", "--name-only", strings.TrimSpace(mb), branch)
+	if err != nil {
+		return "", false
+	}
+	var files []string
+	for _, f := range strings.Split(out, "\n") {
+		if f = strings.TrimSpace(f); f != "" {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 || len(files) > maxContentMatchFiles {
+		return "", false
+	}
+	args := append([]string{"diff", "--quiet", base, branch, "--"}, files...)
+	if _, err := git.Run(ctx, repo, args...); err != nil {
+		return "", false // differs (exit 1) or could not compare: not proven
+	}
+	return fmt.Sprintf("delivered by content: all %d files the branch changed have the same content on %s", len(files), base), true
 }
