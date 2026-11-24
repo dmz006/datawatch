@@ -97,7 +97,22 @@ func (m *Manager) decomposeGuidanceBlock() string {
 	} else {
 		block += "\n\n" + ForbiddenPatternGuidance()
 	}
+	block += "\n\n" + MergeOnlySpecGuidance()
 	return "\n\n--- Decompose guidance ---\n" + block
+}
+
+// MergeOnlySpecGuidance states the merge-only spec rule, appended to
+// the decompose guidance regardless of the operator's guidance text
+// (BuildDecomposeGuidance precedence is untouched): when the spec's
+// entire scope is merging, rebasing or landing an existing finished
+// branch, the plan must not carry a docs set task — the docs set
+// standard task is skipped for merge-only Automata (IsMergeOnlySpec /
+// ApplyTaskTemplatesForSpec). A spec with any new work keeps its docs
+// set task.
+func MergeOnlySpecGuidance() string {
+	return "Merge-only spec rule: when the spec only merges, rebases or lands " +
+		"an existing finished branch and adds no new work, no docs set task: " +
+		"the docs set standard task is skipped for that Automaton."
 }
 
 // looksLikeGuidancePath reports whether v reads like a file path rather

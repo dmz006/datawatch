@@ -120,6 +120,31 @@ autonomous:
 Your own entries in `autonomous.task_templates.templates` overlay the built-in pack. A
 new id appends a standard task, and the same id replaces the built-in one.
 
+### When `docs_set` is skipped: merge-only Automata
+
+A **merge-only** Automaton is one whose spec only lands work that is already finished
+in an existing branch: merging, rebasing, resolving conflicts on, or landing a finished
+branch, with no new work. Such an Automaton changes no behavior the docs describe, so
+the `docs_set` standard task is **not** appended to any of its stories. Every other
+standard task, including `final_gate`, is applied as usual. The decomposer's guidance
+asks the planner for the same thing, so it should not write a docs task either. The
+guidance is advice only: a `docs_set` task the planner writes itself is not removed.
+
+The check is conservative. The spec must carry a merge signal (merge, rebase, land,
+conflict, or a finished-branch phrase) and none of the work verbs (add, implement,
+create, write, fix, build, in the inflected forms the check lists). Any doubt keeps the spec as not
+merge-only, so the `docs_set` task stays. An extra docs task is the safe failure.
+When a merge-only Automaton is decomposed, the daemon log gets the line
+`docs set task skipped: merge-only Automaton` for it. The line is written at each decompose
+of a merge-only spec while decompose lint is `shadow` or `enforce`. It appears even when the
+`docs_set` task was already switched off. With decompose lint `off` no standard task is
+applied at all, so no line is written.
+
+Why the rule exists: a `docs_set` task on a merge-only spec has no feature behavior to
+document, so it could never produce a change and the Automaton stalled waiting on it.
+The rule removes that task for merge-only specs only. A spec that adds any work keeps
+its `docs_set` task.
+
 ## Mode: who runs each task
 
 Each standard task has a **mode**, set per template in `autonomous.task_templates.mode`
@@ -603,11 +628,32 @@ yet:
   The Packs sub-tab has a usage table script, but it is not loaded and its route does not
   exist. The cost breakdown has no surface at all. Decide where they show (the Packs
   sub-tab, the cost report or both) before they are documented as user-facing.
+- **Merge-only detection is text-based and needs operator review.** It reads only the
+  spec words, so a merge spec that names a work verb (for example "fix conflicts") keeps
+  its `docs_set` task, and a spec that merges and also adds work is never skipped. The
+  match is on words, not meaning, so one known false skip is possible: a spec that says
+  `landing` (for example "update the landing page") and names no work verb is treated as
+  merge-only and loses its `docs_set` task. Read such a spec before trusting the skip. Check
+  the decompose log for `docs set task skipped: merge-only Automaton` on a merge-only
+  Automaton (this needs decompose lint `shadow` or `enforce`; with `off` the line is never
+  written), and reword the spec if it should skip the task and does not. A `docs_set`
+  task the planner wrote into the plan itself is not removed by this rule; check the
+  plan for one.
 - **The datawatch app does not show this tab yet, and does not yet use the new
   wording.** Two parity drafts are tracked under `docs/plans/parity-issues/`
   (the Templates-tab surface, and the standard-tasks rename on Android/iPhone).
   They are drafts, not yet filed: the operator opens them on the app tracker when
   ready.
+
+## Merge-only Automata and the nothing-to-document outcome
+
+A merge-only Automaton is one whose spec only lands work: it merges or rebases existing
+branches and writes no new content. It gets **no docs set task**, because there is nothing
+for that task to describe and it would only end with an empty change. The plan shows the
+skip, so the story simply has no docs set task and nothing is hidden.
+
+For any other Automaton the docs set task still runs. If its attempts all end with an empty
+diff while every other task of its story completed, the task is finished as **nothing to document**. The verifier summary is recorded on the task as a note, and the task is not held after three tries. Any other failure of the docs set task is still held for operator review.
 
 ## Troubleshooting
 

@@ -49,6 +49,7 @@ package autonomous
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -160,8 +161,11 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 		// id is built from its story's, and its depends_on names the
 		// story's other tasks by id.
 		ensurePlanIDs(s)
-		s, _ = ApplyTaskTemplates(s, templateFeatureName(prd), prd.ProjectDir, m.decomposeLintTemplateCfg())
+		s, _ = ApplyTaskTemplatesForSpec(s, templateFeatureName(prd), prd.ProjectDir, prd.Spec, m.decomposeLintTemplateCfg())
 		return s
+	}
+	if IsMergeOnlySpec(prd.Spec) {
+		log.Printf("[autonomous] prd=%s %s", prd.ID, MergeOnlySpecSkipNote)
 	}
 	findings := func(s []Story) []LintFinding {
 		f := LintTasksIn(prd.ProjectDir, m.daemonModeStories(s), st.rules)
