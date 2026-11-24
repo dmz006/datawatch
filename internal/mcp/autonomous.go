@@ -1567,11 +1567,24 @@ func (s *Server) toolAutonomousPRDCancel() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_cancel",
 		mcpsdk.WithDescription("Cancel and archive an Automaton. Kills the PRD's worker sessions; the response JSON includes id, status, killed_sessions (count of sessions a kill was attempted on), killed_live_sessions (how many of those were still live when the cancel began) and killed_session_ids (array of the session IDs a kill was attempted on)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("outcome", mcpsdk.Enum("delivered", "superseded", "dropped", "held"), mcpsdk.Description("Outcome class recorded in the same step. Empty lets the daemon derive it: delivered when the Automaton has a shipped record, dropped when its work was left unfinished")),
+		mcpsdk.WithString("delivered_via", mcpsdk.Description("ID of the twin that delivered the work, or of the Automaton that replaced it (superseded)")),
+		mcpsdk.WithString("note", mcpsdk.Description("Why, in a sentence")),
 	)
 }
 func (s *Server) handleAutonomousPRDCancel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	out, err := s.proxyJSON(http.MethodDelete, "/api/autonomous/prds/"+id, nil)
+	path := "/api/autonomous/prds/" + id
+	q := url.Values{}
+	for _, k := range []string{"outcome", "delivered_via", "note"} {
+		if v := req.GetString(k, ""); v != "" {
+			q.Set(k, v)
+		}
+	}
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	out, err := s.proxyJSON(http.MethodDelete, path, nil)
 	if err != nil {
 		return nil, err
 	}

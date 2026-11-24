@@ -1126,8 +1126,16 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				writeJSONOK(w, withKillDetail(map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions, "memory_strategy": memStrat}))
 				return
 			}
-			if err := s.autonomousMgr.Cancel(id); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+			// Optional outcome in the same step: ?outcome=&delivered_via=&note=.
+			var cancelErr error
+			if oc, ok := s.autonomousMgr.(outcomeCanceller); ok {
+				q := r.URL.Query()
+				cancelErr = oc.CancelWithOutcome(id, autonomous.OutcomeInput{Outcome: q.Get("outcome"), DeliveredVia: q.Get("delivered_via"), Note: q.Get("note")})
+			} else {
+				cancelErr = s.autonomousMgr.Cancel(id)
+			}
+			if cancelErr != nil {
+				http.Error(w, cancelErr.Error(), http.StatusBadRequest)
 				return
 			}
 			killSessions()

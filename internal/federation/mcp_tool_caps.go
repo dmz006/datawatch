@@ -153,6 +153,9 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_set_task_verifier_policy":      CapAutonomousWrite,
 	"autonomous_prd_set_type":                      CapAutonomousWrite,
 	"autonomous_shipped_record":                    CapAutonomousWrite, // operator records a PRD or Automation as shipped
+	"autonomous_prd_set_outcome":                   CapAutonomousWrite, // records the outcome class of a finished Automaton (archive=true also archives)
+	"autonomous_outcome_check":                     CapAutonomousRead,  // reads the standing check of closed work (run=true runs it)
+	"autonomous_deploy_record":                     CapAutonomousWrite, // records a release deploy onto the Automata shipped in it
 	"autonomous_shipped_backfill":                  CapAutonomousWrite, // operator runs the shipped-state backfill from merge history (dry_run or writing)
 	"autonomous_completed_migrate":                 CapAutonomousWrite, // operator moves cancelled, merged Automata to Completed (dry_run, limit, id); never kills a session
 	"autonomous_prd_hold":                          CapAutonomousWrite, // operator puts an Automaton on hold, or extends the hold
@@ -883,7 +886,7 @@ var nonConfigWriteTools = map[string]bool{
 	"autonomous_prd_set_task_verification_llm": true, "autonomous_prd_set_task_verifier_policy": true, "autonomous_prd_set_thinking_level": true, "autonomous_prd_set_type": true,
 	"autonomous_prd_set_verification_llm": true, "autonomous_prd_set_verifier_policy": true, "autonomous_progress": true, "autonomous_progress_trend": true,
 	"autonomous_repo_ci_watch": true, "autonomous_request_watch": true, "autonomous_safe_to_delete": true, "autonomous_scan_config_get": true,
-	"autonomous_completed_migrate": true, "autonomous_prd_hold": true, "autonomous_prd_release_hold": true, "autonomous_held": true, "autonomous_held_migrate": true, "autonomous_shipped_backfill": true, "autonomous_shipped_counts": true, "autonomous_shipped_record": true, "autonomous_status": true,
+	"autonomous_completed_migrate": true, "autonomous_prd_hold": true, "autonomous_prd_release_hold": true, "autonomous_held": true, "autonomous_held_migrate": true, "autonomous_shipped_backfill": true, "autonomous_shipped_counts": true, "autonomous_shipped_record": true, "autonomous_prd_set_outcome": true, "autonomous_outcome_check": true, "autonomous_deploy_record": true, "autonomous_status": true,
 	"autonomous_subscribe": true, "autonomous_subscription_test": true, "autonomous_subscription_update": true, "autonomous_subscriptions": true,
 	"autonomous_tag_create": true, "autonomous_tag_delete": true, "autonomous_tag_list": true, "autonomous_tag_registry_dismiss_note": true,
 	"autonomous_tag_registry_status": true, "autonomous_tag_rename": true, "autonomous_tag_set_color": true, "autonomous_tag_set_parent": true,
