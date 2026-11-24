@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.4 — Worker tmux guard, subagent usage under the parent session, and settings that say what took effect
+
+### Added
+- A worker pane guard for tmux: a shim on the worker's path refuses an unscoped tmux kill of the server or of all sessions, for every backend (setting `autonomous.tmux_kill_guard`, on by default). Two regression scripts run in `make test`.
+- Subagent usage now counts under the parent session: the daemon reads each subagent's transcript and folds the tokens, tool calls and cost into the session and the spend ledger (the cost API and cost summary show the subagent share). Tool time per session is recorded and shown in the cost report and the tool usage series.
+- Settings saves say what took effect: `PUT /api/config`, `config set`, and the MCP `config_set` list which keys applied now and which need a restart, and the web app shows a "Restart needed" badge. The daemon logs the same list at start.
+- The web app shows files left behind by a task in the Automaton detail, and a `drift_mode` setting (also on the MCP config tool).
+- A shipped-work forced run raises the same one-time safeguard alert as a pause resume or an attempt reset when a script, not the web app, makes the call.
+
+### Fixed
+- The planning guard now also covers the Automation, story and task LLM setters: a change while a plan is running is refused with a 409.
+- The repository CI watch no longer fails every pass on a local tag that differs from the remote; real fetch failures still fail.
+- The project roll-up refreshes a branch's merge state within about two minutes even when nothing was written to the store, so a hand-merged branch stops showing as finished but not merged.
+
+### Documentation
+- A built-in lifecycle sinks section in operations and the testing tracker, an Automation settings parity set of datawatch-app drafts, and updated MCP and API reference text.
+
 ## v9.187.3 — Closed work outcome, landing decisions that work, and a session end that stops killing other sessions
 
 ### Added

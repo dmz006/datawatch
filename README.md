@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.3 (2026-11-24).** Closed Automata record an outcome and a deploy record, landing decisions and the unlanded list work for hand-ported work, and a session end no longer ends other sessions processes. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.4 (2026-11-24).** A worker tmux kill guard, subagent token accounting under the parent session, saves that report what applied now or needs a restart, and a planning guard on every LLM setter. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
