@@ -200,10 +200,33 @@ func scanClaudeUsageDeltaOnce(path, fullID string, reportFn func(sessID string, 
 		claudeUsageSeen.Store(fullID, seen)
 	}
 
+	d, lineNum := scanClaudeTranscriptFile(f, alreadyRead, seen)
+	if lineNum > alreadyRead {
+		claudeUsageLinesRead.Store(fullID, lineNum)
+		// Persist the checkpoint even when nothing was found this tick.
+		d.LinesRead = lineNum
+		reportFn(fullID, d)
+	}
+}
+
+// scanClaudeTranscript opens path and sums the usage on lines after the first
+// alreadyRead. read is false when the file cannot be opened yet.
+func scanClaudeTranscript(path string, alreadyRead int, seen *claudeSeen) (d ClaudeUsageDelta, lines int, read bool) {
+	f, err := os.Open(path) // #nosec G304 -- path is derived from this daemon's own session record, not external input
+	if err != nil {
+		return d, alreadyRead, false
+	}
+	defer f.Close() //nolint:errcheck
+	d, lines = scanClaudeTranscriptFile(f, alreadyRead, seen)
+	return d, lines, true
+}
+
+// scanClaudeTranscriptFile sums the usage on the lines of f after the first
+// alreadyRead and returns the new line count. seen carries the message and
+// tool_use ids already counted so a message written on several lines counts once.
+func scanClaudeTranscriptFile(f *os.File, alreadyRead int, seen *claudeSeen) (d ClaudeUsageDelta, lineNum int) {
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024) // transcript lines can be large (big tool outputs)
-	var d ClaudeUsageDelta
-	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
 		if lineNum <= alreadyRead {
@@ -234,10 +257,5 @@ func scanClaudeUsageDeltaOnce(path, fullID string, reportFn func(sessID string, 
 		d.CacheRead += u.CacheReadTokens
 		d.CacheCreation += u.CacheCreationTokens
 	}
-	if lineNum > alreadyRead {
-		claudeUsageLinesRead.Store(fullID, lineNum)
-		// Persist the checkpoint even when nothing was found this tick.
-		d.LinesRead = lineNum
-		reportFn(fullID, d)
-	}
+	return d, lineNum
 }

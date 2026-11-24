@@ -86,6 +86,20 @@ curl -sS http://localhost:8080/api/cost | jq .
 }
 ```
 
+### Subagent usage
+
+A Claude Code subagent (a Task or Agent tool run inside a session) has no
+datawatch session of its own: no lease, no entry in the Sessions list. The
+daemon reads the subagent's own transcript, next to the parent's, and records
+the usage under the parent session. The parent's `tokens_in`, `tokens_out`,
+cache totals, tool calls, `est_cost_usd`, the cost summary, the spend ledger
+and the usage that feeds the burn guard all include it. `subagent_tokens_in` and
+`subagent_tokens_out` (per session, and as `subagent_tokens_in/out` in the
+rollup) say how much of the total came from subagents. Usage is picked up
+every ten seconds, when a subagent stops, and once more when the session ends.
+Subagent tokens are priced at the parent session's backend rate, so a subagent
+that ran a different model is priced as the parent.
+
 ### Override a rate at runtime
 
 ```bash

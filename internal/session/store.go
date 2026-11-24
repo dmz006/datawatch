@@ -292,6 +292,17 @@ type Session struct {
 	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
 	ToolCalls           int `json:"tool_calls,omitempty"`
 
+	// Subagent share of the totals above. A Claude Code subagent has no
+	// session record, so its usage is recorded under the parent session: it
+	// is already included in TokensIn, TokensOut, the cache totals and
+	// ToolCalls, and these fields say how much of that came from subagents.
+	// SubagentLinesRead is the persisted per-transcript checkpoint (agent id
+	// to lines counted) so a restart never counts a line twice.
+	SubagentTokensIn  int            `json:"subagent_tokens_in,omitempty"`
+	SubagentTokensOut int            `json:"subagent_tokens_out,omitempty"`
+	SubagentToolCalls int            `json:"subagent_tool_calls,omitempty"`
+	SubagentLinesRead map[string]int `json:"subagent_lines_read,omitempty"`
+
 	// IdleSeconds is the closed waiting_input time; IdleSince is set while
 	// the session is waiting for input (see active_time.go).
 	IdleSeconds float64    `json:"idle_seconds,omitempty"`

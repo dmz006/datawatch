@@ -10523,6 +10523,12 @@ paths:
       summary: Token + USD cost rollup across all sessions
       operationId: costSummary
       tags: [Cost]
+      description: |
+        Token and dollar totals across sessions, or one session with
+        `?session=<full_id>`. The totals of a Claude Code session include the
+        tokens its subagents used, recorded under the session because a
+        subagent has no session of its own; `subagent_tokens_in` and
+        `subagent_tokens_out` give that share, in the rollup and per session.
       parameters:
         - {name: since, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: backend, in: query, required: false, schema: {type: string}}

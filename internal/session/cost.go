@@ -53,11 +53,15 @@ func EstimateCost(rate CostRate, tokensIn, tokensOut int) float64 {
 
 // CostSummary aggregates one or many sessions for reporting.
 type CostSummary struct {
-	Sessions   int                   `json:"sessions"`
-	TotalIn    int                   `json:"total_tokens_in"`
-	TotalOut   int                   `json:"total_tokens_out"`
-	TotalUSD   float64               `json:"total_usd"`
-	PerBackend map[string]CostBucket `json:"per_backend,omitempty"`
+	Sessions int     `json:"sessions"`
+	TotalIn  int     `json:"total_tokens_in"`
+	TotalOut int     `json:"total_tokens_out"`
+	TotalUSD float64 `json:"total_usd"`
+	// SubagentIn and SubagentOut are the part of TotalIn and TotalOut that
+	// came from subagents of the listed sessions.
+	SubagentIn  int                   `json:"subagent_tokens_in,omitempty"`
+	SubagentOut int                   `json:"subagent_tokens_out,omitempty"`
+	PerBackend  map[string]CostBucket `json:"per_backend,omitempty"`
 }
 
 // CostBucket is the per-backend breakdown.
@@ -76,6 +80,8 @@ func SummaryFor(sessions []*Session) CostSummary {
 		out.TotalIn += s.TokensIn
 		out.TotalOut += s.TokensOut
 		out.TotalUSD += s.EstCostUSD
+		out.SubagentIn += s.SubagentTokensIn
+		out.SubagentOut += s.SubagentTokensOut
 		b := out.PerBackend[s.BackendFamily]
 		b.Sessions++
 		b.TokensIn += s.TokensIn

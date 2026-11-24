@@ -443,6 +443,11 @@ func (s *Server) handleSessionHookEvent(w http.ResponseWriter, r *http.Request) 
 	if s.hub != nil {
 		go s.hub.BroadcastHookUpdate(sid, globalHookStore.board(sid))
 	}
+	// A finished subagent has just written its last usage: record it under
+	// this session now instead of waiting for the next periodic scan.
+	if body.Event == "SubagentStop" {
+		go func() { _ = s.manager.ScanSubagentUsage(sid) }()
+	}
 	// Persist-on-stop: flush structured telemetry to episodic memory on Stop events.
 	if (body.Event == "Stop" || body.Event == "SubagentStop") &&
 		s.cfg != nil && s.cfg.Session.PersistTelemetryOnStop &&
