@@ -23606,6 +23606,33 @@ function shippedChipHtml(rec, completedKey) {
 }
 window.shippedChipHtml = shippedChipHtml;
 
+// closedOutcomeBadgesHtml — the outcome class of a finished Automaton and its
+// deploy record, as two small chips. The outcome chip names the class
+// (delivered, superseded, dropped or held) and hovers the twin and the note;
+// the deploy chip shows the version and host and hovers the time and the
+// health check result. A record with neither shows nothing.
+const CLOSED_OUTCOMES = ['delivered', 'superseded', 'dropped', 'held'];
+function closedOutcomeBadgesHtml(rec) {
+  if (!rec || typeof rec !== 'object') return '';
+  let out = '';
+  const oc = String(rec.closed_outcome || '').toLowerCase();
+  if (CLOSED_OUTCOMES.includes(oc)) {
+    const tip = [t('closed_outcome_' + oc)];
+    if (rec.delivered_via) tip.push(t('closed_outcome_via', [String(rec.delivered_via)]));
+    if (rec.closed_outcome_note) tip.push(String(rec.closed_outcome_note));
+    out += `<span class="closed-outcome-chip state" data-outcome="${escHtml(oc)}" title="${escHtml(tip.join(' — '))}">${escHtml(t('closed_outcome_' + oc))}</span>`;
+  }
+  const d = rec.deploy;
+  if (d && typeof d === 'object' && d.version) {
+    const health = ['passed', 'failed', 'unchecked'].includes(d.health) ? d.health : 'unchecked';
+    const tip = [t('release_deploy_chip_tip', [String(d.version), String(d.host || ''), String(d.at || '')]), t('release_deploy_health_' + health)];
+    if (d.detail) tip.push(String(d.detail));
+    out += `<span class="deploy-chip state" data-health="${escHtml(health)}" title="${escHtml(tip.join(' — '))}">${escHtml(t('release_deploy_chip', [String(d.version), String(d.host || '')]))}</span>`;
+  }
+  return out;
+}
+window.closedOutcomeBadgesHtml = closedOutcomeBadgesHtml;
+
 // shippedFilterSelection — reads a statusFilter Set/array for the shipped
 // selection: "shipped", "unshipped" or "all".
 function shippedFilterSelection(statusFilter) {
@@ -24050,7 +24077,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${renderMergeStateBadge(prd)}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${renderMergeStateBadge(prd)}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}${closedOutcomeBadgesHtml(prd)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -27390,6 +27417,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.max_engines_per_node', label: 'Max engines per node (1 = one at a time)', labelKey: 'max_engines_per_node', type: 'number', min: 1, placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
     { key: 'autonomous.shipped_refusal', label: 'Shipped-work rule (on refuses and drops work that already shipped or is closed, shadow only logs, off disables; default on)', labelKey: 'settings_shipped_refusal', type: 'select', options: ['on', 'shadow', 'off'], default: 'on' },
+    { key: 'autonomous.closed_outcome_archive', label: 'Closed outcome rule (on makes the archive step refuse work with no outcome or an unmet hold, shadow only logs, off disables; default on)', labelKey: 'settings_closed_outcome_archive', helpKey: 'settings_closed_outcome_archive_help', helpDocs: 'howto/closed-work-outcome.md', type: 'select', options: ['on', 'shadow', 'off'], default: 'on' },
+    { key: 'autonomous.closed_outcome_check', label: 'Closed work check (shadow records findings, on also raises an alert per finding, off disables; default shadow)', labelKey: 'settings_closed_outcome_check', helpKey: 'settings_closed_outcome_check_help', helpDocs: 'howto/closed-work-outcome.md', type: 'select', options: ['on', 'shadow', 'off'], default: 'shadow' },
     { key: 'autonomous.capacity_fallthrough', label: 'Pool fall-through (admit on another idle allowed pool when the requested one is full)', labelKey: 'settings_capacity_fallthrough', type: 'toggle' },
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
     { key: 'autonomous.archive_grace_minutes', label: 'Archive grace for cancelled Automata (min, 0=at once)', labelKey: 'settings_archive_grace_minutes', type: 'number', min: 0, step: 1, placeholder: '60' },
@@ -43132,6 +43161,46 @@ function _housekeepingIntermittentHtml(list) {
     `<div style="font-size:11px;color:var(--text2);">${escHtml(t('housekeeping_repairs_intermittent_purpose'))}</div>${body}</div>`;
 }
 
+// ── Closed work check card ──────────────────────────────────────────────────
+// outcomeCheckCardHtml(data) draws GET /api/autonomous/outcome-check:
+// { mode, scanned, counts, findings: [{automaton, kind, detail}], proof }.
+// The Run now button runs the check through POST on the same route.
+const OUTCOME_CHECK_KINDS = ['closed_no_outcome', 'completed_no_shipped', 'shipped_no_deploy', 'deployed_older_than_shipped', 'daemon_older_than_shipped', 'intent_unproven'];
+window.outcomeCheckCardHtml = function(data) {
+  const d = (data && typeof data === 'object') ? data : {};
+  const mode = ['off', 'shadow', 'on'].includes(d.mode) ? d.mode : 'shadow';
+  const findings = (Array.isArray(d.findings) ? d.findings : []).filter(f => f && typeof f === 'object');
+  const rows = OUTCOME_CHECK_KINDS.map(kind => {
+    const list = findings.filter(f => f.kind === kind);
+    if (!list.length) return '';
+    const lines = list.slice(0, 8).map(f => `<div class="outcome-check-finding" data-automaton="${escHtml(String(f.automaton || ''))}" style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('outcome_check_finding_line', [String(f.automaton || t('outcome_check_daemon')), String(f.detail || '')]))}</div>`).join('');
+    const more = list.length > 8 ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('outcome_check_more', [list.length - 8]))}</div>` : '';
+    return `<div class="outcome-check-kind" data-kind="${escHtml(kind)}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;"><div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t('outcome_check_kind_' + kind))} — ${list.length}</div>${lines}${more}</div>`;
+  }).join('');
+  const none = findings.length ? '' : `<div style="font-size:11px;color:var(--text2);">${escHtml(t('outcome_check_none'))}</div>`;
+  const p = (d.proof && typeof d.proof === 'object') ? d.proof : {};
+  const proof = Number(p.checked) > 0 ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('outcome_check_proof', [Number(p.checked) || 0, Number(p.proven) || 0, Number(p.partial) || 0, Number(p.unproven) || 0]))}</div>` : '';
+  const run = `<button type="button" class="btn-secondary" style="font-size:11px;padding:3px 10px;margin-top:6px;" onclick="window.runOutcomeCheckNow(this)">${escHtml(t('outcome_check_run_now'))}</button>`;
+  return `<div class="prd-capacity-card outcome-check-card" data-mode="${escHtml(mode)}" style="min-width:0;"><div class="cap-title">${escHtml(t('outcome_check_card_title'))}${_housekeepingHelpLink('closed_work_check', 'outcome_check_help_link')}</div>` +
+    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('outcome_check_purpose'))} ${escHtml(t('outcome_check_mode_' + mode))} ${escHtml(t('outcome_check_scanned', [Number(d.scanned) || 0]))}</div>${rows}${none}${proof}${run}</div>`;
+};
+window.runOutcomeCheckNow = function(btn) {
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.textContent = t('outcome_check_running'); }
+  apiFetch('/api/autonomous/outcome-check', { method: 'POST', body: JSON.stringify({}) })
+    .then(() => { const l = window._listLoaders.automation_outcome_check; if (l && l.load) l.load(); })
+    .catch(err => { showToast(t('outcome_check_failed', [String((err && err.message) || err)]), 'error'); })
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = t('outcome_check_run_now'); } });
+};
+function _automationOutcomeCheckLoader() {
+  return window._listLoaders.automation_outcome_check || listLoader({
+    key: 'automation_outcome_check', el: 'automationOutcomeCheckCard', url: '/api/autonomous/outcome-check', pollMs: 30000,
+    failedText: msg => t('outcome_check_failed', [msg]),
+    active: () => !!document.getElementById('automationOutcomeCheckCard'),
+    render: data => window.outcomeCheckCardHtml(data),
+  });
+}
+
 function _automationHousekeepingRepairsLoader() {
   return window._listLoaders.automation_housekeeping_repairs || listLoader({
     key: 'automation_housekeeping_repairs', el: 'automationHousekeepingRepairsCard', url: '/api/autonomous/housekeeping-repairs', pollMs: 30000,
@@ -48006,6 +48075,14 @@ registerAutomationCardSlot('housekeeping', {
   html: _automationPlaceholderHTML('automationHousekeepingRepairsCard'),
   mount: () => listLoaderAll([_automationHousekeepingRepairsLoader()]),
   stop: () => _automationStopLoaders(['automation_housekeeping_repairs']),
+});
+// The Closed work check card sits under the Housekeeping repairs card.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationOutcomeCheckCard',
+  order: 92,
+  html: _automationPlaceholderHTML('automationOutcomeCheckCard'),
+  mount: () => listLoaderAll([_automationOutcomeCheckLoader()]),
+  stop: () => _automationStopLoaders(['automation_outcome_check']),
 });
 // The Gate repair card sits next to the Housekeeping repairs card and, like
 // it, is polled only while the Housekeeping sub-tab is shown.
