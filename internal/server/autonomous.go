@@ -1216,6 +1216,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			details = map[string]any{"force": true, "reason": req.Reason}
+			// The shipped-work rule is lifted: an alert for any caller that is
+			// not the web app or a session credential (see safeguard_alert.go).
+			s.noteSafeguardAction(r, safeguardEvent{
+				Action: safeguardShippedForceRun, Target: "Automaton " + id,
+				Actor: s.auditActor(r.Context()), Reason: req.Reason,
+			})
 		} else if err := s.autonomousMgr.Run(id); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

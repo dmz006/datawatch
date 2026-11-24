@@ -1838,6 +1838,8 @@
   "settings_observer_section": "連携オブザーバー",
   "settings_orphaned_tmux": "孤立したtmuxセッション",
   "settings_tmux_kill_guard": "ONの場合、デーモンによって起動されたworker/verifier/judgeセッションが、オペレーター側のtmuxサーバーを終了することをブロックされます。OFF=ガードなし。",
+  "settings_restart_pending_badge": "再起動が必要",
+  "settings_saved_restart_needed": "保存しました。反映するにはデーモンを再起動してください",
   "settings_finished_oneshots": "完了したワンショットセッション",
   "settings_finished_oneshots_none": "完了したワンショットセッションはありません。",
   "settings_finished_oneshots_open": "件の完了済みワンショットセッションが開いたままです。",

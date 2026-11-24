@@ -10,7 +10,7 @@
 //
 // # What one pass does, per configured repository
 //
-//  1. `git fetch --tags origin` (bounded by the ciWatchTimeout
+//  1. the origin fetch (branches, then new tags; a local tag that differs from origin's is kept) (bounded by the ciWatchTimeout
 //     pattern) so the local view of origin/main and the release tags is
 //     current. A failed fetch is logged and tolerated — the pass then
 //     uses the local (possibly stale) view — the repository's head is
@@ -244,7 +244,7 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) boo
 	ok := true
 	// 1. Refresh the local view of origin and its tags.
 	if err := d.fetch(p.ctx, repoDir); err != nil {
-		log.Printf("repo ci watch: %s: git fetch --tags origin failed (continuing with the local view): %v", repoDir, err)
+		log.Printf("repo ci watch: %s: origin fetch failed (continuing with the local view): %v", repoDir, err)
 		ok = false
 	}
 	// owner/repo comes from the local origin URL (a repository with no

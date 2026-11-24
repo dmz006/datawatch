@@ -1838,6 +1838,8 @@
   "settings_observer_section": "Föderierter Beobachter",
   "settings_orphaned_tmux": "Verwaiste tmux-Sitzungen",
   "settings_tmux_kill_guard": "Wenn aktiv, werden Worker-/Verifier-/Judge-Sitzungen, die vom Daemon gestartet wurden, daran gehindert, den tmux-Server des Operators zu beenden. Inaktiv = keine Sicherung.",
+  "settings_restart_pending_badge": "Neustart nötig",
+  "settings_saved_restart_needed": "Gespeichert. Daemon neu starten, damit die Änderung wirkt",
   "settings_finished_oneshots": "Beendete One-Shot-Sitzungen",
   "settings_finished_oneshots_none": "Keine beendeten One-Shot-Sitzungen.",
   "settings_finished_oneshots_open": "beendete One-Shot-Sitzung(en) noch offen.",

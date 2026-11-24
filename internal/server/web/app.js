@@ -30192,6 +30192,38 @@ function decidePlacement(id, mode) {
 }
 window.decidePlacement = decidePlacement;
 
+// restartKeysFromPut returns the keys a PUT /api/config reply says are saved
+// but only take effect after a daemon restart. A reply without the list (an
+// older daemon, or every key live) gives [].
+function restartKeysFromPut(body) {
+  return body && Array.isArray(body.requires_restart) ? body.requires_restart.slice() : [];
+}
+window.restartKeysFromPut = restartKeysFromPut;
+
+// noteRestartPending records keys that wait for a daemon restart and shows a
+// small badge that restarts the daemon when pressed. It returns how many
+// distinct keys are waiting.
+function noteRestartPending(keys) {
+  if (!state.restartPendingKeys) state.restartPendingKeys = new Set();
+  (keys || []).forEach(k => state.restartPendingKeys.add(k));
+  const n = state.restartPendingKeys.size;
+  if (n > 0 && typeof document !== 'undefined' && document.body) {
+    let el = document.getElementById('restartPendingBadge');
+    if (!el) {
+      el = document.createElement('button');
+      el.id = 'restartPendingBadge';
+      el.className = 'btn-secondary';
+      el.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:900;font-size:12px;';
+      el.onclick = () => confirmRestartDaemon();
+      document.body.appendChild(el);
+    }
+    el.textContent = _tOr('settings_restart_pending_badge', 'Restart needed') + ' (' + n + ')';
+    el.title = Array.from(state.restartPendingKeys).join(', ');
+  }
+  return n;
+}
+window.noteRestartPending = noteRestartPending;
+
 function saveGeneralConfigPut(key, value) {
   // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
   // selected peer (no-op for local/all).
@@ -30202,6 +30234,16 @@ function saveGeneralConfigPut(key, value) {
   })
     .then(r => {
       if (r.ok) {
+        // The daemon says which saved keys wait for a restart.
+        if (typeof r.clone === 'function') {
+          r.clone().json().then(body => {
+            const waiting = restartKeysFromPut(body);
+            if (waiting.length) {
+              noteRestartPending(waiting);
+              showToast(_tOr('settings_saved_restart_needed', 'Saved. Restart the daemon to apply'), 'warning', 4000);
+            }
+          }).catch(() => {});
+        }
         showToast('Saved', 'success', 1500);
         // Update cached state for settings that affect UI behavior
         if (key === 'server.suppress_active_toasts') state.suppressActiveToasts = !!value;

@@ -1314,6 +1314,14 @@ paths:
                   status:
                     type: string
                     example: "ok"
+                  applied:
+                    type: array
+                    items: {type: string}
+                    description: "The saved keys that took effect immediately, sorted. Omitted when there are none."
+                  requires_restart:
+                    type: array
+                    items: {type: string}
+                    description: "The saved keys that are stored but only take effect after a daemon restart (for example server.port), sorted. Omitted when there are none. A key listed under skipped is in neither list."
         "400":
           description: Invalid request body
         "401":
@@ -8784,6 +8792,56 @@ paths:
                 guardrail_model: {type: string, description: "Optional; omitted = unchanged; empty string = cleared"}
       responses:
         "200": {description: Updated PRD}
+        "400": {description: "Unknown LLM, a model the backend cannot serve, or the Automaton is in a status that locks the change"}
+        "409": {description: "The Automaton is planning (a plan is running). A worker backend, effort or model change, or a guardrail change, is refused until the plan finishes; nothing is changed. A planning-only change (decomposition_profile, decomposition_model) is still accepted. Retry after the plan ends."}
+  /api/autonomous/prds/{id}/set_story_llm:
+    post:
+      summary: Set a story's worker-LLM override
+      description: Sets the story-level worker LLM (backend, effort, model); an empty string clears a field. Refused with 409 while the Automaton is planning.
+      operationId: autonomousPRDSetStoryLLM
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [story_id]
+              properties:
+                story_id: {type: string}
+                backend: {type: string}
+                effort: {type: string}
+                model: {type: string}
+                actor: {type: string}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: "Missing story_id, unknown LLM, or a model the backend cannot serve"}
+        "409": {description: "The Automaton is planning (a plan is running); nothing is changed. Retry after the plan ends."}
+  /api/autonomous/prds/{id}/set_task_llm:
+    post:
+      summary: Set a task's worker-LLM override
+      description: Sets the task-level worker LLM (backend, effort, model); an empty string clears a field. Refused with 409 while the Automaton is planning.
+      operationId: autonomousPRDSetTaskLLM
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id]
+              properties:
+                task_id: {type: string}
+                backend: {type: string}
+                effort: {type: string}
+                model: {type: string}
+                actor: {type: string}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: "Missing task_id, unknown LLM, or a model the backend cannot serve"}
+        "409": {description: "The Automaton is planning (a plan is running); nothing is changed. Retry after the plan ends."}
   /api/autonomous/prds/{id}/set_task_node:
     post:
       summary: Pin a task to a compute node
@@ -9850,6 +9908,44 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
+  /api/automations/{id}/set_llm:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Set an Automation's worker and planning LLM
+      description: |
+        Sets the Automation-level execution backend, model and effort and the planning
+        backend and model. A field the body omits is unchanged; an empty string clears
+        it. Body: `{backend?, model?, effort?, planning_backend?, planning_model?,
+        expected_version?, actor?}`. A change to the backend, model or effort is
+        refused with 409 while a member Automaton is planning; a planning-only change
+        is still accepted.
+      operationId: automationsSetLLM
+      tags: [Automations]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                backend: {type: string}
+                model: {type: string}
+                effort: {type: string}
+                planning_backend: {type: string}
+                planning_model: {type: string}
+                expected_version: {type: integer, format: int64}
+                actor: {type: string}
+      responses:
+        "200":
+          description: The Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Unknown LLM, invalid effort, or a model the backend cannot serve"}
+        "404": {description: Automation not found}
+        "409": {description: "A member Automaton is planning (a plan is running); nothing is changed, retry after the plan ends. Also a stale expected_version, or an Automation status that does not accept the change."}
   /api/automations/{id}/pause:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}

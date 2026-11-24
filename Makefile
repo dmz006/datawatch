@@ -396,6 +396,8 @@ test:
 	bash tests/test-plans-registry-archive.sh
 	bash tests/test-plans-tidy-daily.sh
 	bash tests/test-pre-tag.sh
+	env -u TMUX -u TMUX_TMPDIR bash tests/integration/tmux_scoped_kill_regression.sh
+	env -u TMUX -u TMUX_TMPDIR bash tests/integration/unsafe_tmux_call_check_negative.sh
 	bash tests/test-trivy-scan-image.sh
 	python3 scripts/tests/test_dismissed_alerts_watch.py
 	python3 scripts/tests/test_codeql_alert_gate.py

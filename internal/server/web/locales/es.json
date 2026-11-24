@@ -1838,6 +1838,8 @@
   "settings_observer_section": "Observador federado",
   "settings_orphaned_tmux": "Sesiones tmux huérfanas",
   "settings_tmux_kill_guard": "Si está activado, las sesiones de worker/verifier/judge lanzadas por el daemon no pueden matar el servidor tmux del operador. Desactivado = sin protección.",
+  "settings_restart_pending_badge": "Reinicio necesario",
+  "settings_saved_restart_needed": "Guardado. Reinicie el daemon para aplicarlo",
   "settings_finished_oneshots": "Sesiones one-shot finalizadas",
   "settings_finished_oneshots_none": "No hay sesiones one-shot finalizadas.",
   "settings_finished_oneshots_open": "sesión(es) one-shot finalizada(s) aún abierta(s).",

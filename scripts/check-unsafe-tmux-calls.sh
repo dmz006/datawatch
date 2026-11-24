@@ -110,12 +110,13 @@ fi
 
 # ---- patterns (POSIX ERE, evaluated with bash [[ =~ ]]) --------------------
 # Rule 1: a server-wide kill is only safe when the line scopes it to a
-#         dedicated socket (-S or --socket).
-re_kill_server='(^|[;|&`&(])[[:space:]]*tmux[[:space:]]+kill-server([^a-zA-Z0-9_-]|$)'
+#         dedicated socket (-S or --socket). A leading VAR=value (for example
+#         TMUX_TMPDIR=...) does not scope it: tmux prefers TMUX over TMUX_TMPDIR.
+re_kill_server='(^|[;|&`&(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*tmux[[:space:]]+kill-server([^a-zA-Z0-9_-]|$)'
 re_has_socket='(^|[[:space:]])--?(socket|-S)([=[:space:]]|$)'
 # Rule 2: killing ALL sessions (kill-session with the -a flag, standalone,
 #         not part of a longer flag/token).
-re_kill_session='(^|[;|&`&(])[[:space:]]*tmux[[:space:]]+kill-session([^a-zA-Z0-9_-]|$)'
+re_kill_session='(^|[;|&`&(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*tmux[[:space:]]+kill-session([^a-zA-Z0-9_-]|$)'
 re_flag_a='(^|[[:space:]])-a([^a-zA-Z0-9_-]|$)'
 # Rule 3/4: process-group murder of the tmux server (any pkill/killall that
 #           names tmux, including option forms like 'pkill -9 tmux').

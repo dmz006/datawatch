@@ -100,6 +100,14 @@ func (m *Manager) SetAutomationLLM(id string, backend, model, effort, planningBa
 		{"planning_backend", planningBackend},
 		{"planning_model", planningModel},
 	}
+	// The worker pair does not move while a member Automaton is planning, the
+	// same rule SetPRDLLM holds. A planning-only call stays allowed: it takes
+	// the requeue path below.
+	if backend != nil || model != nil || effort != nil {
+		if err := m.refuseWhileMemberPlanning(id); err != nil {
+			return nil, nil, err
+		}
+	}
 	// The planning pair the Automation held before this call: the "old" side of
 	// the requeue report (the member runs were queued on this pair's pool).
 	var oldPlanBackend, oldPlanModel string
@@ -213,4 +221,24 @@ func (m *Manager) SetAutomationVerificationLLM(id string, backend, model, effort
 		applyVerificationLLM(&a.VerificationBackend, &a.VerificationModel, &a.VerificationEffort, backend, model, effort)
 		return nil
 	})
+}
+
+// refuseWhileMemberPlanning returns the 409 refusal when a member Automaton of
+// the Automation is planning. It reads the member records before the
+// Automation store's Update runs, so a plan that starts in between is not seen;
+// the Automaton-level setters hold the same window.
+func (m *Manager) refuseWhileMemberPlanning(id string) error {
+	a, ok := m.automations.Get(id)
+	if !ok {
+		return nil
+	}
+	for _, mem := range a.Members {
+		if mem.PRDID == "" {
+			continue
+		}
+		if prd, found := m.store.GetPRD(mem.PRDID); found && prd.Status == PRDPlanning {
+			return fmt.Errorf("409: %w: automation %s has a member Automaton (%s) that is planning; wait for the plan to finish, then change the LLM settings", ErrPlanInProgress, id, mem.PRDID)
+		}
+	}
+	return nil
 }

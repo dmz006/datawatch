@@ -8811,6 +8811,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			"autonomous.max_parallel_tasks": maxParallelTasksDeprecatedNote,
 		}
 	}
+	// Say which saved keys are live and which wait for a restart. A key the
+	// daemon refused to store (skipped) is in neither list.
+	saved := make([]string, 0, len(patch))
+	for k := range patch {
+		if !slices.Contains(skipped, k) {
+			saved = append(saved, k)
+		}
+	}
+	applied, restart := config.SplitRestartKeys(saved)
+	if len(applied) > 0 {
+		resp["applied"] = applied
+	}
+	if len(restart) > 0 {
+		resp["requires_restart"] = restart
+	}
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 }
 

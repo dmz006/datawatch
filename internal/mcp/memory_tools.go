@@ -962,6 +962,7 @@ func (s *Server) handleMemoryImport(ctx context.Context, req mcpsdk.CallToolRequ
 func (s *Server) toolConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("config_set",
 		mcpsdk.WithDescription("Set a configuration value. Key format: section.field (e.g. 'detection.prompt_debounce'); the supervisor loop block is set with supervisor_loop.<key> (enabled, the step switches, the model jobs' style/backend/model, validator retries, escalation, run retention, archive_cancelled_after_minutes = whole minutes before a cancelled Automaton is archived, 0 = at once). "+
+			"The reply says whether the saved key took effect now or needs a daemon restart to apply. "+
 			"Supervisor wake keys: supervisor_loop.wake.enabled (true|false; default false), supervisor_loop.wake.kinds (a JSON array or comma list of event kinds that wake the supervisor; an unknown kind is refused), supervisor_loop.wake.coalesce_seconds (whole seconds 0..3600; default 30; 0 = wake on every event), supervisor_loop.wake.fallback_interval_minutes (whole minutes 1..1440; default 20). Read them back with get_config section=supervisor_loop, and the last event and last scheduled check with supervisor_loop_stats. "+
 			"Project defaults keys: projects_defaults.branch_retention_days (whole days a project's branches are kept when it sets none; 0 = unset), projects_defaults.weekly_share_percent (0-100; 0 = unset), projects_defaults.major_trigger (manual|milestone|never; default manual). "+
 			"Automata tag browser keys: autonomous.tags.default_view (auto|attention|tags), autonomous.tags.attention_statuses (comma list of Automaton statuses), "+
@@ -1079,8 +1080,13 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	// A key the daemon skipped (an active profile that does not exist, a
 	// task routing block that fails validation) is reported, not confirmed.
-	if raw, _ := io.ReadAll(resp.Body); config.PutConfigSkippedNote(raw) != "" {
+	raw, _ := io.ReadAll(resp.Body)
+	if config.PutConfigSkippedNote(raw) != "" {
 		return toolErrorf("config_set", "%s %s", key, config.PutConfigSkippedNote(raw)), nil
+	}
+	// Say whether the change is live now or waits for a restart.
+	if note := config.PutConfigApplyNote(raw); note != "" {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Set %s = %s (%s)", key, value, note)), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Set %s = %s", key, value)), nil
 }

@@ -48,8 +48,9 @@ type RepoCIWatchRun struct {
 // poll pass. Each field is an injectable function; a nil field falls
 // back to the corresponding real default below.
 type repoCIWatchDeps struct {
-	// fetch runs `git fetch --tags origin` in the repo directory so
-	// the local view of origin/main and the release tags is current.
+	// fetch brings origin's branches and new release tags into the repo
+	// directory so the local view of origin/main and the tags is current;
+	// a local tag that differs from origin's is left alone.
 	fetch func(ctx context.Context, repoDir string) error
 	// origin returns the origin remote URL (for "owner/repo").
 	origin func(ctx context.Context, repoDir string) (string, error)
@@ -100,18 +101,57 @@ func (m *Manager) repoCIWatchDeps() repoCIWatchDeps {
 	return d
 }
 
-// defaultRepoCIFetch runs `git fetch --tags origin` in repoDir; the
-// caller bounds ctx (the poll pass uses the ciWatchTimeout pattern).
+// defaultRepoCIFetch brings origin's branches and tags into repoDir. It runs
+// two fetches so a local tag never fails the pass:
+//
+//  1. `git fetch --no-tags origin` updates the remote branches (origin/main,
+//     which the watch reads); a failure here is the pass's failure.
+//  2. `git fetch --no-tags origin refs/tags/*:refs/tags/*` brings in new tags
+//     without force. A tag the repo already holds under a different commit is
+//     rejected by git ("would clobber existing tag"); the local tag wins and
+//     that rejection alone is not an error. Any other tag fetch failure is.
+//
+// The caller bounds ctx (the poll pass uses the ciWatchTimeout pattern).
 func defaultRepoCIFetch(ctx context.Context, repoDir string) error {
-	var out bytes.Buffer
-	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "fetch", "--tags", "origin")
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("repo ci watch: git fetch --tags origin in %s: %w: %s",
-			repoDir, err, strings.TrimSpace(out.String()))
+	if out, err := runRepoCIFetch(ctx, repoDir, "--no-tags", "origin"); err != nil {
+		return fmt.Errorf("repo ci watch: git fetch --no-tags origin in %s: %w: %s", repoDir, err, out)
+	}
+	out, err := runRepoCIFetch(ctx, repoDir, "--no-tags", "origin", "refs/tags/*:refs/tags/*")
+	if err != nil && !onlyTagClobberRejections(out) {
+		return fmt.Errorf("repo ci watch: git fetch tags from origin in %s: %w: %s", repoDir, err, out)
 	}
 	return nil
+}
+
+// runRepoCIFetch runs `git -C repoDir fetch <args>` and returns its trimmed
+// combined output.
+func runRepoCIFetch(ctx context.Context, repoDir string, args ...string) (string, error) {
+	var out bytes.Buffer
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repoDir, "fetch"}, args...)...)
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	return strings.TrimSpace(out.String()), err
+}
+
+// onlyTagClobberRejections reports whether every failure line in a tag fetch's
+// output is git refusing to overwrite a tag the repo already holds. A failed
+// fetch with any other cause (no "would clobber" line, or a fatal or error
+// line besides git's closing summary) is not tolerated.
+func onlyTagClobberRejections(out string) bool {
+	clobbered := false
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.Contains(line, "would clobber existing tag"):
+			clobbered = true
+		case strings.HasPrefix(line, "fatal:"), strings.HasPrefix(line, "error:"):
+			return false
+		case strings.Contains(line, "[rejected]"):
+			return false // a rejection for any other reason
+		}
+	}
+	return clobbered
 }
 
 // defaultRepoCIOrigin returns the origin remote URL from repoDir.

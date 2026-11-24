@@ -58,7 +58,7 @@ POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {
 POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_lane_preference  lane an Automaton may take; body: {lane_preference: gpu|claude|any} ("" means any); 400 on an unknown value, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_notify_events  set the lifecycle event kinds the Automaton notifies on; body: {notify_events[]} — absent/null/[] clears (inherit); the reply carries the computed notify_events_effective
-POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD; refused (400, naming already_shipped or work_closed) for shipped or closed work; body {force: true, reason} runs shipped work anyway, audited
+POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD; refused (400, naming already_shipped or work_closed) for shipped or closed work; body {force: true, reason} runs shipped work anyway, audited; a forced run made by a caller that is not the web app or a session credential also raises one safeguard alert (see Safeguard alert in the definitions)
 GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
 
 GET    /api/autonomous/tags[?include_sub=&counts=]  tag tree (parent_id) with Automata counts; counts=true adds subtree, direct and session counts and an untagged object
