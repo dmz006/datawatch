@@ -82,28 +82,56 @@ type rollupFlight struct {
 	body []byte
 }
 
+// rollupMergeSensitive reports whether a roll-up built from entries shows a
+// derived merge state that git can change with no Automaton write: a
+// completed or archived Automaton that has a work branch.
+func rollupMergeSensitive(entries []autonomous.SummaryEntry) bool {
+	for i := range entries {
+		e := &entries[i]
+		if e.GitBranch != "" && (e.Status == autonomous.PRDCompleted || e.Status == autonomous.PRDArchived) {
+			return true
+		}
+	}
+	return false
+}
+
 // rollupCache is a bounded cache of encoded roll-ups with a single-flight
 // guard for cold reads.
 type rollupCache struct {
 	mu      sync.Mutex
 	max     int
 	entries map[rollupCacheKey][]byte
-	order   []rollupCacheKey // oldest first
+	built   map[rollupCacheKey]time.Time // when each entry was stored
+	order   []rollupCacheKey             // oldest first
 	flights map[rollupCacheKey]*rollupFlight
+	now     func() time.Time // nil = time.Now
+}
+
+func (c *rollupCache) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 func newRollupCache(max int) *rollupCache {
 	if max < 1 {
 		max = 1
 	}
-	return &rollupCache{max: max, entries: map[rollupCacheKey][]byte{}, flights: map[rollupCacheKey]*rollupFlight{}}
+	return &rollupCache{max: max, entries: map[rollupCacheKey][]byte{}, built: map[rollupCacheKey]time.Time{}, flights: map[rollupCacheKey]*rollupFlight{}}
 }
 
 // get returns the cached body for key or builds it once. hit reports whether
 // the body came from the cache or from another caller's build.
 func (c *rollupCache) get(key rollupCacheKey, build func() []byte) (body []byte, hit bool) {
+	return c.getFresh(key, 0, build)
+}
+
+// getFresh is get with a longest age: a stored body older than maxAge is not
+// served and is rebuilt (the rebuild replaces it). maxAge <= 0 never expires.
+func (c *rollupCache) getFresh(key rollupCacheKey, maxAge time.Duration, build func() []byte) (body []byte, hit bool) {
 	c.mu.Lock()
-	if b, ok := c.entries[key]; ok {
+	if b, ok := c.entries[key]; ok && (maxAge <= 0 || c.clock().Sub(c.built[key]) <= maxAge) {
 		c.mu.Unlock()
 		return b, true
 	}
@@ -137,6 +165,7 @@ func (c *rollupCache) store(key rollupCacheKey, body []byte) {
 	for _, k := range c.order {
 		if k.project == key.project && k.windowDays == key.windowDays && k != key {
 			delete(c.entries, k)
+			delete(c.built, k)
 			continue
 		}
 		kept = append(kept, k)
@@ -146,8 +175,10 @@ func (c *rollupCache) store(key rollupCacheKey, body []byte) {
 		c.order = append(c.order, key)
 	}
 	c.entries[key] = body
+	c.built[key] = c.clock()
 	for len(c.order) > c.max {
 		delete(c.entries, c.order[0])
+		delete(c.built, c.order[0])
 		c.order = c.order[1:]
 	}
 }
@@ -161,6 +192,7 @@ func (c *rollupCache) evictProject(project string) {
 	for _, k := range c.order {
 		if k.project == project {
 			delete(c.entries, k)
+			delete(c.built, k)
 			continue
 		}
 		kept = append(kept, k)
@@ -251,10 +283,18 @@ func (s *Server) projectRollupBody(mgr *autonomous.Manager, name string, entry c
 		shipped:    s.shippedSettings().EffectiveEnabled(),
 	}
 	releaseHeld := s.releaseHeldFunc()
+	keyEntries := store.SummaryEntries()
 	if releaseHeld != nil {
-		key.held = rollupHeldHash(store.SummaryEntries(), releaseHeld)
+		key.held = rollupHeldHash(keyEntries, releaseHeld)
 	}
-	body, _ := s.rollup.cache.get(key, func() []byte {
+	// Merge state comes from git, so it can change with no Automaton write:
+	// a roll-up showing finished work on a branch expires after the
+	// merge-state window, and any other roll-up keeps its revision key only.
+	var maxAge time.Duration
+	if rollupMergeSensitive(keyEntries) {
+		maxAge = mgr.MergeStateCacheWindow()
+	}
+	body, _ := s.rollup.cache.getFresh(key, maxAge, func() []byte {
 		now := time.Now()
 		entries := store.SummaryEntries()
 		resp := buildProjectRollup(rollupInput{
