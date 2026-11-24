@@ -20,6 +20,21 @@ type netprobeConnAttrV struct {
 	TsNs uint64
 }
 
+// Names of all BPF objects in the ELF.
+//
+// Used for safe lookups in a Collection or CollectionSpec.
+const (
+	netprobeMapBytesRx                 = "bytes_rx"
+	netprobeMapBytesTx                 = "bytes_tx"
+	netprobeMapConnAttribution         = "conn_attribution"
+	netprobeProgKprobeTcpConnect       = "kprobe_tcp_connect"
+	netprobeProgKprobeTcpSendmsg       = "kprobe_tcp_sendmsg"
+	netprobeProgKprobeUdpSendmsg       = "kprobe_udp_sendmsg"
+	netprobeProgKretprobeInetCskAccept = "kretprobe_inet_csk_accept"
+	netprobeProgKretprobeTcpRecvmsg    = "kretprobe_tcp_recvmsg"
+	netprobeProgKretprobeUdpRecvmsg    = "kretprobe_udp_recvmsg"
+)
+
 // loadNetprobe returns the embedded CollectionSpec for netprobe.
 func loadNetprobe() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_NetprobeBytes)
@@ -40,7 +55,7 @@ func loadNetprobe() (*ebpf.CollectionSpec, error) {
 //	*netprobeMaps
 //
 // See ebpf.CollectionSpec.LoadAndAssign documentation for details.
-func loadNetprobeObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
+func loadNetprobeObjects(obj any, opts *ebpf.CollectionOptions) error {
 	spec, err := loadNetprobe()
 	if err != nil {
 		return err
