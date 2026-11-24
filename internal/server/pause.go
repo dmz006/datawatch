@@ -325,7 +325,7 @@ func (s *Server) pauseCallPeer(ctx context.Context, t federationTarget, method, 
 	if err != nil {
 		return pausePeerResult{Error: err.Error()}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
 		return pausePeerResult{Error: fmt.Sprintf("%s: %s", resp.Status, strings.TrimSpace(string(data)))}

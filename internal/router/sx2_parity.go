@@ -2554,3 +2554,73 @@ func specCheckChatText(reply string) string {
 	}
 	return ""
 }
+
+// pauseActorChannel labels a pause or resume sent from a messaging channel in
+// the audit log. The channel is the operator's own surface.
+const pauseActorChannel = "channel"
+
+// handlePause serves "pause <reason…> [project=<p>] [peers=…]" and
+// "pause status" through the /api/pause loopback.
+func (r *Router) handlePause(cmd Command) {
+	const usage = "usage: pause <reason…> [project=<p>] [peers=all|a,b] | pause status [peers]"
+	if cmd.PauseVerb == "status" {
+		var q url.Values
+		if cmd.PauseAllPeers {
+			q = url.Values{"peers": {"1"}}
+		}
+		body, err := r.commGet("/api/pause", q)
+		if err != nil {
+			r.reply("pause status failed", err.Error())
+			return
+		}
+		r.reply("pause status", body)
+		return
+	}
+	if strings.TrimSpace(cmd.PauseReason) == "" {
+		r.reply("pause failed", "a pause needs a reason; "+usage)
+		return
+	}
+	req := map[string]any{"scope": "global", "reason": cmd.PauseReason, "actor": pauseActorChannel}
+	if cmd.PauseProject != "" {
+		req["scope"], req["project"] = "project", cmd.PauseProject
+	}
+	pausePeerFields(req, cmd)
+	payload, _ := json.Marshal(req)
+	out, err := r.commJSON(http.MethodPost, "/api/pause", string(payload))
+	if err != nil {
+		r.reply("pause failed", err.Error())
+		return
+	}
+	r.reply("pause", out)
+}
+
+// handleResume serves "resume [all] [project=<p>] [peers=…]" through the
+// /api/pause/resume loopback. The daemon decides who may resume.
+func (r *Router) handleResume(cmd Command) {
+	req := map[string]any{"actor": pauseActorChannel}
+	switch {
+	case cmd.PauseAll:
+		req["all"] = true
+	case cmd.PauseProject != "":
+		req["scope"], req["project"] = "project", cmd.PauseProject
+	default:
+		req["scope"] = "global"
+	}
+	pausePeerFields(req, cmd)
+	payload, _ := json.Marshal(req)
+	out, err := r.commJSON(http.MethodPost, "/api/pause/resume", string(payload))
+	if err != nil {
+		r.reply("resume failed", err.Error())
+		return
+	}
+	r.reply("resume", out)
+}
+
+func pausePeerFields(req map[string]any, cmd Command) {
+	if cmd.PauseAllPeers {
+		req["all_peers"] = true
+	}
+	if len(cmd.PausePeers) > 0 {
+		req["peers"] = cmd.PausePeers
+	}
+}

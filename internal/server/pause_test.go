@@ -208,7 +208,7 @@ func (f *fakePeer) handler() http.Handler {
 		}
 		f.calls = append(f.calls, r.Method+" "+r.URL.Path+" "+body.String())
 		if r.Header.Get("Authorization") != "Bearer peer-token" {
-			http.Error(w, "unauthorized", 401)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(f.state)
