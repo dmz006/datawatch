@@ -23,7 +23,7 @@ func TestJudgeLimitScalesWithLines(t *testing.T) {
 	}
 	l1 := judgeAttemptLimit(cfg, 1000)
 	l2 := judgeAttemptLimit(cfg, 1556)
-	if !(l1 > base && l2 > l1) {
+	if l1 <= base || l2 <= l1 {
 		t.Errorf("limit must grow with lines: base=%s 1000=%s 1556=%s", base, l1, l2)
 	}
 	if want := base + 600*1556/1000*time.Second; l2 != want {
