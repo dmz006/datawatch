@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.2 (2026-11-24).** The older finished landing branches reach main: the actionable Automata Inbox, git hosts with GitLab, judge-timeout replay for large changes, the eBPF drift fix and the absolute-symlink check. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.3 (2026-11-24).** Closed Automata record an outcome and a deploy record, landing decisions and the unlanded list work for hand-ported work, and a session end no longer ends other sessions processes. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

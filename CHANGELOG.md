@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.3 — Closed work outcome, landing decisions that work, and a session end that stops killing other sessions
+
+### Added
+- Closed work outcome: every closed Automaton records whether it was delivered, superseded, dropped or held, and which Automaton delivered or replaced it. Archive refuses a record with no provable outcome or an unmet hold (setting `autonomous.closed_outcome_archive`, on by default), a release stamps every Automaton it shipped with a deploy record (release, version, time, host, health), and a daily closed-work check flags finished work with no shipped record, shipped work never deployed, and a daemon older than what was shipped (setting `autonomous.closed_outcome_check`, shadow by default). REST, MCP, command line, chat and web surfaces, with locale strings in five languages.
+- A setting `git.push_before_teardown` (off by default): when on, a session teardown pushes only the session's own commits and refuses when another local branch holds unpushed commits.
+
+### Fixed
+- Landing keep and drop answered HTTP 501 on the real daemon; they work now. The unlanded-work list recognizes hand-ported work by its shipped record or identical file content, the archived-unmerged and finished-not-merged views do the same, and a kept or dropped branch reappears with the reason when it gains commits after the decision.
+- Ending a session no longer ends other sessions' processes that merely sit in the same project folder; that caused commit hooks and test runs to die with signal 15. A killed session frees its capacity lease at once, and every session end records its end time and reason.
+
+### Documentation
+- How-tos for the closed work outcome, the worktree cleanup and landing records, the orphan reaper's new scope, and the teardown push.
+
 ## v9.187.2 — Landed the older finished Automaton branches: actionable inbox, git hosts, judge timeout replay, eBPF drift fix
 
 ### Added
