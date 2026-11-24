@@ -1369,23 +1369,29 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.reply("autonomous edit-task", prettyJSON(out))
 	case "reset-task", "reset_task":
 		if len(args) < 3 {
-			r.reply("autonomous reset-task failed", "usage: autonomous reset-task <prd-id> <task-id> [force] [clean-restart]")
+			r.reply("autonomous reset-task failed", "usage: autonomous reset-task <prd-id> <task-id> [force] [clean-restart] [reason <text>]")
 			return
 		}
 		// Optional trailing "clean-restart": the next attempt starts from the
 		// pre-task tree instead of restoring the preserved attempt work.
 		// Optional "force": requeue a completed or cancelled task. As the
 		// operator's own, a force reset also clears the total attempt count.
-		cleanRestart, force := false, false
-		for _, tok := range args[3:] {
+		// Optional "reason <text>": everything after it is the reason, recorded
+		// in the audit log and shown in the operator alert a force reset raises.
+		cleanRestart, force, reason := false, false, ""
+	resetTokens:
+		for i, tok := range args[3:] {
 			switch tok {
 			case "clean-restart", "clean_restart":
 				cleanRestart = true
 			case "force":
 				force = true
+			case "reason":
+				reason = strings.TrimSpace(strings.Join(args[3+i+1:], " "))
+				break resetTokens
 			}
 		}
-		body, _ := json.Marshal(map[string]any{"task_id": args[2], "actor": "operator", "force": force, "clean_restart": cleanRestart})
+		body, _ := json.Marshal(map[string]any{"task_id": args[2], "actor": "operator", "force": force, "clean_restart": cleanRestart, "reason": reason})
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/reset_task", string(body))
 		if err != nil {
 			r.reply("autonomous reset-task failed", err.Error())

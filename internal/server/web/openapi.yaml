@@ -11710,7 +11710,7 @@ paths:
         "403": {description: The caller lacks pause:write}
   /api/pause/resume:
     post:
-      summary: Resume paused work, one scope or everything. Only the operator can resume; the daemon refuses it from a session-scoped credential and from any actor naming a worker, watcher, supervisor or model. Needs pause:write
+      summary: Resume paused work, one scope or everything. Only the operator can resume; the daemon refuses it from a session-scoped credential and from any actor naming a worker, watcher, supervisor or model. Needs pause:write. A resume that takes effect and does not carry the web app header X-Datawatch-Client pwa raises one operator alert and a safeguard_action audit entry naming the caller (address, user agent, claimed actor), the scope and the note; audit.safeguard_alert turns the alert off
       operationId: pauseResume
       tags: [Singletons]
       requestBody:

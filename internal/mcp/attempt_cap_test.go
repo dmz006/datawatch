@@ -48,6 +48,10 @@ func TestAttemptCap_ResetActor(t *testing.T) {
 	if got := resetBody(t, context.Background(), args); got["actor"] != "operator" || got["force"] != true {
 		t.Fatalf("admin reset body = %v, want actor operator and force true", got)
 	}
+	withReason := map[string]any{"id": "p1", "task_id": "t1", "force": true, "reason": "retry by hand"}
+	if got := resetBody(t, context.Background(), withReason); got["reason"] != "retry by hand" {
+		t.Fatalf("reset body = %v, want the reason passed through", got)
+	}
 	ctx := federation.WithCallerSessionID(context.Background(), "host-sess-9")
 	if got := resetBody(t, ctx, args); got["actor"] != "session:host-sess-9" {
 		t.Fatalf("session reset body actor = %v, want session:host-sess-9", got["actor"])

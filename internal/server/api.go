@@ -6335,6 +6335,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"access_log_enabled": s.cfg.Audit.AccessLogEnabledOrDefault(),
 			"retention_days":     s.cfg.Audit.RetentionDaysOrDefault(),
 			"cef_mirror_enabled": s.cfg.Audit.CEFMirrorEnabled,
+			"safeguard_alert":    s.cfg.Audit.SafeguardAlertOrDefault(),
 		},
 		// dashboard.hide_inactive_cards + the operator console switches
 		// (dashboard.console.*); an absent key reads its default, true.
@@ -9387,6 +9388,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "audit.cef_mirror_enabled":
 			cfg.Audit.CEFMirrorEnabled = toBool(v)
+		case "audit.safeguard_alert":
+			b := toBool(v)
+			cfg.Audit.SafeguardAlert = &b
 		case "mcp.enabled":
 			cfg.MCP.Enabled = toBool(v)
 		case "mcp.sse_host":

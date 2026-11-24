@@ -15,7 +15,7 @@ func TestResetTaskActor(t *testing.T) {
 
 func TestPRDResetTaskCmdFlags(t *testing.T) {
 	cmd := newAutonomousPRDResetTaskCmd()
-	for _, f := range []string{"force", "clean-restart"} {
+	for _, f := range []string{"force", "clean-restart", "reason"} {
 		if cmd.Flags().Lookup(f) == nil {
 			t.Errorf("prd-reset-task lacks --%s", f)
 		}

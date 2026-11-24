@@ -68,6 +68,33 @@ or clearing needs `pause:write`, which is not in a session's default grant.
 A federation peer needs `pause:write` through a capability group before it
 can send a pause to this daemon.
 
+## An alert when a script resumes
+
+Until real identities exist, the local API needs no token, so a script, a CLI
+call or a model that reaches the API looks the same as you. To make that
+visible, every resume that takes effect and does not come from the web app or
+from a session credential raises one alert (level warn) and writes a
+`safeguard_action` audit entry. The alert names:
+
+- the action and what it cleared (`global`, a project, or all pauses),
+- the reason you gave (`--note`; the alert says "no reason given" when there is none),
+- the caller: the actor label it claimed, its remote address, its user agent
+  and what kind of credential it used (never the credential itself).
+
+The web app sends a plain `X-Datawatch-Client: pwa` header on every call, so
+resuming from the header button raises no alert; it is still audited, with the
+marker, the address and the user agent. The header is not a secret and anyone
+can send it, so it can only hide the alert, never allow anything, and a call
+that sends it leaves its own audit record. A resume from a session credential
+is refused as before and needs no alert. A resume that clears nothing raises
+nothing. The CLI (`datawatch resume`) and chat (`resume`) are not the web app, so
+they raise the alert too; so does a peer's resume, on the receiving daemon, as
+`peer:<name>`.
+
+Turn it off with `audit.safeguard_alert: false` (Settings -> General -> Audit &
+Access Log). The audit entry is written either way. The same alert covers the
+attempt-count force reset, see [attempt-cap.md](attempt-cap.md).
+
 ## Federation
 
 Each daemon keeps its own state. To send an action to peers add `--peers` (all)
@@ -93,4 +120,5 @@ rewrites it.
 
 `pause_set`, `pause_resumed` and `pause_resume_refused` appear in the audit log
 (`datawatch audit --action 'pause_*'`) with the actor, the scope or project,
-the reason or note, and the time.
+the reason or note, and the time. A resume from a caller that is not a session
+also writes `safeguard_action` (see above), whether or not an alert was raised.

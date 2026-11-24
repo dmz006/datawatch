@@ -87,6 +87,20 @@ credential, not from what the call claims: a session's scoped credential names
 the session, so a session cannot pass as the operator. A force reset made by a
 session still requeues a completed or cancelled task, but it keeps the count.
 
+A force reset that clears the count and does not come from the web app or from a
+session credential raises one alert to you and writes a `safeguard_action` audit
+entry. A plain REST call or `datawatch autonomous prd-reset-task --force` with no
+session token is exactly that case: today the local API needs no token, so the
+alert is how you learn that something other than you cleared a count. The alert
+names the Automaton and task, the reason given (`--reason`, the `reason` field
+of REST and MCP, or `reason <text>` in chat; "no reason given" otherwise), the
+caller's address, user agent and claimed actor label. The web app sends an
+`X-Datawatch-Client: pwa` header, so its **Force reset** and **Re-queue** buttons
+raise no alert but are still audited with the marker. The header is not a
+secret and only ever hides the alert. A force reset by a session never clears the
+count, so it raises nothing. `audit.safeguard_alert: false` turns the alert off;
+see [pause-new-work.md](pause-new-work.md#an-alert-when-a-script-resumes).
+
 If you answer the cap question with the force-reset option, it is the same as
 the force reset. A session that answers it clears nothing; the daemon writes an
 `attempt_cap_answer_ignored` decision.
@@ -111,8 +125,8 @@ whole change and names the key.
 | **YAML** | `config.yaml` -> `autonomous.attempt_cap:` with `enabled`, `max_total`, `free_attempts`, `backoff_minutes`; a project's `policy:` block takes `attempt_cap` |
 | **REST** | `GET /api/config` shows the block under `autonomous.attempt_cap`; `PUT /api/config` with the dotted keys; every task of `GET /api/autonomous/prds/{id}` and `GET /api/autonomous/prds/{id}/tasks` carries `attempts_total`, `attempt_cap_held` and `attempt_not_before`; `POST /api/autonomous/prds/{id}/reset_task` with `force` is the force reset |
 | **MCP** | `autonomous_config_set` with `attempt_cap_enabled`, `attempt_cap_max_total`, `attempt_cap_free_attempts`, `attempt_cap_backoff_minutes`; `autonomous_prd_get` and `autonomous_prd_tasks` for the count; `autonomous_prd_reset_task` with `force` |
-| **CLI** | `datawatch config set autonomous.attempt_cap.max_total 8`; `datawatch autonomous tasks <id>` for the count; `datawatch autonomous prd-reset-task <id> <task> --force` |
-| **Chat** | `configure autonomous.attempt_cap.max_total=8`; `autonomous reset-task <id> <task> force` |
+| **CLI** | `datawatch config set autonomous.attempt_cap.max_total 8`; `datawatch autonomous tasks <id>` for the count; `datawatch autonomous prd-reset-task <id> <task> --force --reason "why"` |
+| **Chat** | `configure autonomous.attempt_cap.max_total=8`; `autonomous reset-task <id> <task> force reason <text>` |
 | **Web app** | Settings -> Automata -> Attempt cap; the project policy editor field **Attempt cap**; each task row shows the count, the hold and the wait, and a held task has a **Force reset** button |
 
 ## Common situations

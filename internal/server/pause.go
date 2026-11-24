@@ -238,12 +238,28 @@ func (s *Server) handlePauseResume(w http.ResponseWriter, r *http.Request) {
 			cleared = 1
 		}
 	}
+	if cleared > 0 {
+		s.noteSafeguardAction(r, safeguardEvent{
+			Action: safeguardPauseResume, Target: pauseResumeTarget(req), Actor: actor, Claimed: req.Actor, Reason: req.Note,
+		})
+	}
 	out := s.pauseState()
 	out.Cleared = cleared
 	out.Peers = s.pauseSendToPeers(r.Context(), req, "/api/pause/resume", pauseRequest{
 		Scope: req.Scope, Project: s.resolvePauseProject(req.Project), Note: req.Note, All: req.All,
 	})
 	writeJSONOK(w, out)
+}
+
+// pauseResumeTarget names what a resume cleared, for the safeguard alert.
+func pauseResumeTarget(req pauseRequest) string {
+	switch {
+	case req.All:
+		return "all pauses (global and every project)"
+	case pause.Scope(req.Scope) == pause.ScopeProject:
+		return "project " + strings.TrimSpace(req.Project)
+	}
+	return "global"
 }
 
 // pauseSendToPeers forwards a pause or resume to the peers the request names

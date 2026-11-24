@@ -42,6 +42,15 @@ Two JSON-lines files under `data_dir` (`~/.datawatch` by default):
 Neither log ever records the `Authorization` header or a raw
 token/nonce value.
 
+**Safeguard actions.** A pause resume that takes effect, an attempt-count
+force reset and a force run of already shipped work each write a
+`safeguard_action` entry when the caller is not a session credential. It
+carries the action, the target, the reason, the claimed actor label, the
+remote address, the user agent, the caller kind, the `X-Datawatch-Client`
+marker when the request sent one, and whether an alert was raised. Unless
+`audit.safeguard_alert` is off, a call without the web app marker also raises
+one alert. See [pause-new-work.md](pause-new-work.md#an-alert-when-a-script-resumes).
+
 **Not covered by either log**: alerts (`alerts.json`, see
 [alerts-and-notifications.md](alerts-and-notifications.md)) are a
 separate persistence mechanism and are not SIEM-mirrored the way this
@@ -240,6 +249,9 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
   through one of the 4 wired call sites (LLM delegation,
   `handleProxyWS`, `handleAggregatedSessions`, `handleRemotePWA`) —
   not every cross-daemon call forwards attribution yet.
+- **A resume or force reset from the web app raised no alert.** That is
+  intended: the app sends `X-Datawatch-Client: pwa`. The `safeguard_action`
+  entry for it still exists and shows the marker, the address and the user agent.
 - **I expected alerts to show up here too.** They don't, except
   incidentally — see "Not covered by either log" above and
   [alerts-and-notifications.md](alerts-and-notifications.md).

@@ -158,6 +158,8 @@ func cefSignature(action string) (int, string, int) {
 		return 99, "PauseResumed", 4
 	case ActionPauseResumeRefused:
 		return 100, "PauseResumeRefused", 7
+	case ActionSafeguardAction:
+		return 101, "SafeguardAction", 6
 	case ActionUsageBackoffSet:
 		return 31, "AutonomousUsageBackoffSet", 4
 	case ActionUsageBackoffCleared:
