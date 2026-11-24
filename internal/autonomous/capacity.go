@@ -803,9 +803,29 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 		Holder: holder, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: capacity.RolePlanner, Consumer: consumerSessionSpawn,
 	}
 	lreq.Refresh = m.placementRefresh(lreq, backend, model, decomposePools)
-	err := led.Acquire(context.Background(), lreq, m.capacityWait(), func() bool { return m.plannerCancelled(prd.ID) }, func(reason string) {
+	// With autonomous.capacity_fallthrough on, a planner whose pools are full
+	// moves to an allowed alternate pool exactly as a task does, and a planner
+	// already waiting looks again on every wait pass. fell is the alternate it
+	// moved to (nil: it runs on the pair it was resolved to).
+	var fell *CapacityAlternate
+	requested := lreq
+	if alt, altReq := m.pickPlannerFallthrough(led, lreq, backend, model); alt != nil {
+		fell, lreq = alt, altReq
+	}
+	recheck := func() (capacity.Request, bool) {
+		if fell != nil {
+			return capacity.Request{}, false
+		}
+		alt, altReq := m.pickPlannerFallthrough(led, requested, backend, model)
+		if alt == nil {
+			return capacity.Request{}, false
+		}
+		fell = alt
+		return altReq, true
+	}
+	err := led.AcquireRechecking(context.Background(), lreq, m.capacityWait(), func() bool { return m.plannerCancelled(prd.ID) }, func(reason string) {
 		m.setPRDWaitReason(prd.ID, reason)
-	})
+	}, recheck)
 	if err != nil {
 		// The wait ended without admission (timeout or cancel): nothing is held,
 		// but the queued reason must not outlive the wait.
@@ -820,6 +840,18 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 	}
 	defer led.Release(holder)
 	m.clearPRDWaitReason(prd.ID)
+	if fell != nil {
+		// The planner runs on the alternate, not on the pair the Automaton
+		// holds, and the Automaton's own record says so.
+		note := fmt.Sprintf("planner fell through from %s/%s to %s/%s: requested pool full or held, alternate idle (autonomous.capacity_fallthrough is on)", backend, model, fell.Backend, fell.Model)
+		log.Printf("[autonomous] prd=%s %s", prd.ID, note)
+		m.store.MutatePRD(prd.ID, func(p *PRD) bool {
+			p.Decisions = trimDecisions(append(p.Decisions, Decision{At: time.Now(), Kind: "planner_fallthrough", Actor: "autonomous", Note: note}))
+			return true
+		})
+		req.Backend, req.Model = fell.Backend, fell.Model
+		return m.decompose(req)
+	}
 	// Planning requeue (planning_requeue.go): the PRD's decomposition pair
 	// can change while this admission was queued — the queue entry is
 	// retargeted onto this pool — so the execution must carry the pair the
@@ -1428,17 +1460,37 @@ func (m *Manager) hasExplicitBackend(prd *PRD, t *Task) bool {
 // pass), and a task whose backend was set explicitly is held to the same rule:
 // it falls through only while the setting is on.
 func (m *Manager) pickFallthrough(led *capacity.Ledger, base capacity.Request, backend, model string) (*CapacityAlternate, capacity.Request) {
+	// Only a worker falls through here. A verifier or judge request never moves
+	// to another backend: it must run on the backend it was resolved to. A
+	// planner has its own entry point (pickPlannerFallthrough).
+	if base.Role != "" && base.Role != capacity.RoleWorker {
+		return nil, base
+	}
+	return m.pickAlternate(led, base, backend, model, nil)
+}
+
+// pickPlannerFallthrough is pickFallthrough for a planner request: the same
+// setting, alternates and "would the ledger grant it" test, judged on the
+// planner's pools (the host pool left out, as at its own admission) and only
+// onto an alternate that can name its model.
+func (m *Manager) pickPlannerFallthrough(led *capacity.Ledger, base capacity.Request, backend, model string) (*CapacityAlternate, capacity.Request) {
+	if base.Role != capacity.RolePlanner {
+		return nil, base
+	}
+	return m.pickAlternate(led, base, backend, model, decomposePools)
+}
+
+// pickAlternate holds the shared body of the two fall-through pickers. trim,
+// when set, narrows an alternate's pools (the planner's); a trimmed pick is a
+// planner pick, so an alternate whose model is not pinned is skipped.
+func (m *Manager) pickAlternate(led *capacity.Ledger, base capacity.Request, backend, model string, trim func([]string) []string) (*CapacityAlternate, capacity.Request) {
 	m.mu.Lock()
 	on, altFn, keysFn, choicesFn := m.cfg.CapacityFallthrough, m.capacityAlternates, m.capacityKeys, m.capacityChoices
 	m.mu.Unlock()
 	if !on || altFn == nil || keysFn == nil {
 		return nil, base
 	}
-	// Only a worker falls through. A verifier, judge or planner request never
-	// moves to another backend: it must run on the backend it was resolved to.
-	if base.Role != "" && base.Role != capacity.RoleWorker {
-		return nil, base
-	}
+	planner := trim != nil
 	if led.WouldGrant(base) {
 		return nil, base
 	}
@@ -1447,13 +1499,20 @@ func (m *Manager) pickFallthrough(led *capacity.Ledger, base capacity.Request, b
 			continue
 		}
 		pools, node := keysFn(alt.Backend, alt.Model)
+		if trim != nil {
+			pools = trim(pools)
+		}
 		if len(pools) == 0 {
+			continue
+		}
+		// A planner session on a pi-family backend must name its model.
+		if planner && RequirePinnedModel(alt.Backend, alt.Model) != nil {
 			continue
 		}
 		req := base
 		req.Pools, req.Node, req.Model = pools, node, alt.Model
 		req.NodeChoices = nodeChoicesFor(choicesFn, alt.Backend, alt.Model)
-		req.Refresh = m.placementRefresh(req, alt.Backend, alt.Model, nil)
+		req.Refresh = m.placementRefresh(req, alt.Backend, alt.Model, trim)
 		if led.WouldGrant(req) {
 			a := alt
 			return &a, req
