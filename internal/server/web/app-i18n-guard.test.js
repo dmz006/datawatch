@@ -151,3 +151,69 @@ test('a bundle that is already ready paints the translation at once', async () =
   await p.sandbox.window.pauseRefresh();
   assert.equal(p.label.textContent, 'Pausiert');
 });
+
+// ── navigate() and the header alert pill before the bundle is ready ─────────
+
+test('navigate() draws no view while the bundle is loading and remembers the choice for the boot', () => {
+  const view = fakeEl();
+  const sb = buildSandbox({ byId: { view } });
+  vm.createContext(sb);
+  loadScript(path.join(__dirname, 'app.js'), sb);
+  sb.window._i18n.loading = true; // initI18n has started and not finished
+  sb.window.navigate('settings');
+  assert.equal(view.innerHTML, '', 'a view was drawn with no bundle');
+  assert.equal(sb.localStorage.getItem('cs_active_view'), 'settings', 'the choice was not remembered');
+  sb.window.navigate('sessions', 'sess-1');
+  assert.equal(sb.localStorage.getItem('cs_active_view'), 'sessions');
+  assert.equal(sb.localStorage.getItem('cs_active_session'), 'sess-1');
+  sb.window.navigate('alerts');
+  assert.equal(sb.localStorage.getItem('cs_active_session'), null, 'a stale session id was kept');
+});
+
+test('a page that never ran the boot is not pending, so navigate() still draws', () => {
+  const sb = loadApp();
+  assert.equal(sb.window._i18n.loading, false);
+  vm.runInContext("navigate('alerts')", sb);
+  assert.equal(vm.runInContext('state.activeView', sb), 'alerts');
+});
+
+test('initI18n clears the loading flag and marks the bundle ready', async () => {
+  const sb = loadApp(bundleFetch());
+  const p = sb.initI18n();
+  assert.equal(sb.window._i18n.loading, true);
+  await p;
+  assert.equal(sb.window._i18n.loading, false);
+  assert.equal(sb.window._i18n.ready, true);
+});
+
+test('the header alert pill shows English text with no bundle and is redrawn in the active locale when ready', async () => {
+  const pill = fakeEl();
+  const sb = buildSandbox({ byId: { headerAlertPill: pill } });
+  sb.fetch = bundleFetch();
+  sb.localStorage.setItem('datawatch.locale', 'de');
+  vm.createContext(sb);
+  loadScript(path.join(__dirname, 'app.js'), sb);
+  vm.runInContext('renderAlertPill()', sb);
+  assert.equal(pill.title, 'Alert dock — click to expand (0)', 'the raw key reached the tooltip');
+  await sb.initI18n();
+  assert.equal(pill.title, localeBundle('de').alert_pill_tip + ' (0)', 'the pill was not redrawn in German');
+});
+
+test('an error toast opened before the bundle loads has English labels and is redrawn when ready', async () => {
+  const toasts = [];
+  const mk = (cls) => ({ ...fakeEl(), cls, title: '', setAttr: {}, setAttribute(k, v) { this.setAttr[k] = v; } });
+  const close = mk('toast-error-close');
+  const reconnect = mk('toast-error-reconnect');
+  const toast = { querySelector: (sel) => (sel === '.toast-error-close' ? close : sel === '.toast-error-reconnect' ? reconnect : null) };
+  toasts.push(toast);
+  const sb = buildSandbox();
+  sb.fetch = bundleFetch();
+  vm.createContext(sb);
+  loadScript(path.join(__dirname, 'app.js'), sb);
+  sb.document.querySelectorAll = (sel) => (sel === '.toast-error-app' ? toasts : []);
+  await sb.initI18n();
+  const en = localeBundle('en');
+  assert.equal(close.title, en.toast_error_dismiss);
+  assert.equal(close.setAttr['aria-label'], en.toast_error_dismiss);
+  assert.equal(reconnect.textContent, en.toast_reconnect_btn);
+});

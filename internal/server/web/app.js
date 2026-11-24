@@ -154,6 +154,7 @@ window._i18n = {
   bundle: {},               // { key: translated string }
   fallback: {},             // English bundle for fallback when a key is missing
   ready: false,
+  loading: false,           // true while initI18n is fetching the bundle (no view is drawn then)
   readyHooks: [],           // functions run once the bundle has loaded (see onI18nReady)
 };
 function detectLocale() {
@@ -178,6 +179,7 @@ async function loadLocale(lang) {
   }
 }
 async function initI18n() {
+  window._i18n.loading = true;
   // Always load EN as the fallback bundle; load active locale if non-EN.
   const en = await loadLocale('en') || {};
   window._i18n.fallback = en;
@@ -190,6 +192,7 @@ async function initI18n() {
     window._i18n.bundle = b || en;
   }
   window._i18n.ready = true;
+  window._i18n.loading = false;
   applyI18nDOM(document);
   // Modules that painted before the bundle was ready repaint now.
   window._i18n.readyHooks.forEach(fn => {
@@ -210,6 +213,12 @@ function onI18nReady(fn) {
   window._i18n.readyHooks.push(fn);
 }
 window.onI18nReady = onI18nReady;
+// _i18nPending is true while the boot is fetching the locale bundle: initI18n has started and
+// has not finished. A page that never ran the boot (a test) is not pending.
+function _i18nPending() {
+  const i = window._i18n;
+  return i.loading === true && !i.ready;
+}
 // applyI18nDOM walks elements with `data-i18n="<key>"` and replaces their
 // textContent with t(key). Variants:
 //   data-i18n-attr="title"   → updates the named attribute instead of text
@@ -2176,6 +2185,9 @@ window.refreshGeneratingIndicator = refreshGeneratingIndicator;
 // "display alert badge even if count is 0". Always-on status indicator
 // in the global header (and legacy tmux command-bar slot if present).
 // Click → toggleAlertDock.
+// The header pill draws before the locale bundle loads (the alert poll starts with the page):
+// tOr gives it the English text until then, and this redraws it in the active locale.
+onI18nReady(() => renderAlertPill());
 function renderAlertPill() {
   const dock = window._alertDock || { alerts: [], muted: false };
   const total = dock.alerts.reduce((acc, a) => acc + (a.n || 1), 0);
@@ -2189,10 +2201,10 @@ function renderAlertPill() {
     bg = 'rgba(96,165,250,0.18)'; border = 'var(--accent2)'; opacity = '1';
   }
   const icon = dock.muted ? '🔕' : '🔔';
-  const label = dock.muted ? `${icon} ${(t('alert_dock_muted_short')||'muted')}` : `${icon} ${total}`;
+  const label = dock.muted ? `${icon} ${tOr('alert_dock_muted_short', 'muted')}` : `${icon} ${total}`;
   const tip = dock.muted
-    ? (t('alert_dock_muted_tip') || 'Alerts muted for this session — click to open dock + un-mute')
-    : (t('alert_pill_tip') || 'Alert dock — click to expand') + ` (${total})`;
+    ? tOr('alert_dock_muted_tip', 'Alerts muted for this session — click to open dock + un-mute')
+    : tOr('alert_pill_tip', 'Alert dock — click to expand') + ` (${total})`;
 
   // Global header pill — always visible.
   const headerPill = document.getElementById('headerAlertPill');
@@ -3072,6 +3084,18 @@ function navigate(view, sessionId, fromPopstate) {
     _automataState.tab = 'projects';
     view = 'autonomous';
   }
+  // Before the locale bundle has loaded no view is drawn: every t() would answer with its
+  // raw key. The choice is remembered (the boot reads cs_active_view when it draws the
+  // first view, once the bundle is ready), so a tap in that window is not lost.
+  if (_i18nPending()) {
+    try {
+      localStorage.setItem('cs_active_view', view);
+      if (sessionId) localStorage.setItem('cs_active_session', sessionId);
+      else localStorage.removeItem('cs_active_session');
+    } catch (e) { /* storage unavailable: the boot draws its default view */ }
+    return;
+  }
+
   // Close the new-session modal on any navigation (Escape or nav tap).
   if (document.getElementById('newSessionModal')) closeNewSessionModal();
 
@@ -19098,7 +19122,7 @@ function renderSettingsView() {
               <button class="btn-primary" style="font-size:11px;display:none;" id="configViewerSaveBtn" onclick="saveConfigViewerEdit()">${t('config_viewer_save')||'Save'}</button>
             </div>
             <div style="font-size:10px;color:var(--text2);padding:0 12px 6px;">${t('config_viewer_hint')||'Secrets are already redacted server-side ("***") — editing a redacted field leaves the real value untouched; only change the fields you mean to.'}</div>
-            <pre id="configViewerBody" style="margin:0 12px 8px;padding:8px;background:var(--bg2);border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;">${loadingEyeBlock()}</pre>
+            <pre id="configViewerBody" data-raw-key-ok="the configuration viewer shows the daemon configuration as JSON" style="margin:0 12px 8px;padding:8px;background:var(--bg2);border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;">${loadingEyeBlock()}</pre>
             <textarea id="configViewerTextarea" style="display:none;margin:0 12px 8px;width:calc(100% - 24px);min-height:300px;font-family:monospace;font-size:11px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;"></textarea>
             <div id="configViewerResult" style="font-size:11px;padding:0 12px 8px;"></div>
           </div>
@@ -22707,8 +22731,10 @@ function loadAboutMcpToolsSummary() {
     } else {
       body = flat.map(toolRow).join('');
     }
+    // The tool names and descriptions come from the daemon's tool registry and are listed as
+    // written (data-raw-key-ok: the raw-key page scan skips them).
     el.innerHTML = `<div style="margin-bottom:4px;">${total} ${escHtml(t('about_mcp_tools_count_suffix')||'tools exposed')}</div>` +
-      `<div style="max-height:260px;overflow-y:auto;">${body}</div>`;
+      `<div data-raw-key-ok="MCP tool names and descriptions are API data, listed as written" style="max-height:260px;overflow-y:auto;">${body}</div>`;
   }).catch(e => { el.textContent = _fedMsg(e, t('about_mcp_tools_unavailable') || 'unavailable'); });
 }
 
@@ -32510,7 +32536,7 @@ function _headerModalShow(opts) {
   overlay.innerHTML = `<div class="confirm-modal header-modal" role="dialog" aria-modal="true" aria-labelledby="${escHtml(titleId)}" tabindex="-1" style="max-width:${escHtml(opts.maxWidth || '320px')};">
     <div class="header-modal-title-row"><span id="${escHtml(titleId)}" class="header-modal-title">${escHtml(opts.titleText || '')}</span>${opts.titleExtraHtml || ''}</div>
     ${opts.bodyHtml || ''}
-    <div class="header-modal-footer">${opts.footerHtml || '<span></span>'}<button type="button" class="btn-secondary header-modal-btn header-modal-close" onclick="${escHtml(closeCode)}">${escHtml(t('header_modal_close') || 'Close')}</button></div>
+    <div class="header-modal-footer">${opts.footerHtml || '<span></span>'}<button type="button" class="btn-secondary header-modal-btn header-modal-close" onclick="${escHtml(closeCode)}">${escHtml(tOr('header_modal_close', 'Close'))}</button></div>
   </div>`;
   const st = {
     overlay, openerId: opts.openerId || '', onClose: opts.onClose,
@@ -33422,6 +33448,20 @@ try {
 //   - No auto-dismiss; persists until operator clicks ✕ to acknowledge
 //   - Distinct red border + background
 //   - Multiple errors stack (newest at top)
+// An error toast can open before the locale bundle loads (a request that fails at start-up):
+// its button labels use the English text until then, and are redrawn here when it is ready.
+onI18nReady(() => {
+  document.querySelectorAll('.toast-error-app').forEach((toast) => {
+    const close = toast.querySelector('.toast-error-close');
+    if (close) {
+      const label = tOr('toast_error_dismiss', 'Dismiss this error (acknowledge)');
+      close.title = label;
+      close.setAttribute('aria-label', label);
+    }
+    const reconnect = toast.querySelector('.toast-error-reconnect');
+    if (reconnect) reconnect.textContent = tOr('toast_reconnect_btn', '⟳ Reconnect');
+  });
+});
 window.showError = function(message, detail) {
   let container = document.querySelector('.toast-container');
   if (!container) {
@@ -33448,7 +33488,7 @@ window.showError = function(message, detail) {
   const toast = document.createElement('div');
   toast.className = 'toast toast-error toast-error-app';
   toast.setAttribute('data-toast-key', dedupKey);
-  const closeTitle = (typeof t === 'function' && (t('toast_error_dismiss')||'')) || 'Dismiss this error (acknowledge)';
+  const closeTitle = tOr('toast_error_dismiss', 'Dismiss this error (acknowledge)');
   // v7.0.0-alpha.18 #250 — sentinel detail "__RECONNECT_BUTTON__"
   // signals the disconnect-toast variant that gets a Reconnect action
   // (calls forceRefreshConnection — same as long-press on header dot).
@@ -33457,7 +33497,7 @@ window.showError = function(message, detail) {
   const renderedDetail = isReconnect ? null : detail;
   const detailHTML = renderedDetail ? `<div class="toast-error-detail">${escHtml(renderedDetail)}</div>` : '';
   const reconnectBtn = isReconnect
-    ? `<button class="toast-error-reconnect" type="button" style="background:var(--accent,#6366f1);color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;margin-right:6px;">${escHtml(t('toast_reconnect_btn')||'⟳ Reconnect')}</button>`
+    ? `<button class="toast-error-reconnect" type="button" style="background:var(--accent,#6366f1);color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;margin-right:6px;">${escHtml(tOr('toast_reconnect_btn', '⟳ Reconnect'))}</button>`
     : '';
   toast.innerHTML = `
     <div class="toast-error-row">
