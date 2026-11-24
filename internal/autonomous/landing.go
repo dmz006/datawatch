@@ -41,6 +41,10 @@ type Landing struct {
 	Actor  string       `json:"actor,omitempty"`
 	At     time.Time    `json:"at"`
 	Reason string       `json:"reason,omitempty"`
+	// Tip is the commit the branch pointed at when a keep or drop decision
+	// was recorded. The unlanded list stops honouring the decision once the
+	// branch moves past it. Empty when the tip could not be read.
+	Tip string `json:"tip,omitempty"`
 }
 
 // markLandingPendingLocked sets a pending record when the Automaton has a
@@ -103,6 +107,7 @@ func (m *Manager) decideLanding(id, actor, reason string, state LandingState, ki
 	if !ok {
 		return nil, fmt.Errorf("automaton %q not found", id)
 	}
+	tip := m.landingBranchTip(p)
 	var refuse error
 	m.store.WithLock(func() {
 		branch := strings.TrimSpace(p.Git.Branch)
@@ -115,7 +120,7 @@ func (m *Manager) decideLanding(id, actor, reason string, state LandingState, ki
 			return
 		}
 		now := time.Now()
-		p.Landing = &Landing{State: state, Actor: actor, At: now, Reason: reason}
+		p.Landing = &Landing{State: state, Actor: actor, At: now, Reason: reason, Tip: tip}
 		p.UpdatedAt = now
 		p.Decisions = append(p.Decisions, Decision{At: now, Kind: kind, Actor: actor,
 			Note: fmt.Sprintf("landing: branch %s recorded %s: %s", branch, state, reason)})
@@ -128,6 +133,25 @@ func (m *Manager) decideLanding(id, actor, reason string, state LandingState, ki
 	}
 	out, _ := m.store.GetPRD(id)
 	return out, nil
+}
+
+// landingBranchTip reads the commit the Automaton's branch points at in the
+// base repository, read-only. It returns "" when there is no base repository,
+// no branch, or git cannot say: the decision is then recorded without a tip
+// and is honoured as before.
+func (m *Manager) landingBranchTip(p *PRD) string {
+	branch := strings.TrimSpace(p.Git.Branch)
+	repo := strings.TrimSpace(m.archivedBaseRepo())
+	if branch == "" || repo == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), archiveBranchGitTimeout)
+	defer cancel()
+	out, err := m.archivedUnmergedGitRunner().Run(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }
 
 // LandingMigrationOpts configures MigrateLanding.

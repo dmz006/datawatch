@@ -77,3 +77,14 @@ func (a *API) FixPermissions(paths []string) (int, error) {
 	}
 	return a.M.FixPermissions(paths)
 }
+
+// KeepLanding forwards to the manager's landing keep decision, so the REST
+// layer (which holds this wrapper, not the manager) can serve it.
+func (a *API) KeepLanding(id, actor, reason string) (*PRD, error) {
+	return a.M.KeepLanding(id, actor, reason)
+}
+
+// DropLanding forwards to the manager's landing drop decision.
+func (a *API) DropLanding(id, actor, reason string) (*PRD, error) {
+	return a.M.DropLanding(id, actor, reason)
+}

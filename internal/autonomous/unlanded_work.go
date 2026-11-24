@@ -10,6 +10,7 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -68,8 +69,19 @@ func ListUnlandedBranches(ctx context.Context, git MergeGitRunner, baseRepo stri
 		if branch == base {
 			continue
 		}
-		if _, err := git.Run(ctx, baseRepo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		tipOut, err := git.Run(ctx, baseRepo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+		if err != nil {
 			continue // branch already gone
+		}
+		// A kept or dropped landing decision settles the branch only while it
+		// still points at the commit the decision was made at. Without a
+		// recorded tip the decision is honoured as before.
+		moved := false
+		if landingDecided(p) {
+			if p.Landing.Tip == "" || p.Landing.Tip == strings.TrimSpace(tipOut) {
+				continue
+			}
+			moved = true
 		}
 		ahead, err := git.Run(ctx, baseRepo, "rev-list", "--count", base+".."+branch)
 		if err != nil || strings.TrimSpace(ahead) == "0" {
@@ -92,6 +104,17 @@ func ListUnlandedBranches(ctx context.Context, git MergeGitRunner, baseRepo stri
 			e.LastActivity, _ = time.Parse(time.RFC3339, strings.TrimSpace(ts))
 		}
 		e.Recommendation, e.Reason = classifyUnlanded(ctx, git, baseRepo, base, branch, unlanded)
+		if e.Recommendation != UnlandedLanded {
+			// A hand port shares no commit with its branch, so the commit
+			// comparison above cannot see it. The shipped record, or the
+			// same file content on the default branch, proves it landed.
+			if why, ok := deliveredOnBase(ctx, git, baseRepo, base, branch, p); ok {
+				e.Recommendation, e.Reason = UnlandedLanded, why
+			}
+		}
+		if moved && e.Recommendation != UnlandedLanded {
+			e.Reason = fmt.Sprintf("new commits after the decision (%s by %s): %s", p.Landing.State, p.Landing.Actor, e.Reason)
+		}
 		out = append(out, e)
 	}
 	rank := map[string]int{UnlandedNeedsDecision: 0, UnlandedSuperseded: 1, UnlandedLanded: 2}
@@ -158,4 +181,115 @@ func classifyUnlanded(ctx context.Context, git MergeGitRunner, repo, base, branc
 		return needs("")
 	}
 	return UnlandedSuperseded, fmt.Sprintf("%d commits are not on %s, but all %d files they change were changed on %s since the branch forked", unlanded, base, n, base)
+}
+
+// landingDecided reports whether the Automaton's landing record carries an
+// operator decision (kept or dropped). Those branches are settled on record,
+// with actor and reason, so they are not listed as work waiting to land, until
+// the branch moves past the tip recorded with the decision.
+func landingDecided(p *PRD) bool {
+	return p != nil && p.Landing != nil &&
+		(p.Landing.State == LandingKept || p.Landing.State == LandingDropped)
+}
+
+var shippedCommitRe = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
+
+// maxContentMatchFiles bounds the content comparison: a branch that changed
+// more files than this is left to the operator.
+const maxContentMatchFiles = 500
+
+// deliveredOnBase says whether the work of an archived Automaton's branch is
+// already on the default branch although git cherry sees no matching commit
+// (a hand port). Two proofs, both read-only:
+//
+//  1. the Automaton's shipped record (release and merge commit) names a commit
+//     that is an ancestor of the default branch;
+//  2. every file the branch's own commits changed has identical content (the
+//     same blob) at the branch tip and on the default branch.
+//
+// Anything else, including a git error, is not proof.
+func deliveredOnBase(ctx context.Context, git MergeGitRunner, repo, base, branch string, p *PRD) (string, bool) {
+	if hasShippedRecord(p) {
+		commit := strings.TrimSpace(p.MergeCommit)
+		if shippedCommitRe.MatchString(commit) {
+			if _, err := git.Run(ctx, repo, "merge-base", "--is-ancestor", commit, base); err == nil {
+				return fmt.Sprintf("delivered: its shipped record (%s, commit %s) is on %s", strings.TrimSpace(p.MergedInRelease), shortCommit(commit), base), true
+			}
+		}
+	}
+	files := branchChangedFiles(ctx, git, repo, base, branch)
+	if len(files) == 0 || len(files) > maxContentMatchFiles {
+		return "", false
+	}
+	// Same blob at the branch tip and on the base for every changed file.
+	for start := 0; start < len(files); start += contentMatchChunk {
+		end := start + contentMatchChunk
+		if end > len(files) {
+			end = len(files)
+		}
+		chunk := files[start:end]
+		args := []string{"rev-parse"}
+		for _, f := range chunk {
+			args = append(args, base+":"+f, branch+":"+f)
+		}
+		out, err := git.Run(ctx, repo, args...)
+		if err != nil {
+			return "", false // a file is missing on one side, or git failed: not proven
+		}
+		ids := strings.Fields(out)
+		if len(ids) != 2*len(chunk) {
+			return "", false
+		}
+		for k := 0; k < len(ids); k += 2 {
+			if ids[k] != ids[k+1] {
+				return "", false
+			}
+		}
+	}
+	return fmt.Sprintf("delivered by content: all %d files the branch changed have the same content on %s", len(files), base), true
+}
+
+// contentMatchChunk is how many files one rev-parse call compares.
+const contentMatchChunk = 100
+
+// branchChangedFiles lists the paths touched by the commits the branch has
+// that the base lacks (renames listed as delete plus add, so both paths are
+// compared). Read-only (git log). Nil on any error.
+func branchChangedFiles(ctx context.Context, git MergeGitRunner, repo, base, branch string) []string {
+	out, err := git.Run(ctx, repo, "log", "--no-renames", "--name-only", "--format=", "-z", base+".."+branch)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var files []string
+	for _, f := range strings.FieldsFunc(out, func(r rune) bool { return r == 0 || r == '\n' }) {
+		if f = strings.TrimSpace(f); f != "" && !seen[f] {
+			seen[f] = true
+			files = append(files, f)
+		}
+	}
+	return files
+}
+
+// checkBranchAheadDelivered is checkBranchAhead plus the delivery proof of
+// deliveredOnBase: a branch the comparison finds ahead of the base, whose work
+// is already on the base (the record's shipped record, or the same file
+// content), reads as merged, with the proof in detail. p may be nil, in which
+// case only the content proof applies. The close-step guard, the carry-forward
+// and the unarchive check keep using checkBranchAhead, which is unchanged.
+func checkBranchAheadDelivered(ctx context.Context, git MergeGitRunner, repo, branch, base string, p *PRD) (state string, ahead int, detail string) {
+	state, ahead, detail = checkBranchAhead(ctx, git, repo, branch, base)
+	if state != branchCheckAhead {
+		return state, ahead, detail
+	}
+	if base == "" {
+		base = resolveMergeBase(ctx, git, repo)
+	}
+	if base == "" {
+		return state, ahead, detail
+	}
+	if why, ok := deliveredOnBase(ctx, git, repo, base, branch, p); ok {
+		return branchCheckMerged, 0, why
+	}
+	return state, ahead, detail
 }

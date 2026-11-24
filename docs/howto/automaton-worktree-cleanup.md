@@ -582,9 +582,19 @@ because their commits are expected to be ahead.
 
 | Recommendation | Meaning |
 |---|---|
-| `landed` | Every commit is already on the default branch by content: the branch is a leftover |
+| `landed` | The work is already on the default branch: every commit matches by content, or the Automaton's shipped record names a commit that is on the default branch, or every file the branch changed has the same content there (a hand port). The branch is a leftover |
 | `superseded` | Some commits are not on the default branch, but every file they change was changed on the default branch since the branch forked, so later work replaced them |
 | `needs_decision` | Commits are not on the default branch and nothing shows they were replaced: you decide |
+
+A hand port shares no commit with its branch, so the commit comparison cannot
+see it. The list therefore also checks the Automaton's shipped record (release
+and merge commit; the commit must be on the default branch) and the file
+content, and shows such a branch as `landed` with the reason. A branch whose
+landing record says kept or dropped (see the landing record how-to) is settled
+on record and is not listed, until the branch moves past the commit it pointed
+at when you decided: then it is listed again with the reason "new commits after
+the decision". The archived-unmerged list and the finished-not-merged badge use
+the same shipped-record and content check.
 
 Each entry shows the Automaton, its title, the branch, the number of commits not
 landed, the last activity, the recommendation and a one-line reason. The list is
