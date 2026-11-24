@@ -3686,6 +3686,11 @@ type AutonomousConfig struct {
 	CapacitySupervisorReserveClaudeSetting *int `yaml:"capacity_supervisor_reserve_claude,omitempty" json:"capacity_supervisor_reserve_claude,omitempty"`
 	CapacitySupervisorReservePiSetting     *int `yaml:"capacity_supervisor_reserve_pi,omitempty" json:"capacity_supervisor_reserve_pi,omitempty"`
 	CapacitySupervisorReserveHostSetting   *int `yaml:"capacity_supervisor_reserve_host,omitempty" json:"capacity_supervisor_reserve_host,omitempty"`
+	// CapacitySupervisorCredentialEnabled: a supervisor credential (a named,
+	// revocable token an operator mints) makes a REST session start the
+	// supervisor class, for an external supervisor until the daemon runs that job
+	// itself. Unset = true; false makes the credential do nothing. Read live.
+	CapacitySupervisorCredentialEnabled *bool `yaml:"capacity_supervisor_credential_enabled,omitempty" json:"capacity_supervisor_credential_enabled,omitempty"`
 	// CapacityOperatorOverageAlert raises an alert each time an operator start
 	// is admitted over a pool's limit. Default false (the overage is still
 	// recorded and shown on status). Read live.

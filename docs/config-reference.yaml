@@ -3494,6 +3494,12 @@ autonomous:
   capacity_supervisor_reserve_pi: 1
   capacity_supervisor_reserve_host: 4
   capacity_operator_overage_alert: false
+  # capacity_supervisor_credential_enabled (default true): a supervisor
+  # credential (minted with `datawatch capacity supervisor-credential mint`) makes
+  # a REST session start the supervisor class, for an external supervisor until
+  # the daemon runs that job itself. false makes every credential do nothing
+  # without revoking it. Read live.
+  capacity_supervisor_credential_enabled: true
   # How often the daemon re-checks LLM role tags for contention (seconds):
   # two enabled entries claiming one role, or two roles that have converged on
   # one entry since the last check. Warnings only; nothing is blocked. Unset or

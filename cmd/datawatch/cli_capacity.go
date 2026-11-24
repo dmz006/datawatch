@@ -45,6 +45,7 @@ func newCapacityCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
 	c.AddCommand(newCapacityAdmissionCmd())
+	c.AddCommand(newCapacitySupervisorCredentialCmd())
 	return c
 }
 

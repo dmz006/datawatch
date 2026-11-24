@@ -59,6 +59,13 @@ func (a *AutonomousConfig) CapacitySupervisorReserveHost() int {
 	return intOr(a.CapacitySupervisorReserveHostSetting, DefaultCapacitySupervisorReserveHost)
 }
 
+// CapacitySupervisorCredentialOn reports whether a supervisor credential makes a
+// REST start the supervisor class (default on). Off, a credentialed start is an
+// operator start and the credential does nothing.
+func (a *AutonomousConfig) CapacitySupervisorCredentialOn() bool {
+	return a == nil || a.CapacitySupervisorCredentialEnabled == nil || *a.CapacitySupervisorCredentialEnabled
+}
+
 // validateCapacityAdmission rejects a negative admission value.
 func validateCapacityAdmission(a *AutonomousConfig) error {
 	for k, p := range map[string]*int{

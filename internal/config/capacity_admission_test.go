@@ -39,3 +39,19 @@ func TestCapacityAdmissionRejectsNegative(t *testing.T) {
 		t.Fatal("unset must validate")
 	}
 }
+
+func TestCapacitySupervisorCredentialDefaultsOn(t *testing.T) {
+	var a AutonomousConfig
+	if !a.CapacitySupervisorCredentialOn() {
+		t.Fatal("unset must read on")
+	}
+	var nilCfg *AutonomousConfig
+	if !nilCfg.CapacitySupervisorCredentialOn() {
+		t.Fatal("nil receiver must read on")
+	}
+	off := false
+	a.CapacitySupervisorCredentialEnabled = &off
+	if a.CapacitySupervisorCredentialOn() {
+		t.Fatal("explicit false must read off")
+	}
+}

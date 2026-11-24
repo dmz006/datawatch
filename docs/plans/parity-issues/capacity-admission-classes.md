@@ -53,6 +53,15 @@ Capability parity with the PWA; each app uses its own idiomatic controls.
   `capacity_pool_over` and `capacity_pool_reserve` strings (`{0}` is the count).
 - A backend listed under `unmapped` is shown as a warning line.
 
+## Supervisor credential (no app change)
+
+The supervisor credential (`autonomous.capacity_supervisor_credential_enabled`, default true, plus the CLI and
+REST endpoint `/api/capacity/supervisor-credential`) is operator tooling for an external supervisor and a
+removable stopgap. The apps need neither a setting row for it nor a way to mint it: the token is a secret that
+is not meant to pass through a phone. The one setting is in the PWA Settings row list and the locale key
+`settings_capacity_supervisor_credential_enabled`; the apps may show it as a switch with the other capacity
+rows (optional).
+
 ## Restarted workers (no app change)
 
 A restarted worker session (rate-limit fallback, exit hook) keeps the worker class and queues at the head, ahead

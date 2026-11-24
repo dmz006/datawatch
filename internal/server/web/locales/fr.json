@@ -2294,6 +2294,7 @@
   "settings_capacity_supervisor_reserve_claude": "Tampon superviseur : emplacements Claude au-dessus du plafond (défaut 1)",
   "settings_capacity_supervisor_reserve_pi": "Tampon superviseur : emplacements pi au-dessus du plafond (défaut 1)",
   "settings_capacity_supervisor_reserve_host": "Tampon superviseur : emplacements de session hôte au-dessus du maximum (défaut 4)",
+  "settings_capacity_supervisor_credential_enabled": "Le jeton superviseur place un démarrage REST dans la classe superviseur",
   "settings_capacity_operator_overage_alert": "Alerter quand une session opérateur démarre au-dessus d’une limite",
   "settings_capacity_slot_reconcile_grace": "Délai de grâce de réconciliation des emplacements (s, défaut 60, min. 10, 0 = 60)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",

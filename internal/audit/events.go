@@ -415,6 +415,17 @@ const (
 	// the ask policy, so the model is not loaded onto the node.
 	// Details: node, model, policy, reason.
 	ActionPlacementDenied = "placement_denied"
+	// ActionSupervisorCredentialMint — an operator minted a supervisor
+	// credential. Details: credential (its name). Never the token.
+	ActionSupervisorCredentialMint = "supervisor_credential_mint"
+	// ActionSupervisorCredentialRevoke — an operator revoked one.
+	// Details: credential.
+	ActionSupervisorCredentialRevoke = "supervisor_credential_revoke"
+	// ActionSupervisorCredentialStart — a session start admitted in the
+	// supervisor class because it carried a supervisor credential. Actor is
+	// supervisor-credential:<name>. Details: credential, backend, model,
+	// holder.
+	ActionSupervisorCredentialStart = "supervisor_credential_start"
 	// ActionPlacementLoaded — a model was loaded onto a node, under auto_load
 	// (no ask) or after an approval under ask. Details: node, model, policy,
 	// reason ("" when the reason carried no text).

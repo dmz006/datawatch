@@ -838,6 +838,7 @@ earlier behaviour):
   capacity_supervisor_reserve_claude  Claude slots above the cap only supervisor sessions may use (default 1)
   capacity_supervisor_reserve_pi  pi slots above the cap only supervisor sessions may use (default 1)
   capacity_supervisor_reserve_host  host session slots above max_sessions only supervisor sessions may use (default 4)
+  capacity_supervisor_credential_enabled  whether a supervisor credential makes a REST start the supervisor class (default true)
   capacity_operator_overage_alert  raise an alert when an operator session starts over a pool's limit (default false; always recorded)
   capacity_slot_reconcile_grace_seconds  how long a capacity slot may look unmatched to a live worker before it is reconciled away (default 60, minimum 10; 0 = default)
 

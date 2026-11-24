@@ -229,6 +229,20 @@ except the adoption wait, which is read once as the ledger starts):
   (unset = 4) (ints >= 0): the supervisor buffers above a pool's limit. The host buffer also
   raises the session manager's hard session cap for the supervisor class
   (`Manager.SetSupervisorSlots`).
+- Supervisor credential (a removable stopgap for the external detector timer):
+  `internal/server/supervisor_credential.go`. `POST/GET/DELETE /api/capacity/supervisor-credential`
+  mint (token shown once), list names and revoke; admin token only (a session-scoped token or a federation
+  peer gets 403). The token is a `SessionTokenStore` token with owner
+  `instance:supervisor-credential:<name>` (kept by the orphan sweep, persisted, revocable) and exactly
+  `sessions:write` plus `capacity:supervisor-start` (`federation.CapCapacitySupervisorStart`, in no built-in
+  group). `Server.startAdmissionClass` gives `supervisor` only to a token with that owner prefix and
+  capability while `autonomous.capacity_supervisor_credential_enabled` (bool, unset = true) is on; a session
+  token that lists the capability, or a forged `X-Datawatch-Internal-Launch` header, is an operator start.
+  Supervisor class never exceeds a pool's limit plus its supervisor buffer (a full buffer waits, then 503),
+  and each credentialed start writes `supervisor_credential_start` (actor
+  `supervisor-credential:<name>`); mint and revoke write `supervisor_credential_mint` and
+  `supervisor_credential_revoke`. Remove the file, the capability, the audit actions and the setting when
+  the native detector ships.
 - `autonomous.capacity_operator_overage_alert` (bool, default false): raise an alert each
   time an operator lease is granted over a pool's limit (`Options.OnOverage`). The overage is
   recorded either way.

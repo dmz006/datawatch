@@ -145,7 +145,7 @@ func TestStartHandlerAdmissionIgnoresOneShot(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(src)
-	i := strings.Index(s, "admitClass := startAdmissionClass(r)")
+	i := strings.Index(s, "admitClass, credName := s.startAdmissionClass(r)")
 	if i < 0 {
 		t.Fatal("handleStartSession no longer decides the class with startAdmissionClass(r)")
 	}

@@ -5834,6 +5834,59 @@ paths:
                             since: {type: string, format: date-time}
                             note: {type: string, description: Sentence for a task parked while holding resources}
 
+  /api/capacity/supervisor-credential:
+    get:
+      tags: [Autonomous]
+      summary: List the supervisor credentials by name
+      operationId: capacitySupervisorCredentialList
+      description: Operator only (the admin token); a session-scoped token or a federation peer gets 403. Never returns a token. A supervisor credential makes a REST session start the supervisor admission class; it is a removable stopgap for an external supervisor.
+      responses:
+        "200":
+          description: Credential names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credentials: {type: array, items: {type: string}}
+        "403": {description: Not the operator}
+    post:
+      tags: [Autonomous]
+      summary: Mint a supervisor credential
+      operationId: capacitySupervisorCredentialMint
+      description: Operator only. The token carries sessions:write and capacity:supervisor-start only and is shown once; minting the same name replaces it. A start with it is supervisor class, uses the supervisor buffer and never goes past it, and is audited as supervisor_credential_start with the name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, description: "1 to 40 characters of a-z, 0-9, dot, dash, underscore, starting with a letter or digit"}
+      responses:
+        "200":
+          description: The credential
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: {type: string}
+                  token: {type: string, description: "Shown once"}
+        "400": {description: Bad name}
+        "403": {description: Not the operator}
+    delete:
+      tags: [Autonomous]
+      summary: Revoke a supervisor credential
+      operationId: capacitySupervisorCredentialRevoke
+      description: Operator only. The token stops working at once.
+      parameters:
+        - {name: name, in: query, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Revoked}
+        "400": {description: Bad name}
+        "403": {description: Not the operator}
   /api/capacity/admission:
     get:
       summary: Capacity admission query

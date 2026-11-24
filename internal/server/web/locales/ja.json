@@ -2294,6 +2294,7 @@
   "settings_capacity_supervisor_reserve_claude": "スーパーバイザー用バッファ: 上限を超える Claude のスロット（既定 1）",
   "settings_capacity_supervisor_reserve_pi": "スーパーバイザー用バッファ: 上限を超える pi のスロット（既定 1）",
   "settings_capacity_supervisor_reserve_host": "スーパーバイザー用バッファ: 最大セッション数を超えるホストのセッションスロット（既定 4）",
+  "settings_capacity_supervisor_credential_enabled": "スーパーバイザー認証情報で REST のセッション開始をスーパーバイザークラスにする",
   "settings_capacity_operator_overage_alert": "オペレーターのセッションが上限を超えて開始したときに通知する",
   "settings_capacity_slot_reconcile_grace": "スロット照合の猶予時間(秒、既定 60、最小 10、0 = 60)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",

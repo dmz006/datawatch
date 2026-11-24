@@ -31,19 +31,22 @@ func InternalLaunchValue(class capacity.Class) string {
 	return string(class) + ":" + internalLaunchToken
 }
 
-// startAdmissionClass decides how a session start is admitted. Only a request
-// carrying the daemon's own marker is a worker (already admitted upstream by
-// the manager that launched it) or a supervisor; everything else, including a
-// request that claims one_shot, is an operator start.
-func startAdmissionClass(r *http.Request) capacity.Class {
+// startAdmissionClass decides how a session start is admitted, and, for a
+// supervisor credential, which credential did it. Only a request carrying the
+// daemon's own marker is a worker (already admitted upstream by the manager that
+// launched it) or a supervisor; a request authenticated with a supervisor
+// credential is a supervisor too. Everything else, including a request that
+// claims one_shot, is an operator start.
+func (s *Server) startAdmissionClass(r *http.Request) (capacity.Class, string) {
 	v := r.Header.Get(InternalLaunchHeader)
-	class, token, ok := strings.Cut(v, ":")
-	if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(internalLaunchToken)) != 1 {
-		return capacity.ClassOperator
+	if class, token, ok := strings.Cut(v, ":"); ok && subtle.ConstantTimeCompare([]byte(token), []byte(internalLaunchToken)) == 1 {
+		switch c := capacity.Class(class); c {
+		case capacity.ClassWorker, capacity.ClassSupervisor:
+			return c, ""
+		}
 	}
-	switch c := capacity.Class(class); c {
-	case capacity.ClassWorker, capacity.ClassSupervisor:
-		return c
+	if name := s.supervisorCredentialName(r); name != "" {
+		return capacity.ClassSupervisor, name
 	}
-	return capacity.ClassOperator
+	return capacity.ClassOperator, ""
 }

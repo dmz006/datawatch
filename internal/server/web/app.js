@@ -27225,6 +27225,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.capacity_supervisor_reserve_claude', label: 'Supervisor buffer: Claude slots above the cap (default 1)', labelKey: 'settings_capacity_supervisor_reserve_claude', type: 'number', min: 0, placeholder: '1' },
     { key: 'autonomous.capacity_supervisor_reserve_pi', label: 'Supervisor buffer: pi slots above the cap (default 1)', labelKey: 'settings_capacity_supervisor_reserve_pi', type: 'number', min: 0, placeholder: '1' },
     { key: 'autonomous.capacity_supervisor_reserve_host', label: 'Supervisor buffer: host session slots above max sessions (default 4)', labelKey: 'settings_capacity_supervisor_reserve_host', type: 'number', min: 0, placeholder: '4' },
+    { key: 'autonomous.capacity_supervisor_credential_enabled', label: 'Supervisor credential makes a REST start the supervisor class', labelKey: 'settings_capacity_supervisor_credential_enabled', type: 'toggle' },
     { key: 'autonomous.capacity_operator_overage_alert', label: 'Alert when an operator session starts over a limit', labelKey: 'settings_capacity_operator_overage_alert', type: 'toggle' },
     { key: 'autonomous.capacity_gpu_util_pct', label: 'Hold tasks while node GPU is above (% util, 0=off)', labelKey: 'settings_capacity_gpu_util', type: 'number', placeholder: '0' },
     { key: 'autonomous.capacity_rate_requests', label: 'Rate ceiling per LLM: requests per window (0 = none)', labelKey: 'capacity_rate_requests_label', type: 'number', min: 0, placeholder: '0' },

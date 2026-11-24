@@ -1454,6 +1454,18 @@ An operator start is never refused. When `llm:claude-code` is full, the session 
 
 Supervisor sessions use slots above a pool's limit that workers cannot take: `autonomous.capacity_supervisor_reserve_claude` (default 1), `autonomous.capacity_supervisor_reserve_pi` (default 1) and `autonomous.capacity_supervisor_reserve_host` (default 4, above `session.max_sessions`). They are counted in the pool's used figure, and a usage back-off or burn hold does not block them. A pool line shows `+1 reserved for supervisors`.
 
+### The supervisor credential
+
+An external supervisor (the detector timer) reaches the daemon over REST, which makes its starts operator starts. To give it the supervisor class without trusting a request field, mint a credential as the operator:
+
+```
+datawatch capacity supervisor-credential mint --name detector   # token shown once
+datawatch capacity supervisor-credential list                   # names only
+datawatch capacity supervisor-credential revoke --name detector # stops working at once
+```
+
+Send the token as the bearer token of the `POST /api/sessions/start` call only (it carries just `sessions:write` and `capacity:supervisor-start`); keep using the normal token for everything else. A start with it is supervisor class: it may use the reserved supervisor buffer on each pool and never goes past it (with the buffer in use it waits for its wait time and is then refused with 503, and starts nothing), and each one is audited as `supervisor_credential_start` with the credential's name as actor. A session credential or a federation peer cannot mint, list or revoke it, and a session token that only lists the capability is an operator start. `autonomous.capacity_supervisor_credential_enabled` false makes every credential do nothing. It is a stopgap that is removed together with the capability when the daemon runs the detector natively. The credential is managed on the CLI and REST only: the token is a secret that must not pass through chat, MCP or the web app.
+
 ### The Claude account pool
 
 Every claude-code entry also draws on the pool `account:claude`, limited by `autonomous.capacity_account_claude_limit` (default 2: claude-code 1 plus claude-lean 1; `0` = unlimited), so the per-entry limits cannot add up past the account. A subscription backend a start names that matches no LLM entry and no compute node is listed under `unmapped` on `GET /api/capacity` (and as `No LLM entry for backend ...` in `datawatch capacity`) and held to one session until an entry is added.

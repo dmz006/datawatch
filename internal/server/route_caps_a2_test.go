@@ -39,6 +39,11 @@ var routeCapsExceptions = map[string]string{
 		"checkProxyAuth (admin/federation token OR a peer-scoped proxy " +
 		"token bound to the exact peer in the path), not the general cap " +
 		"model.",
+	"handleSupervisorCredential": "mints, lists and revokes the supervisor " +
+		"credential; refuses any peer or session-scoped caller itself and " +
+		"admits only the admin token, so no capability is sufficient for a " +
+		"non-admin caller (a capability would let a granted peer mint a " +
+		"credential that raises its own admission class).",
 	"handleRotateToken": "SEC-016 — rotates the admin bearer token itself; " +
 		"explicitly refuses any peer or session-scoped caller rather than " +
 		"gating on a capability (no capability should ever be sufficient " +

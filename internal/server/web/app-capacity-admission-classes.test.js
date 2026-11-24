@@ -16,6 +16,7 @@ const FIELDS = [
   ['autonomous.capacity_supervisor_reserve_claude', 'settings_capacity_supervisor_reserve_claude', 'number'],
   ['autonomous.capacity_supervisor_reserve_pi', 'settings_capacity_supervisor_reserve_pi', 'number'],
   ['autonomous.capacity_supervisor_reserve_host', 'settings_capacity_supervisor_reserve_host', 'number'],
+  ['autonomous.capacity_supervisor_credential_enabled', 'settings_capacity_supervisor_credential_enabled', 'toggle'],
   ['autonomous.capacity_operator_overage_alert', 'settings_capacity_operator_overage_alert', 'toggle'],
 ];
 const POOL_KEYS = ['capacity_pool_account', 'capacity_pool_over', 'capacity_pool_reserve'];
