@@ -6,7 +6,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -39,12 +38,12 @@ func newAutonomousHousekeepingRepairsCmd() *cobra.Command {
 				_, err = cmd.OutOrStdout().Write(body)
 				return err
 			}
-			var parsed autonomous.HousekeepingRepairsView
-			if err := json.Unmarshal(body, &parsed); err != nil {
+			parsed, err := autonomous.ParseHousekeepingRepairsBody(body)
+			if err != nil {
 				return err
 			}
 			buf := &strings.Builder{}
-			autonomous.RenderHousekeepingRepairs(buf, &parsed)
+			autonomous.RenderHousekeepingRepairsBody(buf, parsed)
 			_, err = fmt.Fprint(cmd.OutOrStdout(), buf.String())
 			return err
 		},

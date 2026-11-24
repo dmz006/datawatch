@@ -5,7 +5,6 @@
 package router
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
@@ -38,12 +37,12 @@ func (r *Router) replyHousekeepingRepairs(args []string) {
 		r.reply("autonomous housekeeping-repairs failed", err.Error())
 		return
 	}
-	var body autonomous.HousekeepingRepairsView
-	if err := json.Unmarshal([]byte(out), &body); err != nil {
+	body, err := autonomous.ParseHousekeepingRepairsBody([]byte(out))
+	if err != nil {
 		r.reply("autonomous housekeeping-repairs failed", "unparseable read view: "+err.Error())
 		return
 	}
 	var b strings.Builder
-	autonomous.RenderHousekeepingRepairs(&b, &body)
+	autonomous.RenderHousekeepingRepairsBody(&b, body)
 	r.reply("autonomous housekeeping-repairs", strings.TrimRight(b.String(), "\n"))
 }
