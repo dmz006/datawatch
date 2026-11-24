@@ -282,3 +282,66 @@ func TestAddClaudeUsage_FeedsLedger(t *testing.T) {
 		t.Fatalf("ledger entry %+v", e)
 	}
 }
+
+// Tool time is the time between a tool_use line and the tool_result that
+// answers it, summed over the session. Calls made in parallel overlap, so the
+// sum can exceed the wall time; it is the total time spent inside tools.
+func TestScanClaudeUsageDelta_ToolTime(t *testing.T) {
+	path := writeFixtureTranscript(t,
+		`{"type":"assistant","timestamp":"2026-11-24T10:00:00.000Z","message":{"id":"m1","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"t1"},{"type":"tool_use","id":"t2"}]}}`,
+		`{"type":"user","timestamp":"2026-11-24T10:00:02.500Z","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}`,
+		`{"type":"user","timestamp":"2026-11-24T10:00:04.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"t2"}]}}`,
+		`{"type":"user","timestamp":"2026-11-24T10:00:09.000Z","message":{"content":"plain text turn"}}`,
+		// a result with no recorded tool_use (before the checkpoint) adds nothing
+		`{"type":"user","timestamp":"2026-11-24T10:00:10.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"gone"}]}}`,
+		`{"type":"assistant","timestamp":"2026-11-24T10:01:00.000Z","message":{"id":"m2","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"t3"}]}}`,
+	)
+	got := scanFixture(t, "sess-tool-time-fixture", path)
+	if got.ToolCalls != 3 {
+		t.Fatalf("tool calls %d, want 3", got.ToolCalls)
+	}
+	// t1 2.5s + t2 4s; t3 has no result yet and counts nothing.
+	if got.ToolSeconds != 6.5 {
+		t.Fatalf("tool seconds %v, want 6.5", got.ToolSeconds)
+	}
+}
+
+// A tool still running at the end of one tick is closed by its result on the next.
+func TestScanClaudeUsageDelta_ToolTimeAcrossTicks(t *testing.T) {
+	const id = "sess-tool-time-ticks-fixture"
+	path := writeFixtureTranscript(t,
+		`{"type":"assistant","timestamp":"2026-11-24T10:00:00Z","message":{"id":"m1","usage":{},"content":[{"type":"tool_use","id":"t1"}]}}`)
+	t.Cleanup(func() { claudeUsageLinesRead.Delete(id); claudeUsageSeen.Delete(id) })
+	var total float64
+	rep := func(_ string, d ClaudeUsageDelta) { total += d.ToolSeconds }
+	scanClaudeUsageDeltaOnce(path, id, rep)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- test fixture
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(`{"type":"user","timestamp":"2026-11-24T10:00:30Z","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}` + "\n")
+	_ = f.Close()
+	scanClaudeUsageDeltaOnce(path, id, rep)
+	if total != 30 {
+		t.Fatalf("tool seconds across ticks %v, want 30", total)
+	}
+}
+
+func TestAddClaudeUsage_ToolSecondsFeedLedger(t *testing.T) {
+	mgr, led := newLedgerManager(t)
+	sess := &Session{FullID: "host-ts1", ID: "ts1", BackendFamily: "claude-code", State: StateRunning}
+	mgr.store.mu.Lock()
+	mgr.store.sessions[sess.FullID] = sess
+	mgr.store.mu.Unlock()
+	for _, secs := range []float64{2.5, 4} {
+		if err := mgr.AddClaudeUsage(sess.FullID, ClaudeUsageDelta{ToolCalls: 1, ToolSeconds: secs, LinesRead: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := mgr.GetSession(sess.FullID); got.ToolSeconds != 6.5 {
+		t.Fatalf("session tool seconds %v, want 6.5", got.ToolSeconds)
+	}
+	if e := led.last(t); e.ToolSeconds != 6.5 || e.ToolCalls != 2 {
+		t.Fatalf("ledger entry %+v", e)
+	}
+}

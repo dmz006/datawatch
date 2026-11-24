@@ -79,6 +79,7 @@ func claudeTranscriptPath(projectDir, fullID string) string {
 // decode to zero values and contribute nothing.
 type claudeUsageEntry struct {
 	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"`
 	RequestID string `json:"requestId"`
 	Message   struct {
 		ID    string `json:"id"`
@@ -99,13 +100,73 @@ type claudeUsageEntry struct {
 type ClaudeUsageDelta struct {
 	In, Out, CacheRead, CacheCreation, ToolCalls int
 	LinesRead                                    int
+	// ToolSeconds is the time spent inside tool calls: for each tool_use,
+	// the time until the tool_result that answers it. Parallel calls overlap,
+	// so the sum can exceed wall time.
+	ToolSeconds float64
 }
 
 // claudeUsageSeen holds, per session, the message ids and tool_use ids
 // already counted, so a message written on several lines is counted once.
 var claudeUsageSeen sync.Map // FullID -> *claudeSeen
 
-type claudeSeen struct{ msgs, tools map[string]struct{} }
+type claudeSeen struct {
+	msgs, tools map[string]struct{}
+	// started holds the time of each tool_use still waiting for its result.
+	started map[string]time.Time
+}
+
+// noteToolStarts records when each tool_use in an assistant line began, the
+// first time its id is seen.
+func noteToolStarts(raw json.RawMessage, at time.Time, seen *claudeSeen) {
+	if at.IsZero() {
+		return
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+	}
+	if len(raw) == 0 || raw[0] != '[' || json.Unmarshal(raw, &blocks) != nil {
+		return
+	}
+	for _, b := range blocks {
+		if b.Type != "tool_use" || b.ID == "" {
+			continue
+		}
+		if seen.started == nil {
+			seen.started = map[string]time.Time{}
+		}
+		if _, dup := seen.started[b.ID]; !dup {
+			seen.started[b.ID] = at
+		}
+	}
+}
+
+// toolResultSeconds closes the tool calls a user line answers and returns the
+// time they took. A result whose tool_use was not recorded (it is before the
+// checkpoint, or the daemon restarted while the tool ran) adds nothing.
+func toolResultSeconds(raw json.RawMessage, at time.Time, seen *claudeSeen) float64 {
+	var blocks []struct {
+		Type      string `json:"type"`
+		ToolUseID string `json:"tool_use_id"`
+	}
+	if at.IsZero() || len(raw) == 0 || raw[0] != '[' || json.Unmarshal(raw, &blocks) != nil {
+		return 0
+	}
+	var total float64
+	for _, b := range blocks {
+		if b.Type != "tool_result" || b.ToolUseID == "" {
+			continue
+		}
+		if t0, ok := seen.started[b.ToolUseID]; ok {
+			delete(seen.started, b.ToolUseID)
+			if d := at.Sub(t0).Seconds(); d > 0 {
+				total += d
+			}
+		}
+	}
+	return total
+}
 
 func countToolUse(raw json.RawMessage, seen map[string]struct{}) int {
 	var blocks []struct {
@@ -236,9 +297,15 @@ func scanClaudeTranscriptFile(f *os.File, alreadyRead int, seen *claudeSeen) (d 
 		if json.Unmarshal(scanner.Bytes(), &entry) != nil {
 			continue // mid-write partial line -- pick it up again next tick once it's complete
 		}
+		at, _ := time.Parse(time.RFC3339Nano, entry.Timestamp)
+		if entry.Type == "user" {
+			d.ToolSeconds += toolResultSeconds(entry.Message.Content, at, seen)
+			continue
+		}
 		if entry.Type != "assistant" {
 			continue
 		}
+		noteToolStarts(entry.Message.Content, at, seen)
 		d.ToolCalls += countToolUse(entry.Message.Content, seen.tools)
 		// Usage is repeated on every line of one message: count it once.
 		id := entry.Message.ID

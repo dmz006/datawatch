@@ -111,6 +111,7 @@ func (src managerCostSource) Records(opts costreport.SourceOptions) (*costreport
 			CacheRead:         int(e.CacheRead),
 			CacheCreation:     int(e.CacheCreation),
 			ToolCalls:         int(e.ToolCalls),
+			ToolSeconds:       e.ToolSeconds,
 			FirstActivity:     e.StartedAt,
 			LastActivity:      e.EndedAt,
 			ActiveSeconds:     e.ActiveSeconds,

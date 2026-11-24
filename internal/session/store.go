@@ -291,6 +291,10 @@ type Session struct {
 	CacheReadTokens     int `json:"cache_read_tokens,omitempty"`
 	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
 	ToolCalls           int `json:"tool_calls,omitempty"`
+	// ToolSeconds is the total time spent inside tool calls, from each
+	// tool_use to its tool_result. Parallel calls overlap, so it can exceed
+	// the session's wall time. Subagent tool time is included.
+	ToolSeconds float64 `json:"tool_seconds,omitempty"`
 
 	// Subagent share of the totals above. A Claude Code subagent has no
 	// session record, so its usage is recorded under the parent session: it

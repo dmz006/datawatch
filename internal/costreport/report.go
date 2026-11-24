@@ -145,6 +145,8 @@ type Record struct {
 	CacheRead     int
 	CacheCreation int
 	ToolCalls     int
+	// ToolSeconds is the time the session spent inside tool calls.
+	ToolSeconds float64
 	// FirstActivity and LastActivity bound the session's wall-clock span.
 	FirstActivity time.Time
 	LastActivity  time.Time
@@ -424,6 +426,9 @@ type Row struct {
 	CacheRead     int `json:"cache_read"`
 	CacheCreation int `json:"cache_creation"`
 	ToolCalls     int `json:"tool_calls"`
+	// ToolSeconds is the total time spent inside tool calls, summed over the
+	// group (parallel calls overlap, so it can exceed wall time).
+	ToolSeconds float64 `json:"tool_seconds,omitempty"`
 	// LocalTokens is the in and out tokens of the group's local-model
 	// sessions (a subset of TokensIn + TokensOut).
 	LocalTokens int `json:"local_tokens"`
@@ -492,6 +497,7 @@ type ModelRow struct {
 	CacheRead     int     `json:"cache_read"`
 	CacheCreation int     `json:"cache_creation"`
 	ToolCalls     int     `json:"tool_calls"`
+	ToolSeconds   float64 `json:"tool_seconds,omitempty"`
 	ActiveSeconds float64 `json:"active_seconds"`
 	// APIEquivalentUSD is the model's spend priced at its own rate — the
 	// per-model cost entry when one is configured, the backend's rate
@@ -884,7 +890,7 @@ func Build(
 		local                 int
 		notReported           int
 		first, last           time.Time
-		active                float64
+		active, toolSecs      float64
 		usd                   float64
 		allRate               bool
 		backends              []string
@@ -907,7 +913,7 @@ func Build(
 		sessions              int
 		tin, tout             int
 		cread, ccreate, tools int
-		active                float64
+		active, toolSecs      float64
 		usd                   float64
 		allRate               bool
 	}
@@ -950,6 +956,7 @@ func Build(
 		a.cread += r.CacheRead
 		a.ccreate += r.CacheCreation
 		a.tools += r.ToolCalls
+		a.toolSecs += r.ToolSeconds
 		if !r.Local && isLocalBackend(r.Backend) {
 			a.local += r.TokensIn + r.TokensOut
 		}
@@ -978,6 +985,7 @@ func Build(
 		m.cread += r.CacheRead
 		m.ccreate += r.CacheCreation
 		m.tools += r.ToolCalls
+		m.toolSecs += r.ToolSeconds
 		m.active += r.ActiveSeconds
 		if rateFor == nil {
 			m.allRate = false
@@ -1030,7 +1038,7 @@ func Build(
 	out := make([]Row, 0, len(buckets))
 	for key, a := range buckets {
 		row := Row{Key: key, Sessions: a.sessions, TokensIn: a.tin, TokensOut: a.tout,
-			CacheRead: a.cread, CacheCreation: a.ccreate, ToolCalls: a.tools, LocalTokens: a.local, TokensNotReportedSessions: a.notReported, ActiveSeconds: a.active}
+			CacheRead: a.cread, CacheCreation: a.ccreate, ToolCalls: a.tools, ToolSeconds: a.toolSecs, LocalTokens: a.local, TokensNotReportedSessions: a.notReported, ActiveSeconds: a.active}
 		if !a.first.IsZero() {
 			f, l := a.first, a.last
 			row.FirstActivity, row.LastActivity = &f, &l
@@ -1055,7 +1063,7 @@ func Build(
 	modelOut := make([]ModelRow, 0, len(modelBuckets))
 	for mk, m := range modelBuckets {
 		row := ModelRow{Model: mk, Sessions: m.sessions, TokensIn: m.tin, TokensOut: m.tout,
-			CacheRead: m.cread, CacheCreation: m.ccreate, ToolCalls: m.tools, ActiveSeconds: m.active}
+			CacheRead: m.cread, CacheCreation: m.ccreate, ToolCalls: m.tools, ToolSeconds: m.toolSecs, ActiveSeconds: m.active}
 		if m.allRate && showUSD {
 			v := m.usd
 			row.APIEquivalentUSD = &v

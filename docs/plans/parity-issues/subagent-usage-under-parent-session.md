@@ -11,4 +11,6 @@
 
 **Client work.** Show the subagent share next to a session's token count where the app shows tokens (for example "12,400 tokens, 3,100 from subagents"), and in the cost summary line. No new setting, endpoint or permission. Clients that ignore the new fields keep working.
 
+**Tool time.** Sessions also gain `tool_seconds` (time spent inside tool calls, summed per call, so parallel calls overlap), and the cost report rows, model rows and tool usage series gain `tool_seconds` / `total_tool_seconds` (omitted when zero). Show it beside the tool-call count where the app shows tool calls. Never a per-tool breakdown.
+
 **Open.** Subagent tokens are priced at the parent backend's rate; a subagent that ran another model is priced as the parent.

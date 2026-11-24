@@ -98,6 +98,7 @@ func (m *Manager) ScanSubagentUsage(sessID string) error {
 		total.CacheRead += d.CacheRead
 		total.CacheCreation += d.CacheCreation
 		total.ToolCalls += d.ToolCalls
+		total.ToolSeconds += d.ToolSeconds
 	}
 	if !changed {
 		return nil
@@ -106,6 +107,7 @@ func (m *Manager) ScanSubagentUsage(sessID string) error {
 		s.CacheReadTokens += total.CacheRead
 		s.CacheCreationTokens += total.CacheCreation
 		s.ToolCalls += total.ToolCalls
+		s.ToolSeconds += total.ToolSeconds
 		s.SubagentTokensIn += total.In
 		s.SubagentTokensOut += total.Out
 		s.SubagentToolCalls += total.ToolCalls

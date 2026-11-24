@@ -118,6 +118,7 @@ func (m *Manager) AddClaudeUsage(sessID string, d ClaudeUsageDelta) error {
 		sess.CacheReadTokens += d.CacheRead
 		sess.CacheCreationTokens += d.CacheCreation
 		sess.ToolCalls += d.ToolCalls
+		sess.ToolSeconds += d.ToolSeconds
 	})
 }
 

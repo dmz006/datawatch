@@ -244,15 +244,20 @@ project or model. It takes the same `group_by`, `window` and `bucket` params
 as the cost series and returns the same shape of `buckets[]` and zero-filled
 `groups[].points[]`, with `tool_calls` as the value instead of tokens.
 
-The ledger records one tool-call count per session and never the name of the
-tool, so there is **no per-tool-name breakdown**. Every payload says so in
-`tool_names_note`; nothing is estimated or invented.
+The ledger records one tool-call count and the total time spent inside tools
+per session (from each tool call to its result, read from the Claude Code
+transcript, subagents included), and never the name of the tool, so there is
+**no per-tool-name breakdown**. Tool time is summed per call: calls made in
+parallel overlap, so a session's tool time can exceed its wall time. Every
+payload says so in `tool_names_note`; nothing is estimated or invented.
+A session of another backend reports no tool time, so it adds nothing to the
+figure. Entries written before tool time was recorded carry none.
 
 | Field | Meaning |
 |-------|---------|
 | `groups[].key` | The Automaton, project or model; spend with no owner lands under `unattributed`. A group with no sessions in the window is omitted, so an empty window gives `groups: []` |
-| `groups[].sessions`, `groups[].tool_calls` | The line's sessions and tool calls over the window |
-| `groups[].points[]` | One point per bucket, zero-filled: `start`, `sessions`, `tool_calls` |
+| `groups[].sessions`, `groups[].tool_calls`, `groups[].tool_seconds` | The line's sessions, tool calls and time spent inside tools over the window (`tool_seconds` and `total_tool_seconds` are omitted when zero) |
+| `groups[].points[]` | One point per bucket, zero-filled: `start`, `sessions`, `tool_calls`, `tool_seconds` |
 | `groups[].tool_calls_not_reported_sessions`, `total_tool_calls_not_reported_sessions` | Sessions whose backend gave no tool-call count: not reported, so unknown rather than zero. Omitted when zero |
 | `total_tool_calls`, `total_sessions` | The same totals across all groups |
 | `tool_names_note` | States that only counts are recorded, not tool names |
@@ -420,6 +425,7 @@ no profile is shown with the "(assumed — no usage.billing entry)" label.
 ## Report fields for local usage
 
 Each row of `GET /api/cost/report`, and its totals, also carries `tool_calls`,
+`tool_seconds` (time spent inside tools, omitted when zero),
 `local_tokens`, `tokens_not_reported_sessions` and `active_seconds`. Local
 tokens are never added to `tokens_in` or `tokens_out` and never produce a
 money figure. `tokens_not_reported_sessions` counts the row's local sessions
