@@ -23,7 +23,7 @@ flowchart TD
 
 1. The merge pipeline runs its steps in order: checks, merge, version bump, changelog, the optional tag, and the push. The push is the release.
 2. The deploy step runs.
-3. Only then, with `enabled: true`, the daemon runs the enabled hooks, in list order (disabled hooks are skipped over): each builtin does its step — `registry_row` updates the registry row, `parity_issue` files the issue through the ship runner, `tag` adds the tag if it is not there yet, `notify` sends the rendered template — or runs the hook's command in the project, with the hook name and index exported.
+3. Only then, with `enabled: true`, the daemon runs the enabled hooks, in list order (disabled hooks are skipped over): each builtin does its step — `registry_row` updates the registry row, `parity_issue` files the issue through the ship runner (today `gh issue create`; when the merge pipeline is run with the project's remote and your `git.hosts` list resolving the companion to a `github` or `gitlab` host, through that host's own issue creation — one of the operations audit-logged as `host_git_operation`), `tag` adds the tag if it is not there yet, `notify` sends the rendered template — or runs the hook's command in the project, with the hook name and index exported.
 4. The merge run record gets one entry per hook: the state (`ok`, `failed`, `skipped`, `ignored` on the whole block) and the result text (redacted). The record shows exactly which hook did what and what failed. Only for a run that belongs to an Automaton does each failed hook leave one triage note with source `post_ship`.
 5. The run ended where the ship ended. The hooks are steps after the ship, and what they show is recorded and, through the `notify` builtin, sent out.
 

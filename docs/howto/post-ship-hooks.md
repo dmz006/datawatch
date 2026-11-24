@@ -64,7 +64,7 @@ The five built-ins:
 | Built-in | What it does |
 |---|---|
 | `registry_row` | Finds the project's row in the registry file and marks its status cell shipped, with the version. |
-| `parity_issue` | Opens a parity issue in the companion repository, titled by the title template, with the notify template as its body. |
+| `parity_issue` | Opens a parity issue in the companion repository, titled by the title template, with the notify template as its body. Where it is filed: through the ship runner the merge pipeline wired (today `gh issue create`), or — when the daemon resolves the project's remote to a configured [git host](git-hosts.md) and hands that host to the pipeline (the `github` or `gitlab` kinds) — through the host's own issue creation (`gh` / `glab`). A host-filed issue is one of the operations the daemon audit-logs as `host_git_operation`. |
 | `tag` | Tags the release `vVERSION`; skips rather than fails when the tag already exists. |
 | `notify` | Sends the rendered message through the daemon's notifier (its alert channel); the step fails rather than drops the message when no notifier is wired. |
 | `mark_completed` | Marks the Automaton whose branch just shipped **Completed**, with the release, the merge commit and the merge time, and records its branch's **landing** as `landed` with the merge commit. Needs no target setting. Safe to repeat: an Automaton that is already Completed is left alone, and a landing record that already names the commit is left alone. It never cancels anything and never touches a session. |
@@ -77,6 +77,10 @@ records. Recording the landing as `landed` is what lets the Automaton be
 archived afterwards: an Automaton whose branch has a **pending** landing
 record is refused by Archive until it is `landed`, `kept` or `dropped` — see
 [Automaton worktree cleanup](automaton-worktree-cleanup.md#the-landing-record). A run that belongs to no Automaton fails this hook's step with the reason named; the ship itself is already done.
+
+## Note for the operator: where `parity_issue` files today
+
+The host-routing path above becomes live only when the merge pipeline is run with the project's remote and your `git.hosts` list (which is how the facade finds the host that owns the companion repository). As of this change, the daemon's supervisor merge path still runs with a plain runner, so **`parity_issue` is filed with `gh issue create`** — a companion on a different git host than the project is not reached through that host yet. The capability (provider-neutral issue filing under the host's credential source, audit-logged as `host_git_operation`) is in, the wiring into the supervisor's runner is the follow-up alongside the [Phase 4 push-and-tag](git-hosts.md#what-is-not-here-yet-flagged-for-the-operator). A plain-git kind (`gitea`, `bitbucket`, `git`) has no issue filing: the daemon says so, and the hook step fails with that named.
 
 ## The built-in targets
 
