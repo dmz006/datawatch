@@ -35,6 +35,47 @@ const (
 	RolePlanner Role = "planner"
 )
 
+// Class is the admission class of a request, decided by how the daemon
+// launches the session and never by a field the client sends. The zero value
+// is ClassWorker, so every existing caller keeps its behaviour.
+type Class string
+
+const (
+	// ClassWorker is autonomous work. It obeys every pool limit and waits.
+	ClassWorker Class = "worker"
+	// ClassSupervisor is a supervisor session (doer, fast doer, watcher,
+	// detector, supervisor schedules). It may use the reserved buffer on top
+	// of a pool's limit (SetReserve) and is dispatched before every other
+	// waiter, so it is never queued behind workers. It is still counted.
+	ClassSupervisor Class = "supervisor"
+	// ClassOperator is an operator start. It is never refused by a pool
+	// limit: the lease is granted over the cap and records the overage.
+	ClassOperator Class = "operator"
+)
+
+// Overage records how far over a pool's limit an operator lease went.
+type Overage struct {
+	Pool  string `json:"pool"`
+	Limit int    `json:"limit"`
+	// Over is the used count after the grant minus the limit (1 = one over).
+	Over int `json:"over"`
+}
+
+// overageAllowedLocked reports whether an operator start may exceed pool. A
+// node engine pool (node:<name>, node-verify:<name>) is soft like every other
+// pool, because how many models an engine runs at once is up to the user's
+// hardware; only a node whose operator set hard_limit (SetHardLimit) keeps
+// operator starts waiting for a free engine.
+func (l *Ledger) overageAllowedLocked(pool string) bool {
+	if name, ok := strings.CutPrefix(pool, "node:"); ok {
+		return !l.hard[name]
+	}
+	if name, ok := strings.CutPrefix(pool, "node-verify:"); ok {
+		return !l.hard[name]
+	}
+	return true
+}
+
 // rank orders roles for dispatch; lower is granted first. The zero value and
 // any unknown role rank as RoleWorker so existing callers keep their order.
 func (r Role) rank() int {
@@ -87,6 +128,13 @@ type Request struct {
 	// node and carries Lease.NodeUnknown so the gap stays visible. Ignored by
 	// Acquire and when Node is set.
 	NodeUnknown bool
+	// Class is the admission class; the zero value means ClassWorker.
+	Class Class
+	// Resume marks a worker restarted after its session ended (rate-limit
+	// fallback, exit-hook restart). Among requests of the same role it is
+	// dispatched before every other waiter, whatever their priority, so the
+	// interrupted work resumes first; it still obeys every pool limit.
+	Resume bool
 	// Interactive marks an operator-started session. Such a request is never
 	// held back by Options.AutonomousBackpressure.
 	Interactive bool
@@ -214,7 +262,12 @@ type Lease struct {
 	// Role is the dispatch role the lease was admitted under; empty is
 	// RoleWorker (the zero value), so leases admitted before roles were
 	// recorded count as worker. Read by heldByRoleLocked.
-	Role      Role      `json:"role,omitempty"`
+	Role Role `json:"role,omitempty"`
+	// Class is the admission class the lease was granted under; empty is
+	// ClassWorker. Overage is set only on an operator lease granted over a
+	// pool's limit: one record per pool that was already full.
+	Class     Class     `json:"class,omitempty"`
+	Overage   []Overage `json:"overage,omitempty"`
 	Pools     []string  `json:"pools"`
 	Node      string    `json:"node,omitempty"`
 	Model     string    `json:"model,omitempty"`
@@ -263,6 +316,11 @@ type PoolStatus struct {
 	Limit    int    `json:"limit"` // 0 = unlimited
 	External int    `json:"external"`
 	Held     int    `json:"held"`
+	// Reserve is the buffer above Limit that only supervisor-class requests
+	// may use. Over is how far Held plus External is above Limit (operator
+	// overage); both are omitted when zero.
+	Reserve int `json:"reserve,omitempty"`
+	Over    int `json:"over,omitempty"`
 	// Drained and DrainUntil are the node pool's drain state, reported by
 	// Options.NodeState; a non-node pool or an undrained node leaves them
 	// unset (zero). A drained pool still shows its Held count: the tasks
@@ -351,6 +409,16 @@ type Options struct {
 	// requests marked Interactive skip it. Called under the lock: in-memory
 	// state only.
 	AutonomousBackpressure func(pool string) (blocked bool, reason string)
+	// OnAdoptOverLimit is called, on its own goroutine and with no ledger lock
+	// held, once per pool that the work adopted after a restart left above its
+	// limit (held leases, limit). It runs when the adoption hold ends. The
+	// adopted sessions are real and keep their leases; new work waits until the
+	// pool is back under its limit. Nil means no finding.
+	OnAdoptOverLimit func(pool string, held, limit int)
+	// OnOverage is called, on its own goroutine and with no ledger lock held,
+	// each time an operator lease is granted over a pool's limit. Nil means
+	// no notice. The lease is a copy.
+	OnOverage func(Lease)
 	// RoleBackpressure is a soft block for autonomous requests that sees the
 	// requesting role and the pool's live per-role lease counts, so a gate
 	// can refuse some roles while admitting others (for example a role-
@@ -455,6 +523,8 @@ type waiter struct {
 type Ledger struct {
 	mu        sync.Mutex
 	limits    map[string]int
+	reserves  map[string]int    // pool → supervisor buffer above the limit
+	hard      map[string]bool   // node name → hard_limit: its engine pools refuse operator overage
 	leases    map[string]*Lease // holder → lease
 	waiters   []*waiter
 	seq       uint64
@@ -495,6 +565,8 @@ func New(opt Options) *Ledger {
 	return &Ledger{
 		recordingSince: opt.Clock.Now(),
 		limits:         map[string]int{},
+		reserves:       map[string]int{},
+		hard:           map[string]bool{},
 		leases:         map[string]*Lease{},
 		lastGrant:      map[string]time.Time{},
 		lastModel:      map[string]string{},
@@ -563,6 +635,57 @@ func (l *Ledger) SetLimit(pool string, limit int) {
 	l.signalChangedLocked()
 	l.dispatchLocked()
 	l.mu.Unlock()
+}
+
+// SetReserve sets the buffer above pool's limit that only supervisor-class
+// requests may use (0 clears it). A pool with no limit has no use for it.
+func (l *Ledger) SetReserve(pool string, n int) {
+	l.mu.Lock()
+	if n <= 0 {
+		delete(l.reserves, pool)
+	} else {
+		l.reserves[pool] = n
+	}
+	l.signalChangedLocked()
+	l.dispatchLocked()
+	l.mu.Unlock()
+}
+
+// SetHardLimit marks a compute node's engine pools (node:<node> and
+// node-verify:<node>) as a physical limit: an operator start waits for a free
+// engine there, as every class did before node pools became soft. Off (the
+// default) lets an operator start go over them with the overage recorded.
+// Workers wait on node pools either way.
+func (l *Ledger) SetHardLimit(node string, hard bool) {
+	l.mu.Lock()
+	if hard {
+		l.hard[node] = true
+	} else {
+		delete(l.hard, node)
+	}
+	l.signalChangedLocked()
+	l.dispatchLocked()
+	l.mu.Unlock()
+}
+
+// HardLimit reports whether node's engine pools are a hard limit.
+func (l *Ledger) HardLimit(node string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.hard[node]
+}
+
+// Reserve returns a pool's supervisor buffer (0 = none).
+func (l *Ledger) Reserve(pool string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.reserves[pool]
+}
+
+// softExempt reports whether a request skips the soft, autonomous-only
+// blocks (back-off, burn guard, usage hold): operator starts and supervisors.
+func (r Request) softExempt() bool {
+	return r.Interactive || r.Class == ClassOperator || r.Class == ClassSupervisor
 }
 
 // Limit returns a pool's limit (0 = unlimited).
@@ -702,12 +825,31 @@ func (l *Ledger) BeginAdoption() {
 func (l *Ledger) MarkAdoptionComplete() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.reportAdoptOverLimitLocked()
 	if !l.adopting {
 		return
 	}
 	l.adopting = false
 	l.signalChangedLocked()
 	l.dispatchLocked()
+}
+
+// reportAdoptOverLimitLocked raises one finding per pool whose held leases are
+// above its limit when the adoption hold ends.
+func (l *Ledger) reportAdoptOverLimitLocked() {
+	if l.opt.OnAdoptOverLimit == nil {
+		return
+	}
+	pools := make([]string, 0, len(l.limits))
+	for p := range l.limits {
+		pools = append(pools, p)
+	}
+	sort.Strings(pools)
+	for _, p := range pools {
+		if held, lim := l.heldLocked(p), l.limits[p]; lim > 0 && held > lim {
+			go l.opt.OnAdoptOverLimit(p, held, lim)
+		}
+	}
 }
 
 // adoptionPendingLocked returns the reason requests are held back for adoption,
@@ -734,7 +876,12 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 	now := l.opt.Clock.Now()
 	for _, p := range req.Pools {
 		lim := l.limits[p]
-		if lim > 0 && l.usedLocked(p) >= lim {
+		eff := lim
+		if req.Class == ClassSupervisor && lim > 0 {
+			eff = lim + l.reserves[p]
+		}
+		operatorMayExceed := req.Class == ClassOperator && l.overageAllowedLocked(p)
+		if eff > 0 && l.usedLocked(p) >= eff && !operatorMayExceed {
 			if name, ok := strings.CutPrefix(p, "node:"); ok {
 				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
 			}
@@ -771,22 +918,22 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}
-		if l.opt.RoleBackpressure != nil && !req.Interactive {
+		if l.opt.RoleBackpressure != nil && !req.softExempt() {
 			if blocked, why := l.opt.RoleBackpressure(p, req.Role, l.heldByRoleLocked(p)); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}
-		if l.opt.AutonomousModelBackpressure != nil && !req.Interactive {
+		if l.opt.AutonomousModelBackpressure != nil && !req.softExempt() {
 			if blocked, why := l.opt.AutonomousModelBackpressure(p, req.Model); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}
-		if l.opt.AutonomousBackpressure != nil && !req.Interactive {
+		if l.opt.AutonomousBackpressure != nil && !req.softExempt() {
 			if blocked, why := l.opt.AutonomousBackpressure(p); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}
-		if l.opt.HeldBackpressure != nil && !req.Interactive {
+		if l.opt.HeldBackpressure != nil && !req.softExempt() {
 			if blocked, why := l.opt.HeldBackpressure(p, l.heldLocked(p), l.limits[p]); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
@@ -1042,6 +1189,10 @@ func (l *Ledger) orderLocked(now time.Time) []*waiter {
 // at least Options.PlannerAgeAfter ranks as a worker so it cannot starve behind
 // a steady stream of workers; verifiers keep rank 0.
 func (l *Ledger) effectiveRank(w *waiter, now time.Time) int {
+	// Supervisor and operator requests are dispatched before every role.
+	if w.req.Class == ClassSupervisor || w.req.Class == ClassOperator {
+		return -1
+	}
 	r := w.req.Role.rank()
 	if w.req.Role == RolePlanner && l.opt.PlannerAgeAfter > 0 && now.Sub(w.since) >= l.opt.PlannerAgeAfter {
 		return RoleWorker.rank()
@@ -1072,6 +1223,9 @@ func (l *Ledger) orderListLocked(list []*waiter, now time.Time) []*waiter {
 		a, b := ws[i], ws[j]
 		if ra, rb := l.effectiveRank(a, now), l.effectiveRank(b, now); ra != rb {
 			return ra < rb
+		}
+		if a.req.Resume != b.req.Resume {
+			return a.req.Resume
 		}
 		if a.req.Priority != b.req.Priority {
 			return a.req.Priority > b.req.Priority
@@ -1140,10 +1294,24 @@ func (l *Ledger) Replan() {
 // for a request with NodeChoices it already names the chosen node.
 func (l *Ledger) grantLocked(w *waiter, req Request, now time.Time) {
 	l.recordWaitEndLocked(w, now)
+	var over []Overage
+	if req.Class == ClassOperator {
+		for _, p := range req.Pools {
+			if lim := l.limits[p]; lim > 0 && l.overageAllowedLocked(p) {
+				if used := l.usedLocked(p); used >= lim {
+					over = append(over, Overage{Pool: p, Limit: lim, Over: used + 1 - lim})
+				}
+			}
+		}
+	}
 	l.leases[req.Holder] = &Lease{
-		Holder: req.Holder, PRDID: req.PRDID, Role: req.Role,
+		Holder: req.Holder, PRDID: req.PRDID, Role: req.Role, Class: req.Class, Overage: over,
 		Pools: append([]string(nil), req.Pools...),
 		Node:  req.Node, Model: req.Model, Acquired: now,
+	}
+	if len(over) > 0 && l.opt.OnOverage != nil {
+		cp := *l.leases[req.Holder]
+		go l.opt.OnOverage(cp)
 	}
 	l.lastGrant[req.PRDID] = now
 	l.recordRequestsLocked(req.Pools, now)
@@ -1768,7 +1936,7 @@ func (l *Ledger) Snapshot() Status {
 		}
 	}
 	for p := range names {
-		ps := PoolStatus{Name: p, Limit: l.limits[p], Held: l.heldLocked(p)}
+		ps := PoolStatus{Name: p, Limit: l.limits[p], Held: l.heldLocked(p), Reserve: l.reserves[p]}
 		if node, ok := strings.CutPrefix(p, "node:"); ok {
 			ps.Overflow = len(l.overflowLocked(node))
 			if bad, why := l.unhealthy.get(node); bad {
@@ -1785,6 +1953,9 @@ func (l *Ledger) Snapshot() Status {
 		}
 		if l.opt.External != nil {
 			ps.External = l.opt.External(p)
+		}
+		if ps.Limit > 0 && ps.Held+ps.External > ps.Limit {
+			ps.Over = ps.Held + ps.External - ps.Limit
 		}
 		if c, ok := l.rates[p]; ok {
 			now := l.opt.Clock.Now()
@@ -1846,6 +2017,12 @@ func FormatPools(pools []PoolStatus) string {
 		if p.Overflow > 0 {
 			fmt.Fprintf(&b, " (+%d adopted over the limit)", p.Overflow)
 		}
+		if p.Over > 0 {
+			fmt.Fprintf(&b, " (%d over the limit: operator)", p.Over)
+		}
+		if p.Reserve > 0 {
+			fmt.Fprintf(&b, " (+%d reserved for supervisors)", p.Reserve)
+		}
 		if len(p.Holders) > 0 {
 			holders := p.Holders
 			if len(p.HoldNames) == len(p.Holders) {
@@ -1891,6 +2068,11 @@ func FormatText(st Status) string {
 	}
 	if unknown > 0 {
 		fmt.Fprintf(&b, "Leases with unknown node: %d (counted in host and llm pools, held on no node pool)\n", unknown)
+	}
+	for _, ls := range st.Leases {
+		for _, o := range ls.Overage {
+			fmt.Fprintf(&b, "Operator session %s: %s is %d over its limit of %d\n", ls.Holder, o.Pool, o.Over, o.Limit)
+		}
 	}
 	if len(st.Waiting) == 0 {
 		b.WriteString("Waiting: none\n")

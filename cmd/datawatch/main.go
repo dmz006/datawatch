@@ -48,6 +48,7 @@ import (
 	authpkg "github.com/dmz006/datawatch/internal/auth"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
@@ -2066,6 +2067,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				AutomatonID: sess.AutomatonID,
 				SpendRole:   sess.SpendRole,
 			}
+			// A worker keeps the worker class and re-enters the queue at the head.
+			opts.AdmitClass, opts.AdmitRestart = session.RestartAdmission(sess)
 			newSess, err := mgr.Start(context.Background(), sess.Task, "", sess.ProjectDir, opts)
 			if err != nil {
 				fmt.Printf("[fallback] failed to start fallback session: %v\n", err)
@@ -5449,6 +5452,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return autonomouspkg.SpawnResult{}, err
 			}
 			httpReq.Header.Set("Content-Type", "application/json")
+			// The manager admitted this task before spawning: the daemon's own
+			// marker tells the handler, which ignores the body's one_shot.
+			httpReq.Header.Set(server.InternalLaunchHeader, server.InternalLaunchValue(capacity.ClassWorker))
 			if cfg.Server.Token != "" {
 				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
 			}
@@ -15237,6 +15243,9 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 					EphemeralWorkspace: ds.Ephemeral,
 					Subprocess:         ds.Subprocess,
 					Git:                ds.Git,
+					// A schedule of the supervisor role launches in the
+					// supervisor class; any other schedule is an operator start.
+					AdmitClass: session.AdmitClassForLaunchRole(ds.LaunchRole),
 				}
 				sess, err := mgr.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
 				if err != nil {
@@ -20041,6 +20050,8 @@ func runExitHookRestart(mgr *session.Manager, sess *session.Session, hook *sessi
 		AutomatonID: sess.AutomatonID,
 		SpendRole:   sess.SpendRole,
 	}
+	// A worker keeps the worker class and re-enters the queue at the head.
+	opts.AdmitClass, opts.AdmitRestart = session.RestartAdmission(sess)
 	newSess, err := mgr.Start(ctx, sess.Task, sess.GroupID, sess.ProjectDir, opts)
 	if err != nil {
 		fmt.Printf("[exit-hook] restart failed for session %q: %v\n", sess.Name, err)
@@ -20634,6 +20645,7 @@ func computeNodeFromConfig(c config.ComputeNodeYAML) compute.Node {
 		NodePinnedModel:       c.NodePinnedModel,
 		AllowModelSwap:        c.AllowModelSwap,
 		SessionSlots:          c.SessionSlots,
+		HardLimit:             c.HardLimit,
 		VerifierSlots:         c.VerifierSlots,
 		VerifierMinFreeMemMB:  c.VerifierMinFreeMemMB,
 		VerifierContextMB:     c.VerifierContextMB,

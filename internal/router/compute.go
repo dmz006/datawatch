@@ -40,8 +40,9 @@ const computeUsage = `Usage:
   compute node get <name>                          fetch one
   compute node add <name> kind=<k> [k=v ...]       add (kind = ollama|openai-compat|gemini-api|opencode-api)
                                                    pin: node_pinned_model=<model> allow_model_swap=true|false
+                                                   engine slots: hard_limit=true|false (true = an operator start waits for a free engine; default false, it may go over and the overage is recorded)
                                                    tls: tls_ca_file=<path> tls_cert_fingerprint=<sha256-hex> tls_insecure_skip_verify=true|false verify_tls=true|false
-  compute node update <name> [k=v ...]             update (replaces the node; repeat node_pinned_model and the tls_ keys to keep them)
+  compute node update <name> [k=v ...]             update (replaces the node; repeat node_pinned_model, hard_limit and the tls_ keys to keep them)
   compute pin                                      show pin_check_seconds (0 = keeper off)
   compute pin <seconds>                            set pin_check_seconds
   compute placement                                list pending placement asks (missing-model "ask" policy)
@@ -584,7 +585,7 @@ func parseKVPairs(s string) map[string]any {
 			cap[k] = v
 		case "node_pinned_model":
 			out[k] = strings.TrimSpace(v)
-		case "allow_model_swap", "tls_insecure_skip_verify", "verify_tls":
+		case "allow_model_swap", "hard_limit", "tls_insecure_skip_verify", "verify_tls":
 			out[k] = v == "true" || v == "1" || v == "yes"
 		case "tls_ca_file", "tls_cert_fingerprint":
 			out[k] = strings.TrimSpace(v)

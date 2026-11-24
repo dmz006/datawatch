@@ -101,7 +101,9 @@ func TestKeysOffersEveryNodeOfTheEntry(t *testing.T) {
 	}
 
 	// Hosted backends and unresolved providers gain no node and no choices.
-	if p, n, c := resolve("claude-code", "opus"); n != "" || c != nil || !reflect.DeepEqual(p, []string{"host"}) {
+	// A claude-code backend with no LLM entry still gets an llm pool and the
+	// account pool (reported as unmapped, never unlimited).
+	if p, n, c := resolve("claude-code", "opus"); n != "" || c != nil || !reflect.DeepEqual(p, []string{"host", "llm:claude-code", "account:claude"}) {
 		t.Fatalf("hosted = %v %q %v", p, n, c)
 	}
 
@@ -141,6 +143,7 @@ func TestKeysSingleNodeMatchesPreviousPools(t *testing.T) {
 		resolve := capacityResolver(func() *inference.Registry { return reg }, nodes)
 		for _, tc := range cases {
 			wantPools, wantNode := previousKeys(reg)(tc.backend, tc.model)
+			wantPools = withAccountPool(reg, tc.backend, wantPools)
 			pools, node, choices := resolve(tc.backend, tc.model)
 			if !reflect.DeepEqual(pools, wantPools) || node != wantNode || choices != nil {
 				t.Errorf("%s %s/%s: got %v %q %v, want %v %q", name, tc.backend, tc.model, pools, node, choices, wantPools, wantNode)
@@ -210,4 +213,23 @@ func TestPlacementSignatureTracksModelsList(t *testing.T) {
 	if placementSignature(regFn, nodesFn) == base {
 		t.Fatal("signature unchanged after the models list changed")
 	}
+}
+
+// withAccountPool applies the one change the admission classes made to the
+// previous resolution: a claude-code entry also draws on the account pool, and
+// a claude-code backend with no entry and no node gets an llm pool and the
+// account pool (it is reported as unmapped instead of being left unlimited).
+func withAccountPool(reg *inference.Registry, backend string, pools []string) []string {
+	if reg != nil {
+		if l, err := reg.Get(backend); err == nil && l != nil {
+			if l.Kind == inference.KindClaudeCode {
+				return append(append([]string(nil), pools...), "account:claude")
+			}
+			return pools
+		}
+	}
+	if backend == string(inference.KindClaudeCode) {
+		return append(append([]string(nil), pools...), "llm:claude-code", "account:claude")
+	}
+	return pools
 }

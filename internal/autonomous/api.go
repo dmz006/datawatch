@@ -730,6 +730,17 @@ func (a *API) SetConfig(v any) error {
 	if cfg.CapacityAdoptionWaitSeconds < 0 {
 		return fmt.Errorf("config: capacity_adoption_wait_seconds must be >= 0")
 	}
+	for k, p := range map[string]*int{
+		"capacity_account_claude_limit":      cfg.CapacityAccountClaudeLimit,
+		"capacity_supervisor_reserve_claude": cfg.CapacitySupervisorReserveClaude,
+		"capacity_supervisor_reserve_pi":     cfg.CapacitySupervisorReservePi,
+		"capacity_supervisor_reserve_host":   cfg.CapacitySupervisorReserveHost,
+		"capacity_operator_reserve_host":     cfg.CapacityOperatorReserveHost,
+	} {
+		if p != nil && *p < 0 {
+			return fmt.Errorf("config: %s must be >= 0", k)
+		}
+	}
 	if g := cfg.CapacitySlotReconcileGraceSeconds; g < 0 || (g > 0 && g < 10) {
 		return fmt.Errorf("config: capacity_slot_reconcile_grace_seconds must be 0 (default 60) or at least 10")
 	}

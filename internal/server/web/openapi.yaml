@@ -5474,6 +5474,10 @@ paths:
                     type: integer
                     minimum: 0
                     description: Operator-set worker count (0 = derive from observer GPU data, one slot per GPU limited by free GPU memory). Capped by max_concurrent_sessions when that is set.
+                  hard_limit:
+                    type: boolean
+                    default: false
+                    description: Operator-set flag, default false. Off, an operator start may go over the node's engine slots and the overage is recorded; on, the slots are a physical limit and an operator start waits for a free engine. Workers wait either way.
                   verifier_slots:
                     type: integer
                     minimum: 0
@@ -5507,6 +5511,7 @@ paths:
               properties:
                 max_concurrent_sessions: {type: integer, minimum: 0}
                 session_slots: {type: integer, minimum: 0, description: Operator-set worker count; 0 derives the count from observer GPU data.}
+                hard_limit: {type: boolean, default: false, description: "Operator-set flag, default false. Off, an operator start may go over the node's engine slots and the overage is recorded; on, the slots are a physical limit and an operator start waits for a free engine. Workers wait either way. Omitting it on a replace turns it off."}
                 verifier_slots: {type: integer, minimum: 0, nullable: true, description: Worker slots for verifiers on the node; absent = unset (1 if the node hosts a local engine, else 0), 0 = no verifier slots.}
                 verifier_min_free_mem_mb: {type: integer, minimum: 0, nullable: true, description: Free GPU MB required before a new verifier slot starts; absent = 1024 MB, 0 = check off.}
                 verifier_context_mb: {type: integer, minimum: 0, description: Extra context MB one verifier slot holds, used to size the advice figure (0 = none).}
@@ -5756,6 +5761,14 @@ paths:
                           type: integer
                           minimum: 0
                           description: The node's verifier pool (node-verify:<name>) held count, for node pools.
+                        reserve:
+                          type: integer
+                          minimum: 0
+                          description: Buffer above limit that only supervisor-class starts may use. Absent when none.
+                        over:
+                          type: integer
+                          minimum: 0
+                          description: How far held plus external is above limit (operator overage or sessions re-adopted after a restart). Absent when zero.
                         free_gpu_mb:
                           type: integer
                           minimum: 0
@@ -5773,7 +5786,66 @@ paths:
                       type: object
                       properties:
                         node_unknown: {type: boolean, description: "True when the lease's compute node was expected and could not be determined at adoption. The lease holds no node pool. Absent when false"}
+                        class: {type: string, enum: [worker, supervisor, operator], description: "Admission class the lease was granted under, decided by how the daemon launched the session (never by a request field). Absent on a worker lease"}
+                        overage:
+                          type: array
+                          description: Set only on an operator lease granted over a pool's limit, one record per pool that was already full. Autonomous work waits instead.
+                          items:
+                            type: object
+                            properties:
+                              pool: {type: string}
+                              limit: {type: integer}
+                              over: {type: integer, description: "Used count after the grant minus the limit"}
                   waiting: {type: array, items: {type: object}}
+                  federation:
+                    type: object
+                    description: The cluster view, present when a peer is opted in for fingerprint sync, named in a peer_window or matched. Each host is shown at its own pools and limits; a peer's local llm and node pools are its own and add to the federated capacity. Only the Claude account can span hosts - a peer's leases count against this daemon's account:claude pool for a confirmed billing_group match or a peer_window opt-in; a pending match counts nothing.
+                    properties:
+                      hosts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name: {type: string}
+                            self: {type: boolean}
+                            reachable: {type: boolean}
+                            pools: {type: array, items: {type: object, properties: {name: {type: string}, limit: {type: integer}, held: {type: integer}, external: {type: integer}, over: {type: integer}}}}
+                            llm_limit: {type: integer}
+                            llm_held: {type: integer}
+                            node_limit: {type: integer}
+                            node_held: {type: integer}
+                            unlimited_pools: {type: integer}
+                            shared_account: {type: string, enum: [self, confirmed, opted_in, pending, none]}
+                            counted_held: {type: integer, description: "How much of this host's holding counts against this daemon's account:claude pool"}
+                            note: {type: string, description: "possible shared account, awaiting your confirmation, for a pending match"}
+                      cluster:
+                        type: object
+                        properties: {llm_limit: {type: integer}, llm_held: {type: integer}, node_limit: {type: integer}, node_held: {type: integer}, unlimited_pools: {type: integer}}
+                      account:
+                        type: object
+                        properties: {limit: {type: integer}, local_held: {type: integer}, peer_held: {type: integer}, total: {type: integer}}
+                      pending_shared_accounts:
+                        type: array
+                        items: {type: object, properties: {id: {type: string}, peer: {type: string}, local_entry: {type: string}, peer_entry: {type: string}, message: {type: string}}}
+                  session_cap:
+                    type: object
+                    description: The host session cap (session.max_sessions) with the allowances above it. Absent when no cap is set. over is how far running sessions are above max (operator sessions started into the operator allowance).
+                    properties:
+                      max: {type: integer}
+                      active: {type: integer}
+                      operator_slots: {type: integer, description: "autonomous.capacity_operator_reserve_host: slots above max only operator starts may use"}
+                      supervisor_slots: {type: integer, description: "autonomous.capacity_supervisor_reserve_host: slots above max only supervisor starts may use"}
+                      over: {type: integer}
+                  unmapped:
+                    type: array
+                    description: Subscription backends a start named that resolve to no LLM entry. Each is held to one session, never treated as unlimited. Absent when none.
+                    items:
+                      type: object
+                      properties:
+                        backend: {type: string}
+                        model: {type: string}
+                        count: {type: integer}
+                        last_seen: {type: string, format: date-time}
                   backoff:
                     type: array
                     description: Active usage back-off flags.
@@ -5818,6 +5890,59 @@ paths:
                             since: {type: string, format: date-time}
                             note: {type: string, description: Sentence for a task parked while holding resources}
 
+  /api/capacity/supervisor-credential:
+    get:
+      tags: [Autonomous]
+      summary: List the supervisor credentials by name
+      operationId: capacitySupervisorCredentialList
+      description: Operator only (the admin token); a session-scoped token or a federation peer gets 403. Never returns a token. A supervisor credential makes a REST session start the supervisor admission class; it is a removable stopgap for an external supervisor.
+      responses:
+        "200":
+          description: Credential names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credentials: {type: array, items: {type: string}}
+        "403": {description: Not the operator}
+    post:
+      tags: [Autonomous]
+      summary: Mint a supervisor credential
+      operationId: capacitySupervisorCredentialMint
+      description: Operator only. The token carries sessions:write and capacity:supervisor-start only and is shown once; minting the same name replaces it. A start with it is supervisor class, uses the supervisor buffer and never goes past it, and is audited as supervisor_credential_start with the name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, description: "1 to 40 characters of a-z, 0-9, dot, dash, underscore, starting with a letter or digit"}
+      responses:
+        "200":
+          description: The credential
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: {type: string}
+                  token: {type: string, description: "Shown once"}
+        "400": {description: Bad name}
+        "403": {description: Not the operator}
+    delete:
+      tags: [Autonomous]
+      summary: Revoke a supervisor credential
+      operationId: capacitySupervisorCredentialRevoke
+      description: Operator only. The token stops working at once.
+      parameters:
+        - {name: name, in: query, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Revoked}
+        "400": {description: Bad name}
+        "403": {description: Not the operator}
   /api/capacity/admission:
     get:
       summary: Capacity admission query
@@ -5829,7 +5954,7 @@ paths:
         - {name: llm, in: query, required: false, description: Alias for backend, schema: {type: string}}
         - {name: node, in: query, required: false, description: Compute node the start would use, schema: {type: string}}
         - {name: model, in: query, required: false, description: Model wanted, schema: {type: string}}
-        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive]}}
+        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive, operator, supervisor]}}
         - {name: priority, in: query, required: false, description: Integer queue priority; higher runs first, schema: {type: integer}}
         - {name: prd_id, in: query, required: false, description: Automaton the start would belong to, schema: {type: string}}
       responses:

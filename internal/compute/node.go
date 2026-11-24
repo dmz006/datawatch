@@ -269,6 +269,13 @@ type Node struct {
 	// capped by MaxConcurrentSessions when that is set.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
 
+	// HardLimit makes this node's engine pools a physical limit for every
+	// class: an operator start waits for a free engine instead of going over
+	// the pool. Default false (soft): how many models an engine runs at once
+	// is up to the user's hardware, so an operator start may exceed the pool
+	// and the overage is recorded. Workers wait on the pool either way.
+	HardLimit bool `yaml:"hard_limit,omitempty" json:"hard_limit,omitempty"`
+
 	// VerifierSlots is the operator's verifier worker count for this node.
 	// Nil (unset) = resolved by default in a later task; explicit 0 =
 	// verifier disabled on this node. Must not be negative.

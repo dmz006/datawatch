@@ -204,6 +204,24 @@ func (s *SessionTokenStore) SessionIDForToken(tok string) string {
 	return ""
 }
 
+// ListOwners returns, sorted, the owner ids that hold a live token and start
+// with prefix. It never returns a token.
+func (s *SessionTokenStore) ListOwners(prefix string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []string
+	for owner, tok := range s.bySession {
+		if !strings.HasPrefix(owner, prefix) {
+			continue
+		}
+		if r, ok := s.byToken[tok]; ok && !s.expired(r) {
+			out = append(out, owner)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Revoke invalidates ownerID's token immediately (session kill,
 // stop_all_sessions). It works for any owner id minted via Mint or
 // MintScoped, including reserved prefix ids such as

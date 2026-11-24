@@ -1128,6 +1128,10 @@ type ComputeNodeYAML struct {
 	// SessionSlots is the operator's worker count for this node (0 = derive
 	// from observer GPU data). Must not be negative.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
+	// HardLimit makes this node's engine pools a physical limit for every
+	// class (operator starts wait for a free engine). Default false: the
+	// pools are soft and an operator start may go over them.
+	HardLimit bool `yaml:"hard_limit,omitempty" json:"hard_limit,omitempty"`
 	// VerifierSlots is the operator's verifier worker count for this node.
 	// Nil (unset) = default; explicit 0 = verifier disabled on this node.
 	// Must not be negative.
@@ -3681,6 +3685,31 @@ type AutonomousConfig struct {
 	// CapacityAdoptionWaitSeconds bounds the restart wait above. 0 or unset =
 	// 30. Read when the daemon starts.
 	CapacityAdoptionWaitSeconds int `yaml:"capacity_adoption_wait_seconds,omitempty" json:"capacity_adoption_wait_seconds,omitempty"`
+	// CapacityAccountClaudeLimitSetting caps the whole Claude account through
+	// the account:claude pool every claude-code entry draws on. Unset = 2
+	// (claude-code 1 plus claude-lean 1); 0 = unlimited. Read live.
+	CapacityAccountClaudeLimitSetting *int `yaml:"capacity_account_claude_limit,omitempty" json:"capacity_account_claude_limit,omitempty"`
+	// CapacitySupervisorReserve*Setting size the buffer above a pool's limit that
+	// only the supervisor admission class may use: Claude slots (unset = 1), pi
+	// slots (unset = 1) and host session slots (unset = 4). Read live.
+	CapacitySupervisorReserveClaudeSetting *int `yaml:"capacity_supervisor_reserve_claude,omitempty" json:"capacity_supervisor_reserve_claude,omitempty"`
+	CapacitySupervisorReservePiSetting     *int `yaml:"capacity_supervisor_reserve_pi,omitempty" json:"capacity_supervisor_reserve_pi,omitempty"`
+	CapacitySupervisorReserveHostSetting   *int `yaml:"capacity_supervisor_reserve_host,omitempty" json:"capacity_supervisor_reserve_host,omitempty"`
+	// CapacityOperatorReserveHostSetting is the operator allowance: how many
+	// sessions above session.max_sessions an operator start may take before it is
+	// refused (unset = 5; 0 = operators stop at the cap). Workers never use it;
+	// supervisors have their own host slots. Using it raises an alert and is
+	// recorded on the session. Read live.
+	CapacityOperatorReserveHostSetting *int `yaml:"capacity_operator_reserve_host,omitempty" json:"capacity_operator_reserve_host,omitempty"`
+	// CapacitySupervisorCredentialEnabled: a supervisor credential (a named,
+	// revocable token an operator mints) makes a REST session start the
+	// supervisor class, for an external supervisor until the daemon runs that job
+	// itself. Unset = true; false makes the credential do nothing. Read live.
+	CapacitySupervisorCredentialEnabled *bool `yaml:"capacity_supervisor_credential_enabled,omitempty" json:"capacity_supervisor_credential_enabled,omitempty"`
+	// CapacityOperatorOverageAlert raises an alert each time an operator start
+	// is admitted over a pool's limit. Default false (the overage is still
+	// recorded and shown on status). Read live.
+	CapacityOperatorOverageAlert bool `yaml:"capacity_operator_overage_alert,omitempty" json:"capacity_operator_overage_alert,omitempty"`
 	// CapacitySlotReconcileGraceSeconds is how long a fresh lease counts as
 	// having a node lease in the orphan-slot reconcile, so a just-admitted
 	// holder is never freed. 0 or unset = 60; otherwise at least 10. Read
@@ -9056,6 +9085,9 @@ func validateLoaded(cfg *Config) error {
 	}
 	if cfg.Autonomous.CapacityAdoptionWaitSeconds < 0 {
 		return fmt.Errorf("autonomous.capacity_adoption_wait_seconds: %d must be >= 0", cfg.Autonomous.CapacityAdoptionWaitSeconds)
+	}
+	if err := validateCapacityAdmission(&cfg.Autonomous); err != nil {
+		return err
 	}
 	if g := cfg.Autonomous.CapacitySlotReconcileGraceSeconds; g != 0 && g < MinCapacitySlotReconcileGraceSeconds {
 		return fmt.Errorf("autonomous.capacity_slot_reconcile_grace_seconds: %d must be 0 (default %d) or at least %d", g, DefaultCapacitySlotReconcileGraceSeconds, MinCapacitySlotReconcileGraceSeconds)

@@ -45,6 +45,7 @@ func newCapacityCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
 	c.AddCommand(newCapacityAdmissionCmd())
+	c.AddCommand(newCapacitySupervisorCredentialCmd())
 	return c
 }
 
@@ -89,7 +90,7 @@ func newCapacityAdmissionCmd() *cobra.Command {
 	c.Flags().StringVar(&backend, "backend", "", "backend or named LLM to start (required)")
 	c.Flags().StringVar(&node, "node", "", "compute node the start would use")
 	c.Flags().StringVar(&model, "model", "", "model wanted")
-	c.Flags().StringVar(&role, "role", "", "worker (default), verifier, planner or interactive")
+	c.Flags().StringVar(&role, "role", "", "worker (default), verifier, planner, interactive (operator) or supervisor")
 	c.Flags().StringVar(&priority, "priority", "", "integer queue priority (default 0)")
 	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON decision")
 	return c

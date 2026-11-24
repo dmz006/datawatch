@@ -109,7 +109,7 @@ Other channels:
 - **PWA:** Settings > Compute > node edit > *Max concurrent sessions* and
   *Session slots*; LLM edit > *Max in flight*; Settings > General > Automata >
   capacity fields; Automata > Capacity card shows pools and the queue.
-- **MCP:** `compute_node_update` (`session_slots`, `max_concurrent_sessions`),
+- **MCP:** `compute_node_update` (`session_slots`, `max_concurrent_sessions`, `hard_limit`),
   `llm_update` (`max_inflight`), `config_set` for
   `autonomous.capacity_*` and `session.reserved_interactive`,
   `capacity_status` to view, `autonomous_prd_set_priority`.
@@ -203,6 +203,38 @@ without a restart. A derived count never drops below the workers already running
 on the node, but that floor is capped at the GPU count. Running workers are not
 stopped. A node that hosts no local engine takes no slot count at all; it keeps
 its `max_concurrent_sessions` limit.
+
+### Soft node slots and hard_limit
+
+Node slots are not a physical limit by default. A local engine can often run
+several models at once, only slower, and a machine with a lot of memory may run
+many; how many is up to the user and the hardware. So an operator start (a
+session you start yourself) over the `node:<name>` or `node-verify:<name>` pool
+of a node is admitted like it would be on any other pool, and its lease records
+the overage: the pool, its limit and how far over. It shows on the pool line of
+`datawatch capacity`, in the chat `capacity` verb, in the Capacity card, and in
+`GET /api/capacity`, and raises an alert when
+`autonomous.capacity_operator_overage_alert` is on.
+
+Nothing else changes. Workers still wait for a free slot on a node pool, the
+supervisor class does not use node pools, and the node a worker is placed on is
+picked by the same rules as before (least loaded first, then priority); an
+operator's overage lease counts as load on that node, so a worker goes to a node
+with room.
+
+If you know a node's engine truly cannot take more, turn `hard_limit` on for that
+node (default off). With it on, that node's pools keep the old behaviour for every
+class: an operator start waits for a free engine and is refused with the usual
+capacity message if none frees up in time. The setting is per node and read live;
+a peer's node setting is its own, because each daemon reads only its own nodes.
+
+- **PWA:** Settings > Compute > node edit > *Hard limit*.
+- **CLI:** `datawatch compute node update <name> --hard-limit` (update replaces
+  the whole node, so pass it again to keep it).
+- **MCP:** `compute_node_update` / `compute_node_add` with `hard_limit`.
+- **Chat channels:** `compute node update <name> hard_limit=true`.
+- **REST:** `PUT /api/compute/nodes/{name}` with `"hard_limit": true`.
+- **YAML:** `hard_limit: true` on a `compute_nodes` entry.
 
 ### Verifier slots
 
@@ -1429,6 +1461,58 @@ To follow one task, filter on its id: `datawatch audit --subject t-3f9a1c`
 shows when it started waiting, why, and when it was admitted. To see who set
 or cleared a back-off by hand: `datawatch audit --action
 'autonomous_usage_backoff_*' --actor operator`.
+
+## Who is admitted: worker, supervisor and operator starts
+
+Every session start takes a lease on the capacity pools before it launches, and the daemon decides how by the way it launched the session. A field in the request never decides it: `one_shot` in a start request is accepted and ignored for admission.
+
+| Class | Which starts | At a full pool |
+|---|---|---|
+| Worker | An Automaton's own launches: task sessions, decompose, verifier and judge sessions; and the restart of a worker session (rate-limit fallback, exit hook) | Waits in the queue |
+| Supervisor | Supervisor loop jobs and schedules whose launch role is supervisor | Uses the buffer above the limit; never queued behind workers |
+| Operator | Every other start: the app, the CLI, chat, MCP, the API, restarts, and any outside client | Admitted over the limit; the overage is recorded |
+
+Workers carry a marker only the daemon holds (a per-process secret), so no client can claim the worker class. Every start path is admitted at the session manager, and the test `TestSessionStartPathsAreAudited` lists them: a new start path fails the test until it is on the audited list.
+
+### Restarted workers
+
+When a worker session is restarted (a rate-limit fallback to another profile, or an exit hook), the new session keeps the worker class and re-enters the queue at the head: it is granted before every other waiting worker, whatever their priority, so interrupted work resumes first. It still respects the cap: with a full pool it waits for a slot, for as long as any worker waits (`autonomous.capacity_wait_timeout_seconds`, default 4 hours). It does not take the operator class and gets no supervisor buffer. A verifier still ranks ahead of it, and a supervisor request is granted before it. The restart of a session that is not a worker's stays an operator start.
+
+### Operator overage
+
+An operator start is never refused. When `llm:claude-code` is full, the session still starts, and its lease records the overage: the pool, who, how far over. The overage counts in the pool's used figure and shows as `N over the limit: operator` on the pool line of `datawatch capacity`, in the chat `capacity` verb, in the Capacity card of the web app, and as `over` on the pool and `class` and `overage` on the lease in `GET /api/capacity`. Autonomous work waits until the pool is back under its limit. Turn on `autonomous.capacity_operator_overage_alert` to get an alert each time. A compute node's engine slots are soft in the same way: an operator start over the slots of a node is admitted and the overage is recorded (pool `node:<name>`, its limit, how far over). Set `hard_limit` on a node whose engine cannot take more; see [Soft node slots and hard_limit](#soft-node-slots-and-hard_limit).
+
+### The operator allowance above the session cap
+
+The host session cap (`session.max_sessions`) is a hard stop for workers. An operator start gets an allowance above it: `autonomous.capacity_operator_reserve_host` (default 5 slots; `0` = operators stop at the cap too). When an operator start finds the cap reached it still starts, into the allowance: an alert says so, and the session records how far over the cap it is (`over_session_cap` on the session; `session_cap` with `max`, `active`, `operator_slots`, `supervisor_slots` and `over` on `GET /api/capacity`; a `Host session cap: ... over` line in `datawatch capacity`). When the allowance is used up the start is refused with `max sessions (N) reached and the operator allowance of M above it is used up; raise autonomous.capacity_operator_reserve_host to allow more operator sessions`. A worker never uses the allowance, and supervisors keep their own host slots (below). The cap value itself is not changed by this setting.
+
+### The supervisor buffer
+
+Supervisor sessions use slots above a pool's limit that workers cannot take: `autonomous.capacity_supervisor_reserve_claude` (default 1), `autonomous.capacity_supervisor_reserve_pi` (default 1) and `autonomous.capacity_supervisor_reserve_host` (default 4, above `session.max_sessions`). They are counted in the pool's used figure, and a usage back-off or burn hold does not block them. A pool line shows `+1 reserved for supervisors`.
+
+### The supervisor credential
+
+An external supervisor (the detector timer) reaches the daemon over REST, which makes its starts operator starts. To give it the supervisor class without trusting a request field, mint a credential as the operator:
+
+```
+datawatch capacity supervisor-credential mint --name detector   # token shown once
+datawatch capacity supervisor-credential list                   # names only
+datawatch capacity supervisor-credential revoke --name detector # stops working at once
+```
+
+Send the token as the bearer token of the `POST /api/sessions/start` call only (it carries just `sessions:write` and `capacity:supervisor-start`); keep using the normal token for everything else. A start with it is supervisor class: it may use the reserved supervisor buffer on each pool and never goes past it (with the buffer in use it waits for its wait time and is then refused with 503, and starts nothing), and each one is audited as `supervisor_credential_start` with the credential's name as actor. A session credential or a federation peer cannot mint, list or revoke it, and a session token that only lists the capability is an operator start. `autonomous.capacity_supervisor_credential_enabled` false makes every credential do nothing. It is a stopgap that is removed together with the capability when the daemon runs the detector natively. The credential is managed on the CLI and REST only: the token is a secret that must not pass through chat, MCP or the web app.
+
+### The Claude account pool
+
+Every claude-code entry also draws on the pool `account:claude`, limited by `autonomous.capacity_account_claude_limit` (default 2: claude-code 1 plus claude-lean 1; `0` = unlimited), so the per-entry limits cannot add up past the account. A subscription backend a start names that matches no LLM entry and no compute node is listed under `unmapped` on `GET /api/capacity` (and as `No LLM entry for backend ...` in `datawatch capacity`) and held to one session until an entry is added.
+
+**Federation.** Each host has its own local caps. A peer's local model pools (`llm:<entry>` and `node:<name>` on that peer) are its own: they add to the federated capacity, and one host's cap never limits another host's local models. `GET /api/capacity`, `datawatch capacity`, the chat `capacity` verb and the web Capacity card show a **cluster view**: this host first, then every peer that is opted in for fingerprint sync, named in a `peer_window` or matched, each at the pools and limits that peer reports, with each host's llm and node sums and the cluster total. Nothing assumes this host's sizes. The Claude account is the one pool that can span hosts. A peer's leases count against this daemon's `account:claude` limit only when (1) a **confirmed** `billing_group` match says its LLM entry bills to the same account as a local entry (the peer's own leases on that matched entry count, see [federation-fingerprint.md](federation-fingerprint.md)), or (2) you named the peer in the `peer_window` of a claude-code entry's budget (the peer's whole `account:claude` pool counts; a peer that is both is counted once). A **pending** match counts nothing and is listed as `possible shared account, awaiting your confirmation`; a rejected one counts nothing; a peer with a separate Claude account adds its own limit and counts nothing here. Peers are read on the ten-second tick, an unreachable peer counts 0 and shows as not reachable, and a peer's own external figure is never counted, so two peers that name each other do not double count.
+
+Ask the daemon what a start would do with `datawatch capacity admission --backend claude-code --role interactive` (also `--role supervisor`); it changes nothing.
+
+### After a restart
+
+If the work re-adopted at a restart leaves a pool above its limit, the daemon raises one alert per pool. The sessions keep running; new work waits until the pool is back under its limit. A cancelled task never takes a lease, runs no placement and loads no model on a node.
 
 ## Common pitfalls
 

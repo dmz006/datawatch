@@ -34,8 +34,20 @@ type PeerRef struct {
 // /api/capacity body (the shape internal/server/capacity.go writes); the
 // rest of the response is ignored.
 type capacityPoolView struct {
-	Name string `json:"name"`
-	Held int    `json:"held"`
+	Name     string `json:"name"`
+	Held     int    `json:"held"`
+	Limit    int    `json:"limit"`
+	External int    `json:"external"`
+	Over     int    `json:"over"`
+}
+
+// PoolUsage is one pool as a peer reported it, at that peer's own size.
+type PoolUsage struct {
+	Name     string `json:"name"`
+	Limit    int    `json:"limit"` // 0 = unlimited on that peer
+	Held     int    `json:"held"`
+	External int    `json:"external,omitempty"`
+	Over     int    `json:"over,omitempty"`
 }
 
 // PeerGate is the admission-time check: for a local node, each confirmed

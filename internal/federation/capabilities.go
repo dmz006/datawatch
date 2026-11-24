@@ -186,6 +186,15 @@ const (
 	// any kind before this; needed to scope the session-default group.
 	CapMemoryRead  = "memory:read"
 	CapMemoryWrite = "memory:write"
+
+	// CapCapacitySupervisorStart makes a REST session start the supervisor
+	// admission class. It is the one capability of the supervisor credential, a
+	// stopgap for an external supervisor (the detector timer) until the daemon
+	// runs that job natively; remove it with that credential. Deliberately in
+	// NO built-in group, not even full-control: it exists only on a token an
+	// operator mints with POST /api/capacity/supervisor-credential, and the
+	// daemon honours it only on a token minted that way.
+	CapCapacitySupervisorStart = "capacity:supervisor-start"
 )
 
 // allCaps is every individual capability for the full-control group.

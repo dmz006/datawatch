@@ -50,6 +50,7 @@ func (s *Server) toolComputeNodeAdd() mcpsdk.Tool {
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
 		mcpsdk.WithString("node_pinned_model", mcpsdk.Description("pin this node to one model. Requests with no explicit model run on it; an explicit request for another model is refused unless allow_model_swap is true. Empty = no pin.")),
 		mcpsdk.WithBoolean("allow_model_swap", mcpsdk.Description("let an explicit request replace the pinned model. Default false. Ignored when no node_pinned_model is set.")),
+		mcpsdk.WithBoolean("hard_limit", mcpsdk.Description("treat this node's engine slots as a physical limit: an operator start waits for a free engine instead of going over. Default false (soft): an operator start may go over the slots and the overage is recorded; workers wait either way.")),
 		mcpsdk.WithString("tls_ca_file", mcpsdk.Description("path to a PEM CA bundle trusted in addition to the system roots when connecting to this node over https. Cannot be combined with tls_insecure_skip_verify. Empty = system roots only.")),
 		mcpsdk.WithString("tls_cert_fingerprint", mcpsdk.Description("SHA-256 fingerprint of this node's leaf certificate (64 hex chars, colons allowed). Cannot be combined with tls_insecure_skip_verify. Empty = no pin.")),
 		mcpsdk.WithBoolean("tls_insecure_skip_verify", mcpsdk.Description("turn certificate checking off for this node. Default false. Every use is audited and shown in the PWA. Cannot be combined with tls_ca_file or tls_cert_fingerprint.")),
@@ -78,6 +79,7 @@ func (s *Server) toolComputeNodeUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
 		mcpsdk.WithString("node_pinned_model", mcpsdk.Description("pin this node to one model. Update replaces the whole node, so omitting this clears the pin. Empty = no pin.")),
 		mcpsdk.WithBoolean("allow_model_swap", mcpsdk.Description("let an explicit request replace the pinned model. Default false. Update replaces the whole node, so omitting this resets it to false.")),
+		mcpsdk.WithBoolean("hard_limit", mcpsdk.Description("treat this node's engine slots as a physical limit: an operator start waits for a free engine instead of going over. Default false (soft): an operator start may go over the slots and the overage is recorded; workers wait either way. Update replaces the whole node, so omitting this turns it off.")),
 		mcpsdk.WithString("tls_ca_file", mcpsdk.Description("path to a PEM CA bundle trusted in addition to the system roots when connecting to this node over https. Update replaces the whole node, so omitting this clears it. Cannot be combined with tls_insecure_skip_verify.")),
 		mcpsdk.WithString("tls_cert_fingerprint", mcpsdk.Description("SHA-256 fingerprint of this node's leaf certificate (64 hex chars, colons allowed). Update replaces the whole node, so omitting this clears the pin. Cannot be combined with tls_insecure_skip_verify.")),
 		mcpsdk.WithBoolean("tls_insecure_skip_verify", mcpsdk.Description("turn certificate checking off for this node. Default false. Every use is audited and shown in the PWA. Update replaces the whole node, so omitting this resets it to false (verification back on). Cannot be combined with tls_ca_file or tls_cert_fingerprint.")),
@@ -578,6 +580,7 @@ func computeBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 		body["node_pinned_model"] = v
 	}
 	body["allow_model_swap"] = req.GetBool("allow_model_swap", false)
+	body["hard_limit"] = req.GetBool("hard_limit", false)
 	if v := optString(req, "tls_ca_file"); v != "" {
 		body["tls_ca_file"] = v
 	}

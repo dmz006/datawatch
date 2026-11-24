@@ -306,7 +306,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 
 Compute node tools:
 
-- **`compute_node_add` / `compute_node_update`** — create or replace a compute node. Alongside the executor's `session_slots` (0 = derive from observer data) and `max_concurrent_sessions` they take the three verifier keys:
+- **`compute_node_add` / `compute_node_update`** — create or replace a compute node. Alongside the executor's `session_slots` (0 = derive from observer data) and `max_concurrent_sessions` they take `hard_limit` (boolean, default false: when true an operator start waits for a free engine on this node instead of going over its slots; `update` replaces the whole node, so omitting it turns it off) and the three verifier keys:
 
   | Parameter | Meaning |
   |---|---|

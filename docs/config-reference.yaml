@@ -3504,6 +3504,32 @@ autonomous:
   # holder is not freed as an orphan during that window (seconds; default 60,
   # minimum 10; 0 = 60). Read live. Values 1-9 and negatives are refused.
   capacity_slot_reconcile_grace_seconds: 60
+  # Admission classes (docs/howto/automata-capacity.md). A claude-code entry also
+  # draws on the pool account:claude, limited by capacity_account_claude_limit
+  # (default 2 = claude-code 1 + claude-lean 1; 0 = unlimited). The supervisor
+  # class may use a buffer above a pool's limit: Claude 1, pi 1, and host
+  # session slots above session.max_sessions 4. An operator start is never
+  # refused by a pool limit; it is admitted over the cap with an overage lease,
+  # and capacity_operator_overage_alert (default false) raises an alert each
+  # time. All five are read live.
+  capacity_account_claude_limit: 2
+  capacity_supervisor_reserve_claude: 1
+  capacity_supervisor_reserve_pi: 1
+  capacity_supervisor_reserve_host: 4
+  # capacity_operator_reserve_host (default 5): host session slots above
+  # session.max_sessions that only operator starts may use. An operator start at
+  # the cap goes into this allowance (an alert is raised and the session records
+  # how far over the cap it is); past it the start is refused with a reason that
+  # names this setting. Workers never use it; supervisors have the slots above.
+  # 0 = operators stop at the cap. Read live. The cap itself is unchanged.
+  capacity_operator_reserve_host: 5
+  capacity_operator_overage_alert: false
+  # capacity_supervisor_credential_enabled (default true): a supervisor
+  # credential (minted with `datawatch capacity supervisor-credential mint`) makes
+  # a REST session start the supervisor class, for an external supervisor until
+  # the daemon runs that job itself. false makes every credential do nothing
+  # without revoking it. Read live.
+  capacity_supervisor_credential_enabled: true
   # How often the daemon re-checks LLM role tags for contention (seconds):
   # two enabled entries claiming one role, or two roles that have converged on
   # one entry since the last check. Warnings only; nothing is blocked. Unset or
@@ -5185,6 +5211,15 @@ orchestrator:
 # `datawatch compute node update <name> --session-slots N`, or REST
 # PUT /api/compute/nodes/{name}.
 #
+# hard_limit (default false) says whether the node's engine slots are a physical
+# limit. Off, an operator start (a session you start yourself) may go over a node's
+# slots and the overage is recorded, because how many models an engine runs at once
+# is up to the user's hardware; workers still wait for a free slot. On, the node's
+# pools keep the old behaviour for every class and an operator start waits for a
+# free engine. Set it in the PWA node form, `datawatch compute node update <name>
+# --hard-limit`, REST PUT /api/compute/nodes/{name}, the MCP compute node tools or
+# the comm channel's compute node update. A peer's node setting is its own.
+#
 # Verifier slots live beside it, as three more per-node keys:
 # verifier_slots              the node's verifier worker count. Leave it out and
 #                             the node takes one verifier slot when it hosts a
@@ -5216,6 +5251,7 @@ orchestrator:
 #     kind: ollama
 #     address: http://gpu-1:11434
 #     session_slots: 2
+#     hard_limit: false               # true = an operator start waits for a free engine instead of going over the slots
 #     verifier_slots: 2               # leave out for the default; 0 = no verifier runs here
 #     verifier_min_free_mem_mb: 2048  # leave out for the default of 1024; 0 = headroom check off
 #     verifier_context_mb: 4096       # context MB per verifier slot for the advice figure; 0 = none

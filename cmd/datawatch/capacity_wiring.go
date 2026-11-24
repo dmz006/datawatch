@@ -15,6 +15,7 @@ import (
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/fingerprint"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/server"
@@ -333,14 +334,31 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 		if registry != nil {
 			reg = registry()
 		}
+		var named *inference.LLM
 		if reg != nil {
 			if l, err := reg.Get(backend); err == nil && l != nil {
-				pools = append(pools, "llm:"+l.Name)
+				named = l
+			}
+		}
+		if named != nil {
+			pools = append(pools, "llm:"+named.Name)
+			if named.Kind == inference.KindClaudeCode {
+				pools = append(pools, accountClaudePool)
 			}
 		}
 		// Only a local-engine session takes a compute node's pool.
 		entry, node, gated := hostingEntry(reg, backend, model)
 		if !gated {
+			if named == nil && inference.IsSubscriptionKind(backend) && !autonomous.IsLocalEngineBackend(backend) {
+				// A subscription backend with no entry and no compute node to
+				// govern it is reported and held to the subscription default,
+				// never treated as unlimited.
+				unmappedBackends.note(backend, model)
+				pools = append(pools, "llm:"+backend)
+				if backend == string(inference.KindClaudeCode) {
+					pools = append(pools, accountClaudePool)
+				}
+			}
 			return pools, node, nil
 		}
 		if len(entry.ComputeNodes) > 1 {
@@ -1054,7 +1072,30 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	servedModel := map[string]uint64{}
 	servedCPUModel := map[string]uint64{}
 
-	external := hostExternalCount(mgr)
+	// The Claude account can span hosts: a peer's leases count against
+	// account:claude here only for a confirmed billing-group match or a
+	// peer_window opt-in (see capacity_federation.go). A peer's own llm: and
+	// node: pools are its own and never count against this daemon's.
+	fedAccount := newFederationAccount(
+		func() *fingerprint.PeerGate { return fingerprintPeerGate },
+		claudeAccountPeers(httpServer.InferenceRegistry))
+	httpServer.SetCapacityFederation(func(local []capacity.PoolStatus) *server.CapacityFederation {
+		localAcct := 0
+		for _, p := range local {
+			if p.Name == accountClaudePool {
+				localAcct = p.Held
+			}
+		}
+		v := fedAccount.View(cfg.Hostname, local, cfg.Autonomous.CapacityAccountClaudeLimit(), localAcct)
+		return &v
+	})
+	hostExternal := hostExternalCount(mgr)
+	external := func(pool string) int {
+		if pool == accountClaudePool {
+			return fedAccount.Held()
+		}
+		return hostExternal(pool)
+	}
 	backpressure := gpuNodeBackpressure(func() int { return cfg.Autonomous.CapacityGPUUtilPct }, &gpuMu, gpuUtil)
 	// A spawn refused by the BL30 global cooldown waits instead of failing;
 	// the reset time words the task's wait reason.
@@ -1097,6 +1138,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		AutonomousModelBackpressure: backoffBackpressure(autonomousBackoff),
 		HeldBackpressure:            sharedNodeBackpressure(),
 		VerifierHeadroom:            verifierHeadroom.blocked,
+		OnOverage:                   operatorOverageNotice(cfg, alertFn),
+		OnAdoptOverLimit:            adoptOverLimitNotice(alertFn),
 	}
 	applyNodeLimitOptions(&opts, cfg)
 	led := capacity.New(opts)
@@ -1244,7 +1287,10 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		if len(pools) == 0 {
 			return "", nil
 		}
+		unmappedBackends.apply(led)
 		req := withNodeChoices(interactiveAdmitRequest(holder, pools, node, model, priority), nodeChoices)
+		req.Class = capacity.ClassFrom(ctx)
+		req.Interactive = req.Class == capacity.ClassOperator
 		req.Refresh = resolveRefresh(resolve, req, backend, model)
 		if err := led.Acquire(ctx, req, 0, func() bool { return false }, func(string) {}); err != nil {
 			return "", err
@@ -1255,6 +1301,18 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			return ls.Node, nil
 		}
 		return "", nil
+	})
+	// Every other start path (chat, MCP, schedules, WebSocket, restarts, the
+	// pipeline adapter) admits at the manager, so no start is unaccounted.
+	mgr.SetOverSessionCapHook(overSessionCapNotice(cfg, alertFn))
+	mgr.SetStartAdmitter(managerStartAdmitter(cfg, led, resolve, func() string { return cfg.Session.LLMBackend }))
+	httpServer.SetCapacityUnmapped(func() []server.CapacityUnmapped {
+		src := unmappedBackends.list()
+		out := make([]server.CapacityUnmapped, 0, len(src))
+		for _, u := range src {
+			out = append(out, server.CapacityUnmapped{Backend: u.Backend, Model: u.Model, Count: u.Count, LastSeen: u.LastSeen})
+		}
+		return out
 	})
 	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
@@ -1423,6 +1481,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		if reg := httpServer.ComputeRegistry(); reg != nil {
 			nodes := reg.List()
 			nodeHealth.refresh(nodes)
+			syncNodeHardLimits(led, nodes)
 			hosting := map[string]bool{}
 			for _, entryNodes := range engineNodes(httpServer.InferenceRegistry()) {
 				for _, node := range entryNodes {
@@ -1519,6 +1578,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 		if reg := httpServer.InferenceRegistry(); reg != nil {
 			syncLLMLimits(cfg, reg, led)
+			syncAdmissionPoolsFor(cfg, reg, led, mgr)
 			syncLLMRates(cfg, reg, led)
 		}
 		// The reaper runs live once per lease, in order, on this goroutine, so the
@@ -1580,6 +1640,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				// Peer spend is fetched off the tick so a slow peer never
 				// delays pool syncing; admission reads only the cache.
 				go peerBudget.Refresh(ctx)
+				go fedAccount.Refresh(ctx)
 				auditBudgetTransitions(autonomousBudget, budgetFull, emitBackoffAudit)
 				// Review-reserve verdicts queued on a ledger decision are emitted
 				// here, outside every lock.
@@ -2021,4 +2082,15 @@ func nodeInPooledEntry(reg *inference.Registry, node string) bool {
 		}
 	}
 	return false
+}
+
+// syncNodeHardLimits copies each compute node's own hard_limit setting onto the
+// ledger: on, that node's engine pools (node: and node-verify:) keep operator
+// starts waiting for a free engine; off (the default), an operator start may go
+// over them with the overage recorded. A peer's node setting is its own: only
+// this daemon's registry feeds this daemon's ledger.
+func syncNodeHardLimits(led *capacity.Ledger, nodes []*compute.Node) {
+	for _, n := range nodes {
+		led.SetHardLimit(n.Name, n.HardLimit)
+	}
 }

@@ -6461,6 +6461,12 @@ A node that hosts no local engine takes its limit from `max_concurrent_sessions`
 alone, as it always has: 0 means unlimited, and no observer count is used.
 `session_slots` has no effect on such a node.
 
+A node's slots are soft by default: an operator start over them is admitted and
+its lease records the overage, because how many models an engine runs at once is
+up to the user's hardware. Workers still wait for a free slot. Set `hard_limit`
+on the node (`datawatch compute node update <name> --hard-limit`) when its
+engine truly cannot take more; an operator start then waits for a free engine too.
+
 Running workers are not counted out when free memory shrinks. The count never
 falls below the number of workers already holding the node, but that floor is
 capped at the node's GPU count, so a node running more workers than it has GPUs

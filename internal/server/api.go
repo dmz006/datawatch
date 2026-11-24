@@ -419,10 +419,12 @@ type Server struct {
 	// the same backend+model — nil when capacity isn't wired at all.
 	// Autonomous task spawns skip this (they already admit via the
 	// executor's own m.admit()); see handleStartSession's req.OneShot check.
-	capacityAdmit   CapacityAdmitFn
-	capacityBind    CapacityBindFn
-	capacityRelease CapacityReleaseFn
-	inferenceDisp   *inference.Dispatcher
+	capacityUnmapped   func() []CapacityUnmapped
+	capacityFederation func(local []capacity.PoolStatus) *CapacityFederation
+	capacityAdmit      CapacityAdmitFn
+	capacityBind       CapacityBindFn
+	capacityRelease    CapacityReleaseFn
+	inferenceDisp      *inference.Dispatcher
 
 	// summarizerSvc is the response summarizer (nil when disabled).
 	// Wired from main.go after daemon init via SetSummarizerSvc.
@@ -5658,14 +5660,21 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	// node:/llm: capacity pools an autonomous task would use for this same
 	// backend+model, so a manual session against a shared compute node
 	// actually contends with autonomous tasks for its real capacity instead
-	// of being invisible to the ledger. Autonomous task spawns (OneShot)
-	// skip this — they already admit via the executor's own m.admit()
-	// before ever reaching this handler; gating them here too would
+	// of being invisible to the ledger. Only a launch the daemon marked as its
+	// own worker skips this — it already admitted via the executor's own
+	// m.admit() before reaching this handler; gating it here too would
 	// double-acquire the same pool and could deadlock a node capped at 1.
 	// Short timeout (a few seconds, not the autonomous path's hours-long
 	// default) because this blocks a synchronous HTTP request.
 	capacityHolder := ""
-	if !req.OneShot && s.capacityAdmit != nil {
+	// Admission class is decided by how the daemon launched this start (the
+	// internal marker), never by a request field: one_shot is accepted and
+	// ignored here. A worker launch is admitted upstream by the manager that
+	// started it; supervisor and operator starts admit on the pools below.
+	admitClass, credName := s.startAdmissionClass(r)
+	opts.AdmitClass = string(admitClass)
+	opts.PreAdmitted = true // this handler owns admission for the start
+	if admitClass != capacity.ClassWorker && s.capacityAdmit != nil {
 		holder, herr := generateStreamID()
 		if herr != nil {
 			http.Error(w, "capacity: could not generate holder id: "+herr.Error(), http.StatusInternalServerError)
@@ -5676,13 +5685,16 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			waitSecs = s.cfg.Session.CapacityWaitSeconds
 		}
 		admitCtx, cancel := context.WithTimeout(r.Context(), time.Duration(waitSecs)*time.Second)
-		grantedNode, aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, startPriority)
+		grantedNode, aerr := s.capacityAdmit(capacity.WithClass(admitCtx, admitClass), resolvedLLMRef, req.Model, holder, startPriority)
 		cancel()
 		if aerr != nil {
 			jsonError(w, http.StatusServiceUnavailable, capacityRefusalMessage(aerr, resolvedLLMRef, req.Model, resolvedComputeNodeRef, waitSecs))
 			return
 		}
 		capacityHolder = holder
+		if credName != "" {
+			s.auditSupervisorCredentialStart(credName, resolvedLLMRef, req.Model, holder)
+		}
 		// The ledger placed this start on grantedNode, so the session runs there,
 		// not on the backend's first node. A compute_node the operator named is
 		// kept as named.
@@ -6857,48 +6869,55 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"loop_detect_turns": config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
 			// Daily pending-branch alert: effective values (unset reads on
 			// and 3), so the keys are never absent from the read surface.
-			"unlanded_alert_enabled":                config.UnlandedAlertEnabledEffective(s.cfg.Autonomous.UnlandedAlertEnabled),
-			"unlanded_alert_threshold":              config.UnlandedAlertThresholdEffective(s.cfg.Autonomous.UnlandedAlertThreshold),
-			"descendant_stall_seconds":              s.cfg.Autonomous.DescendantStallSeconds,
-			"session_start_confirm_seconds":         s.cfg.Autonomous.SessionStartConfirmSeconds,
-			"orphan_grace_seconds":                  s.cfg.Autonomous.OrphanGraceSeconds,
-			"duplicate_session_keep":                config.NormalizeDuplicateSessionKeep(s.cfg.Autonomous.DuplicateSessionKeep),
-			"restart_policy":                        config.NormalizeRestartPolicy(s.cfg.Autonomous.RestartPolicy),
-			"planning_restart_policy":               config.NormalizePlanningRestartPolicy(s.cfg.Autonomous.PlanningRestartPolicy),
-			"restart_quiet_timeout_seconds":         config.NormalizeRestartQuietTimeoutSeconds(s.cfg.Autonomous.RestartQuietTimeoutSeconds),
-			"restart_on_timeout":                    config.NormalizeRestartOnTimeout(s.cfg.Autonomous.RestartOnTimeout),
-			"stuck_running_seconds":                 s.cfg.Autonomous.StuckRunningSeconds,
-			"worker_idle_nudge_seconds":             s.cfg.Autonomous.WorkerIdleNudgeSeconds,
-			"worker_idle_nudge_stall_seconds":       s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
-			"capacity_enabled":                      s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
-			"capacity_wait_timeout_seconds":         s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
-			"archive_grace_minutes":                 s.cfg.Autonomous.ArchiveGraceMinutesOrDefault(),
-			"archive_keep_unmerged":                 s.cfg.Autonomous.ArchiveKeepUnmergedOrDefault(),
-			"capacity_fallthrough":                  s.cfg.Autonomous.CapacityFallthrough,
-			"capacity_strict_node_limit":            s.cfg.Autonomous.CapacityStrictNodeLimitOn(),
-			"capacity_count_pool_by_node":           s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
-			"capacity_adopt_before_admit":           s.cfg.Autonomous.CapacityAdoptBeforeAdmitOn(),
-			"capacity_adoption_wait_seconds":        int(s.cfg.Autonomous.CapacityAdoptionWait() / time.Second),
-			"capacity_slot_reconcile_grace_seconds": int(s.cfg.Autonomous.CapacitySlotReconcileGrace() / time.Second),
-			"capacity_gpu_util_pct":                 s.cfg.Autonomous.CapacityGPUUtilPct,
-			"capacity_rate_requests":                s.cfg.Autonomous.CapacityRateRequests,
-			"capacity_rate_tokens":                  s.cfg.Autonomous.CapacityRateTokens,
-			"capacity_rate_window_seconds":          s.cfg.Autonomous.CapacityRateWindowSeconds,
-			"ci_watch_timeout_seconds":              s.cfg.Autonomous.CIWatchTimeoutSeconds,
-			"checks":                                checksShipConfigDisplay(s.cfg)["checks"],
-			"ship":                                  checksShipConfigDisplay(s.cfg)["ship"],
-			"detail_text_cap_bytes":                 s.cfg.Autonomous.DetailTextCapBytes,
-			"inherited_tags_cache_seconds":          s.cfg.Autonomous.InheritedTagsCacheSeconds, // 0 = default (15s), negative = off
-			"per_prd_guardrails":                    s.cfg.Autonomous.PerPRDGuardrails,          // rules-review, ci-watch
-			"block_on_file_drift":                   s.cfg.Autonomous.BlockOnFileDrift,          // strict foreign-file-drift enforcement
-			"gate_disagreement":                     s.cfg.Autonomous.GateDisagreement,          // verifier OK + gate regression: "warn" (default) or "block"
-			"failure_escalation":                    failureEscalationConfigForDisplay(s.cfg.Autonomous.FailureEscalation),
-			"verifier_infra_escalation_threshold":   s.cfg.Autonomous.VerifierInfraEscalationThreshold,
-			"verification_record_scores":            autonomous.RecordScoresEnabled(s.cfg.Autonomous.VerificationRecordScores),
-			"scope_breadth_enabled":                 s.cfg.Autonomous.ScopeBreadthEnabled,
-			"fallback_verification_backend":         s.cfg.Autonomous.FallbackVerificationBackend,
-			"verifier_no_progress_timeout_seconds":  s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
-			"verifier_max_run_seconds":              s.cfg.Autonomous.VerifierMaxRunSeconds, // 0 = no cap
+			"unlanded_alert_enabled":                 config.UnlandedAlertEnabledEffective(s.cfg.Autonomous.UnlandedAlertEnabled),
+			"unlanded_alert_threshold":               config.UnlandedAlertThresholdEffective(s.cfg.Autonomous.UnlandedAlertThreshold),
+			"descendant_stall_seconds":               s.cfg.Autonomous.DescendantStallSeconds,
+			"session_start_confirm_seconds":          s.cfg.Autonomous.SessionStartConfirmSeconds,
+			"orphan_grace_seconds":                   s.cfg.Autonomous.OrphanGraceSeconds,
+			"duplicate_session_keep":                 config.NormalizeDuplicateSessionKeep(s.cfg.Autonomous.DuplicateSessionKeep),
+			"restart_policy":                         config.NormalizeRestartPolicy(s.cfg.Autonomous.RestartPolicy),
+			"planning_restart_policy":                config.NormalizePlanningRestartPolicy(s.cfg.Autonomous.PlanningRestartPolicy),
+			"restart_quiet_timeout_seconds":          config.NormalizeRestartQuietTimeoutSeconds(s.cfg.Autonomous.RestartQuietTimeoutSeconds),
+			"restart_on_timeout":                     config.NormalizeRestartOnTimeout(s.cfg.Autonomous.RestartOnTimeout),
+			"stuck_running_seconds":                  s.cfg.Autonomous.StuckRunningSeconds,
+			"worker_idle_nudge_seconds":              s.cfg.Autonomous.WorkerIdleNudgeSeconds,
+			"worker_idle_nudge_stall_seconds":        s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
+			"capacity_enabled":                       s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
+			"capacity_wait_timeout_seconds":          s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
+			"archive_grace_minutes":                  s.cfg.Autonomous.ArchiveGraceMinutesOrDefault(),
+			"archive_keep_unmerged":                  s.cfg.Autonomous.ArchiveKeepUnmergedOrDefault(),
+			"capacity_fallthrough":                   s.cfg.Autonomous.CapacityFallthrough,
+			"capacity_strict_node_limit":             s.cfg.Autonomous.CapacityStrictNodeLimitOn(),
+			"capacity_count_pool_by_node":            s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
+			"capacity_adopt_before_admit":            s.cfg.Autonomous.CapacityAdoptBeforeAdmitOn(),
+			"capacity_adoption_wait_seconds":         int(s.cfg.Autonomous.CapacityAdoptionWait() / time.Second),
+			"capacity_account_claude_limit":          s.cfg.Autonomous.CapacityAccountClaudeLimit(),
+			"capacity_supervisor_reserve_claude":     s.cfg.Autonomous.CapacitySupervisorReserveClaude(),
+			"capacity_supervisor_reserve_pi":         s.cfg.Autonomous.CapacitySupervisorReservePi(),
+			"capacity_supervisor_reserve_host":       s.cfg.Autonomous.CapacitySupervisorReserveHost(),
+			"capacity_operator_reserve_host":         s.cfg.Autonomous.CapacityOperatorReserveHost(),
+			"capacity_operator_overage_alert":        s.cfg.Autonomous.CapacityOperatorOverageAlert,
+			"capacity_supervisor_credential_enabled": s.cfg.Autonomous.CapacitySupervisorCredentialOn(),
+			"capacity_slot_reconcile_grace_seconds":  int(s.cfg.Autonomous.CapacitySlotReconcileGrace() / time.Second),
+			"capacity_gpu_util_pct":                  s.cfg.Autonomous.CapacityGPUUtilPct,
+			"capacity_rate_requests":                 s.cfg.Autonomous.CapacityRateRequests,
+			"capacity_rate_tokens":                   s.cfg.Autonomous.CapacityRateTokens,
+			"capacity_rate_window_seconds":           s.cfg.Autonomous.CapacityRateWindowSeconds,
+			"ci_watch_timeout_seconds":               s.cfg.Autonomous.CIWatchTimeoutSeconds,
+			"checks":                                 checksShipConfigDisplay(s.cfg)["checks"],
+			"ship":                                   checksShipConfigDisplay(s.cfg)["ship"],
+			"detail_text_cap_bytes":                  s.cfg.Autonomous.DetailTextCapBytes,
+			"inherited_tags_cache_seconds":           s.cfg.Autonomous.InheritedTagsCacheSeconds, // 0 = default (15s), negative = off
+			"per_prd_guardrails":                     s.cfg.Autonomous.PerPRDGuardrails,          // rules-review, ci-watch
+			"block_on_file_drift":                    s.cfg.Autonomous.BlockOnFileDrift,          // strict foreign-file-drift enforcement
+			"gate_disagreement":                      s.cfg.Autonomous.GateDisagreement,          // verifier OK + gate regression: "warn" (default) or "block"
+			"failure_escalation":                     failureEscalationConfigForDisplay(s.cfg.Autonomous.FailureEscalation),
+			"verifier_infra_escalation_threshold":    s.cfg.Autonomous.VerifierInfraEscalationThreshold,
+			"verification_record_scores":             autonomous.RecordScoresEnabled(s.cfg.Autonomous.VerificationRecordScores),
+			"scope_breadth_enabled":                  s.cfg.Autonomous.ScopeBreadthEnabled,
+			"fallback_verification_backend":          s.cfg.Autonomous.FallbackVerificationBackend,
+			"verifier_no_progress_timeout_seconds":   s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
+			"verifier_max_run_seconds":               s.cfg.Autonomous.VerifierMaxRunSeconds, // 0 = no cap
 
 			// Read-only: the idle-nudge windows the daemon applies after the
 			// unset or non-positive fallback (180s nudge, 600s stall).
@@ -10964,6 +10983,34 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_adoption_wait_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.CapacityAdoptionWaitSeconds = n
+			}
+		case "autonomous.capacity_account_claude_limit":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityAccountClaudeLimitSetting = &n
+			}
+		case "autonomous.capacity_supervisor_reserve_claude":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacitySupervisorReserveClaudeSetting = &n
+			}
+		case "autonomous.capacity_supervisor_reserve_pi":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacitySupervisorReservePiSetting = &n
+			}
+		case "autonomous.capacity_supervisor_reserve_host":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacitySupervisorReserveHostSetting = &n
+			}
+		case "autonomous.capacity_supervisor_credential_enabled":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacitySupervisorCredentialEnabled = &b
+			}
+		case "autonomous.capacity_operator_reserve_host":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityOperatorReserveHostSetting = &n
+			}
+		case "autonomous.capacity_operator_overage_alert":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityOperatorOverageAlert = b
 			}
 		case "autonomous.capacity_slot_reconcile_grace_seconds":
 			// Range-checked up front by validateSlotReconcileGracePatch.

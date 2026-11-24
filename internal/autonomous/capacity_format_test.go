@@ -327,3 +327,48 @@ func TestCapacityText_PrintsCurrentNodeEngineReason(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatCapacityText_ShowsOperatorOverageAndUnmapped(t *testing.T) {
+	body := []byte(`{"pools":[],"leases":[{"holder":"start-1","class":"operator","overage":[{"pool":"llm:claude-code","limit":1,"over":1}]}],"unmapped":[{"backend":"claude-code","count":3}],"waiting":[],"tasks":{"waiting":[],"running":[],"verifying":[]}}`)
+	out, err := FormatCapacityText(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Operator sessions over a limit (1)", "start-1 (operator): llm:claude-code is 1 over its limit of 1", "No LLM entry for backend claude-code (3 starts)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("text missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestFormatCapacityText_ShowsHostSessionCapOver(t *testing.T) {
+	body := []byte(`{"pools":[],"leases":[],"session_cap":{"max":20,"active":22,"operator_slots":5,"over":2},"waiting":[],"tasks":{"waiting":[],"running":[],"verifying":[]}}`)
+	out, err := FormatCapacityText(body)
+	if err != nil || !strings.Contains(out, "Host session cap: 22 running against 20, 2 over (operator allowance 5)") {
+		t.Fatalf("text %q err %v", out, err)
+	}
+	body = []byte(`{"pools":[],"leases":[],"session_cap":{"max":20,"active":3,"operator_slots":5},"waiting":[],"tasks":{"waiting":[],"running":[],"verifying":[]}}`)
+	out, _ = FormatCapacityText(body)
+	if strings.Contains(out, "Host session cap") {
+		t.Fatalf("within the cap nothing is shown: %q", out)
+	}
+}
+
+func TestFormatCapacityText_ShowsClusterHostsAndSharedAccount(t *testing.T) {
+	body := []byte(`{"pools":[],"leases":[],"waiting":[],"tasks":{"waiting":[],"running":[],"verifying":[]},
+"federation":{"hosts":[
+ {"name":"alpha","self":true,"reachable":true,"llm_limit":1,"llm_held":1,"node_limit":2,"node_held":0,"shared_account":"self"},
+ {"name":"beta","reachable":true,"llm_limit":5,"llm_held":3,"shared_account":"confirmed","counted_held":1},
+ {"name":"gamma","reachable":false,"shared_account":"pending","note":"possible shared account, awaiting your confirmation"}],
+ "cluster":{"llm_limit":6,"llm_held":4,"node_limit":2,"node_held":0},
+ "account":{"limit":2,"local_held":1,"peer_held":1,"total":2}}}`)
+	out, err := FormatCapacityText(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Cluster, 3 hosts, each at its own limits: LLM 4/6 in use", "Claude account 2/2 (this host 1, peers 1)", "alpha (this host): LLM 1/1", "beta: LLM 3/5, nodes 0/no limit; shares the Claude account (confirmed), 1 counted here", "gamma (not reachable, counted as 0)", "possible shared account, awaiting your confirmation"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+}

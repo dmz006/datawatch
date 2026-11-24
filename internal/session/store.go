@@ -317,6 +317,11 @@ type Session struct {
 	// restart re-applies it to the new pane shell.
 	ScrubTmuxEnv bool `json:"scrub_tmux_env,omitempty"`
 
+	// OverSessionCap is how far over session.max_sessions this session was
+	// when an operator start went into the operator allowance (1 = one over).
+	// Zero for every start within the cap.
+	OverSessionCap int `json:"over_session_cap,omitempty"`
+
 	// CeilingPath records which memory-ceiling mechanism the worker pane
 	// used: "scope" (systemd user scope), "watchdog" (/proc watchdog) or
 	// "none". Empty for sessions that are not worker panes.

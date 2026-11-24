@@ -96,8 +96,13 @@ that is not a failure.
   rejected matches never do, and only `node:` pools are affected —
   never the `host`, `llm:` or external pools, and never
   operator-started interactive sessions.
-- **`billing_group`** — the confirmation records that both LLMs bill to
-  the same account, which feeds your budget decision: name the peer in
+- **`billing_group`** — a confirmed match also makes the peer's own leases on
+  the matched LLM entry count against this daemon's `account:claude` pool at
+  admission (see *Federation* in [automata-capacity.md](automata-capacity.md#who-is-admitted-worker-supervisor-and-operator-starts)),
+  so hosts that share one billing account count together against one limit,
+  while a peer with a separate account adds its own. A *pending* match counts
+  nothing and shows on capacity status as "possible shared account, awaiting
+  your confirmation". It also feeds your budget decision: name the peer in
   the LLM budget's `peer_window` (CLI `--budget-peer-window`, MCP
   `llm_update`/`budget_set` `peer_window`, config, or the budget's own
   surfaces) and that peer's spend counts toward the ceiling. The

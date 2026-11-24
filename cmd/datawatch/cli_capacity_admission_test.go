@@ -50,3 +50,20 @@ func TestRenderCapacity_RatePoolShowsRateSegment(t *testing.T) {
 		t.Fatalf("rate segment missing:\n%s", b.String())
 	}
 }
+
+func TestCapacitySupervisorCredentialCmd_RegisteredAndRendered(t *testing.T) {
+	for _, sub := range []string{"mint", "list", "revoke"} {
+		c, _, err := newCapacityCmd().Find([]string{"supervisor-credential", sub})
+		if err != nil || c.Name() != sub {
+			t.Fatalf("supervisor-credential %s missing: %v", sub, err)
+		}
+	}
+	var b bytes.Buffer
+	if err := renderSupervisorCredentials(&b, []byte(`{"credentials":["detector","other"]}`)); err != nil || b.String() != "detector\nother\n" {
+		t.Fatalf("list text %q err %v", b.String(), err)
+	}
+	b.Reset()
+	if err := renderSupervisorCredentials(&b, []byte(`{"credentials":[]}`)); err != nil || !strings.Contains(b.String(), "No supervisor credentials") {
+		t.Fatalf("empty text %q err %v", b.String(), err)
+	}
+}

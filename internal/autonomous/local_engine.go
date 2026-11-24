@@ -21,6 +21,11 @@ var localEngineBackends = map[string]bool{
 	"opencode-acp": true,
 }
 
+// IsLocalEngineBackend reports whether backend can run a model on a local
+// engine (pi, pi-prompt, ollama, opencode, opencode-acp). Such a backend is
+// governed by the node pools, not by a subscription plan.
+func IsLocalEngineBackend(backend string) bool { return localEngineBackends[backend] }
+
 // LocalEngineGate reports the compute node a session's model runs on and
 // whether that session is gated on the node's capacity pool.
 //

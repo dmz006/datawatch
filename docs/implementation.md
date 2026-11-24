@@ -195,7 +195,76 @@ except the adoption wait, which is read once as the ledger starts):
   (`MarkAdoptionComplete`), or the wait passes. The daemon's node health view also
   starts strict: no node is healthy until the first read of the compute registry, so
   nothing is placed on a node the ledger has not loaded. Off: requests are admitted
-  at once and the strict view does not hold placement.
+  at once and the strict view does not hold placement. When adoption ends, one finding
+  (an alert) is raised per pool the adopted sessions left above its limit
+  (`Options.OnAdoptOverLimit`); the sessions keep running and new work waits.
+- Admission classes. `capacity.Request.Class` is `worker` (zero value), `supervisor` or
+  `operator`; the daemon sets it from how it launched the session, never from a request
+  field. `internal/server/internal_launch.go` holds a per-process random token and the
+  `X-Datawatch-Internal-Launch` header (`<class>:<token>`) that the daemon's own loopback
+  callers send (autonomous spawn: worker; one-shot judge, verifier and decompose sessions:
+  worker; supervisor loop jobs: supervisor); `handleStartSession` ignores `one_shot` for
+  admission. `session.Manager.Start` admits every start nobody admitted upstream
+  (`SetStartAdmitter`, `StartOptions.AdmitClass`, `StartOptions.PreAdmitted`, set only by the
+  REST handler), so chat, MCP, schedules, WebSocket, restarts and the pipeline adapter are
+  counted; `cmd/datawatch/start_path_audit_test.go` lists every start path. In the ledger a
+  supervisor request may use `Ledger.SetReserve` slots above a pool's limit and is dispatched
+  before every role; an operator request is granted over the limit of every pool, and the lease records
+  `Lease.Overage`; a node's `node:` and `node-verify:` pools are soft too, unless the node's
+  `hard_limit` is on (`Ledger.SetHardLimit`, fed by `syncNodeHardLimits` from the registry). Pools carry
+  `PoolStatus.Over` and `PoolStatus.Reserve`.
+- Restarted workers: `StartOptions.AdmitRestart` (set from `session.RestartAdmission` by the
+  rate-limit fallback and the exit-hook restart for a session whose spend role is worker) keeps
+  `AdmitClass` worker and sets `capacity.Request.Resume`, which the ledger orders before every other
+  request of the same role regardless of priority. The admitter waits for such a restart as long as
+  `autonomous.capacity_wait_timeout_seconds` (default 4 h) instead of the short start wait.
+- `autonomous.capacity_account_claude_limit` (int, unset = 2, 0 = unlimited): the limit of
+  the `account:claude` pool every claude-code entry also draws on (`capacityResolver`,
+  `syncAdmissionPools`). A subscription backend with no LLM entry and no compute node gets
+  an `llm:<backend>` pool limited to 1 and is listed under `unmapped` on `GET /api/capacity`.
+- Federation: `cmd/datawatch/capacity_federation.go` (`federationAccount`). Each host keeps its own
+  local pools; a peer's `llm:`/`node:` pools never feed this daemon's external counts. The account pool's
+  external count is the peers' share of the Claude account, read from memory (the ledger calls it under its
+  lock): for a peer named in a claude-code entry's budget `peer_window` its whole `account:claude` held
+  count; for a peer with a CONFIRMED `billing_group` fingerprint match its held count on each matched
+  entry (`llm:<peer entry>`, each counted once; a window peer is counted once through the account pool).
+  Pending and rejected matches count nothing. `Refresh` (10 s tick) rebuilds the snapshot and refreshes
+  `fingerprint.PeerUsageCache` (one `GET /api/capacity` per opted-in or window peer; the cache now keeps
+  each peer's pools with its own limits, `PeerUsageCache.Pools`); an unreachable peer counts 0 and is shown
+  not reachable. `View` builds `GET /api/capacity` `federation`: `hosts` (this host, then each related peer
+  with its pools, llm and node sums, `shared_account` self | confirmed | opted_in | pending | none,
+  `counted_held`, `note`), `cluster` sums, `account` (limit, local, peer, total) and
+  `pending_shared_accounts`.
+- `autonomous.capacity_supervisor_reserve_claude` (unset = 1), `_pi` (unset = 1) and `_host`
+  (unset = 4) (ints >= 0): the supervisor buffers above a pool's limit. The host buffer also
+  raises the session manager's hard session cap for the supervisor class
+  (`Manager.SetSupervisorSlots`).
+- `autonomous.capacity_operator_reserve_host` (int >= 0, unset = 5): the operator allowance above
+  `session.max_sessions`. `Manager.startSession` lets an operator start (`AdmitClass` empty or
+  `operator`) run while active < max + allowance (`SetOperatorSlots`), sets `Session.OverSessionCap`
+  (`over_session_cap`, how far over the cap) and calls the hook that raises one alert per use
+  (`overSessionCapNotice`); past it the start is refused with `max sessions (N) reached and the operator
+  allowance of M above it is used up; raise autonomous.capacity_operator_reserve_host ...`. A worker
+  never uses it, and the supervisor class keeps its own `capacity_supervisor_reserve_host` slots.
+  `GET /api/capacity` carries `session_cap` (`max`, `active`, `operator_slots`, `supervisor_slots`,
+  `over`). The cap value (`session.max_sessions`) is unchanged.
+- Supervisor credential (a removable stopgap for the external detector timer):
+  `internal/server/supervisor_credential.go`. `POST/GET/DELETE /api/capacity/supervisor-credential`
+  mint (token shown once), list names and revoke; admin token only (a session-scoped token or a federation
+  peer gets 403). The token is a `SessionTokenStore` token with owner
+  `instance:supervisor-credential:<name>` (kept by the orphan sweep, persisted, revocable) and exactly
+  `sessions:write` plus `capacity:supervisor-start` (`federation.CapCapacitySupervisorStart`, in no built-in
+  group). `Server.startAdmissionClass` gives `supervisor` only to a token with that owner prefix and
+  capability while `autonomous.capacity_supervisor_credential_enabled` (bool, unset = true) is on; a session
+  token that lists the capability, or a forged `X-Datawatch-Internal-Launch` header, is an operator start.
+  Supervisor class never exceeds a pool's limit plus its supervisor buffer (a full buffer waits, then 503),
+  and each credentialed start writes `supervisor_credential_start` (actor
+  `supervisor-credential:<name>`); mint and revoke write `supervisor_credential_mint` and
+  `supervisor_credential_revoke`. Remove the file, the capability, the audit actions and the setting when
+  the native detector ships.
+- `autonomous.capacity_operator_overage_alert` (bool, default false): raise an alert each
+  time an operator lease is granted over a pool's limit (`Options.OnOverage`). The overage is
+  recorded either way.
 
 All four keys are in `GET`/`PUT /api/config`, `datawatch config set`, the MCP
 `config_set` and `autonomous_config_set` tools, the chat `configure` verb and the PWA
@@ -1288,6 +1357,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `compute_nodes[].scheduling_priority` | int | `50` (when `0` or unset) | Node priority, 0 to 100. When an LLM entry's pool lists two or more nodes, the ledger places a worker on the least-loaded healthy node that has a free slot (pool used count over its limit); priority only breaks a tie between equally loaded nodes, and a remaining tie keeps the order of the entry's list (`internal/capacity/ledger.go`). Set through REST, MCP `compute_node_add`/`compute_node_update`, the CLI `compute node add|update` and the PWA node form. |
 | `llms[].compute_nodes` | list of names | empty | LLM registry entry, not a `config.yaml` key. The list of compute nodes a local-model worker, verifier and judge may run on. Each listed node that is known and serves the model is a candidate, and the request goes to the least loaded candidate (`scheduling_priority` only breaks a tie, then list order); a node that does not serve the model is skipped, and one engine per node still applies. With one node it behaves as before. With two or more candidates it is the pool the ledger picks from, and each worker's model is loaded on the chosen node before it starts; a failed load alerts, releases the lease and tries another node of the list. Set with `--compute-nodes` on `datawatch llm add|update`, REST `PUT /api/llms/{name}` and MCP `llm_add`/`llm_update`. |
 | `compute_nodes[].session_slots` | int | `0` | Operator's worker count for a node that hosts a local engine. `0` derives it from observer data (`compute.NodeSlots`, `internal/compute/slots.go`): one slot per GPU limited by free GPU memory against the served model, or free system memory divided by model size with no GPU data, at least one slot. A positive value wins over the derived count. `max_concurrent_sessions` still caps the result. A negative value is rejected when the config loads (`validateLoaded`, `internal/config/config.go`) and when the node is saved (`Node.Validate`). The same field is on the node record in `internal/compute/node.go`, saved by the registry, and set through REST, MCP, the CLI, the comm channel and the PWA node form. |
+| `compute_nodes[].hard_limit` | bool | `false` | Makes the node's engine pools (`node:<name>` and `node-verify:<name>`) a physical limit for every class: an operator start waits for a free engine. Off, an operator start may go over them and the lease records the overage. Workers wait either way, so placement is unchanged. The field is on the node record in `internal/compute/node.go`, read into the ledger by `syncNodeHardLimits` (`cmd/datawatch/capacity_wiring.go`) and set through REST, MCP, the CLI, the comm channel and the PWA node forms. A peer's setting is its own. |
 | `compute_nodes[].verifier_slots` | int, nullable | unset (`null`) | Operator's verifier worker count for a node. Unset resolves to 1 on a node that hosts a local engine and 0 on one that does not; an explicit 0 takes no verifier work at all. Resolved by `compute.EffectiveVerifierSlots` (`internal/compute/verifier_slots.go`) and applied by `syncVerifierPools` (`cmd/datawatch/capacity_wiring.go`) as the limit of the node's own verifier pool (pool name `node-verify:<name>`, `capacity.VerifierPool`, `internal/capacity/verifier_pool.go`). A verifier leases it when the limit is above 0; with it at 0 a verifier leases the executor pool `node:<name>` as before, and the executor cap is never raised. A negative value is rejected at config load (`validateLoaded`, `internal/config/config.go`) and when the node is saved (`Node.Validate`). Same field on the node record in `internal/compute/node.go`, set through REST, MCP, the CLI, the comm channel and the PWA node form. |
 | `compute_nodes[].verifier_min_free_mem_mb` | int, nullable | unset (`null`) → 1024 | Free GPU memory in MB a new verifier slot wants free before it starts. Unset uses the default of 1024; an explicit 0 turns the headroom check off. Resolved by `compute.EffectiveVerifierMinFreeMB` and enforced by the ledger gate (`VerifierHeadroom`, `internal/capacity/ledger.go`) on the node's verifier pool; `syncVerifierPools` records the node's last headroom verdict in the admission cache (`VerifierNodeStatus`, `cmd/datawatch/capacity_wiring.go`), which the REST node detail and the per-pool state read back. A node the observer cannot reach is recorded as no data and the gate fails open on it. Negative values rejected the same way. |
 | `compute_nodes[].verifier_context_mb` | int | `0` | Context memory in MB one verifier slot holds on the node, used only for the advice figure: with the node's free GPU data the suggestion is free MB divided by this value whole slots (`compute.SuggestVerifierSlots`, reported as `suggested_verifier_slots`). 0 means unknown, so no figure. Advice only: nothing applies it automatically and it never raises the executor cap. Set through the same five surfaces. |

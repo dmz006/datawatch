@@ -5346,6 +5346,10 @@ paths:
                     type: integer
                     minimum: 0
                     description: Operator-set worker count (0 = derive from observer GPU data, one slot per GPU limited by free GPU memory). Capped by max_concurrent_sessions when that is set.
+                  hard_limit:
+                    type: boolean
+                    default: false
+                    description: Operator-set flag, default false. Off, an operator start may go over the node's engine slots and the overage is recorded; on, the slots are a physical limit and an operator start waits for a free engine. Workers wait either way.
                   verify_tls: {type: boolean, default: false, description: "Kept for configuration compatibility. Model pulls to this node always verify its HTTPS certificate — against the system roots (plus tls_ca_file when set), or against the tls_cert_fingerprint pin when set. There is no per-node off switch."}
     put:
       summary: Replace one compute node
@@ -5363,6 +5367,7 @@ paths:
               properties:
                 max_concurrent_sessions: {type: integer, minimum: 0}
                 session_slots: {type: integer, minimum: 0, description: Operator-set worker count; 0 derives the count from observer GPU data.}
+                hard_limit: {type: boolean, default: false, description: "Operator-set flag, default false. Off, an operator start may go over the node's engine slots and the overage is recorded; on, the slots are a physical limit and an operator start waits for a free engine. Workers wait either way. Omitting it on a replace turns it off."}
                 verify_tls: {type: boolean, default: false, description: "Kept for configuration compatibility. Model pulls to this node always verify its HTTPS certificate (system roots, plus tls_ca_file or tls_cert_fingerprint when set). Omitting it on a replace still leaves it false; it no longer gates the pull."}
       responses:
         "200":
@@ -5509,7 +5514,7 @@ paths:
         - {name: llm, in: query, required: false, description: Alias for backend, schema: {type: string}}
         - {name: node, in: query, required: false, description: Compute node the start would use, schema: {type: string}}
         - {name: model, in: query, required: false, description: Model wanted, schema: {type: string}}
-        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive]}}
+        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive, operator, supervisor]}}
         - {name: priority, in: query, required: false, description: Integer queue priority; higher runs first, schema: {type: integer}}
         - {name: prd_id, in: query, required: false, description: Automaton the start would belong to, schema: {type: string}}
       responses:

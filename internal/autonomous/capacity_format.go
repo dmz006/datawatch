@@ -81,8 +81,50 @@ type capacityWaiterView struct {
 type capacityBody struct {
 	Pools  []capacityPoolView `json:"pools"`
 	Leases []struct {
-		NodeUnknown bool `json:"node_unknown"`
+		NodeUnknown bool               `json:"node_unknown"`
+		Holder      string             `json:"holder"`
+		Class       string             `json:"class"`
+		Overage     []capacity.Overage `json:"overage"`
 	} `json:"leases"`
+	// Unmapped lists subscription backends a start named that resolve to no
+	// LLM entry; they are held to one session, never unlimited.
+	Federation *struct {
+		Hosts []struct {
+			Name           string `json:"name"`
+			Self           bool   `json:"self"`
+			Reachable      bool   `json:"reachable"`
+			LLMLimit       int    `json:"llm_limit"`
+			LLMHeld        int    `json:"llm_held"`
+			NodeLimit      int    `json:"node_limit"`
+			NodeHeld       int    `json:"node_held"`
+			UnlimitedPools int    `json:"unlimited_pools"`
+			SharedAccount  string `json:"shared_account"`
+			CountedHeld    int    `json:"counted_held"`
+			Note           string `json:"note"`
+		} `json:"hosts"`
+		Cluster struct {
+			LLMLimit  int `json:"llm_limit"`
+			LLMHeld   int `json:"llm_held"`
+			NodeLimit int `json:"node_limit"`
+			NodeHeld  int `json:"node_held"`
+		} `json:"cluster"`
+		Account struct {
+			Limit     int `json:"limit"`
+			LocalHeld int `json:"local_held"`
+			PeerHeld  int `json:"peer_held"`
+			Total     int `json:"total"`
+		} `json:"account"`
+	} `json:"federation"`
+	SessionCap *struct {
+		Max           int `json:"max"`
+		Active        int `json:"active"`
+		OperatorSlots int `json:"operator_slots"`
+		Over          int `json:"over"`
+	} `json:"session_cap"`
+	Unmapped []struct {
+		Backend string `json:"backend"`
+		Count   int    `json:"count"`
+	} `json:"unmapped"`
 	Waiting []capacityWaiterView  `json:"waiting"`
 	Backoff []capacityBackoffView `json:"backoff"`
 	Budgets []BudgetStatus        `json:"budgets"`
@@ -118,6 +160,45 @@ func FormatCapacityText(body []byte) (string, error) {
 	}
 	if unknown > 0 {
 		fmt.Fprintf(&b, "Leases with unknown node: %d (counted in host and llm pools, held on no node pool)\n", unknown)
+	}
+	var over []string
+	for _, l := range c.Leases {
+		for _, o := range l.Overage {
+			over = append(over, fmt.Sprintf("  %s (%s): %s is %d over its limit of %d", l.Holder, firstNonEmpty(l.Class, "worker"), o.Pool, o.Over, o.Limit))
+		}
+	}
+	if len(over) > 0 {
+		fmt.Fprintf(&b, "Operator sessions over a limit (%d):\n%s\n", len(over), strings.Join(over, "\n"))
+	}
+	if fed := c.Federation; fed != nil {
+		fmt.Fprintf(&b, "Cluster, %d hosts, each at its own limits: LLM %d/%s in use, nodes %d/%s in use; Claude account %d/%s (this host %d, peers %d)\n",
+			len(fed.Hosts), fed.Cluster.LLMHeld, limitText(fed.Cluster.LLMLimit), fed.Cluster.NodeHeld, limitText(fed.Cluster.NodeLimit),
+			fed.Account.Total, limitText(fed.Account.Limit), fed.Account.LocalHeld, fed.Account.PeerHeld)
+		for _, h := range fed.Hosts {
+			state := ""
+			switch {
+			case h.Self:
+				state = " (this host)"
+			case !h.Reachable:
+				state = " (not reachable, counted as 0)"
+			}
+			share := ""
+			switch h.SharedAccount {
+			case "confirmed":
+				share = fmt.Sprintf("; shares the Claude account (confirmed), %d counted here", h.CountedHeld)
+			case "opted_in":
+				share = fmt.Sprintf("; shares the Claude account (opted in), %d counted here", h.CountedHeld)
+			case "pending":
+				share = "; " + h.Note
+			}
+			fmt.Fprintf(&b, "  %s%s: LLM %d/%s, nodes %d/%s%s\n", h.Name, state, h.LLMHeld, limitText(h.LLMLimit), h.NodeHeld, limitText(h.NodeLimit), share)
+		}
+	}
+	if sc := c.SessionCap; sc != nil && sc.Over > 0 {
+		fmt.Fprintf(&b, "Host session cap: %d running against %d, %d over (operator allowance %d)\n", sc.Active, sc.Max, sc.Over, sc.OperatorSlots)
+	}
+	for _, u := range c.Unmapped {
+		fmt.Fprintf(&b, "No LLM entry for backend %s (%d starts): held to 1 session until an entry is added\n", u.Backend, u.Count)
 	}
 
 	switch {
@@ -389,4 +470,12 @@ func waitedFor(now, t time.Time) string {
 		d = 0
 	}
 	return d.Round(time.Second).String()
+}
+
+// limitText renders a summed limit: 0 means no limited pool.
+func limitText(n int) string {
+	if n <= 0 {
+		return "no limit"
+	}
+	return fmt.Sprintf("%d", n)
 }

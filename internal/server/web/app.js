@@ -20216,6 +20216,11 @@ function buildComputeNodeForm(n) {
     <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${escHtml(n.max_concurrent_sessions||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_session_slots')||'Session slots (0 = derive from GPU data)')}</label>
     <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${escHtml(n.session_slots||'')}" />
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:6px;">
+      <input id="fe_compute_hard_limit" type="checkbox" ${n.hard_limit ? 'checked' : ''} />
+      ${escHtml(t('compute_field_hard_limit')||'Hard limit: engine slots are a physical limit')}
+    </label>
+    <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_hard_limit_hint')||'Off (default): an operator start may go over the slots and the overage is recorded. On: it waits for a free engine. Workers wait either way.')}</div>
     <!-- PRD 35070001 — verifier slots: empty = daemon default, an integer
          as typed, so the three fields round-trip through the collector. -->
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_slots')||'Verifier slots (empty = default, 0 = none)')}</label>
@@ -20266,6 +20271,7 @@ function collectComputeNodeForm(originalRecord) {
   out.declared_capacity.max_concurrent_models = parseInt((document.getElementById('fe_compute_max_models')||{}).value || '0', 10) || 0;
   out.max_concurrent_sessions = parseInt((document.getElementById('fe_compute_max_sessions')||{}).value || '0', 10) || 0;
   out.session_slots = parseInt((document.getElementById('fe_compute_session_slots')||{}).value || '0', 10) || 0;
+  out.hard_limit = !!((document.getElementById('fe_compute_hard_limit')||{}).checked);
   // PRD 35070001 — verifier settings: an empty field saves null (the daemon
   // side decodes it as unset → default) and a number saves as that whole
   // number, so "empty = default, 0 = off/none" reads straight off the form.
@@ -21503,6 +21509,13 @@ window.openComputeAddPanel = function(existingNode, prefill) {
         </label>
         <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_pin_hint')||'Requests with no model run on the pin. An explicit request for another model is refused unless swap is allowed.')}</div>
       </div>
+      <div class="wizard-field">
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);">
+          <input id="computeNewHardLimit" type="checkbox" ${existingNode && existingNode.hard_limit ? 'checked' : ''} />
+          ${escHtml(t('compute_field_hard_limit')||'Hard limit: engine slots are a physical limit')}
+        </label>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_hard_limit_hint')||'Off (default): an operator start may go over the slots and the overage is recorded. On: it waits for a free engine. Workers wait either way.')}</div>
+      </div>
       ${isEdit && existingNode && existingNode.kind === 'ollama' ? `
       <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
@@ -21760,6 +21773,7 @@ window.computeAddNode = function() {
       observer_peer: ((document.getElementById('computeNewObserverPeer')||{}).value || '').trim(),
       node_pinned_model: ((document.getElementById('computeNewPinnedModel')||{}).value || '').trim(),
       allow_model_swap: !!((document.getElementById('computeNewAllowSwap')||{}).checked),
+      hard_limit: !!((document.getElementById('computeNewHardLimit')||{}).checked),
       // Sent even when empty/false: PUT replaces the whole node, so this is
       // how an edit clears a CA file, a pin or the opt-out. Skipping
       // verification excludes the other two.
@@ -27247,6 +27261,13 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.capacity_adopt_before_admit', label: 'After a restart, admit resumed workers before new work', labelKey: 'settings_capacity_adopt_before_admit', type: 'toggle' },
     { key: 'autonomous.capacity_slot_reconcile_grace_seconds', label: 'Slot reconcile grace (sec, default 60, min 10, 0 = 60)', labelKey: 'settings_capacity_slot_reconcile_grace', type: 'number', min: 0, placeholder: '60' },
     { key: 'autonomous.capacity_adoption_wait_seconds', label: 'Restart adoption wait (sec, 0 = 30)', labelKey: 'settings_capacity_adoption_wait', type: 'number', min: 0, placeholder: '30' },
+    { key: 'autonomous.capacity_account_claude_limit', label: 'Claude account cap across all Claude entries (default 2, 0 = unlimited)', labelKey: 'settings_capacity_account_claude_limit', type: 'number', min: 0, placeholder: '2' },
+    { key: 'autonomous.capacity_supervisor_reserve_claude', label: 'Supervisor buffer: Claude slots above the cap (default 1)', labelKey: 'settings_capacity_supervisor_reserve_claude', type: 'number', min: 0, placeholder: '1' },
+    { key: 'autonomous.capacity_supervisor_reserve_pi', label: 'Supervisor buffer: pi slots above the cap (default 1)', labelKey: 'settings_capacity_supervisor_reserve_pi', type: 'number', min: 0, placeholder: '1' },
+    { key: 'autonomous.capacity_supervisor_reserve_host', label: 'Supervisor buffer: host session slots above max sessions (default 4)', labelKey: 'settings_capacity_supervisor_reserve_host', type: 'number', min: 0, placeholder: '4' },
+    { key: 'autonomous.capacity_operator_reserve_host', label: 'Operator allowance: host session slots above max sessions (default 5, 0 = none)', labelKey: 'settings_capacity_operator_reserve_host', type: 'number', min: 0, placeholder: '5' },
+    { key: 'autonomous.capacity_supervisor_credential_enabled', label: 'Supervisor credential makes a REST start the supervisor class', labelKey: 'settings_capacity_supervisor_credential_enabled', type: 'toggle' },
+    { key: 'autonomous.capacity_operator_overage_alert', label: 'Alert when an operator session starts over a limit', labelKey: 'settings_capacity_operator_overage_alert', type: 'toggle' },
     { key: 'autonomous.capacity_gpu_util_pct', label: 'Hold tasks while node GPU is above (% util, 0=off)', labelKey: 'settings_capacity_gpu_util', type: 'number', placeholder: '0' },
     { key: 'autonomous.capacity_rate_requests', label: 'Rate ceiling per LLM: requests per window (0 = none)', labelKey: 'capacity_rate_requests_label', type: 'number', min: 0, placeholder: '0' },
     { key: 'autonomous.capacity_rate_tokens', label: 'Rate ceiling per LLM: tokens per window (0 = none)', labelKey: 'capacity_rate_tokens_label', type: 'number', min: 0, placeholder: '0' },
@@ -38212,10 +38233,23 @@ function capacityNodeT(key, fallback, vars) {
 // unrelated interactive sessions. Label + tooltip make the distinction
 // explicit instead of showing the raw pool key.
 function capacityPoolLabel(p) {
+  return capacityPoolBaseLabel(p) + capacityPoolAdmissionSuffix(p);
+}
+// What the pool is, without the admission notes.
+function capacityPoolBaseLabel(p) {
   if (p.name === 'host') return t('capacity_pool_host')||'Host sessions (all tasks + interactive)';
   if (p.name.startsWith('node:')) return (t('capacity_pool_node')||'Compute node') + ': ' + p.name.slice(5);
   if (p.name.startsWith('llm:')) return (t('capacity_pool_llm')||'LLM') + ': ' + p.name.slice(4);
+  if (p.name.startsWith('account:')) return (t('capacity_pool_account')||'Account') + ': ' + p.name.slice(8);
   return p.name;
+}
+// Operator sessions admitted over the limit, and the buffer only supervisor
+// sessions may use above it.
+function capacityPoolAdmissionSuffix(p) {
+  let out = '';
+  if (p.over > 0) out += ' (' + (t('capacity_pool_over')||'{0} over the limit: operator').replace('{0}', p.over) + ')';
+  if (p.reserve > 0) out += ' (' + (t('capacity_pool_reserve')||'+{0} reserved for supervisors').replace('{0}', p.reserve) + ')';
+  return out;
 }
 function capacityPoolTitle(p) {
   if (p.name === 'host') {
@@ -38548,6 +38582,31 @@ function capacityVerifyingHtml(cap) {
   });
   return `<div style="margin-top:6px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(t('capacity_verifying_title')||'Verifying')} (${list.length})</div>` + rows.join('');
 }
+// The cluster view: this host first, then each federated peer, each at its own
+// pools and sizes (a peer's local models are its own and add to the federated
+// capacity), with the Claude account sharing and any possible shared account
+// awaiting the operator's confirmation. Empty when this host is alone.
+function capacityFederationHtml(cap) {
+  const fed = cap && cap.federation;
+  if (!fed || !Array.isArray(fed.hosts) || fed.hosts.length < 2) return '';
+  const lim = n => (n > 0 ? String(n) : (t('capacity_fed_no_limit')||'no limit'));
+  const acct = fed.account || {};
+  const head = (t('capacity_fed_cluster')||'Cluster: LLM {0}/{1}, nodes {2}/{3}; Claude account {4}/{5}')
+    .replace('{0}', (fed.cluster||{}).llm_held||0).replace('{1}', lim((fed.cluster||{}).llm_limit))
+    .replace('{2}', (fed.cluster||{}).node_held||0).replace('{3}', lim((fed.cluster||{}).node_limit))
+    .replace('{4}', acct.total||0).replace('{5}', lim(acct.limit));
+  const rows = fed.hosts.map(h => {
+    let share = '';
+    if (h.shared_account === 'confirmed') share = (t('capacity_fed_shared_confirmed')||'shares the Claude account (confirmed), {0} counted here').replace('{0}', h.counted_held||0);
+    else if (h.shared_account === 'opted_in') share = (t('capacity_fed_shared_opted_in')||'shares the Claude account (opted in), {0} counted here').replace('{0}', h.counted_held||0);
+    else if (h.shared_account === 'pending') share = t('capacity_fed_pending')||'possible shared account, awaiting your confirmation';
+    const state = h.self ? ' (' + (t('capacity_fed_this_host')||'this host') + ')' : (h.reachable ? '' : ' (' + (t('capacity_fed_unreachable')||'not reachable, counted as 0') + ')');
+    const line = `${h.name}${state}: LLM ${h.llm_held||0}/${lim(h.llm_limit)}, ${t('capacity_fed_nodes')||'nodes'} ${h.node_held||0}/${lim(h.node_limit)}` + (share ? ' · ' + share : '');
+    return `<div class="cap-fed-host" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(line)}</div>`;
+  }).join('');
+  return `<div class="cap-federation" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(head)}</div>${rows}</div>`;
+}
+window.capacityFederationHtml = capacityFederationHtml;
 // capacityCardHtml(cap, opts): cap is the decoded /api/capacity response.
 // opts.now (ms) pins the clock for wait times; opts.showEmpty renders a
 // placeholder instead of an empty string when there is nothing to show.
@@ -38557,10 +38616,11 @@ window.capacityCardHtml = function(cap, opts) {
   const backoff = capacityBackoffHtml(cap && cap.backoff);
   const budgetLines = budgetCapacityLines(cap && cap.budgets);
   const queue = capacityWaitingHtml(cap && cap.waiting, opts.now) + capacityVerifyingHtml(cap);
-  if (!pools && !backoff && !budgetLines && !queue) {
+  const federation = capacityFederationHtml(cap);
+  if (!pools && !backoff && !budgetLines && !queue && !federation) {
     return opts.showEmpty ? `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div><div style="color:var(--text2);">${escHtml(t('capacity_card_empty')||'No capacity limits, back-offs or budgets to show')}</div></div>` : '';
   }
-  return `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${pools}${backoff}${budgetLines}${queue}</div>`;
+  return `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${pools}${federation}${backoff}${budgetLines}${queue}</div>`;
 };
 
 // Polled every 5s; the interval lives on window so re-renders never stack
