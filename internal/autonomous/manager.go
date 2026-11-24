@@ -4954,6 +4954,12 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 					// operator's force reset clears it: no other reset path may.
 					clearedHold = t.AttemptCapHeld
 					t.AttemptCapHeld = false
+					// The back-off wait belongs to automatic retries and to resets
+					// made by sessions. The operator's own retry starts at once; it
+					// still counts toward the cap (only a force reset clears that).
+					if isOperatorActor(actor) {
+						t.AttemptNotBefore = nil
+					}
 					if operatorClear {
 						clearedAttempts = t.AttemptsTotal
 						t.AttemptsTotal = 0

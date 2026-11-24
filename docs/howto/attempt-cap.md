@@ -51,6 +51,12 @@ of an attempt, so cancel-and-retry waits too. The wait is stored on the task as
 `attempt_not_before`, so a daemon restart does not shorten it, and the task
 shows "Next attempt not before ..." while it waits.
 
+The wait applies to automatic retries and to retries and resets made by
+sessions. Your own retry starts at once: when you retry or reset a task as the
+operator, the wait that was owed is dropped and the next attempt starts
+immediately. It still counts toward the cap, and the automatic retries that
+follow inside that run still wait. Only your force reset also clears the count.
+
 With the defaults a task can run six attempts: three at once, then one after 5
 minutes, one after 15, one after 45. The numbers are the failure ladder run
 twice (the second run is the retry a supervisor or you may ask for), with the
