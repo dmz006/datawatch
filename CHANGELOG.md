@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.2 — Landed the older finished Automaton branches: actionable inbox, git hosts, judge timeout replay, eBPF drift fix
+
+### Added
+- Actionable Automata Inbox: the Inbox counts and lists only what the operator can act on, blocked triage cards show the real reason and what each button does, held questions show their text and default, and the Inbox lists get the Sessions-style list modes and group dropdown.
+- Git hosts: name the hosts datawatch may use (GitHub, GitLab, Gitea, Bitbucket or plain git) with a credential source (the host's own login, a vault secret name, or the broker), check readiness with the host's own status command, and use GitLab through its command line tool or plain git without a forge API. Counters of recent host operations appear in system stats. Settings, REST, MCP, command line and chat surfaces are included.
+- A judge that times out on a very large change no longer strands the Automaton: the rejudge route and run accept a timeout hold, the review state says the judge never answered instead of that it found a problem, the time limit no longer counts slot waiting, and a new setting adds judge time per thousand changed lines.
+- A check that fails the build when a tracked symlink has an absolute target.
+- Guard tests for the plan roll-up and Sessions toolbar behaviour.
+
+### Fixed
+- The eBPF generated code no longer drifts: the workflow and the Makefile use the same pinned compiler, and the generated files are regenerated with that pin.
+- The merge pipeline's shadow gates can pass (pinned lint, rerun-passing flakes no longer count as disagreement).
+- A tracked symlink with an absolute home path under the PWA test stories was removed; the stories install their own dependencies.
+
+### Documentation
+- The remote branch reap settings (`autonomous.remote_reap_enabled` and `autonomous.remote_reap_retention_days`) are documented in the configuration reference and the implementation guide.
+
 ## v9.187.1 — Landed finished Automaton work: dormant features read, result store protection, capacity over-limit flags
 
 ### Added
