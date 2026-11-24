@@ -221,6 +221,78 @@ re-fetches what it needs; that is the trade-off for leaving nothing behind. If
 directory is created. The sweep above remains the net for the stray `go-build`
 and Trivy scan-cache folders it could not remove itself.
 
+## Task worktrees and task branches
+
+With a worktree per task, each task also has a worktree and a branch
+(`automaton/<id>-...--tasks-<task>`). They are looked at when the Automaton
+completes or is cancelled. The worktree and the branch are judged apart, and
+anything that cannot be checked is kept.
+
+A **task worktree** is removed only if all of these hold:
+
+- no live session works in it;
+- it has no uncommitted or untracked file. The only exceptions are the daemon's
+  own generated and tooling files: the harness files listed above, the
+  completion, checkpoint and lock files, a verification script that still has an
+  identical copy, and an instruction or ignore file whose only change is the
+  daemon's own block. A staged change always counts as your work, and so does an
+  empty new file;
+- a detached HEAD in it holds no commit that is on neither the task branch nor
+  the default branch.
+
+Files that the repository's ignore rules hide are not counted: git removes them
+with the worktree.
+
+A **task branch** is deleted only if every one of its commits is on the default
+branch, directly or through an Automaton branch that is itself on the default
+branch. Being merged into an Automaton branch that has not landed is not
+enough. A branch whose merge commit is not on the default branch is kept. Before
+the delete, the branch tip is written to
+`refs/datawatch/reap-backup/<branch>/<time>`; if that fails, the branch stays,
+and an earlier backup is never overwritten. Restore it the same way as a reaped
+branch (see **The task sub-branch reaper** below).
+
+The default branch here is the repository's own: the target of `origin/HEAD`,
+or else the branch the base repository has checked out. The Automaton's base
+branch setting is not used for task branches.
+
+A clean worktree of a branch that has not landed is removed and the branch is
+kept, so no commit is lost. A kept branch is looked at again on later passes
+over a completed Automaton.
+
+The mode applies here too. `off` removes nothing and runs no git command.
+`report` removes nothing and records what it would remove. `on` removes.
+Archiving never removes a task worktree or branch.
+
+**What was kept and why.** The Automaton record carries
+`task_worktree_cleanup`: the counts of worktrees and branches removed and kept,
+a count per reason, a one-sentence `message`, and one entry per kept task with
+the branch tip and the uncommitted files. The cancel reply and the archive reply
+carry it on every surface (REST, MCP, CLI, chat), and the web app shows a notice.
+
+| Reason | Meaning |
+|---|---|
+| `cleanup_off` | `cleanup_mode` is `off`: nothing was looked at |
+| `report_mode` | `cleanup_mode` is `report`: it would be removed in `on` |
+| `not_removed_by_archive` | Safe to remove, but archiving removes nothing |
+| `no_base_repo` | No base repository is configured |
+| `live_session` | A session is still working in the worktree |
+| `uncommitted_work` | Uncommitted or untracked files |
+| `detached_commits` | A detached HEAD holds commits that are nowhere else |
+| `unverified` | The worktree or branch could not be checked |
+| `remove_failed` | git refused to remove the worktree |
+| `unmerged_branch` | Commits that are not on the default branch |
+| `no_default_branch` | The default branch could not be worked out |
+| `backup_failed` | The backup ref could not be written |
+| `branch_delete_failed` | git refused to delete the branch |
+
+The audit log records every removal (`autonomous_task_worktree_remove`,
+`autonomous_task_branch_delete` with the backup ref) and every refusal
+(`autonomous_task_worktree_kept`, `autonomous_task_branch_kept`, and in
+`report` mode `autonomous_task_worktree_would_remove`), each with the branch
+tip. A refusal that has not changed since the last pass is not written again.
+In `off` mode nothing is written to the audit log.
+
 ## The three modes
 
 The mode is one key: `autonomous.automation.cleanup_mode`.

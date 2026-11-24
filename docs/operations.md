@@ -5805,6 +5805,7 @@ A cancel returns two counts about the Automaton's sessions:
 |---|---|
 | `killed_sessions` | The number of sessions the cancel ended. |
 | `killed_live_sessions` | How many of those sessions were still live when the cancel began. |
+| `task_worktree_cleanup` | Present when the Automaton had task worktrees or branches: how many were removed, how many were kept and why. See [Task worktrees and task branches](howto/automaton-worktree-cleanup.md#task-worktrees-and-task-branches). |
 
 When `killed_sessions` is above zero and `killed_live_sessions` is `0`, the
 cancel only touched sessions that had already ended, so nothing running was

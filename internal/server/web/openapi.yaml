@@ -14166,6 +14166,30 @@ components:
             example: "unauthorized"
 
   schemas:
+    TaskWorktreeCleanup:
+      type: object
+      description: "What closing an Automaton did with its task worktrees and task branches. Also a field of the Automaton record (task_worktree_cleanup), so the cancel and archive replies carry it. A task worktree with uncommitted or untracked files is never removed; a task branch with commits that are not on the default branch is never deleted. The compact view carries the counts without the kept list."
+      properties:
+        at: {type: string, format: date-time}
+        mode: {type: string, enum: [off, report, "on"]}
+        worktrees_removed: {type: integer}
+        branches_deleted: {type: integer}
+        worktrees_kept: {type: integer}
+        branches_kept: {type: integer}
+        reasons: {type: object, additionalProperties: {type: integer}, description: "Kept entries counted by reason"}
+        message: {type: string, description: "The same in one sentence"}
+        kept:
+          type: array
+          items:
+            type: object
+            properties:
+              task_id: {type: string}
+              worktree: {type: string, description: "The kept worktree; absent when only the branch is kept"}
+              branch: {type: string}
+              branch_tip: {type: string}
+              reason: {type: string, enum: [cleanup_off, report_mode, not_removed_by_archive, no_base_repo, live_session, uncommitted_work, detached_commits, unverified, remove_failed, unmerged_branch, no_default_branch, backup_failed, branch_delete_failed]}
+              detail: {type: string}
+              files: {type: array, items: {type: string}, description: "Up to 20 uncommitted files, as git status code and path"}
     BurnGuardPaceDecision:
       type: object
       description: One pace policy decision with the evidence it was made on
