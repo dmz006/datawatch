@@ -89,6 +89,12 @@ Nothing in the daemon, a plan, or a task type silently substitutes a
 different model for yours: the session record holds exactly the model the
 CLI was passed (see [verification](#verification-which-model-actually-ran)).
 
+## Reasoning effort: the launch decides, and one thing outside it can change a default
+
+The reasoning level (`--effort low|medium|high|xhigh|max`) a Claude Code session starts with is the one named for that launch and nothing else: the daemon sets it fresh for every start and restart, so a session that names none starts with no `--effort` flag and Claude Code's own default, never the level an earlier session used. The `quick|normal|thorough` choice on a direct start is datawatch's own thoroughness hint and is not sent to Claude Code as `--effort`.
+
+One side effect belongs to Claude Code, not to datawatch: typing `/effort <level>` inside a running session is saved by Claude Code as your default in `~/.claude/settings.json`, so it also applies to Claude sessions you start afterwards. The daemon does not read or write that file. If new sessions start at a level you did not choose, check that file for an `effortLevel` entry; naming the level for the launch (an Automaton's effort setting, or the session's `claude_effort`) always takes precedence for that launch.
+
 ## Verification: which model actually ran
 
 The session record carries exactly the value the CLI received as `--model`;

@@ -93,6 +93,11 @@ func (b *Backend) Model() string { return b.model }
 // SetEffort (v5.27.5) — effort level forwarded to `--effort`.
 func (b *Backend) SetEffort(effort string) { b.effort = effort }
 
+// ClearEffort drops any effort level left by an earlier launch, so the next
+// launch carries no --effort flag. The backend is a shared singleton: without
+// this a session that names no effort would run at the previous session's.
+func (b *Backend) ClearEffort() { b.effort = "" }
+
 // SetExcludeAncestorClaudeMd — opt-in: hide ancestor-directory CLAUDE.md files
 // (never the project's own or ~/.claude/CLAUDE.md) from the launched claude.
 // Set explicitly on every launch: the backend is a shared singleton.

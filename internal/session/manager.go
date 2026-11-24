@@ -3114,6 +3114,10 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
 		ex.SetExcludeAncestorClaudeMd(sess.PRDID != "")
 	}
+	// The claude --effort level is this launch's own request, set on every
+	// launch for the same reason: left alone, the value of an earlier session
+	// would carry into this one.
+	setLaunchEffort(backendObj, startEffort(opt))
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
@@ -3227,11 +3231,6 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		if opt.Model != "" {
 			if mm, ok := backendObj.(interface{ SetModel(string) }); ok {
 				mm.SetModel(opt.Model)
-			}
-		}
-		if opt.ClaudeEffort != "" {
-			if em, ok := backendObj.(interface{ SetEffort(string) }); ok {
-				em.SetEffort(opt.ClaudeEffort)
 			}
 		}
 		if opt.ThinkingLevel != "" {
@@ -4994,6 +4993,8 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
 		ex.SetExcludeAncestorClaudeMd(sess.PRDID != "")
 	}
+	// A restart names no effort; clear what an earlier launch left behind.
+	setLaunchEffort(backendObj, "")
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
@@ -7149,6 +7150,30 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 // Returns the matched line and context (surrounding non-empty lines) or empty strings.
 func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, context string) {
 	return m.matchPromptLines(lines, n, true)
+}
+
+// setLaunchEffort sets the claude --effort level for the launch about to
+// run. An empty level clears whatever an earlier launch left on the shared
+// backend (ClearEffort) rather than setting an empty one, so the launch has
+// no --effort flag. Backends without an effort setting ignore it.
+func setLaunchEffort(backendObj interface{}, effort string) {
+	if effort == "" {
+		if ce, ok := backendObj.(interface{ ClearEffort() }); ok {
+			ce.ClearEffort()
+		}
+		return
+	}
+	if em, ok := backendObj.(interface{ SetEffort(string) }); ok {
+		em.SetEffort(effort)
+	}
+}
+
+// startEffort is the claude effort a start request names, or "".
+func startEffort(opt *StartOptions) string {
+	if opt == nil {
+		return ""
+	}
+	return opt.ClaudeEffort
 }
 
 // inputRowIndex returns the index of the last input row ("❯" alone, or "❯"

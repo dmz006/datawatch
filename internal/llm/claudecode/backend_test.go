@@ -765,3 +765,20 @@ func TestNewWithOptionsWrapperBinaryIsHonored(t *testing.T) {
 		t.Fatalf("launch command must run the configured wrapper binary, got:\n%s", cmd)
 	}
 }
+
+// TestLaunch_ClearEffortDropsFlag: after ClearEffort the launch carries no
+// --effort flag, so a shared backend never runs a session at an earlier
+// session's level.
+func TestLaunch_ClearEffortDropsFlag(t *testing.T) {
+	d := t.TempDir()
+	argv := startFakeTmux(t, false)
+	b := backendOf()
+	b.SetEffort("low")
+	b.ClearEffort()
+	if err := b.Launch(context.Background(), "", "cs-cleareffort", d, "/nonexistent/log"); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if cmd := recordedCmd(t, argv); strings.Contains(cmd, "--effort") {
+		t.Errorf("launch after ClearEffort still carries --effort: %s", cmd)
+	}
+}
