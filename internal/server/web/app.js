@@ -16076,25 +16076,37 @@ function loadSavedCmdsQuick(sessionId) {
         { name: 'tmux prefix (Ctrl-b)', command: '__ctrlb__' },
         { name: 'quit', command: '/exit' },
       ];
-      let optHtml = '<optgroup label="System">';
-      optHtml += systemOpts.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name)}</option>`).join('');
-      optHtml += '</optgroup>';
+      const sel = document.createElement('select');
+      sel.className = 'quick-cmd-select';
+      sel.addEventListener('change', () => handleQuickCmd(sel));
+      const addOpt = (parent, value, text) => {
+        const o = document.createElement('option');
+        o.value = value;
+        o.textContent = text;
+        parent.appendChild(o);
+      };
+      const addGroup = (label) => {
+        const g = document.createElement('optgroup');
+        g.label = label;
+        sel.appendChild(g);
+        return g;
+      };
+      addOpt(sel, '', 'Commands…');
+      const sysGroup = addGroup('System');
+      systemOpts.forEach(c => addOpt(sysGroup, c.command, c.name));
       // GATE alpha.36 (operator 2026-05-10): suppress server-seeded
       // commands from the Saved optgroup — they exactly duplicate the
-      // hardcoded System set (approve/reject/enter/continue/skip/abort/
-      // ctrl-c) and made the dropdown look broken. Only show user-saved.
+      // hardcoded System set. Only show user-saved.
       const userSaved = (cmds || []).filter(c => !c.seeded);
       if (userSaved.length) {
-        optHtml += '<optgroup label="Saved">';
-        optHtml += userSaved.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name || c.command)}</option>`).join('');
-        optHtml += '</optgroup>';
+        const savedGroup = addGroup('Saved');
+        userSaved.forEach(c => addOpt(savedGroup, c.command, c.name || c.command));
       }
       // BL303 S3 T14 — guardrail section: run built-in guardrail on session project dir.
-      optHtml += '<optgroup label="Guardrails">';
-      optHtml += ['sast-scan', 'secrets-scan', 'deps-scan', 'project-rules-scan'].map(g =>
-        `<option value="__guardrail__${g}">▶ ${g}</option>`).join('');
-      optHtml += '</optgroup>';
-      optHtml += '<optgroup label=""><option value="__custom__">Custom…</option></optgroup>';
+      const grGroup = addGroup('Guardrails');
+      ['sast-scan', 'secrets-scan', 'deps-scan', 'project-rules-scan'].forEach(g =>
+        addOpt(grGroup, '__guardrail__' + g, '▶ ' + g));
+      addOpt(addGroup(''), '__custom__', 'Custom…');
       // v5.19.0 — operator-reported regression: Response button + tmux
       // arrow group (shipped v5.2.0) were getting blown away when this
       // function overwrote panel.innerHTML. Preserve the Response +
@@ -16112,21 +16124,45 @@ function loadSavedCmdsQuick(sessionId) {
       // GATE alpha.36 (operator 2026-05-10): arrow buttons must
       // press-and-hold repeat (operator scrolls a lot through long
       // outputs / pickers). ESC + Enter stay one-shot.
-      const arrows = sid ? `<span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
-        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b')" title="${escHtml(t('send_esc_title')||'ESC')}">␛</button>
-        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[A')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[A',event)" ontouchend="stopArrowRepeat()" title="Up (hold to repeat)">&uarr;</button>
-        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[B')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[B',event)" ontouchend="stopArrowRepeat()" title="Down (hold to repeat)">&darr;</button>
-        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[D')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[D',event)" ontouchend="stopArrowRepeat()" title="Left (hold to repeat)">&larr;</button>
-        <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${sid}','\\x1b[C')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${sid}','\\x1b[C',event)" ontouchend="stopArrowRepeat()" title="Right (hold to repeat)">&rarr;</button>
-        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\r')" title="${escHtml(t('send_enter_title')||'ENTER')}">⏎</button>
-      </span>` : '';
-      panel.innerHTML =
-        `<select class="quick-cmd-select" onchange="handleQuickCmd(this)"><option value="">Commands…</option>${optHtml}</select>` +
-        `<div id="customCmdWrap" class="custom-cmd-wrap" style="display:none;">` +
-        `<input type="text" class="custom-cmd-input" id="customCmdInput" placeholder="Type command…" onkeydown="if(event.key==='Enter'){sendCustomCmd();event.preventDefault();}">` +
-        `<button class="quick-btn" onclick="sendCustomCmd()" title="Send">&#10148;</button>` +
-        `<button class="quick-btn" onclick="hideCustomCmd()" title="Cancel">&#10005;</button></div>` +
-        arrows;
+      const mk = (tag, props, text) => {
+        const el = document.createElement(tag);
+        Object.keys(props || {}).forEach(k => el.setAttribute(k, props[k]));
+        if (text != null) el.textContent = text;
+        return el;
+      };
+      const wrap = mk('div', { id: 'customCmdWrap', class: 'custom-cmd-wrap', style: 'display:none;' });
+      const cmdInput = mk('input', { type: 'text', class: 'custom-cmd-input', id: 'customCmdInput', placeholder: 'Type command…' });
+      cmdInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { sendCustomCmd(); ev.preventDefault(); } });
+      const sendBtn = mk('button', { class: 'quick-btn', title: 'Send' }, '\u27A4');
+      sendBtn.addEventListener('click', () => sendCustomCmd());
+      const cancelBtn = mk('button', { class: 'quick-btn', title: 'Cancel' }, '\u2715');
+      cancelBtn.addEventListener('click', () => hideCustomCmd());
+      wrap.append(cmdInput, sendBtn, cancelBtn);
+      panel.textContent = '';
+      panel.append(sel, wrap);
+      if (sid) {
+        const group = mk('span', {
+          class: 'tmux-arrow-group',
+          style: 'display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;',
+          title: t('send_arrow_title') || 'Send arrow key to tmux',
+        });
+        const escBtn = mk('button', { class: 'btn-icon tmux-arrow-btn', title: t('send_esc_title') || 'ESC' }, '\u241B');
+        escBtn.addEventListener('click', () => sendTmuxKey(sid, '\x1b'));
+        group.appendChild(escBtn);
+        [['\u2191', '\x1b[A', 'Up'], ['\u2193', '\x1b[B', 'Down'], ['\u2190', '\x1b[D', 'Left'], ['\u2192', '\x1b[C', 'Right']].forEach(([glyph, seq, name]) => {
+          const b = mk('button', { class: 'btn-icon tmux-arrow-btn', title: name + ' (hold to repeat)' }, glyph);
+          b.addEventListener('mousedown', () => startArrowRepeat(sid, seq));
+          b.addEventListener('mouseup', () => stopArrowRepeat());
+          b.addEventListener('mouseleave', () => stopArrowRepeat());
+          b.addEventListener('touchstart', (ev) => startArrowRepeat(sid, seq, ev));
+          b.addEventListener('touchend', () => stopArrowRepeat());
+          group.appendChild(b);
+        });
+        const enterBtn = mk('button', { class: 'btn-icon tmux-arrow-btn', title: t('send_enter_title') || 'ENTER' }, '\u23CE');
+        enterBtn.addEventListener('click', () => sendTmuxKey(sid, '\r'));
+        group.appendChild(enterBtn);
+        panel.appendChild(group);
+      }
     })
     .catch(() => {});
 }

@@ -1846,6 +1846,8 @@ Three Settings → About cards exist only in the mobile apps, with no server-sid
 
 The CodeQL alert gate's state when GitHub's core rate limit resets later than the wait budget that is left (`WAIT_MAX_SECONDS` minus the time already waited). It applies to both steps: `wait-analyses` and `open-alerts`. The gate does not sleep toward a reset it cannot reach: it prints a `Rate limited` error line (naming the reset epoch when one is known) and exits 1 at once. A reset inside the budget is waited for and retried; a rate limit with no reset time is retried on the normal interval until the budget runs out. Either way the run is a rate limit, not a missing analysis, and `open-alerts` never reports a zero-alert result from it. See [`howto/codeql-local-scan.md`](howto/codeql-local-scan.md#red-check-from-a-rate-limit).
 
+**Scanner-accepted barrier** — a code change that makes a CodeQL code-scanning alert close because the scanner recognizes the safe pattern, rather than the alert being dismissed. Example: the PWA session card quick-command select is built with `createElement` and `textContent`, so command names display as text and are never parsed as markup; behavior is unchanged. The alert counts as closed only after the next "Open high/critical alerts" gate run on main shows it gone. See [operations.md](operations.md#open-code-scanning-alerts-fixed-on-main-closure-pending-the-gate-run).
+
 
 Key terms used across the docs, API, and hook payloads.
 

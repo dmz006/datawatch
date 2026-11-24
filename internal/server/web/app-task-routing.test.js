@@ -284,7 +284,8 @@ test('detail column shows the task type with the deciding row, or the reason non
   assert.match(sb.taskRoutingDetailChipHtml(decided), /class="prd-task-routing-col"/);
   assert.match(sb.taskRoutingDetailLineHtml(none), /class="prd-task-routing-line">docs_set · no row: set by operator</);
   const evil = sb.taskRoutingDetailChipHtml({ task_type: '<script>', reason: '"><b>' });
-  assert.doesNotMatch(evil, /<script>|<b>/);
+  assert.equal(evil.includes('<script'), false);
+  assert.equal(evil.includes('<b'), false);
   assert.equal(sb.taskRoutingDetailChipHtml(undefined), '');
 });
 

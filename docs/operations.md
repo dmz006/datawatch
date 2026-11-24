@@ -5651,6 +5651,12 @@ autonomous:
 
 ## Undeclared Edit Mode (`autonomous.undeclared_edit_mode`)
 
+> **Hardening note.** The checker's git runner now uses a fixed command prefix,
+> an allow-list of subcommands and a root-resolved folder check (see
+> [file-drift-guardrail.md](howto/file-drift-guardrail.md#how-the-checker-runs-git)).
+> No setting changed. Operator review: a refused subcommand shows as
+> `git subcommand ... not allowed` in the daemon log.
+
 Every direct-mode (non-worktree) autonomous task is checked after
 verification for **undeclared edits**: files the task's own worker
 committed in `<pre-task SHA>..HEAD` that were clean before the task started
@@ -9094,6 +9100,8 @@ The eleven open high or critical code scanning alerts on main — the path and c
 
 1. **Confirm the alert gate is green.** Code-scanning engines report a fix on the next analysis, not immediately: check the next "Open high/critical alerts" gate run on main and confirm none of either pass's findings — the twelve still reported open after the first pass, the PWA `app.js` batch (alerts 849 and 850), or any of the rewritten test lines — still appears as an open high or critical finding. Until that run is confirmed green, nothing in this repository should be read as claiming them closed; if the gate still reports one open — or never ran after these commits — record it here and do not promote the changelog entry with the alerts claimed closed. Distinguish a red run caused by the code from one caused by the gate itself: the gate cannot yet tell an open alert from a failed analysis, and a manual dispatch does not re-analyze (filed in the [promotion findings ledger](plans/2026-11-16-promotion-findings.md)); rule out a failed analysis first — aborted analysis jobs, or a rate limit whose reset is past the wait budget (the `wait-analyses` and `open-alerts` steps' rate-limit rule, see *Rate-limit reset out of reach* in [datawatch-definitions.md](datawatch-definitions.md#rate-limit-reset-out-of-reach)) — before concluding the fix is missing.
 2. **Name the trust on every `https://` node before its next pull.** Model pulls now always verify the node's certificate. A node with a self-signed or private-CA certificate fails its pulls until `tls_ca_file` or `tls_cert_fingerprint` is set on it — `verify_tls` and `tls_insecure_skip_verify` no longer apply to a pull. List your nodes (`datawatch compute nodes` or the PWA Compute tab) and set the trust; the pull error names the fix: `node <name>: certificate verification failed: ...; trust the certificate with tls_ca_file or tls_cert_fingerprint`. See [howto/compute-nodes.md](howto/compute-nodes.md#verify-the-certificate-on-model-pulls).
+
+Final barrier pass: the session card quick-command select in `internal/server/web/app.js` is now built with `createElement` and `textContent` instead of an HTML string, so a command name or label is displayed as text and never parsed as markup. What an operator sees is unchanged. **Operator review still owed:** after the next gate run, confirm the quick-command alert no longer appears open, and open a session card's quick-command list once in the PWA to confirm every command still shows and runs.
 
 Run the same checks before a push with [CodeQL local scan](howto/codeql-local-scan.md) instead of waiting for the gate; if an alert is dismissed in code scanning rather than fixed, follow the workflow contract and record the dismissal's reason in the accepted-risks registry (`security/accepted-risks.yml`) — the gate itself never reads that file: it only fails on alerts the code-scanning API still reports as open, high or critical.
 

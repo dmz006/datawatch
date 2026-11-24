@@ -1,0 +1,8 @@
+# Configuration audit exemptions.
+#
+# One entry per line: key | surfaces | reason
+#   key       a configuration key (dotted, as in config.yaml), or a prefix
+#             ending in .* that covers every key under it
+#   surfaces  comma list of ref, web, get, put, or * for all four
+#   reason    required; why the surface does not apply, or where the gap is tracked
+# Lines starting with # and blank lines are ignored.

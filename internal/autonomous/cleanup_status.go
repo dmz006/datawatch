@@ -25,7 +25,9 @@ package autonomous
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -883,8 +885,17 @@ func FixCleanupPermissions(base string, paths []string) (int, error) {
 			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", orig))
 			continue
 		}
-		if _, err := os.Lstat(p); err != nil {
-			continue // already gone: nothing to fix
+		statRoot := cleanBase
+		if !strings.HasPrefix(p, cleanBase+string(filepath.Separator)) {
+			statRoot = realBase
+		}
+		if _, err := lstatUnderRoot(statRoot, strings.TrimPrefix(p, statRoot+string(filepath.Separator))); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // already gone: nothing to fix
+			}
+			// Escapes the root (e.g. through a symlink): refused.
+			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", orig))
+			continue
 		}
 		// Resolve the parent so a final symlink is not followed.
 		rp, err := filepath.EvalSymlinks(filepath.Dir(p))

@@ -342,11 +342,15 @@ func isDaemonIgnoreChange(ctx context.Context, dir, rel string, run driftGitRunn
 	if relClean == "." || !filepath.IsLocal(relClean) {
 		return false
 	}
-	curPath, err := repoFileInside(dir, filepath.ToSlash(relClean))
+	if _, err := repoFileInside(dir, filepath.ToSlash(relClean)); err != nil {
+		return false
+	}
+	repoRoot, err := os.OpenRoot(dir)
 	if err != nil {
 		return false
 	}
-	cur, err := os.ReadFile(curPath)
+	defer func() { _ = repoRoot.Close() }()
+	cur, err := repoRoot.ReadFile(relClean)
 	if err != nil {
 		return false
 	}
@@ -555,8 +559,8 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 			pathspec = append(pathspec, p)
 			continue
 		}
-		if inside, ierr := repoFileInside(dir, rel); ierr == nil {
-			if _, lerr := os.Lstat(inside); lerr == nil {
+		if _, ierr := repoFileInside(dir, rel); ierr == nil {
+			if _, lerr := lstatUnderRoot(dir, rel); lerr == nil {
 				// Git-ignored and untracked (not in the index) are skipped:
 				// DefaultTaskCommit neither adds them nor puts them in the
 				// commit pathspec, and never force-adds them. A path in the
@@ -665,4 +669,19 @@ func taskHeadSHA(ctx context.Context, dir string) (string, error) {
 		return "", fmt.Errorf("task commit: git rev-parse HEAD in %s: %w", dir, err)
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// lstatUnderRoot lstats rel (already IsLocal-checked by the caller) through
+// an os.Root opened on dir, so the name is resolved against a fixed root and
+// cannot escape it.
+func lstatUnderRoot(dir, rel string) (os.FileInfo, error) {
+	if !filepath.IsLocal(rel) {
+		return nil, os.ErrInvalid
+	}
+	r, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = r.Close() }()
+	return r.Lstat(rel)
 }

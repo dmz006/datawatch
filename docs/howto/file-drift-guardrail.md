@@ -389,6 +389,19 @@ To stop it happening: commit or stash your own work before starting a
 direct-mode Automaton, list every file a task should touch in its
 `files`, or run the Automaton in worktree mode.
 
+## How the checker runs git
+
+The checker runs git from a fixed set of constants (it disables the fsmonitor
+and hooks path and takes no optional locks) and sets the folder through the
+process working directory rather than building it into a command line. Only
+a fixed list of git subcommands is allowed; anything else is refused with
+`git subcommand ... not allowed`. The folder is validated through a handle
+opened on its parent. Results and settings are unchanged.
+
+**Still needs your review:** if a custom workflow relies on a git subcommand
+outside that list, the checker now refuses it; tell the maintainers rather than
+working around it.
+
 ## See also
 
 - [guardrail-library.md](guardrail-library.md): guardrail profiles, per-Automaton overrides, resolution order

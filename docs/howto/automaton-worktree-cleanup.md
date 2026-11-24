@@ -474,6 +474,16 @@ directory, a data directory that is not usable leaves the status recorder
 inert (it neither loads nor saves anything), and the "still there" probe on a
 failed worktree path never stats an empty, NUL-laden or `../`-climbing path.
 
+The "still there" probe is now resolved through a handle opened on the worktree
+base. A path that is truly gone is still skipped as "nothing to fix"; a path
+that escapes the base (for example through a symbolic link) is refused and
+reported as `outside the worktree base` in the status errors instead of being
+inspected.
+
+**Still needs your review:** an `outside the worktree base` entry in the
+cleanup status means a recorded path pointed outside the base. Nothing was
+removed; check how that path was recorded before clearing the entry.
+
 ## Skipped by reason, permission errors and the fix
 
 The worktrees pass also groups what it left in place by the reason, so the
