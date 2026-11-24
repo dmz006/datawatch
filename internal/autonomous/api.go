@@ -1227,13 +1227,18 @@ func (a *API) cancelRun(id string) {
 	}
 }
 
-func (a *API) Cancel(id string) error {
+func (a *API) Cancel(id string) error { return a.cancel(id, OutcomeInput{}) }
+
+// cancel stops the Automaton and records its outcome in the same step: the
+// explicit one in in, else the one its own facts prove (closed_outcome.go).
+func (a *API) cancel(id string, in OutcomeInput) error {
 	prd, ok := a.M.Store().GetPRD(id)
 	if !ok {
 		return fmt.Errorf("prd %q not found", id)
 	}
 	a.cancelRun(id)          // v5.26.16 — stop the executor goroutine first
 	a.M.killPRDSessions(prd) // kill any task sessions still running
+	outcomeMode := a.M.Config().EffectiveClosedOutcomeArchive()
 	var old PRDStatus
 	// The status change, the cancel stamp and the cancel decision go in one
 	// lock block so a concurrent loop pass never sees a cancelled record
@@ -1247,6 +1252,9 @@ func (a *API) Cancel(id string) error {
 		prd.UpdatedAt = now
 		clearPlannerFields(prd) // cancel ends any planning in flight
 		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "cancel", Actor: "operator"})
+		if in.Outcome != "" || outcomeMode != ClosedOutcomeOff {
+			a.M.setOutcomeLocked(prd, in, "operator", now, outcomeMode)
+		}
 	})
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err

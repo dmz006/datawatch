@@ -455,6 +455,18 @@ type PRD struct {
 	ShippedRefusal     *ShippedRefusalRecord `json:"shipped_refusal,omitempty"`
 	ClosedWorkOverride *ClosedWorkOverride   `json:"closed_work_override,omitempty"`
 
+	// ClosedOutcome is the class the work ended in: delivered, superseded,
+	// dropped or held (see closed_outcome.go). DeliveredVia names the twin
+	// Automaton that delivered the work (or the one that replaced it, for a
+	// superseded record). ClosedOutcomeNote says why and ClosedOutcomeAt when
+	// it was recorded. Deploy is the post-ship deploy record. All empty until
+	// recorded.
+	ClosedOutcome     string        `json:"closed_outcome,omitempty"`
+	DeliveredVia      string        `json:"delivered_via,omitempty"`
+	ClosedOutcomeNote string        `json:"closed_outcome_note,omitempty"`
+	ClosedOutcomeAt   *time.Time    `json:"closed_outcome_at,omitempty"`
+	Deploy            *DeployRecord `json:"deploy,omitempty"`
+
 	// BranchRefresh is the state of the last branch refresh against main.
 	BranchRefresh *BranchRefresh `json:"branch_refresh,omitempty"`
 	// BranchRefreshOverride overrides the global branch-refresh setting for

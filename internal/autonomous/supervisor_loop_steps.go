@@ -310,6 +310,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 	closed := 0
 	held := 0
 	kept := 0
+	needOutcome := 0
 	keptBy := map[PRDStatus]int{}
 	reasons := map[string]string{}
 	keepUnmerged := s.archiveKeepUnmerged()
@@ -364,6 +365,14 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 			}
 		}
 		if _, err := s.c.m.Archive(p.ID, supervisorLoopActor); err != nil {
+			if errors.Is(err, ErrClosedOutcomeRefused) {
+				// No outcome, or a hold that is not met: the record stays as
+				// it is and the refusal is on its decision log, once.
+				needOutcome++
+				reasons[p.ID] = err.Error()
+				log.Printf("[autonomous] supervisor-loop: kept %s (%s): %v", p.ID, f.status, err)
+				continue
+			}
 			errs = append(errs, fmt.Errorf("archive %s: %w", p.ID, err))
 			continue
 		}
@@ -392,6 +401,9 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 				detail += fmt.Sprintf(" (kept %d %s with unmerged branch work)", n, st)
 			}
 		}
+	}
+	if needOutcome > 0 {
+		detail += fmt.Sprintf(" (kept %d with no outcome or an unmet hold: record an outcome to close them)", needOutcome)
 	}
 	return detail, errors.Join(errs...)
 }
