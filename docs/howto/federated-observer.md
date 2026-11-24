@@ -598,6 +598,32 @@ bash install/install-stats.sh \
 > combine `--archive` with `--version <version>` if the filename does
 > not already encode it.
 
+## Building the eBPF objects (netprobe)
+
+The eBPF netprobe objects in `internal/observer/ebpf/` (`netprobe_x86_bpfel.{go,o}` and
+`netprobe_arm64_bpfel.{go,o}`) are generated from `netprobe.bpf.c`, not hand-written.
+The toolchain is pinned, and the Makefile target `ebpf-gen` and the `ebpf-gen-drift` CI
+workflow use the same pins, so a local regeneration gives the same bytes CI checks:
+
+- **bpf2go:** `github.com/cilium/ebpf` v0.22.0, taken from `go.mod`.
+- **clang:** `clang-18` with `llvm-strip-18`, named in the `//go:generate` lines of
+  `internal/observer/ebpf/netprobe.go`. The workflow runs on `ubuntu-24.04`, where
+  `clang-18` and `llvm-18` come from the distro packages.
+
+To regenerate, install `clang-18`, `llvm-18` and `libbpf-dev` (Debian or Ubuntu 24.04;
+put `/usr/lib/llvm-18/bin` on `PATH` if `llvm-strip-18` is not found), then run:
+
+```bash
+make ebpf-gen
+```
+
+`ebpf-gen` stops with a message when `clang-18` is missing or is not version 18. Without the
+generated objects the netprobe loader degrades to noop with a clear message, so the
+observer still runs. The drift check fails the push when the committed artifacts differ from
+what `make ebpf-gen` produces, so regenerate and commit all four files together. If you change
+the clang or bpf2go pin, change the Makefile, `.github/workflows/ebpf-gen-drift.yaml`, the
+`//go:generate` lines, the committed artifacts and this note together.
+
 ## Common pitfalls
 
 - **Peer can't reach primary.** Mesh is up but `push_to.url` wrong

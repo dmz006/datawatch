@@ -456,7 +456,13 @@ cross: sync-docs docs-index
 # BL173 task 1 — generate the eBPF objects via bpf2go. Requires clang +
 # kernel headers (linux-headers-$(uname -r) on Debian/Ubuntu). Without
 # this step the netprobe loader degrades to noop with a clear message.
+# Toolchain pin (must match .github/workflows/ebpf-gen-drift.yaml): bpf2go
+# comes from github.com/cilium/ebpf v0.22.0 via go.mod; clang-18 and
+# llvm-strip-18 are named in the //go:generate directives (not overridable
+# here, so the same command gives the same bytes locally and in CI). The
+# committed netprobe_*_bpfel.{go,o} were generated with exactly this pin.
 ebpf-gen:
+	@command -v clang-18 >/dev/null && clang-18 --version | head -1 | grep -q 'version 18\.' || { echo "ebpf-gen needs clang-18 and llvm-strip-18 (install clang-18 llvm-18)" >&2; exit 1; }
 	cd internal/observer/ebpf && go generate ./...
 
 # BL173 task 4 — build the Shape C cluster container image. Multi-arch
