@@ -25,6 +25,9 @@ function splashDwellRemainingMs({ minSeconds = 0, legacyStartAt = 0, now = 0 } =
 }
 window.splashDwellRemainingMs = splashDwellRemainingMs;
 
+// Set while a connected splash hold is running; removed when it finishes.
+const SPLASH_HOLD_PENDING_KEY = 'cs_splash_hold_pending';
+
 // Schedule the launch splash's exit: wait remainingMs, then the 700 ms
 // fade, then removal. The listeners are only ever added on the connected
 // path, so input before the connection is up never ends the dwell.
@@ -51,6 +54,8 @@ function _scheduleSplashDismiss(splash, remainingMs, { connected = false } = {})
   const beginFade = () => {
     if (finished) return;
     finished = true;
+    // The hold ran its course (or the operator ended it): it counts as shown.
+    if (connected) { try { localStorage.removeItem(SPLASH_HOLD_PENDING_KEY); } catch (_) {} }
     if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }
     removeListeners();
     splash.classList.add('fade-out');
@@ -1093,7 +1098,12 @@ function connect() {
       const statusEl = document.getElementById('splashStatus');
       if (statusEl) statusEl.textContent = t('splash_status_connected') || 'Connected';
       const lastSplashTime = parseInt(localStorage.getItem('cs_splash_time') || '0', 10);
-      const lastSplashVer = localStorage.getItem('cs_splash_version') || '';
+      // A hold that a navigation cut short (a release change: the new worker
+      // navigates the page a fraction of a second in) never finished, so it is
+      // still owed. The marker holds the previous version of a new-version
+      // splash ('' otherwise) so the re-show is the same splash, held in full.
+      const owedSplash = localStorage.getItem(SPLASH_HOLD_PENDING_KEY);
+      const lastSplashVer = owedSplash || localStorage.getItem('cs_splash_version') || '';
       // The splash's 'new version' decision must compare against the
       // daemon serving THIS page (the primary), not against the active
       // peer's build: state._daemonVersion is only ever set from a
@@ -1123,7 +1133,8 @@ function connect() {
       // is unchanged.
 
       // Show splash if: first visit, new version, or >24h since last display
-      const shouldShow = !lastSplashTime || isNewVersion || hoursSince >= 24;
+      // A hold that has not finished is shown again whatever the clock says.
+      const shouldShow = !lastSplashTime || isNewVersion || hoursSince >= 24 || owedSplash !== null;
 
       // Minimum-dwell settings (ui.splash_min_seconds / *_new_version,
       // daemon defaults 6 / 9 seconds) must be in hand before the timing
@@ -1148,6 +1159,7 @@ function connect() {
           if (shouldShow) {
             localStorage.setItem('cs_splash_time', String(Date.now()));
             if (serverVer) localStorage.setItem('cs_splash_version', serverVer);
+            localStorage.setItem(SPLASH_HOLD_PENDING_KEY, isNewVersion ? lastSplashVer : '');
             // Dwell clock starts now (the moment the gating allowed the
             // splash); 0 in the settings keeps the legacy 3000 ms window
             // measured from window._splashStart instead.
@@ -33328,6 +33340,7 @@ window.replaySplash = function() {
   try {
     localStorage.removeItem('cs_splash_time');
     localStorage.removeItem('cs_splash_version');
+    localStorage.removeItem(SPLASH_HOLD_PENDING_KEY);
   } catch (_) {}
   // Audit (b42f0003): deliberate operator action (the Replay-splash button),
   // never triggered by a federated-server switch.

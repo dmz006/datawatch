@@ -466,3 +466,76 @@ test('version line: left untouched when the version did not change', async (t) =
   assert.equal(h.prevEl.textContent, '', 'no "previous version" text on a same-version re-show');
   assert.equal(h.prevEl.style.display, undefined, 'the line stays CSS-hidden — never revealed');
 });
+
+// ── a hold cut short by a navigation is not "shown" ────────────────────────
+// After a release change the new service worker navigates the page a fraction
+// of a second into the splash. The next load must give the splash its full
+// hold, not find it "shown less than 24 h ago" and drop it at once.
+
+// What survives a navigation: localStorage.
+function splashStorage(h) {
+  const out = {};
+  for (const k of ['cs_splash_time', 'cs_splash_version', 'cs_splash_hold_pending']) {
+    const v = h.sandbox.localStorage.getItem(k);
+    if (v !== null) out[k] = v;
+  }
+  return out;
+}
+
+test('a new-version hold cut short by a navigation is held in full (9 s, with the previous-version line) on the next load', async (t) => {
+  const tick = enableFakeTimers(t);
+  const ui = { splash_min_seconds: 6, splash_min_seconds_new_version: 9 };
+  const first = await makeHarness({
+    ui,
+    ls: { cs_splash_time: FAKE_EPOCH - HOUR, cs_splash_version: 'v1.0.0-alpha.1' },
+    daemonVersion: 'v1.0.0-alpha.10',
+  });
+  first.open();
+  await flushAsync();
+  tick(200); // the worker navigates the page here
+  const carried = splashStorage(first);
+  first.splash._splashDismiss.cancel(); // the old document is gone with its timers
+
+  const second = await makeHarness({ ui, ls: carried, daemonVersion: 'v1.0.0-alpha.10' });
+  second.open();
+  await flushAsync();
+  assert.equal(second.splash.removed, 0, 'the reloaded page must not drop the splash at once');
+  assert.equal(second.prevEl.textContent, 'previous v1.0.0-alpha.1', 'still the new-version splash');
+  tick(8900);
+  assert.equal(second.splash.isConnected, true, 'held for the full new-version minimum');
+  tick(100);
+  tick(FADE_MS + 1);
+  assert.equal(second.splash.removed, 1);
+});
+
+test('a completed hold is not repeated: the next load within 24 h skips the splash', async (t) => {
+  const tick = enableFakeTimers(t);
+  const ui = { splash_min_seconds: 6 };
+  const first = await makeHarness({ ui, daemonVersion: 'v1.0.0-alpha.10' });
+  first.open();
+  await flushAsync();
+  tick(6000);
+  tick(FADE_MS + 1);
+  assert.equal(first.splash.removed, 1);
+
+  const second = await makeHarness({ ui, ls: splashStorage(first), daemonVersion: 'v1.0.0-alpha.10' });
+  second.open();
+  await flushAsync();
+  assert.equal(second.splash.removed, 1, 'shown in full already: skipped');
+});
+
+test('a hold the operator dismisses with a tap counts as shown', async (t) => {
+  const tick = enableFakeTimers(t);
+  const ui = { splash_min_seconds: 6 };
+  const first = await makeHarness({ ui, daemonVersion: 'v1.0.0-alpha.10' });
+  first.open();
+  await flushAsync();
+  tick(1000);
+  first.dispatch('click');
+  tick(FADE_MS + 1);
+
+  const second = await makeHarness({ ui, ls: splashStorage(first), daemonVersion: 'v1.0.0-alpha.10' });
+  second.open();
+  await flushAsync();
+  assert.equal(second.splash.removed, 1);
+});
