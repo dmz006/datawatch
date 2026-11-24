@@ -1252,7 +1252,7 @@ Includes **overlap guard**: if the previous spawn for this schedule is still run
 | `--backend` | LLM backend name (e.g. `claude-code`) |
 | `--model` | Model name override |
 | `--llm-ref` | Unified LLM registry reference (alternative to `--backend`) |
-| `--effort` | Thoroughness: `quick`, `normal`, or `thorough` |
+| `--effort` | Thoroughness: `quick`, `normal`, or `thorough` (claude-code: `--effort low`, `medium`, `high`) |
 | `--cron` | 5-field cron for recurring spawns (e.g. `"0 * * * *"` for hourly) |
 | `--at` | First fire time: `HH:MM` or RFC3339 |
 | `--schedule-name` | Name for this schedule entry (for lookup/cancel) |

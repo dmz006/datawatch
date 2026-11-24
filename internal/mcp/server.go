@@ -2069,7 +2069,7 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 			mcpsdk.Description("Model for this claude-code session (alias like sonnet or full name). Omit to use the LLM row's model or the daemon default"),
 		),
 		mcpsdk.WithString("effort",
-			mcpsdk.Description("Session effort: quick|normal|thorough. Omit for the default"),
+			mcpsdk.Description("Session effort: quick|normal|thorough (claude-code: --effort low|medium|high). Omit for the default"),
 		),
 		mcpsdk.WithString("name",
 			mcpsdk.Description("Human-readable session name (used by send_input name resolution)"),

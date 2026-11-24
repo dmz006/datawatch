@@ -15562,6 +15562,9 @@ components:
           type: string
           description: Path to the session's output log
           example: ".datawatch/logs/hal9000-a3f2.log"
+        claude_effort:
+          type: string
+          description: "The claude --effort level the start request named; a restart runs at it. Absent when none was named."
         state:
           $ref: "#/components/schemas/SessionState"
         created_at:

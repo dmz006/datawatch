@@ -1,8 +1,7 @@
 // Regression proof that StartOptions.ClaudeEffort (claude-code's real
-// reasoning `--effort` enum) reaches the backend via SetEffort, and that
-// it is independent of the BL41 thoroughness hint StartOptions.Effort.
-// The two were previously confused: autonomous tasks only ever set the
-// BL41 field, so no --effort reached the claude CLI.
+// reasoning `--effort` enum) reaches the backend via SetEffort and wins over
+// the BL41 thoroughness hint StartOptions.Effort, which sets the level only
+// when ClaudeEffort is empty. The recorded Session.Effort stays the hint.
 
 package session
 
@@ -69,14 +68,14 @@ func TestClaudeEffort_ForwardedIndependentOfBL41Effort(t *testing.T) {
 	}
 }
 
-func TestClaudeEffort_EmptyDoesNotCallSetEffort(t *testing.T) {
+func TestClaudeEffort_EmptyMapsSessionEffort(t *testing.T) {
 	stub := &effortStubBackend{}
 	startWithEffortOpts(t, &StartOptions{
 		Effort:     "thorough",
 		BackendObj: stub,
 	})
-	if len(stub.effortCalls) != 0 {
-		t.Errorf("SetEffort must not be called when ClaudeEffort is empty (even with BL41 Effort set); got %v", stub.effortCalls)
+	if len(stub.effortCalls) != 1 || stub.effortCalls[0] != "high" {
+		t.Errorf("SetEffort calls = %v, want [high] for the thorough session effort", stub.effortCalls)
 	}
 }
 

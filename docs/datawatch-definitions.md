@@ -289,7 +289,7 @@ Spawn a fresh, independent session at a scheduled time or on a recurring cron â€
 | `backend` | string | `""` | LLM backend name (e.g. `claude-code`); omit for `--shell` jobs |
 | `llm_ref` | string | `""` | Unified LLM registry reference (e.g. `"claude-sonnet"`) |
 | `model` | string | `""` | Model name override |
-| `effort` | string | `""` | Effort level: `quick`, `normal`, or `thorough` |
+| `effort` | string | `""` | Effort level: `quick`, `normal`, or `thorough` (claude-code: `--effort` `low`, `medium`, `high`) |
 | `name` | string | `""` | Human-readable name for this schedule entry (for lookup/cancel) |
 | `session-name` | string | `""` | Name given to each spawned session instance |
 | `run_at` | time | computed | Explicit first fire time (ISO-8601 or `HH:MM`) |

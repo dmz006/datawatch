@@ -10,15 +10,15 @@ import (
 //
 //  1. session.Effort (BL41) — datawatch's legacy thoroughness hint
 //     (quick/normal/thorough), sent as the "effort" key of the
-//     /api/sessions/start body. It never reaches the claude CLI.
+//     /api/sessions/start body. For claude-code the session manager maps
+//     it to --effort low/medium/high when no claude level is named.
 //  2. claude's own --effort reasoning level (low/medium/high/xhigh/max),
 //     sent as the "claude_effort" key and applied by session.Manager.Start
 //     via backend.SetEffort.
 //
-// The autonomous Effort enum feeds both. The claude_effort key is
-// ADDITIVE: the BL41 "effort" value is unchanged, so existing behavior
-// for every backend is preserved and claude-code tasks additionally get
-// a real --effort flag.
+// The autonomous Effort enum feeds both. The claude_effort key is the
+// authoritative one for claude-code (it keeps max and xhigh, which the
+// BL41 vocabulary cannot say); the BL41 "effort" value is unchanged.
 
 // mapAutonomousEffortToSession translates an autonomous Effort to the
 // BL41 session.Effort thoroughness vocabulary (concept 1 above).
