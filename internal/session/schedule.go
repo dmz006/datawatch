@@ -102,6 +102,9 @@ type ScheduledCommand struct {
 	// ConsecutiveWaits counts starts in a row that were refused for capacity
 	// (session cap, cooldown, draining). A wait is not a failure.
 	ConsecutiveWaits int `json:"consecutive_waits,omitempty"`
+	// WaitingSince is when the current run of waits for capacity began; it
+	// bounds how long a one-time schedule waits. Cleared by a spawned fire.
+	WaitingSince time.Time `json:"waiting_since,omitempty"`
 	// RearmState is "", "retrying", "waiting_capacity" or "gave_up".
 	RearmState string `json:"rearm_state,omitempty"`
 	// LastError is the reason of the last refused or failed start.
@@ -678,6 +681,7 @@ func (s *ScheduleStore) RecordFire(id, sessionID, result string) error {
 			if result == "spawned" {
 				sc.ConsecutiveFailures = 0
 				sc.ConsecutiveWaits = 0
+				sc.WaitingSince = time.Time{}
 				sc.RearmState = ""
 				sc.LastError = ""
 			}

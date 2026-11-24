@@ -37,6 +37,7 @@ docs.
 - Other failures follow `schedule.rearm_mode`: `next_fire` (default, old behaviour), `backoff` (retry
   count), `stay_failed`. A give-up raises an error alert; waits raise one warn alert after 5 in a row.
 - `Manager.FireDueSessions` is the one path, behind a lock; both loops call it.
+- Follow-up (2026-11-24): a one-time schedule refused for capacity waits only `schedule.one_time_max_wait_hours` (default 12) from its first refusal, then fails with the reason and an error alert (`rearm_state` gave_up). The clock is the entry's `waiting_since`; recurring schedules still wait without a limit.
 
 ## Run history (item 7), checked
 

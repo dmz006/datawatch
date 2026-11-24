@@ -1537,6 +1537,7 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `schedule.rearm_max_retries` | int | `0` | Failures in a row after which `backoff` gives up. 0 = never. |
 | `schedule.rearm_backoff_seconds` | int | `30` | First pause before a retry; doubles each time. Also the pause for waits. Values below 1 rejected. |
 | `schedule.rearm_backoff_max_seconds` | int | `900` | Longest pause; never below `rearm_backoff_seconds`. |
+| `schedule.one_time_max_wait_hours` | int | `12` | Hours a one-time schedule refused for capacity keeps waiting before it fails with the reason (rearm_state `gave_up`) and an error alert. Values below 1 rejected. Recurring schedules wait without a limit. |
 | `audit.safeguard_alert` | bool | `true` | Raise one alert (and write one `safeguard_action` audit entry) when a pause resume, an attempt-count force reset or a shipped-work force run is made by a caller that is neither the web app (`X-Datawatch-Client: pwa`) nor a session credential. Off stops the alert only; the audit entry is always written. Live, no restart. |
 | `audit.access_log_enabled` | bool | `true` | Log every HTTP request/response, auth failure, and WS connect/disconnect to `access.log` (method, path, status, remote IP, user agent, resolved principal — never the token). |
 | `audit.retention_days` | int | `30` | Prune entries older than this from both `audit.log` and `access.log`. Negative = never prune. |

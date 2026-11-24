@@ -40,9 +40,12 @@ For these the schedule is **never marked failed**, whatever the settings below s
 a recurring schedule is never left behind. It stays scheduled and tries again after a
 pause that starts at `schedule.rearm_backoff_seconds` (30 s) and doubles each time up
 to `schedule.rearm_backoff_max_seconds` (15 min). A recurring schedule is never pushed
-past its next scheduled time. A one-time schedule that is refused for capacity keeps
-waiting the same way until it starts or you cancel it. These waits do not count as
-failures and do not use up the retry limit.
+past its next scheduled time. A one-time schedule that is refused for capacity waits
+the same way, but only for `schedule.one_time_max_wait_hours` (12 hours) from its first
+refusal. If it has not started by then it **fails with the reason** (`gave_up`, with the
+text "gave up waiting for capacity after 12 hours" and the last refusal) and you get an
+**error** alert. Recurring schedules keep waiting without a limit. These waits do not
+count as failures and do not use up the retry limit.
 
 After 5 waits in a row you get one **warn** alert (then one per 60 waits), naming the
 schedule and the reason, so a cap that stays full does not go unnoticed.
@@ -71,7 +74,7 @@ result** with its reason, and the **re-arm state** (`retrying`, `waiting_capacit
 
 | Surface | How |
 |---------|-----|
-| Web | Monitor tab → **Scheduled Events**: a line under each schedule; Settings → General → **Scheduled Spawns** holds the four settings |
+| Web | Monitor tab → **Scheduled Events**: a line under each schedule; Settings → General → **Scheduled Spawns** holds the five settings |
 | CLI | `datawatch schedule list`: the `REARM` column beside `FIRES`, `LAST-FIRE`, `LAST-RESULT` |
 | Chat | `schedule list` |
 | MCP | `schedule_list` (pending and failed entries, with the state line) |
@@ -88,8 +91,9 @@ or `deferred` (refused for capacity).
 | `schedule.rearm_max_retries` | `0` | Failures in a row after which `backoff` gives up; 0 = never |
 | `schedule.rearm_backoff_seconds` | `30` | First pause before a retry; doubles each time. Also used for waits |
 | `schedule.rearm_backoff_max_seconds` | `900` | Longest pause; never below the first pause |
+| `schedule.one_time_max_wait_hours` | `12` | How long a one-time schedule refused for capacity waits before it fails; at least 1. Recurring schedules never use it |
 
-All four are read at every failed start, so a change applies without a restart. Set them
+All five are read at every failed start, so a change applies without a restart. Set them
 in `datawatch.yaml`, with `datawatch config set schedule.rearm_mode backoff`, the MCP
 `config_set` tool, `PUT /api/config`, the chat `configure` command or the web card.
 

@@ -39,12 +39,13 @@ test('every schedule re-arm string exists in all five locales', () => {
   }
 });
 
-test('the Settings card has the four policy fields wired to the schedule.* keys', () => {
+test('the Settings card has the policy fields wired to the schedule.* keys', () => {
   const sb = loadApp();
   const card = JSON.parse(vm.runInContext("JSON.stringify(GENERAL_CONFIG_FIELDS.find(s => s.id === 'schedule') || null)", sb));
   assert.ok(card, 'schedule card missing');
   assert.deepEqual(card.fields.map(f => f.key), [
-    'schedule.rearm_mode', 'schedule.rearm_max_retries', 'schedule.rearm_backoff_seconds', 'schedule.rearm_backoff_max_seconds']);
+    'schedule.rearm_mode', 'schedule.rearm_max_retries', 'schedule.rearm_backoff_seconds', 'schedule.rearm_backoff_max_seconds',
+    'schedule.one_time_max_wait_hours']);
   assert.deepEqual(card.fields[0].options, ['next_fire', 'backoff', 'stay_failed']);
   for (const f of card.fields) assert.ok(bundle('en')[f.labelKey], `${f.key} label key not in the bundle`);
 });

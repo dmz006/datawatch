@@ -35,6 +35,9 @@ const (
 const (
 	defaultRearmBackoff    = 30 * time.Second
 	defaultRearmBackoffMax = 15 * time.Minute
+	// DefaultOneTimeMaxWait is how long a one-time schedule refused for
+	// capacity waits before it gives up.
+	DefaultOneTimeMaxWait = 12 * time.Hour
 	// maxLastErrorChars bounds the stored reason of a refused start.
 	maxLastErrorChars = 300
 )
@@ -58,6 +61,9 @@ type RearmPolicy struct {
 	MaxRetries int // backoff mode: failures in a row before giving up; 0 = never give up
 	Backoff    time.Duration
 	BackoffMax time.Duration
+	// OneTimeMaxWait is how long a one-time schedule refused for capacity
+	// keeps waiting before it gives up. Recurring schedules never use it.
+	OneTimeMaxWait time.Duration
 }
 
 // DefaultRearmPolicy is the policy that keeps the behaviour from before the
@@ -83,6 +89,9 @@ func (p RearmPolicy) Normalised() RearmPolicy {
 	if p.BackoffMax < p.Backoff {
 		p.BackoffMax = p.Backoff
 	}
+	if p.OneTimeMaxWait <= 0 {
+		p.OneTimeMaxWait = DefaultOneTimeMaxWait
+	}
 	return p
 }
 
@@ -103,9 +112,10 @@ func (p RearmPolicy) delay(n int) time.Duration {
 type StartFailure struct {
 	Consecutive int       `json:"consecutive_failures"`
 	Waits       int       `json:"consecutive_waits"`
-	Wait        bool      `json:"wait"`    // the refusal was a wait for capacity
-	Rearmed     bool      `json:"rearmed"` // the schedule is pending again
-	GaveUp      bool      `json:"gave_up"` // the policy gave up: the schedule stays failed
+	Wait        bool      `json:"wait"`       // the refusal was a wait for capacity
+	Rearmed     bool      `json:"rearmed"`    // the schedule is pending again
+	GaveUp      bool      `json:"gave_up"`    // the policy gave up: the schedule stays failed
+	WaitLimit   bool      `json:"wait_limit"` // the give-up was a one-time schedule that waited for capacity too long
 	NextAt      time.Time `json:"next_at"`
 }
 
@@ -160,6 +170,18 @@ func (sc *ScheduledCommand) appendFire(f ScheduleFire) {
 	}
 }
 
+// waitHours words a wait limit for a reason text: "12 hours", "1 hour".
+func waitHours(d time.Duration) string {
+	h := int(d / time.Hour)
+	if d%time.Hour != 0 || h < 1 {
+		return d.String()
+	}
+	if h == 1 {
+		return "1 hour"
+	}
+	return fmt.Sprintf("%d hours", h)
+}
+
 func truncateReason(err error) string {
 	if err == nil {
 		return ""
@@ -174,10 +196,12 @@ func truncateReason(err error) string {
 // RecordStartFailure records a spawn fire that did not start a session and
 // re-arms the schedule under the policy.
 //
-//   - A wait for capacity (IsStartWait) never fails the schedule: it stays
-//     pending and retries after a growing pause, never later than its next
-//     scheduled time. It does not count as a failure and does not spend
-//     MaxRetries. This holds for one-time schedules too.
+//   - A wait for capacity (IsStartWait) never fails a recurring schedule: it
+//     stays pending and retries after a growing pause, never later than its
+//     next scheduled time. It does not count as a failure and does not spend
+//     MaxRetries. A one-time schedule waits the same way, but only for
+//     OneTimeMaxWait from its first refusal; then it fails with the reason
+//     (rearm_state gave_up) and the operator is alerted.
 //   - Any other failure follows the policy mode.
 //
 // A cancelled schedule stays cancelled.
@@ -204,11 +228,26 @@ func (s *ScheduleStore) RecordStartFailure(id string, cause error, now time.Time
 			}
 			return next
 		}
-		if IsStartWait(cause) {
+		if IsStartWait(cause) && !hasNatural && !sc.WaitingSince.IsZero() && !now.Before(sc.WaitingSince.Add(p.OneTimeMaxWait)) {
+			// A one-time schedule has waited as long as the setting allows.
+			reason = fmt.Sprintf("gave up waiting for capacity after %s: %s", waitHours(p.OneTimeMaxWait), reason)
+			sc.FireCount++
+			sc.ConsecutiveWaits++
+			sc.LastError, sc.LastFireResult = reason, "failed"
+			sc.State, sc.RearmState, sc.DoneAt = SchedFailed, RearmStateGaveUp, now
+			sc.appendFire(ScheduleFire{At: now, Result: "failed", Error: reason})
+			out = StartFailure{GaveUp: true, WaitLimit: true, NextAt: sc.RunAt}
+		} else if IsStartWait(cause) {
+			if sc.ConsecutiveWaits == 0 || sc.WaitingSince.IsZero() {
+				sc.WaitingSince = now
+			}
 			sc.ConsecutiveWaits++
 			sc.LastFireResult = "deferred"
 			sc.RearmState = RearmStateWaiting
 			sc.RunAt, sc.State = retryAt(p.delay(sc.ConsecutiveWaits)), SchedPending
+			if limit := sc.WaitingSince.Add(p.OneTimeMaxWait); !hasNatural && sc.RunAt.After(limit) {
+				sc.RunAt = limit // the last retry is the one at the limit
+			}
 			sc.appendFire(ScheduleFire{At: now, Result: "deferred", Error: reason})
 			out = StartFailure{Wait: true, Rearmed: true, NextAt: sc.RunAt}
 		} else {
@@ -439,7 +478,14 @@ func (sc *ScheduledCommand) RearmText() string {
 	switch sc.RearmState {
 	case RearmStateWaiting:
 		parts = append(parts, fmt.Sprintf("%s x%d", sc.RearmState, sc.ConsecutiveWaits))
-	case RearmStateRetrying, RearmStateGaveUp:
+	case RearmStateGaveUp:
+		if sc.ConsecutiveFailures == 0 && sc.ConsecutiveWaits > 0 {
+			// A one-time schedule that waited for capacity too long.
+			parts = append(parts, fmt.Sprintf("%s (waited %d tries)", sc.RearmState, sc.ConsecutiveWaits))
+		} else {
+			parts = append(parts, fmt.Sprintf("%s x%d", sc.RearmState, sc.ConsecutiveFailures))
+		}
+	case RearmStateRetrying:
 		parts = append(parts, fmt.Sprintf("%s x%d", sc.RearmState, sc.ConsecutiveFailures))
 	}
 	return strings.Join(parts, " · ")

@@ -16423,6 +16423,10 @@ components:
         consecutive_waits:
           type: integer
           description: Starts in a row that were refused for capacity (full session cap, cooldown, draining). Reset by a successful start.
+        waiting_since:
+          type: string
+          format: date-time
+          description: When the current run of waits for capacity began. A one-time schedule gives up `schedule.one_time_max_wait_hours` after it (rearm_state `gave_up`, reason in `last_error`). Cleared by a successful start.
         rearm_state:
           type: string
           description: "Re-arm state: empty, `retrying` (after a failed start), `waiting_capacity` (refused for capacity; retries with backoff, never later than the next scheduled time) or `gave_up` (the re-arm policy gave up; the schedule stays failed and an alert was raised)"

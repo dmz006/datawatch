@@ -5775,7 +5775,7 @@ results:
 # capacity (full session cap, global cooldown, draining daemon, capacity wait
 # timeout) is a wait in every mode: the schedule stays pending and retries with
 # backoff, never later than its next scheduled time, and is never marked failed.
-# All four keys are read at every failed start; no restart needed. See
+# All five keys are read at every failed start; no restart needed. See
 # docs/howto/schedule-rearm.md.
 schedule:
   # next_fire (default): a recurring schedule tries again at its next time and
@@ -5791,6 +5791,10 @@ schedule:
   rearm_backoff_seconds: 30
   # Longest pause. Default 900; never below rearm_backoff_seconds.
   rearm_backoff_max_seconds: 900
+  # Hours a one-time schedule refused for capacity keeps waiting before it fails
+  # with the reason (rearm_state gave_up) and an error alert. Default 12; values
+  # below 1 are rejected. Recurring schedules wait without a limit.
+  one_time_max_wait_hours: 12
 
 # ── Cost report ──
 # Knobs for the cost report (internal/costreport): one view over the
