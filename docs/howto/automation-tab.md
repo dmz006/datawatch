@@ -176,6 +176,52 @@ in Overview. If a selected project has nothing waiting on you, the badge is hidd
 This is a display rule of the web app only. REST, MCP, the CLI and the comm channel
 still return every item, unfiltered.
 
+### The view switch (List, Tiles, Compact)
+
+Above the three Inbox lists (Triage, open questions, held questions) is a
+**view switch** with three buttons — **List**, **Tiles**, **Compact** — the
+same three modes the Sessions list offers. One switch covers all three Inbox
+lists: the mode you pick applies to Triage, open questions and held questions
+together, and it is remembered on this device, the same way the Sessions list
+remembers its mode, so it comes back when you reopen the tab.
+
+- **List** — the densest view, one line per item.
+- **Tiles** — one full card per item.
+- **Compact** — smaller cards, several to a row.
+
+Until you press a button, the mode follows the window width (wide: Tiles,
+mid-width: Compact, narrow: List); once you press one, that choice wins on
+this device. Switching only repaints the lists from the data already loaded —
+nothing is fetched again, and the badge counts the same items before and
+after. The choice is stored in your browser, not on the daemon, so it does
+not follow you to another browser or phone, and clearing the browser's site
+data resets it to the defaults.
+
+The flat **Automata** list and the **Automations** list carry the same view
+switch, above their lists and next to the **Group by** dropdown described
+next.
+
+### The Group by dropdown
+
+The **Automata** and **Automations** lists carry, next to the view switch, a
+**Group by** select. The choices are **No grouping** (the default), **tag**,
+**state**, **node**, **project**, and each tag prefix — **automation:**,
+**stage:**, **kind:**, **compute:**, **peer:**, **backend:**, **lane:**,
+**role:** and **project:**. Each group draws under its header, with a
+collapse toggle, the item count and the state mix; long groups page with a
+**Show more** button. The choice, the collapsed groups and the per-group
+paging are remembered on this device, per list.
+
+The dropdown also keeps its state across a list's refreshes. When the list
+redraws — the next poll, a filter, coming back to the sub-tab — the select is
+patched in place instead of replaced while you are in it, so an open or
+focused dropdown keeps its open state and focus, and the selection you made is
+restored onto it. When a redraw does stand a new toolbar (because the mode or
+group changed), the new select is drawn with your stored group, never back to
+the default. Because the choice is stored on this device, it also comes back
+after a page reload. Whatever the refresh, the group you chose is the group
+the list shows.
+
 ### The needs-attention card
 
 On Inbox, the needs-attention card is titled **Triage**. It holds one card per
