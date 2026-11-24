@@ -72,6 +72,8 @@ are recorded in [the trigger-narrowing plan](../plans/2026-11-07-codeql-gate-tri
 
 For every one of those refs the pass lists the runs on that ref's head commit — every workflow that ran on that SHA — not a fixed workflow name. So a poll covers the head of `main` plus the newest `tag_count` release tags, each across every workflow that ran there. A run belongs to the (repository, ref, workflow) triple it ran on, and each one gets at most one watch record.
 
+Before each poll the watch fetches from `origin`: the branches first, then any tags it does not have yet. A tag that your local copy holds under a different commit than origin does is kept as it is, and git's "would clobber existing tag" refusal is not treated as a failure, so a local tag never stops the fetch. Any other fetch failure is logged and the pass carries on with the local view.
+
 ### Configured GitHub/GitLab hosts
 
 A watched repository whose origin belongs to a `git.hosts` entry of kind `github` or `gitlab` lists its runs through that host instead of `gh run list`: `gh run list --repo <owner/name> --branch <ref>` for a github host and `glab api projects/<owner%2Fname>/pipelines?ref=<ref>` for a gitlab host, under the host's credential source and the same 15-second bound. A repository on any other kind of host — `gitea`, `bitbucket`, a plain `git` remote, or an origin that is not one of your configured hosts — is simply not listed through a host; the pass has no run data for it and records none (plain git has no CI API to read). What changes, what does not, and what this means for the actions:
