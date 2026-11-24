@@ -1430,6 +1430,38 @@ shows when it started waiting, why, and when it was admitted. To see who set
 or cleared a back-off by hand: `datawatch audit --action
 'autonomous_usage_backoff_*' --actor operator`.
 
+## Who is admitted: worker, supervisor and operator starts
+
+Every session start takes a lease on the capacity pools before it launches, and the daemon decides how by the way it launched the session. A field in the request never decides it: `one_shot` in a start request is accepted and ignored for admission.
+
+| Class | Which starts | At a full pool |
+|---|---|---|
+| Worker | An Automaton's own launches: task sessions, decompose, verifier and judge sessions | Waits in the queue |
+| Supervisor | Supervisor loop jobs and schedules whose launch role is supervisor | Uses the buffer above the limit; never queued behind workers |
+| Operator | Every other start: the app, the CLI, chat, MCP, the API, restarts, and any outside client | Admitted over the limit; the overage is recorded |
+
+Workers carry a marker only the daemon holds (a per-process secret), so no client can claim the worker class. Every start path is admitted at the session manager, and the test `TestSessionStartPathsAreAudited` lists them: a new start path fails the test until it is on the audited list.
+
+### Operator overage
+
+An operator start is never refused. When `llm:claude-code` is full, the session still starts, and its lease records the overage: the pool, who, how far over. The overage counts in the pool's used figure and shows as `N over the limit: operator` on the pool line of `datawatch capacity`, in the chat `capacity` verb, in the Capacity card of the web app, and as `over` on the pool and `class` and `overage` on the lease in `GET /api/capacity`. Autonomous work waits until the pool is back under its limit. Turn on `autonomous.capacity_operator_overage_alert` to get an alert each time. A compute node's engine limit is a hardware limit and still holds for an operator start.
+
+### The supervisor buffer
+
+Supervisor sessions use slots above a pool's limit that workers cannot take: `autonomous.capacity_supervisor_reserve_claude` (default 1), `autonomous.capacity_supervisor_reserve_pi` (default 1) and `autonomous.capacity_supervisor_reserve_host` (default 4, above `session.max_sessions`). They are counted in the pool's used figure, and a usage back-off or burn hold does not block them. A pool line shows `+1 reserved for supervisors`.
+
+### The Claude account pool
+
+Every claude-code entry also draws on the pool `account:claude`, limited by `autonomous.capacity_account_claude_limit` (default 2: claude-code 1 plus claude-lean 1; `0` = unlimited), so the per-entry limits cannot add up past the account. A subscription backend a start names that matches no LLM entry and no compute node is listed under `unmapped` on `GET /api/capacity` (and as `No LLM entry for backend ...` in `datawatch capacity`) and held to one session until an entry is added.
+
+**Federation.** A federated peer that shares the Claude account holds some of its slots. Name the peer in the `peer_window` of a claude-code entry's budget and its own `account:claude` leases are counted against the account limit on this daemon (shown as the pool's `external` figure), refreshed every ten seconds. Only peers named there are contacted, a peer that does not answer counts 0 (logged once), and a peer's own external figure is never counted, so two peers that name each other do not double count.
+
+Ask the daemon what a start would do with `datawatch capacity admission --backend claude-code --role interactive` (also `--role supervisor`); it changes nothing.
+
+### After a restart
+
+If the work re-adopted at a restart leaves a pool above its limit, the daemon raises one alert per pool. The sessions keep running; new work waits until the pool is back under its limit. A cancelled task never takes a lease, runs no placement and loads no model on a node.
+
 ## Common pitfalls
 
 - **Everything queues behind one big model.** That is the node limit

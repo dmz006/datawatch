@@ -115,7 +115,7 @@ func (s *Server) toolCapacityAdmission() mcpsdk.Tool {
 		mcpsdk.WithString("llm", mcpsdk.Description("Alias for backend")),
 		mcpsdk.WithString("node", mcpsdk.Description("Compute node the start would use")),
 		mcpsdk.WithString("model", mcpsdk.Description("Model wanted, for node model affinity")),
-		mcpsdk.WithString("role", mcpsdk.Description("worker (default), verifier, planner or interactive")),
+		mcpsdk.WithString("role", mcpsdk.Description("worker (default), verifier, planner, interactive (operator) or supervisor")),
 		mcpsdk.WithString("priority", mcpsdk.Description("Integer queue priority; higher runs first (default 0)")),
 		mcpsdk.WithString("prd_id", mcpsdk.Description("Automaton the start would belong to (fairness group)")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),

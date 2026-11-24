@@ -205,3 +205,15 @@ func TestOperatorOverageNoticeHonoursSetting(t *testing.T) {
 		t.Fatalf("alerts = %d, want 1 with the setting on", n)
 	}
 }
+
+// A local-engine backend (pi) with no LLM entry is governed by the node pools,
+// not a subscription plan, so it is not reported as unmapped.
+func TestLocalEngineBackendIsNotReportedUnmapped(t *testing.T) {
+	reg := inference.NewRegistry()
+	unmappedBackends.reset()
+	resolve := capacityResolver(func() *inference.Registry { return reg }, func() *compute.Registry { return nil })
+	pools, _, _ := resolve("pi", "ollama/qwen")
+	if len(unmappedBackends.list()) != 0 || hasPool(pools, "llm:pi") {
+		t.Fatalf("pi with no entry: pools %v unmapped %v, want neither", pools, unmappedBackends.list())
+	}
+}

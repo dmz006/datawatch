@@ -168,6 +168,11 @@ func (s *Server) resolvePoolsForBackend(backend string) []string {
 		return nil
 	}
 	pools := []string{"llm:" + l.Name}
+	// Every claude-code entry also draws on the account pool, so the entry caps
+	// cannot add up past the account's.
+	if l.Kind == inference.KindClaudeCode {
+		pools = append(pools, "account:claude")
+	}
 	// Every node of the entry is listed so a card scoped to it finds each
 	// node a start may land on; a one-node entry lists its one node as before.
 	seen := map[string]bool{}

@@ -5509,7 +5509,7 @@ paths:
         - {name: llm, in: query, required: false, description: Alias for backend, schema: {type: string}}
         - {name: node, in: query, required: false, description: Compute node the start would use, schema: {type: string}}
         - {name: model, in: query, required: false, description: Model wanted, schema: {type: string}}
-        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive]}}
+        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive, operator, supervisor]}}
         - {name: priority, in: query, required: false, description: Integer queue priority; higher runs first, schema: {type: integer}}
         - {name: prd_id, in: query, required: false, description: Automaton the start would belong to, schema: {type: string}}
       responses:

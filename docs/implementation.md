@@ -195,7 +195,38 @@ except the adoption wait, which is read once as the ledger starts):
   (`MarkAdoptionComplete`), or the wait passes. The daemon's node health view also
   starts strict: no node is healthy until the first read of the compute registry, so
   nothing is placed on a node the ledger has not loaded. Off: requests are admitted
-  at once and the strict view does not hold placement.
+  at once and the strict view does not hold placement. When adoption ends, one finding
+  (an alert) is raised per pool the adopted sessions left above its limit
+  (`Options.OnAdoptOverLimit`); the sessions keep running and new work waits.
+- Admission classes. `capacity.Request.Class` is `worker` (zero value), `supervisor` or
+  `operator`; the daemon sets it from how it launched the session, never from a request
+  field. `internal/server/internal_launch.go` holds a per-process random token and the
+  `X-Datawatch-Internal-Launch` header (`<class>:<token>`) that the daemon's own loopback
+  callers send (autonomous spawn: worker; one-shot judge, verifier and decompose sessions:
+  worker; supervisor loop jobs: supervisor); `handleStartSession` ignores `one_shot` for
+  admission. `session.Manager.Start` admits every start nobody admitted upstream
+  (`SetStartAdmitter`, `StartOptions.AdmitClass`, `StartOptions.PreAdmitted`, set only by the
+  REST handler), so chat, MCP, schedules, WebSocket, restarts and the pipeline adapter are
+  counted; `cmd/datawatch/start_path_audit_test.go` lists every start path. In the ledger a
+  supervisor request may use `Ledger.SetReserve` slots above a pool's limit and is dispatched
+  before every role; an operator request is granted over the limit of every pool except a
+  `node:` or `node-verify:` pool, and the lease records `Lease.Overage`. Pools carry
+  `PoolStatus.Over` and `PoolStatus.Reserve`.
+- `autonomous.capacity_account_claude_limit` (int, unset = 2, 0 = unlimited): the limit of
+  the `account:claude` pool every claude-code entry also draws on (`capacityResolver`,
+  `syncAdmissionPools`). A subscription backend with no LLM entry and no compute node gets
+  an `llm:<backend>` pool limited to 1 and is listed under `unmapped` on `GET /api/capacity`.
+- Federation: `cmd/datawatch/capacity_peer_account.go` (`peerAccountPool`) reads each peer named in
+  a claude-code entry's budget `peer_window` from its `GET /api/capacity` (`pools[account:claude].held`,
+  never `external`) on the 10 s tick and feeds the sum to the ledger as the `account:claude` external
+  count; an unreachable peer counts 0 and is logged once.
+- `autonomous.capacity_supervisor_reserve_claude` (unset = 1), `_pi` (unset = 1) and `_host`
+  (unset = 4) (ints >= 0): the supervisor buffers above a pool's limit. The host buffer also
+  raises the session manager's hard session cap for the supervisor class
+  (`Manager.SetSupervisorSlots`).
+- `autonomous.capacity_operator_overage_alert` (bool, default false): raise an alert each
+  time an operator lease is granted over a pool's limit (`Options.OnOverage`). The overage is
+  recorded either way.
 
 All four keys are in `GET`/`PUT /api/config`, `datawatch config set`, the MCP
 `config_set` and `autonomous_config_set` tools, the chat `configure` verb and the PWA

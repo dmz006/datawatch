@@ -840,7 +840,8 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 		if req.Class == ClassSupervisor && lim > 0 {
 			eff = lim + l.reserves[p]
 		}
-		if eff > 0 && l.usedLocked(p) >= eff && !(req.Class == ClassOperator && overageAllowed(p)) {
+		operatorMayExceed := req.Class == ClassOperator && overageAllowed(p)
+		if eff > 0 && l.usedLocked(p) >= eff && !operatorMayExceed {
 			if name, ok := strings.CutPrefix(p, "node:"); ok {
 				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
 			}

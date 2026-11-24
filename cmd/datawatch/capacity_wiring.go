@@ -348,7 +348,7 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 		// Only a local-engine session takes a compute node's pool.
 		entry, node, gated := hostingEntry(reg, backend, model)
 		if !gated {
-			if named == nil && inference.IsSubscriptionKind(backend) {
+			if named == nil && inference.IsSubscriptionKind(backend) && !autonomous.IsLocalEngineBackend(backend) {
 				// A subscription backend with no entry and no compute node to
 				// govern it is reported and held to the subscription default,
 				// never treated as unlimited.
@@ -1071,7 +1071,26 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	servedModel := map[string]uint64{}
 	servedCPUModel := map[string]uint64{}
 
-	external := hostExternalCount(mgr)
+	// Peers sharing the Claude account hold some of its slots: their leases
+	// count against account:claude here (opt-in through a claude-code entry's
+	// budget peer_window). Refreshed on the slow tick; admission reads the cache.
+	peerAccount := &peerAccountPool{
+		peers: claudeAccountPeers(httpServer.InferenceRegistry),
+		lookup: func(name string) (string, string, bool) {
+			st := httpServer.ServerStore()
+			if st == nil {
+				return "", "", false
+			}
+			return st.GetByName(name)
+		},
+	}
+	hostExternal := hostExternalCount(mgr)
+	external := func(pool string) int {
+		if pool == accountClaudePool {
+			return peerAccount.Held()
+		}
+		return hostExternal(pool)
+	}
 	backpressure := gpuNodeBackpressure(func() int { return cfg.Autonomous.CapacityGPUUtilPct }, &gpuMu, gpuUtil)
 	// A spawn refused by the BL30 global cooldown waits instead of failing;
 	// the reset time words the task's wait reason.
@@ -1614,6 +1633,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				// Peer spend is fetched off the tick so a slow peer never
 				// delays pool syncing; admission reads only the cache.
 				go peerBudget.Refresh(ctx)
+				go peerAccount.Refresh(ctx)
 				auditBudgetTransitions(autonomousBudget, budgetFull, emitBackoffAudit)
 				// Review-reserve verdicts queued on a ledger decision are emitted
 				// here, outside every lock.

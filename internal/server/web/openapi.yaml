@@ -5744,6 +5744,14 @@ paths:
                           type: integer
                           minimum: 0
                           description: The node's verifier pool (node-verify:<name>) held count, for node pools.
+                        reserve:
+                          type: integer
+                          minimum: 0
+                          description: Buffer above limit that only supervisor-class starts may use. Absent when none.
+                        over:
+                          type: integer
+                          minimum: 0
+                          description: How far held plus external is above limit (operator overage or sessions re-adopted after a restart). Absent when zero.
                         free_gpu_mb:
                           type: integer
                           minimum: 0
@@ -5761,7 +5769,27 @@ paths:
                       type: object
                       properties:
                         node_unknown: {type: boolean, description: "True when the lease's compute node was expected and could not be determined at adoption. The lease holds no node pool. Absent when false"}
+                        class: {type: string, enum: [worker, supervisor, operator], description: "Admission class the lease was granted under, decided by how the daemon launched the session (never by a request field). Absent on a worker lease"}
+                        overage:
+                          type: array
+                          description: Set only on an operator lease granted over a pool's limit, one record per pool that was already full. Autonomous work waits instead.
+                          items:
+                            type: object
+                            properties:
+                              pool: {type: string}
+                              limit: {type: integer}
+                              over: {type: integer, description: "Used count after the grant minus the limit"}
                   waiting: {type: array, items: {type: object}}
+                  unmapped:
+                    type: array
+                    description: Subscription backends a start named that resolve to no LLM entry. Each is held to one session, never treated as unlimited. Absent when none.
+                    items:
+                      type: object
+                      properties:
+                        backend: {type: string}
+                        model: {type: string}
+                        count: {type: integer}
+                        last_seen: {type: string, format: date-time}
                   backoff:
                     type: array
                     description: Active usage back-off flags.
@@ -5817,7 +5845,7 @@ paths:
         - {name: llm, in: query, required: false, description: Alias for backend, schema: {type: string}}
         - {name: node, in: query, required: false, description: Compute node the start would use, schema: {type: string}}
         - {name: model, in: query, required: false, description: Model wanted, schema: {type: string}}
-        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive]}}
+        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive, operator, supervisor]}}
         - {name: priority, in: query, required: false, description: Integer queue priority; higher runs first, schema: {type: integer}}
         - {name: prd_id, in: query, required: false, description: Automaton the start would belong to, schema: {type: string}}
       responses:

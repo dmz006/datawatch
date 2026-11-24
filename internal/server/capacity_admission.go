@@ -48,10 +48,13 @@ func (s *Server) admissionRequest(q map[string][]string) (capacity.Request, stri
 		req.Role = capacity.RoleVerifier
 	case "planner":
 		req.Role = capacity.RolePlanner
-	case "interactive":
+	case "interactive", "operator":
 		req.Interactive = true
+		req.Class = capacity.ClassOperator
+	case "supervisor":
+		req.Class = capacity.ClassSupervisor
 	default:
-		return capacity.Request{}, "role must be worker, verifier, planner or interactive"
+		return capacity.Request{}, "role must be worker, verifier, planner, interactive, operator or supervisor"
 	}
 	req.Pools = append([]string{"host"}, s.resolvePoolsForBackend(backend)...)
 	if req.Node == "" {

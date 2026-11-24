@@ -3481,6 +3481,19 @@ autonomous:
   # holder is not freed as an orphan during that window (seconds; default 60,
   # minimum 10; 0 = 60). Read live. Values 1-9 and negatives are refused.
   capacity_slot_reconcile_grace_seconds: 60
+  # Admission classes (docs/howto/automata-capacity.md). A claude-code entry also
+  # draws on the pool account:claude, limited by capacity_account_claude_limit
+  # (default 2 = claude-code 1 + claude-lean 1; 0 = unlimited). The supervisor
+  # class may use a buffer above a pool's limit: Claude 1, pi 1, and host
+  # session slots above session.max_sessions 4. An operator start is never
+  # refused by a pool limit; it is admitted over the cap with an overage lease,
+  # and capacity_operator_overage_alert (default false) raises an alert each
+  # time. All five are read live.
+  capacity_account_claude_limit: 2
+  capacity_supervisor_reserve_claude: 1
+  capacity_supervisor_reserve_pi: 1
+  capacity_supervisor_reserve_host: 4
+  capacity_operator_overage_alert: false
   # How often the daemon re-checks LLM role tags for contention (seconds):
   # two enabled entries claiming one role, or two roles that have converged on
   # one entry since the last check. Warnings only; nothing is blocked. Unset or
