@@ -338,9 +338,7 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
 2. **Narrow the list.** One toolbar line sits directly under the page
    heading, at every width — the control-by-control description is in
    [sessions-tiles-and-grouping](sessions-tiles-and-grouping.md#the-toolbar-row).
-   In order: a **server select** (the same shared picker as the header
-   dropdown — choosing an entry in one updates the other), a **search
-   box** that takes the free width of the line, a **Filters** button (a
+   In order: a **search box** that takes the free width of the line, a **Filters** button (a
    badge shows how many filters are active), a **Fold all** icon (only while a
    grouping is active and the list has groups to fold) and the three **List / Tiles / Compact** view mode
    buttons (icon buttons, the active one marked); your view choice is remembered on this device.
@@ -640,7 +638,7 @@ The window form and the rest of the message shapes are specified in
    /api/sessions?view=summary...` request in the Fetch/XHR filter, not from a
    new large WebSocket message.
 
-The Playwright story TS-816 (group `wire`) checks these budgets
+The Playwright `wire` group checks these budgets
 automatically against the seeded fixture. See
 [testing/README.md](../testing/README.md).
 

@@ -27,6 +27,7 @@ const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
 
 const WEB = __dirname;
 const CSS = fs.readFileSync(path.join(WEB, 'style.css'), 'utf8');
+const APP_JS = fs.readFileSync(path.join(WEB, 'app.js'), 'utf8');
 const LOCALES = ['en', 'de', 'es', 'fr', 'ja'];
 const TIPS = {
   fold: { label: 'Fold all', tip: 'Fold every group' },
@@ -289,6 +290,11 @@ test('the view control is a button group with List/Tiles/Compact, an accessible 
   assert.match(html, /data-mode="list" aria-pressed="false"/);
   assert.match(html, /data-mode="compact" aria-pressed="false"/);
   assert.match(html, /aria-hidden="true"/, 'the icon glyph is decorative-only');
+  // Word-bounded: matches the old select id only, not the _sessionsViewSelectHTML helper.
+  assert.equal(/(^|[^\w])sessionsViewSelect\b/.test(html), false, 'the old view <select> id is gone from the markup');
+  assert.equal(/(^|[^\w])sessionsViewSelect\b/.test(APP_JS), false, 'the old view <select> id is gone from app.js');
+  assert.equal(typeof sb._svbPressStart, 'function', 'the touch long-press start helper is exposed');
+  assert.equal(typeof sb._svbPressEnd, 'function', 'the touch long-press end helper is exposed');
   // DOM order: list, tiles, compact.
   const pos = ['list', 'tiles', 'compact'].map(m => html.indexOf('data-mode="' + m + '"'));
   assert.ok(pos.every(i => i >= 0), 'all three buttons are painted');

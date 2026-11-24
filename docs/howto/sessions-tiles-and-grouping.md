@@ -398,7 +398,7 @@ With **Group by** set to none, **List**, **Tiles** and **Compact** always draw
 three different layouts: list rows, a tile grid, and a smaller tile grid.
 The **Tree** button (which groups sessions under their parent by lineage) is a
 variant of **List** only. Earlier builds kept a saved Tree choice (stored as
-`cs_session_tree_view` in this browser) over the mode toggle, and the Tree
+`cs_session_tree_view` in this browser) over the view mode buttons, and the Tree
 button is hidden while the toolbar is collapsed, so a stale Tree choice could
 make Tiles and Compact look identical to List with nothing visible to switch
 off. That is fixed in two ways:
@@ -849,7 +849,7 @@ works too — it performs the same reset and hard reload.)
 - **I see a tile, not a row, and I want rows back.** Choose **List** in the
   view mode buttons — the choice sticks on that device. On phones the default
   is already List.
-- **The mode toggle looks broken after an upgrade (no button active, or a
+- **The view mode buttons look broken after an upgrade (no button active, or a
   click does nothing).** That is a stale value in the browser's local
   storage from an older version. The page now validates the remembered mode
   on load and falls back to the viewport default (list below 600 px, tiles
@@ -910,6 +910,18 @@ works too — it performs the same reset and hard reload.)
   backdrop or anywhere outside the sheet, or **Escape** — none of these
   touches the picks you made or the badge count, and a refresh with the
   sheet open keeps it open.
+- **The one-line toolbar on a phone.** At 360 px wide the whole toolbar
+  (search, Filters, Fold all and the three view buttons) stays on one line
+  with no wrapping and no horizontal page scroll, and the page carries no
+  server select of its own: the header server button is the one server
+  picker on every page.
+- **Server switching from the Sessions page.** Picking a host in the header
+  server button re-renders the Sessions page against that host. While a
+  federated host is active, the line below the toolbar (hidden by default;
+  turn on the header search-and-filters toggle to show it) carries the
+  clickable globe indicator next to **Tree** and **History**, and clicking it
+  returns to this server. Confirm on a two-host setup, and that a remembered
+  choice is restored after a reload.
 
 ## Related guides
 

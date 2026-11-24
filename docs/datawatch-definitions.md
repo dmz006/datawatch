@@ -3789,6 +3789,10 @@ A plan can be **renamed** and its **goal edited** with `PATCH /api/plans/{ref}` 
 
 **Plan links** are the ids a plan keeps in `automations`, `automata` and `findings`. A link is never overwritten: attaching an Automaton or Automation that another plan already holds, or a finding attached elsewhere, is refused and names the holder. Detach it first.
 
+### Set-by-hand plan
+
+A **set-by-hand** plan is a plan whose status someone wrote by hand. The plan record carries `set_by_hand: true`; the plan roll-up never changes its status and only reports it (`set_by_hand_kept`). A plan renamed by hand carries `title_set_by_hand`, so a later plans migration keeps its name. Both markers are set by the store, not by a separate setting. See [Rolling plan status up from the work](howto/plan-records.md#rolling-plan-status-up-from-the-work) and [Renaming a plan and editing its goal](howto/plan-records.md#renaming-a-plan-and-editing-its-goal).
+
 ### Release plan
 
 A **release plan** is a plan record with `plan_kind` `release` and a `release` label naming the release it stands for. A plan *is* a release: the release plan holds that release's Automata and Automations, grouped by [themes](#theme). A project has one release plan per label (compared like titles, so `Release 11.0` and ` release 11.0 ` are one label), and a second is refused with the plan that holds the label named. The release migration names the plans it makes `Release <label>` and uses the default labels `10.0` (current) and `11.0` (next) when it is given none. Registry rows and findings are not release plans; they are items that link into one (see [Registry row link](#registry-row-link) and [Backlog item](#backlog-item)). A release plan is created by the [release migration](#release-migration), or by hand over REST or MCP (`plan_create` with `plan_kind` `release`). See [howto/plan-records.md](howto/plan-records.md#release-plans-and-themes). Operator review: the default labels `10.0` and `11.0` are only defaults, so check the two labels in the migration preview before approving it (see [operations.md](operations.md)); Android and iPhone do not have release plans yet.
