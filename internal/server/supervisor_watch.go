@@ -103,3 +103,36 @@ func (s *Server) handleSupervisorWatchStats(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSONOK(w, sr.SupervisorWatchStats())
 }
+
+// priorityStallsReader is the narrow read surface the priority-stalls route
+// uses: the current stalls. It never mutates an Automaton.
+type priorityStallsReader interface {
+	PriorityStalls() []autonomous.PriorityStall
+}
+
+// handlePriorityStalls serves GET /api/autonomous/priority-stalls: the
+// current stalls, each with the Automaton, its priority, the wait in
+// minutes, the blocker code, the blocker text and the one action. Read-only.
+func (s *Server) handlePriorityStalls(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	pr, ok := s.autonomousMgr.(priorityStallsReader)
+	if !ok {
+		http.Error(w, "priority stalls unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	stalls := pr.PriorityStalls()
+	if stalls == nil {
+		stalls = []autonomous.PriorityStall{}
+	}
+	writeJSONOK(w, map[string]interface{}{"stalls": stalls})
+}

@@ -2938,3 +2938,10 @@ func (a *API) RemoteReapRun(ctx context.Context) (RemoteReapReport, error) {
 func (a *API) RemoteReapRestore(ctx context.Context, branch string) (RemoteReapRestoreResult, error) {
 	return a.M.RemoteReapRestore(ctx, branch)
 }
+
+// PriorityStalls is the read-only list of current priority stalls (blocker
+// code, blocker text and the one action). Serves
+// GET /api/autonomous/priority-stalls.
+func (a *API) PriorityStalls() []PriorityStall {
+	return a.M.PriorityStalls(time.Now())
+}

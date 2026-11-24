@@ -87,6 +87,18 @@ def get_json(url, timeout=6, insecure=False):
         return None
 
 
+def stall_blocker_action(bid):
+    """(blocker text, action) the daemon watch carries for the priority stall of
+    the Automaton whose short id is bid, read from the supervisor-watch read
+    route; ("", "") when the route or the fields are absent, which keeps the
+    line as it was."""
+    data = get_json("https://localhost:8443/api/autonomous/supervisor-watch", insecure=True) or {}
+    for f in data.get("findings") or []:
+        if f.get("kind") == "priority_stall" and str(f.get("subject", "")).startswith(bid):
+            return f.get("blocker_text") or "", f.get("action") or ""
+    return "", ""
+
+
 def model_hosts():
     """The Ollama hosts to check: every ollama compute node the daemon has
     registered (its own registry, never a hard-coded address), plus the
@@ -558,7 +570,11 @@ def main(argv=None):
             _shown.append("+%d more" % (len(backlog) - BACKLOG_CAP))
         findings.append("BACKLOG %d Automata (highest priority first, then oldest): %s" % (len(backlog), " ".join(_shown)))
     for _prio, _age, _bid in sorted(priority_stalls, key=lambda x: (-x[0], x[1])):
-        findings.append("PRIORITY STALL %s: priority %d waiting %d min (stall threshold %d min, floor %d)" % (_bid, _prio, _age, STALL_THRESHOLD_MIN, PRIORITY_FLOOR))
+        _line = "PRIORITY STALL %s: priority %d waiting %d min (stall threshold %d min, floor %d)" % (_bid, _prio, _age, STALL_THRESHOLD_MIN, PRIORITY_FLOOR)
+        _bt, _act = stall_blocker_action(_bid)
+        if _bt and _act:
+            _line += ": %s. To clear it: %s" % (_bt, _act)
+        findings.append(_line)
 
     # capacity and lanes
     cap = get_json("https://localhost:8443/api/capacity", insecure=True) or {}

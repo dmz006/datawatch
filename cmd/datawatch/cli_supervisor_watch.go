@@ -54,3 +54,46 @@ func newAutonomousSupervisorWatchCmd() *cobra.Command {
 	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
 	return c
 }
+
+// newAutonomousPriorityStallsCmd is the `datawatch autonomous priority-stalls`
+// subcommand: the current priority stalls, one line each. A read only.
+func newAutonomousPriorityStallsCmd() *cobra.Command {
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "priority-stalls",
+		Short: "Read the current priority stalls: blocker code, blocker text and action",
+		Long: "Show each waiting Automaton at or above the priority floor that has waited " +
+			"past the stall threshold, with the blocker code, the blocker text and the " +
+			"one action that clears it. A read: nothing is written, no wake is sent and " +
+			"no Automaton is changed.\n\n--json prints the raw response untouched.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			body, err := progressGet("/api/autonomous/priority-stalls", nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				_, err = cmd.OutOrStdout().Write(body)
+				return err
+			}
+			var parsed struct {
+				Stalls []autonomous.PriorityStall `json:"stalls"`
+			}
+			if err := json.Unmarshal(body, &parsed); err != nil {
+				return err
+			}
+			if len(parsed.Stalls) == 0 {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "No priority stalls.")
+				return err
+			}
+			buf := &strings.Builder{}
+			for _, st := range parsed.Stalls {
+				fmt.Fprintf(buf, "%s [%s] %s\n", st.AutomatonID, st.BlockerCode, st.Text())
+			}
+			_, err = fmt.Fprint(cmd.OutOrStdout(), buf.String())
+			return err
+		},
+	}
+	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
+	return c
+}

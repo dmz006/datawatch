@@ -95,6 +95,10 @@ const (
 	KindJudgeVerdictPass  = "judge.verdict_pass"
 	// KindFinalGateFailed fires once when a final gate task fails. Opt-in.
 	KindFinalGateFailed = "task.final_gate_failed"
+	// KindPriorityStall fires once per Automaton per blocker when a waiting,
+	// high-priority Automaton has waited past the stall threshold. NewStatus
+	// carries the blocker code and Details the JSON of a PriorityStall.
+	KindPriorityStall = "priority_stall"
 )
 
 // PRDStatusKind returns the event kind for a PRD entering status s,

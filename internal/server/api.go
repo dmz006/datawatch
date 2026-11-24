@@ -10516,7 +10516,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			supervisorWatchKeyPrefix + "script_output_path",
 			supervisorWatchKeyPrefix + "tmux_restart_baseline",
 			supervisorWatchKeyPrefix + "main_checkout",
-			supervisorWatchKeyPrefix + "working_model":
+			supervisorWatchKeyPrefix + "working_model",
+			supervisorWatchKeyPrefix + "stall_wake":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
 			applySupervisorWatchValue(&cfg.Autonomous.Automation.SupervisorWatch,
@@ -12502,6 +12503,7 @@ func supervisorWatchSurface(c config.SupervisorWatchConfig) map[string]interface
 		"tmux_restart_baseline":   c.TmuxRestartBaseline,
 		"main_checkout":           c.MainCheckout,
 		"working_model":           strings.TrimSpace(c.WorkingModel),
+		"stall_wake":              c.EffectiveStallWake(),
 	}
 }
 
@@ -12564,6 +12566,13 @@ func withSupervisorWatchClears(automation json.RawMessage, swc config.Supervisor
 			return automation
 		}
 		block[key] = b
+	}
+	if swc.StallWake != nil {
+		b, err := json.Marshal(*swc.StallWake)
+		if err != nil {
+			return automation
+		}
+		block["stall_wake"] = b
 	}
 	nb, err := json.Marshal(block)
 	if err != nil {
@@ -12644,6 +12653,11 @@ func validateSupervisorWatchPatch(patch map[string]interface{}) error {
 			}
 		}
 	}
+	if v, ok := patch[supervisorWatchKeyPrefix+"stall_wake"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("%sstall_wake: must be true or false (unset reads on)", supervisorWatchKeyPrefix)
+		}
+	}
 	return nil
 }
 
@@ -12672,6 +12686,10 @@ func applySupervisorWatchValue(swc *config.SupervisorWatchConfig, field string, 
 	case "priority_floor":
 		if n, ok := toInt(v); ok && n >= 0 {
 			swc.PriorityFloor = &n
+		}
+	case "stall_wake":
+		if b, ok := v.(bool); ok {
+			swc.StallWake = &b
 		}
 	case "poll_seconds":
 		// 0 is unset (it reads the default), the same as on the config-load

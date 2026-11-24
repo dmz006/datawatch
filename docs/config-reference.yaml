@@ -1988,6 +1988,11 @@ autonomous:
     #   is reported by backlog, not by stall. An explicit 0 is legal (every
     #   queued Automaton is at or above it); unset reads the 80 default (the
     #   high band boundary). A negative value is refused on the write paths.
+    # stall_wake: true or false. Whether the daemon wakes the supervisor (one
+    #   priority_stall event per Automaton per blocker) when a waiting Automaton
+    #   at or above priority_floor stalls. Unset reads true. The current stalls
+    #   are readable at GET /api/autonomous/priority-stalls, the priority_stalls
+    #   MCP tool and `datawatch autonomous priority-stalls`, whatever this says.
     # poll_seconds: whole seconds. The poll interval the script record's
     #   freshness is judged against: a record older than three times this value
     #   is "script output unavailable" and no comparison is recorded for that
@@ -2032,6 +2037,7 @@ autonomous:
       tmux_restart_baseline: ""
       main_checkout: ""
       working_model: ""
+      stall_wake: true
     create_search_mode: shadow
     create_search_threshold: 0.5
     # decision_assistant — no daemon config key; default OFF. The optional

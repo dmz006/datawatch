@@ -1526,6 +1526,7 @@ type Manager struct {
 	supervisorWatchLiveness  SupervisorWatchLivenessSource
 	supervisorWatchFindings  func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
 	supervisorWatchAlerted   map[string]bool
+	supervisorWatchStall     *StallDetector // priority_stall wake detector; lazily built, keeps per-blocker dedup across polls
 	supervisorWatchAlertMu   sync.Mutex
 	projectPolicyConcurrency func(*PRD) (int, bool) // project-policy tier of resolveTaskConcurrency: (value, true) when the operator set max_concurrent_tasks on the PRD's project, else (0, false); nil = tier unwired. Wire with config.ResolveProjectPolicy, whose Automaton > project > daemon precedence this lookup mirrors.
 

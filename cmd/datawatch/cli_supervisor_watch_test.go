@@ -215,3 +215,51 @@ func TestSupervisorWatchCLIServerErrorExitCode(t *testing.T) {
 		t.Errorf("nothing should be printed on a server error, got %q", s)
 	}
 }
+
+const priorityStallsBody = `{"stalls":[{"automaton_id":"a1b2","priority":90,"waiting_minutes":45,"blocker_code":"held","blocker_text":"the Automaton is on hold","action":"release the hold"}]}`
+
+func runPriorityStallsCmd(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	c := &cobra.Command{Use: "autonomous", SilenceUsage: true, SilenceErrors: true}
+	c.AddCommand(newAutonomousPriorityStallsCmd())
+	c.SetArgs(append([]string{"priority-stalls"}, args...))
+	out := &strings.Builder{}
+	c.SetOut(out)
+	err := c.Execute()
+	return out.String(), err
+}
+
+func TestPriorityStallsCLI(t *testing.T) {
+	found := false
+	for _, sub := range newAutonomousCmd().Commands() {
+		found = found || sub.Name() == "priority-stalls"
+	}
+	if !found {
+		t.Fatal("priority-stalls is not registered under the autonomous command")
+	}
+	method, path := supervisorWatchDaemon(t, http.StatusOK, priorityStallsBody)
+	s, err := runPriorityStallsCmd(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method() != http.MethodGet || path() != "/api/autonomous/priority-stalls" {
+		t.Errorf("requested %s %s", method(), path())
+	}
+	for _, want := range []string{"a1b2", "held", "the Automaton is on hold", "release the hold"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("output lacks %q:\n%s", want, s)
+		}
+	}
+	s, err = runPriorityStallsCmd(t, "--json")
+	if err != nil || s != priorityStallsBody {
+		t.Errorf("--json not untouched: %v %q", err, s)
+	}
+}
+
+func TestPriorityStallsCLIEmpty(t *testing.T) {
+	supervisorWatchDaemon(t, http.StatusOK, `{"stalls":[]}`)
+	s, err := runPriorityStallsCmd(t)
+	if err != nil || !strings.Contains(s, "No priority stalls") {
+		t.Errorf("err=%v out=%q", err, s)
+	}
+}

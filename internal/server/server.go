@@ -691,6 +691,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/gate-repairs", api.handleGateRepairs)                               // gate repair engine: mode and repair records, newest first
 	apiMux.HandleFunc("/api/autonomous/gate-repair", api.handleGateRepair)                                 // gate repair: mode, records and budget split per class per task
 	apiMux.HandleFunc("/api/autonomous/gate-repair/run", api.handleGateRepairRun)                          // gate repair run: one gate (automaton_id+task_id) or one pass (no body)
+	apiMux.HandleFunc("/api/autonomous/priority-stalls", api.handlePriorityStalls)                         // current priority stalls: blocker code, text and action (read only)
 	apiMux.HandleFunc("/api/autonomous/supervisor-watch/stats", api.handleSupervisorWatchStats)            // supervisor watch numbers: mode, poll age, finding counts, agreed days
 	apiMux.HandleFunc("/api/capacity/supervisor-credential", api.handleSupervisorCredential)               // operator-minted supervisor start credential (removable stopgap)
 	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)                              // read-only admission query

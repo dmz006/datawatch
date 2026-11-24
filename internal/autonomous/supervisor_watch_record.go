@@ -149,6 +149,11 @@ type SupervisorWatchFinding struct {
 	// Text is the operator-facing one line for this finding (built by
 	// the supervisor watch text builder); single line, no tracker ids.
 	Text string `json:"text,omitempty"`
+	// BlockerText and Action are set on a priority_stall finding: what
+	// blocks the Automaton and the one action that clears it, the same
+	// text the priority_stall wake carries.
+	BlockerText string `json:"blocker_text,omitempty"`
+	Action      string `json:"action,omitempty"`
 	// FirstSeenAt is when the finding was first raised; it is preserved
 	// across refreshes of the same kind+subject.
 	FirstSeenAt time.Time `json:"first_seen_at"`

@@ -80,7 +80,7 @@ the same subject is one record that is refreshed, not a new one every poll.
 | `main_checkout_automaton` | An open Automaton (a non-terminal status) has a project directory that is the daemon's own main checkout. Approve and run refuse it there, so it cannot run until it is recreated. Recreate the Automaton without a project directory and it runs isolated in its own worktree. An Automaton with no project directory never raises it, and neither does one that is completed, failed, rejected, cancelled or archived. | The Automaton id |
 | `ci_red` | A CI run is red. This is read from the repo CI watch's records — see [automation-repo-ci-watch.md](automation-repo-ci-watch.md) — and nothing new is fetched from the CI service. | The CI run id |
 | `ci_stuck` | A CI run has been in progress abnormally long (the repo CI watch has marked it hung). The Automata release pipeline is stalled until it is done. | The CI run id |
-| `priority_stall` | A high-priority Automaton has been waiting in the queue for more than the stall threshold without a lane picking it up. The line names the Automaton, its priority, how long it has been waiting, the `stall_threshold_minutes` and the `priority_floor`. Only Automata at or above the floor are named, only once the age is past the threshold, and a holding or an already-reported state is not a stall. | The Automaton id |
+| `priority_stall` | A high-priority Automaton has been waiting in the queue for more than the stall threshold without a lane picking it up. The line names the Automaton, its priority, how long it has been waiting, the one blocker (`lane_full`, `plan_coverage_blocked`, `held`, `stale`, `proposal_not_confirmed`, `judge_timed_out`, `merge_pending` or `other_refusal`) and the one action that clears it. Only Automata at or above the `priority_floor` are named, only once the age is past the `stall_threshold_minutes`. The watch also wakes the supervisor for it; see [Priority stall wakes the supervisor](#priority-stall-wakes-the-supervisor). | The Automaton id |
 | `backlog` | The queue of Automata that need attention, in one finding: the Automata still waiting to be picked up and the failed or blocked Automata that still have work left, ordered highest priority first and, within a priority, oldest first; it names up to sixteen Automata and then the `+k more` tail. This is one finding about the queue, not one per Automaton. | The fixed subject `backlog` |
 
 **When a check cannot tell, it says nothing.** A probe that fails, a node that
@@ -296,6 +296,75 @@ Automaton has no triage record by convention — its finding record is its
 record — so nothing is written for it. Findings about the machines, the lanes,
 CI and the main checkout belong to no Automaton and write no triage note.
 
+## Priority stall wakes the supervisor
+
+A `priority_stall` finding is no longer only a line on the watch. On each pass
+the daemon now reacts to the stall itself: for every Automaton it names it
+publishes one `priority_stall` lifecycle event, and the event-driven supervisor
+wake set delivers that event to the supervisor session. The supervisor is woken
+to clear the blocker instead of finding it on its next scheduled check.
+
+- **One event per Automaton per blocker.** The daemon remembers the blocker it
+  last woke for each Automaton. It publishes again only when the blocker changes,
+  or after the stall has cleared and returns. An unchanged stall does not repeat.
+- **Only the stalled set.** The same rules as the finding apply: at or above the
+  `priority_floor`, past the `stall_threshold_minutes`, waiting, and not on hold.
+  The detector reads only. It never approves, runs, acknowledges or merges.
+- **The event names the one action.** Its text is the blocker and its one
+  action, for example "every lane is busy: wait for a lane or free one", the
+  same text the finding carries.
+- **Off switch.** `autonomous.automation.supervisor_watch.stall_wake` turns the
+  event off (default on). The finding on the watch is still recorded.
+- **Needs the pass to run.** The event is published from the watch pass, so `mode`
+  `off` stops it: no pass runs and no event is published. Unlike the rest of the
+  watch, the wake is **not** held back by `shadow`: in `shadow` the event is still
+  published and can wake the supervisor, while the findings stay report-only.
+  Operators who expect `shadow` to act on nothing must set `stall_wake` to `false`
+  or `mode` to `off`.
+- **Needs the supervisor wake.** The event reaches a supervisor session only when
+  the supervisor event wake is on (`autonomous.supervisor_loop.wake.enabled`,
+  off by default). `priority_stall` is in the default wake kinds. With the
+  supervisor wake off, no session is woken and the scheduled check covers the
+  stall.
+- **Default.** `stall_wake` is `true`, the threshold is 30 minutes and the
+  priority floor is 80. Confirm these suit your installation before turning the
+  supervisor wake on.
+
+### The blockers and their single action
+
+Each stalled Automaton is named with exactly one blocker and one action.
+
+| Blocker | Meaning | The one action |
+|---|---|---|
+| `lane_full` | Every lane is busy. | Wait for a lane or free one. |
+| `plan_coverage_blocked` | The plan coverage check failed and nobody has acknowledged it. | Acknowledge the coverage failure or re-decompose the Automaton. |
+| `held` | The Automaton is on hold. | Release the hold. |
+| `stale` | The Automaton has not been touched for too long. | Refresh the Automaton or re-decompose it. |
+| `proposal_not_confirmed` | Its proposal is not confirmed. | Confirm the proposal. |
+| `judge_timed_out` | The judge timed out on every backend. | Re-run the judge. |
+| `merge_pending` | Every task is done and the branch is waiting for a merge. | Merge the branch. |
+
+Any other lane-fill refusal is reported as `other_refusal`, with the refusal's
+own text and the action "clear the reason named in the text".
+
+A change of blocker for the same Automaton is a new wake; the same blocker is
+never woken twice.
+
+### Reading the current stalls
+
+The stalls can be read at any time, whatever `stall_wake` says:
+
+- REST: `GET /api/autonomous/priority-stalls`, body `stalls`: each with
+  `automaton_id`, `priority`, `waiting_minutes`, `blocker_code`, `blocker_text`
+  and `action`, high priority first. An empty list means nothing is stalled.
+- MCP: `priority_stalls` (read-only, no arguments).
+- CLI: `datawatch autonomous priority-stalls [--json]`.
+
+The read is toward Automata only and read only: it never wakes the supervisor
+and never approves, runs, acknowledges or merges an Automaton. The action is
+yours or the supervisor's to take. Run `datawatch autonomous priority-stalls`
+first to see what is stalled and why.
+
 ## Configuration
 
 | Key | Default | Meaning |
@@ -305,6 +374,7 @@ CI and the main checkout belong to no Automaton and write no triage note.
 | `autonomous.automation.supervisor_watch.silent_minutes` | `60` | How long an Automaton with a task in progress may show no activity before `worktree_silent`. `0` is legal; negative is refused. |
 | `autonomous.automation.supervisor_watch.stall_threshold_minutes` | `30` | How long a queued Automaton at or above the priority floor may wait before a `priority_stall` finding names it. The age must be strictly past the threshold, so `0` is legal (named as soon as the waiting age is positive); negative is refused. |
 | `autonomous.automation.supervisor_watch.priority_floor` | `80` | The priority at or above which a queued Automaton is high enough for a `priority_stall` finding. Below the floor a queue is a `backlog`, not a stall. `0` is legal (every queued Automaton is above it); negative is refused. |
+| `autonomous.automation.supervisor_watch.stall_wake` | `true` | Whether a `priority_stall` also publishes a lifecycle event that can wake the supervisor. `false` keeps the finding and stops the event. Read on every pass. See [Priority stall wakes the supervisor](#priority-stall-wakes-the-supervisor). |
 | `autonomous.automation.supervisor_watch.poll_seconds` | `60` (unset or `0` reads `60`) | The poll interval the script record's freshness is judged against: a record older than three times this is "unavailable", not a disagreement. The coordinator runs the pass at most once a minute. Below 60 is refused; nothing is ever rounded up for you. |
 | `autonomous.automation.supervisor_watch.script_output_path` | empty | The file the supervisor script writes with `--record`. Empty means no comparison is made. |
 | `autonomous.automation.supervisor_watch.tmux_restart_baseline` | empty | The starting point (restart count and active-since time of the terminal-session service) that `tmux_restart` compares against. Empty means no starting point is configured and that check reports nothing. |
@@ -355,6 +425,12 @@ on every surface.
 its per-day summary, in `<data-dir>/autonomous/supervisor_watch_comparisons.json`.
 Both are reloaded at startup, so the watch resumes with its full history, and a
 finding that already alerted does not alert again after the restart.
+
+**Restarting the daemon and priority stalls.** The wake memory (which blocker was
+last woken for each Automaton) is kept in memory only. After a restart the first
+pass that finds a stall publishes its `priority_stall` event again, even if the
+same blocker was already woken before the restart. This is one extra wake per
+stalled Automaton, not a repeat every pass.
 
 **Audit.** The durable trace is the finding itself (first and last seen, the
 would-alert mark, the alert time), the triage-record notes and the comparison

@@ -109,6 +109,8 @@ func buildEventKindRegistry() []EventKindInfo {
 	add(KindQuestionAnswered, EventGroupReview, "An operator question was answered.")
 	add(KindQuestionWithdrawn, EventGroupReview, "An operator question was withdrawn.")
 
+	add(KindPriorityStall, EventGroupAutomaton, "A waiting high-priority Automaton stalled; names the blocker and the one action that clears it.")
+
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Group != out[j].Group {
 			return out[i].Group < out[j].Group
