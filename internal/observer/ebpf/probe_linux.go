@@ -17,7 +17,7 @@ import (
 // degrade-safe stub.
 func NewNetProbe() (NetProbe, error) {
 	if !hasCapBPF() {
-		return NewNoopProbe("CAP_BPF not granted on this binary — run `datawatch setup ebpf`"), nil
+		return NewNoopProbe("CAP_BPF not granted on this binary — a release replaces the binary file and removes its capabilities; run `datawatch setup ebpf` (sudo), then restart the daemon"), nil
 	}
 	if !generatedAvailable() {
 		return NewNoopProbe("eBPF objects not pre-generated — run `make ebpf-gen` and rebuild"), nil

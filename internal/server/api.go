@@ -15365,7 +15365,7 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		binaryPath, _ := os.Executable()
 		if !stats.HasCapBPF(binaryPath) {
 			s.hub.Broadcast(MsgNotification, map[string]string{
-				"message": "Warning: eBPF enabled but CAP_BPF missing. Restart will start without eBPF. Run: sudo setcap cap_bpf,cap_perfmon+ep " + binaryPath,
+				"message": "Warning: eBPF enabled but CAP_BPF missing (a release replaces the binary file and removes its capabilities). Restart will start without eBPF. Run: datawatch setup ebpf — then restart again. " + binaryPath,
 			})
 		}
 	}

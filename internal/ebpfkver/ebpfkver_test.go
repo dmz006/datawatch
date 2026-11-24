@@ -12,7 +12,7 @@ func TestParseRelease(t *testing.T) {
 		want uint32
 		bad  bool
 	}{
-		{"7.0.0-43-generic", 7<<16, false},
+		{"7.0.0-43-generic", 7 << 16, false},
 		{"6.8.12", 6<<16 | 8<<8 | 12, false},
 		{"5.10.300-foo", 5<<16 | 10<<8 | 255, false}, // patch clamps to 255
 		{"6.8-rc1", 6<<16 | 8<<8, false},

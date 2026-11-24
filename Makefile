@@ -240,6 +240,9 @@ build: sync-docs docs-index
 
 install: sync-docs docs-index
 	go build -ldflags="$(LDFLAGS)" -o $(HOME)/.local/bin/$(BINARY) ./cmd/datawatch/
+	@# The new file has no eBPF capabilities. Re-apply them with sudo -n when the
+	@# passwordless rule exists, otherwise print the one command to run.
+	-@$(HOME)/.local/bin/$(BINARY) setup ebpf --reapply
 	@if [ -e "$(HOME)/go/bin/$(BINARY)" ]; then \
 		echo ">>> v7.x binary found at $(HOME)/go/bin/$(BINARY) — updating to point to new install (issue #81)"; \
 		ln -sf "$(HOME)/.local/bin/$(BINARY)" "$(HOME)/go/bin/$(BINARY)"; \
