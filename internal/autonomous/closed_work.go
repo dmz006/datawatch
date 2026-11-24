@@ -36,6 +36,9 @@ const (
 	DecisionClosedWorkRefused = "closed_work_refused"
 	// DecisionClosedWorkOverride: the operator forced past the rule.
 	DecisionClosedWorkOverride = "closed_work_override"
+	// DecisionMemberDelivered: an Automation skipped a member whose own
+	// record says its work already shipped, and went on to the next member.
+	DecisionMemberDelivered = "member_delivered"
 )
 
 // ShippedRefusalRecord is the reason the daemon dropped an Automaton as

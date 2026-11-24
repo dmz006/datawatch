@@ -232,6 +232,18 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 	if mode == "" {
 		reason = fmt.Sprintf("next member %s is %s", name, status)
 	}
+	// A member whose own record says its work shipped is skipped, not started,
+	// unless another member builds on its output; then the Automation blocks.
+	snap := c.snapshotMembers(a)
+	if n := snap[memID].shipped; n != nil {
+		if dep := deliveredBlockReason(a, snap, mem); dep != "" {
+			reason = dep
+		} else {
+			c.reconcileAudit(a, mem, "delivered member skipped", string(status))
+			c.advance(a.ID, stepInput{memberID: memID, end: deliveredEnd(n)})
+			return
+		}
+	}
 	// The budget gate guards a retried start as it does every other start.
 	var verdict BudgetVerdict
 	if reason == "" {

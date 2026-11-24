@@ -541,6 +541,34 @@ The refusal reason shows wherever a start error shows (the CLI error, the chat
 reply, the MCP result, the REST 400 body and the web app's error toast), and
 `already_shipped` shows as the eligibility reason on a lane fill decision.
 
+### An Automation goes past a delivered member
+
+When an Automation reaches a member whose own record says its work already
+shipped (a release and a merge commit, with the member queued, failed or blocked),
+it does not start that member and does not block. The coordinator marks the member
+**delivered**, writes why, and goes on to the next member as if it had finished:
+
+- the member ends `completed` with outcome `already_shipped` and no start time, and
+  the Automation follows its `on_complete` edge (a delivered last member lets the
+  Automation complete; a delivered fork branch counts as a finished branch for the
+  join);
+- the Automation records a `member_delivered` decision naming the member, the
+  release and the commit, and an `automation_member_delivered` audit entry;
+- the member's own Automaton ends delivered too (`shipped_refusal` on it), the same
+  as when a lane fill poll drops it.
+
+This is the same on every daemon that runs the Automation, and several delivered
+members in a row are all passed. It follows the rule's setting: with
+`autonomous.shipped_refusal` on it skips, with `shadow` or `off` the member starts as
+before, and an operator force that covers the record starts it.
+
+**One case is never skipped on its own.** When another member of the Automation that
+has not started builds on the delivered member's branch (its Automaton's base branch
+is that member's branch), the output is still needed. The Automation blocks with a
+message that names both members and the branch, nothing is marked delivered, and
+nothing starts. Skip the member yourself (`datawatch automation skip`, MCP `automation_skip_member`, or the Skip member button) or force-run it
+with a reason.
+
 ## Which lane a task takes
 
 Lane fill decides which **Automaton** an idle lane starts. It does not choose

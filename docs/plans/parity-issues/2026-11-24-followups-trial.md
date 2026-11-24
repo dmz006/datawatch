@@ -14,3 +14,12 @@ Date: 2026-11-24. One draft for the four daemon changes that touch the mobile cl
 - **Strings** (en, de, es, fr, ja in `internal/server/web/locales/*.json`): `settings_schedule_one_time_max_wait`,
   `settings_schedule_one_time_max_wait_help`, `schedule_rearm_gave_up_waiting`.
 - No new endpoint, tool or auth change. Old clients ignore the new field.
+
+## 2. An Automation goes past a delivered member
+
+- No new endpoint, setting or tool. `GET /api/automations/{id}` members can now end `completed` with `outcome`
+  `already_shipped`, `started_at` absent, and the Automation `decisions` can carry `kind` `member_delivered`
+  (note: member, release, commit). The app should show such a member as "Delivered, skipped" rather than "Completed",
+  and list the decision. An Automation that blocks because a later member builds on the delivered member's branch
+  carries the explanation in its last `blocked` decision and in the "Automation blocked" alert.
+- Audit entry `automation_member_delivered` (automation_id, prd_id, release, commit).

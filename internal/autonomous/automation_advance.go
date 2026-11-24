@@ -33,6 +33,7 @@ type endOutcome struct {
 	revert    bool              // PRD reverted to approved: counts only while the member is running
 	note      string            // branch decision text (a start error names its cause)
 	merged    *mergedMemberNote // set when the merged-member proof decided this end
+	delivered *deliveredNote    // set when the member's own shipped record decided this end
 	answerID  string            // decision_wait: the operator answer that ended the wait
 }
 
@@ -85,6 +86,24 @@ type memberInfo struct {
 	// pending carries a pending item member's registry facts (kind
 	// pending_item); nil for every other kind.
 	pending *pendingFacts
+	// shipped is set when the member's own record says its work shipped and
+	// the shipped-work rule is on: the member is skipped, not started.
+	shipped *deliveredNote
+	// branch and baseBranch are the member Automaton's own git branch and the
+	// branch it builds on; a member that builds on another's branch needs that
+	// member's output.
+	branch, baseBranch string
+}
+
+// deliveredNote is what the Automation records when it skips a member whose
+// own record says its work already shipped.
+type deliveredNote struct {
+	prdID, name, release, commit string
+}
+
+func (n *deliveredNote) text() string {
+	return fmt.Sprintf("member %s is already delivered (shipped in %s, commit %s): skipped, not started, and the Automation goes on",
+		n.name, n.release, shortCommit(n.commit))
 }
 
 // stepInput names the member that ended and how it ended.
@@ -152,6 +171,9 @@ type stepEffects struct {
 	// waits names the decision_wait members that began waiting in this step:
 	// afterAdvance raises (or finds) and links each one's operator question.
 	waits []string
+	// delivered holds the PRD ids of members skipped as already delivered:
+	// afterAdvance marks each one delivered on its own record.
+	delivered []string
 	// settle holds the question ids of decision_wait members that ended without
 	// being answered or withdrawn: afterAdvance withdraws each one still open.
 	settle []string
@@ -168,6 +190,9 @@ type stepper struct {
 	// breachChoice overrides the budget policy's on_breach for a gate this step
 	// hits; empty keeps the policy.
 	breachChoice string
+	// skipDepth counts delivered members skipped in a row in this step, so a
+	// cycle of delivered members cannot loop.
+	skipDepth int
 }
 
 // step computes one advance on a for the ended member in, mutating a in place.
@@ -208,35 +233,11 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 			"merged": n.merged, "actor": coordinatorActor,
 		})
 	}
+	if n := in.end.delivered; n != nil {
+		st.noteDelivered(n)
+	}
 	if join := joinOf(a, mem.ID); join != nil {
-		_, _, chain := branchChainOf(a, mem.ID)
-		tail := len(chain) == 0 || isBranchTail(chain, mem.ID)
-		end := in.end
-		if !tail && end.success {
-			// A chain member finished: its own cursor moves to the next chain
-			// member, and no other branch is touched.
-			st.finish(mem, end)
-			note := end.note
-			if note == "" {
-				note = fmt.Sprintf("branch member %s completed; its chain moves on", st.name(mem))
-			}
-			st.decision("branch", note)
-			st.followChain(mem, end)
-		} else {
-			// The branch ends here: the tail finished, or a chain member ended
-			// without success, which ends the whole branch as failed.
-			end.edge = ""
-			st.finish(mem, end)
-			note := end.note
-			if note == "" {
-				note = fmt.Sprintf("branch %s ended %s", st.name(mem), end.outcome)
-			}
-			st.decision("branch", note)
-			if !tail {
-				st.skipChainAfter(chain, mem.ID)
-			}
-			st.evalJoin(join.ID)
-		}
+		st.endJoinMember(mem, join, in.end)
 	} else if in.end.direct != "" {
 		st.finish(mem, in.end)
 		st.block(in.end.direct)
@@ -246,6 +247,39 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 	}
 	st.finalize()
 	return st.eff, nil
+}
+
+// endJoinMember ends a member that sits on a fork branch. A chain member that
+// finished moves its own cursor to the next chain member; anything else ends
+// the branch here and the join rule decides what that means.
+func (st *stepper) endJoinMember(mem, join *AutomationMember, end endOutcome) {
+	_, _, chain := branchChainOf(st.a, mem.ID)
+	tail := len(chain) == 0 || isBranchTail(chain, mem.ID)
+	if !tail && end.success {
+		// A chain member finished: its own cursor moves to the next chain
+		// member, and no other branch is touched.
+		st.finish(mem, end)
+		note := end.note
+		if note == "" {
+			note = fmt.Sprintf("branch member %s completed; its chain moves on", st.name(mem))
+		}
+		st.decision("branch", note)
+		st.followChain(mem, end)
+		return
+	}
+	// The branch ends here: the tail finished, or a chain member ended
+	// without success, which ends the whole branch as failed.
+	end.edge = ""
+	st.finish(mem, end)
+	note := end.note
+	if note == "" {
+		note = fmt.Sprintf("branch %s ended %s", st.name(mem), end.outcome)
+	}
+	st.decision("branch", note)
+	if !tail {
+		st.skipChainAfter(chain, mem.ID)
+	}
+	st.evalJoin(join.ID)
 }
 
 // stepJoinReeval re-derives a join that is still waiting with no branch live:
@@ -430,6 +464,18 @@ func (st *stepper) enter(next *AutomationMember) {
 func (st *stepper) enterAdmitted(next *AutomationMember) {
 	next.WaitingForSlot = false
 	next.WaitingForStage = ""
+	if info := st.snap[next.ID]; next.kind() == MemberKindPRD && info.shipped != nil {
+		// The member's own record says its work shipped: skip it and go on to
+		// the next member, unless another member builds on its output. It starts
+		// nothing and costs nothing, so no budget gate holds it.
+		if reason := deliveredBlockReason(st.a, st.snap, next); reason != "" {
+			addCursor(st.a, next.ID)
+			st.block(reason)
+			return
+		}
+		st.skipDelivered(next, info.shipped)
+		return
+	}
 	if next.kind() != MemberKindJoin {
 		if v := st.snap[next.ID].verdict; v.Gate {
 			st.budgetGate(next, v)
@@ -477,6 +523,69 @@ func (st *stepper) enterAdmitted(next *AutomationMember) {
 	default:
 		st.block(fmt.Sprintf("member %s is a join; a join is reached only through its fork", next.ID))
 	}
+}
+
+// deliveredEnd is the end a delivered member takes: completed (its work is
+// delivered, the same status the daemon gives the member's own record) with the
+// outcome already_shipped and no start, along its on_complete edge, and a
+// success for a join.
+func deliveredEnd(n *deliveredNote) endOutcome {
+	return endOutcome{
+		edge: edgeOnComplete, memStatus: MemberCompleted, outcome: "already_shipped", success: true,
+		note: n.text(), delivered: n,
+	}
+}
+
+// deliveredBlockReason says why a delivered member is not skipped on its own:
+// another member that has not started builds on its branch, so skipping it
+// would drop output that member needs. Empty means the member may be skipped.
+func deliveredBlockReason(a *Automation, snap map[string]memberInfo, mem *AutomationMember) string {
+	info := snap[mem.ID]
+	if info.shipped == nil || info.branch == "" {
+		return ""
+	}
+	for i := range a.Members {
+		other := &a.Members[i]
+		if other.ID == mem.ID || other.kind() != MemberKindPRD || !memberUnstarted(other) {
+			continue
+		}
+		if snap[other.ID].baseBranch == info.branch {
+			return fmt.Sprintf("next member %s is already delivered (shipped in %s, commit %s) and member %s builds on its branch %s: it is not skipped automatically because that work is needed; skip it with skip member, or force-run it with a reason",
+				info.name, info.shipped.release, shortCommit(info.shipped.commit), snap[other.ID].name, info.branch)
+		}
+	}
+	return ""
+}
+
+// noteDelivered records why a member was skipped as delivered: a decision on
+// the Automation, an audit entry, and the member's own record to mark delivered
+// once the write wins.
+func (st *stepper) noteDelivered(n *deliveredNote) {
+	st.decision(DecisionMemberDelivered, n.text())
+	st.audit("automation_member_delivered", map[string]any{
+		"automation_id": st.a.ID, "prd_id": n.prdID, "release": n.release, "commit": n.commit, "actor": coordinatorActor,
+	})
+	st.eff.delivered = append(st.eff.delivered, n.prdID)
+}
+
+// skipDelivered ends next as delivered without starting it and follows its
+// on_complete edge, so the Automation carries on as if the member had finished.
+func (st *stepper) skipDelivered(next *AutomationMember, n *deliveredNote) {
+	st.skipDepth++
+	if st.skipDepth > len(st.a.Members) {
+		addCursor(st.a, next.ID)
+		st.block("delivered members loop back on themselves: " + n.text())
+		return
+	}
+	addCursor(st.a, next.ID)
+	end := deliveredEnd(n)
+	st.noteDelivered(n)
+	if join := joinOf(st.a, next.ID); join != nil {
+		st.endJoinMember(next, join, end)
+		return
+	}
+	st.finish(next, end)
+	st.followEdge(next, end)
 }
 
 // startPRD marks a PRD member running and records its start.
@@ -570,6 +679,19 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 			addCursor(st.a, b.ID)
 			st.decision("held", fmt.Sprintf("branch %s not started: %s is held by the operator", b.ID, info.name))
 			results[bid] = "held"
+			continue
+		}
+		if info.shipped != nil {
+			// A branch whose own record says its work shipped counts as done,
+			// unless another member builds on its output.
+			if reason := deliveredBlockReason(st.a, st.snap, b); reason != "" {
+				st.failBranchMember(b, "gate-denied")
+				st.decision("branch", reason)
+				results[bid] = "gate-denied"
+				continue
+			}
+			st.skipDelivered(b, info.shipped)
+			results[bid] = "delivered"
 			continue
 		}
 		mode := gateMode(info.prdStatus)

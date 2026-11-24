@@ -498,7 +498,9 @@ func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 			if name == "" {
 				name = m.PRDID
 			}
-			snap[m.ID] = memberInfo{name: name, prdStatus: status, verdict: c.startVerdict(a, &a.Members[i])}
+			info := memberInfo{name: name, prdStatus: status, verdict: c.startVerdict(a, &a.Members[i])}
+			c.addShipFacts(&info, m.PRDID)
+			snap[m.ID] = info
 		case MemberKindAutomation:
 			name := m.AutomationID
 			if child, ok := c.m.automations.Get(m.AutomationID); ok && child.Name != "" {
@@ -519,6 +521,26 @@ func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 		}
 	}
 	return snap
+}
+
+// addShipFacts reads the member Automaton's own shipped record and branches
+// into info. A shipped record counts only while the shipped-work rule is on and
+// no operator force covers the record.
+func (c *Coordinator) addShipFacts(info *memberInfo, prdID string) {
+	prd, ok := c.m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	on := c.m.Config().EffectiveShippedRefusal() == ShippedRefusalOn
+	c.m.readLocked(func() {
+		info.branch, info.baseBranch = prd.Git.Branch, prd.Git.BaseBranch
+		if code, _ := closedWorkRefusal(prd); on && code == LaneFillReasonAlreadyShipped {
+			info.shipped = &deliveredNote{
+				prdID: prdID, name: info.name,
+				release: strings.TrimSpace(prd.MergedInRelease), commit: strings.TrimSpace(prd.MergeCommit),
+			}
+		}
+	})
 }
 
 // startVerdict is the budget verdict for starting mem, read once with the
@@ -553,6 +575,9 @@ func (c *Coordinator) afterAdvance(a *Automation, eff *stepEffects) {
 	}
 	c.afterBudget(a, eff.budget)
 	c.afterMergedMember(a, eff.mergedAdvance)
+	for _, id := range eff.delivered {
+		c.m.deliverShipped(id) // the member's own record says delivered, with the reason
+	}
 	c.afterDecisionWaits(a, eff)
 	switch {
 	case eff.blocked != "":
