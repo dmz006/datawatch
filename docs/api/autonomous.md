@@ -3048,6 +3048,20 @@ hosted backend) is unchanged, and the field is omitted when false.
   matched no node.
 - **PWA:** the capacity card marks the holder `node unknown`.
 
+### Workers over the limit
+
+A restart can re-adopt more sessions than a pool or node allows (the sessions are
+real, so they stay recorded and new work waits). Each adopted worker lease that
+sits in such a pool or node is flagged in `leases` of `GET /api/capacity`:
+`adopted: true`, `over_limit: true`, `over_limit_code: "adopted_over_limit"` and
+`over_limit_reason` (the pool or node, what it holds, its limit). The fields are
+computed on each read and omitted when the lease is not over a limit. A worker
+admitted through the queue is never flagged, and a pool that is over only
+because of an operator session started over the cap (see its `overage`) flags
+no worker. The `capacity` MCP tool and `datawatch capacity` return the same
+fields; the text views add one `Worker <id> over the limit: ...` line per
+flagged lease; the PWA capacity card marks the holder `over the limit`.
+
 ### Rate ceilings
 
 A pool can carry a rolling-window rate ceiling (requests and/or tokens per
