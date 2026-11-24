@@ -2394,7 +2394,7 @@ func (s *Server) toolScheduleSpawn() mcpsdk.Tool {
 
 func (s *Server) toolScheduleList() mcpsdk.Tool {
 	return mcpsdk.NewTool("schedule_list",
-		mcpsdk.WithDescription("List all pending scheduled commands. Includes session_name, cron_expr, and schedule_name (BL353)."),
+		mcpsdk.WithDescription("List pending and failed scheduled commands. Includes session_name, cron_expr and schedule_name, and for each schedule that has fired or been refused: the next fire, the last result with its reason, and the re-arm state (retrying, waiting_capacity or gave_up)."),
 	)
 }
 

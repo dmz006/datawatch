@@ -1970,6 +1970,7 @@ history <id>                    git log of session tracking folder
 schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel <schedID>)
 schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>] [at=<HH:MM>]
 schedule spawn task=<t> [dir=<d>] [backend=<b>] [cron=<c>] [name=<n>]
+schedule list                   every pending and failed schedule with next fire, last result and re-arm state
 schedule cancel id=<id>|name=<sched-name>
 schedule-results               last status + summary per scheduled job
 schedule-results list           same as above

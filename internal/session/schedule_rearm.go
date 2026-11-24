@@ -217,10 +217,10 @@ func (s *ScheduleStore) RecordStartFailure(id string, cause error, now time.Time
 			sc.ConsecutiveWaits = 0
 			sc.LastFireResult = "failed"
 			sc.appendFire(ScheduleFire{At: now, Result: "failed", Error: reason})
-			switch {
-			case p.Mode == RearmStayFailed:
+			switch p.Mode {
+			case RearmStayFailed:
 				out.GaveUp = true
-			case p.Mode == RearmBackoff:
+			case RearmBackoff:
 				if p.MaxRetries > 0 && sc.ConsecutiveFailures > p.MaxRetries {
 					out.GaveUp = true
 				} else {
