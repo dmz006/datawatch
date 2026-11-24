@@ -1,0 +1,9 @@
+  ⎿  Running…
+✻ Cascading… (8m 10s · ↓ 54.3k tokens)
+  ⎿  Tip: Size a workflow in your prompt: try "use at most 5 agents", or set a default with Dynamic workflow size in
+     /config
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────── build-job ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt

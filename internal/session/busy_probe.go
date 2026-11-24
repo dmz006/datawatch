@@ -65,8 +65,9 @@ func paneShowsWork(lines []string) bool {
 	return false
 }
 
-// paneIdlePromptVisible reports whether one of the last three lines is an
-// input prompt: the claude-code input box or a shell prompt.
+// paneIdlePromptVisible reports whether the pane ends at an input prompt: the
+// claude-code input box (its ❯ row among the last busyBoxRows lines) or a shell
+// prompt in the last three.
 func paneIdlePromptVisible(lines []string) bool {
 	for i := len(lines) - 1; i >= 0 && i >= len(lines)-3; i-- {
 		l := lines[i]
@@ -74,8 +75,19 @@ func paneIdlePromptVisible(lines []string) bool {
 			return true
 		}
 	}
+	// A box holding long or wrapped text (an unsent paste) pushes its ❯ row
+	// above the last three lines; the footer and the rules still follow it.
+	for i := len(lines) - 1; i >= 0 && i >= len(lines)-busyBoxRows; i-- {
+		if strings.HasPrefix(lines[i], "❯") && !numberedChoiceRow.MatchString(lines[i]) {
+			return true
+		}
+	}
 	return false
 }
+
+// busyBoxRows is how many non-empty lines from the bottom may separate the ❯
+// row of a wrapped input box from the end of the pane.
+const busyBoxRows = 8
 
 // isToolRunningLine matches a tool status line such as "⎿  Running…".
 func isToolRunningLine(l string) bool {

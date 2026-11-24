@@ -1,0 +1,16 @@
+user@testhost:~/work/repo$ cd '/work/project' && NO_COLOR=1 claude --dangerously-load-development-channels server:datawatch-testhost-0001 --channels server:datawatch-testhost-0001 --add-dir '/work/project' --permission-mode 'bypassPermissions'; echo 'DATAWATCH_COMPLETE: claude done'
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  WARNING: Loading development channels
+
+  --dangerously-load-development-channels is for local channel development only. Do not use this option to run
+  channels you have downloaded off the internet.
+
+  Please use --channels to run a list of approved channels.
+
+  Channels: server:datawatch-testhost-0001
+
+  ❯ 1. I am using this for local development
+    2. Exit
+
+  Enter to confirm · Esc to cancel

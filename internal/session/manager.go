@@ -441,6 +441,10 @@ type Manager struct {
 	// positive before the LLM has had time to process and respond.
 	taskDeliveredAt map[string]time.Time
 
+	// deliveryFailure holds the last reason a task delivery gave up, per
+	// session. Guarded by mu; created on first use.
+	deliveryFailure map[string]string
+
 	// hookStopAt records when the Claude Code Stop hook last fired for a session
 	// and no later turn activity (a prompt or a tool call) has been seen. It lets
 	// the one-shot reaper end a supervisor pass that has finished its turn, without
@@ -3193,6 +3197,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		})
 	}
 
+	m.armTaskDeliveryAfterStart(monCtx, sess, backendObj, resumeID)
 	m.notifySessionStart(sess)
 	m.runPlacementStartHook(sess)
 
@@ -5795,29 +5800,6 @@ func (m *Manager) MainPromptReady(fullID string) bool {
 	return false
 }
 
-// awaitOneShotPrompt polls on ~1 s ticks (m.now()/m.sleep so a test can
-// drive it with virtual time) until the session is waiting for input with
-// its main prompt visible, until window elapses, or — checked on every
-// poll before the prompt check — until the session has exited: it is
-// missing from the store, in a terminal state, or its tmux session no
-// longer exists.
-func (m *Manager) awaitOneShotPrompt(fullID string, window time.Duration) oneShotPromptOutcome {
-	deadline := m.now().Add(window)
-	for {
-		sess, ok := m.store.Get(fullID)
-		if !ok || sess.State.IsTerminal() || (sess.TmuxSession != "" && !m.tmux.SessionExists(sess.TmuxSession)) {
-			return oneShotSessionExited
-		}
-		if sess.State == StateWaitingInput && m.MainPromptReady(fullID) {
-			return oneShotReady
-		}
-		if !m.now().Before(deadline) {
-			return oneShotTimedOut
-		}
-		m.sleep(time.Second)
-	}
-}
-
 // taskEchoWindow is how long DeliverOneShotTask waits, after typing the task,
 // for the text to show up in the pane before counting the attempt as lost.
 const taskEchoWindow = 10 * time.Second
@@ -5884,13 +5866,16 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 
 	exited := false
 	notEchoed := false
+	lastScreen := ""
 	attemptsMade := 0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		attemptsMade = attempt
 		if isJudge {
 			m.debugf("judge prompt delivery: %d lines, attempt %d of %d, waiting up to %ds", promptLines, attempt, maxAttempts, int(window/time.Second))
 		}
-		switch outcome := m.awaitOneShotPrompt(fullID, window); outcome {
+		outcome, screen := m.awaitOneShotPrompt(fullID, input, window)
+		lastScreen = screen
+		switch outcome {
 		case oneShotReady:
 			err := m.SendInput(fullID, input, "channel-task")
 			if err == nil {
@@ -5910,7 +5895,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 			m.debugf("DeliverOneShotTask: session for %s ended before attempt %d/%d could wait for its main prompt", fullID, attempt, maxAttempts)
 			exited = true
 		case oneShotTimedOut:
-			m.debugf("DeliverOneShotTask: no main prompt within %s for %s attempt %d/%d", window, fullID, attempt, maxAttempts)
+			m.debugf("DeliverOneShotTask: no ready input box within %s for %s attempt %d/%d: %s", window, fullID, attempt, maxAttempts, screen)
 		}
 		if exited {
 			break
@@ -5928,9 +5913,10 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 	} else if notEchoed {
 		reason = fmt.Sprintf("task delivery failed: the task text never appeared in the session input within %s of typing it, across %d attempts — worker was never given its task (prompt %d lines)", taskEchoWindow, attemptsMade, promptLines)
 	} else {
-		reason = fmt.Sprintf("task delivery failed: main prompt never appeared within %s across %d attempts — worker was never given its task (prompt %d lines, total wait used %s)", window, maxAttempts, promptLines, window*time.Duration(attemptsMade))
+		reason = fmt.Sprintf("task delivery failed: main prompt never appeared within %s across %d attempts — worker was never given its task (prompt %d lines, total wait used %s); last screen: %s", window, maxAttempts, promptLines, window*time.Duration(attemptsMade), lastScreen)
 	}
 	m.debugf("DeliverOneShotTask: %s: %s", fullID, reason)
+	m.recordTaskDeliveryFailure(fullID, reason)
 
 	if !exited {
 		// Ending the session lets the executor's worker wait loop observe a
