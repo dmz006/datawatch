@@ -303,6 +303,10 @@ func profileEnv(w WorkerProfileLaunch, profileFlags string) string {
 // Nil means neither flag is passed (let claude use its default).
 func (b *Backend) SetChrome(enabled bool) { b.chrome = &enabled }
 
+// ChannelEnabled reports whether the launch hands the task over through the
+// channel bridge instead of the command line, so the daemon must deliver it.
+func (b *Backend) ChannelEnabled() bool { return b.channelEnabled }
+
 func (b *Backend) Name() string                   { return "claude-code" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
 func (b *Backend) HasToolAccess() bool            { return true }
