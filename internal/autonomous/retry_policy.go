@@ -267,12 +267,15 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 		log.Printf("[autonomous] decompose FAILED prd=%s: keep output artifact: %v", prd.ID, err)
 	}
 	// 2026-10-19 incident — the give-up paths that went through
-	// retryDecomposeFailure already recorded a richer FailureReason; the
-	// parse-failure path (a written-but-unparseable plan, "invalid-"
-	// "response" category — terminal, never infra-retryable) is the one
-	// that would otherwise leave LastDecomposeFailure nil. Record the
-	// parse reason so an operator sees WHY (the same intent manager.go's
-	// decom-parse comment states), without touching an existing record.
+	// retryDecomposeFailure already recorded a richer FailureReason; this
+	// is the safety net for a give-up that arrives without one (most
+	// notably decompose-persist, a store failure that is operator-retryable
+	// infra, not a content judgement). Record the reason so an operator
+	// sees WHY, without touching an existing record. A written-but-
+	// unparseable plan (decompose-parse) is a content judgement — its
+	// content retry already happened before this give-up, so any recorded
+	// trace of it stays content and non-retryable AT THE MOMENT it is
+	// recorded: never an invalid-response terminal, never infra.
 	var hasFailure bool
 	m.store.WithLock(func() { hasFailure = prd.LastDecomposeFailure != nil })
 	if !hasFailure {
@@ -280,7 +283,14 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 		retryable := false
 		switch source {
 		case "decompose-parse":
-			category = "invalid-response"
+			// content (the default above) for a plan whose named field the
+			// planner could fix: its content retry already happened upstream.
+			// A DecomposeOutputError (panic, over-size, empty or non-JSON
+			// output) is the terminal invalid-response: never infra, never
+			// retryable.
+			if errors.Is(cause, ErrDecomposeOutputUnparseable) {
+				category = "invalid-response"
+			}
 		case "decompose-persist":
 			category = "infra"
 			retryable = true // a store persistence failure is operator-retryable, not a content judgement

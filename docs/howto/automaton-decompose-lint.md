@@ -918,6 +918,21 @@ described here makes that failure explicit and, where it is only a
 wording problem, self-correcting, so an Automaton does not sit as a draft
 with zero stories and no explanation.
 
+**An answer with a fixable field is a content failure, not a terminal
+one.** When the planner wrote valid JSON the parser cannot accept — a task's
+`verification` value that is a number, boolean or array, or a malformed
+`verification` object — the failure is recorded as a `content`-category
+failure (rule `decompose-parse`) and retried within the content budget
+(one retry at the default configuration), with the parse error — it names
+the offending field and task — carried back to the planner as the next
+attempt's guidance. It never consumes infra retry budget; output that is not
+valid JSON, is empty, is over the size bound or makes the parser panic stays
+the invalid-response terminal class and takes no retry. A spent budget leaves a non-retryable
+`content` record on the ordinary alert and question path. A `verification`
+value that is a plain string is accepted as an unverified result (`ok`
+false, the string as its summary) rather than rejected; a missing value or
+`null` means “no verification result”.
+
 **1. The daemon corrects fixed release numbers itself.** When the
 `release-version-fixed` check is the **only** content failure of a plan,
 the daemon rewrites each fixed three-part number that is the Automaton's

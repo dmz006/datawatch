@@ -103,6 +103,32 @@ address, a worktree path, any other plan check, or a release number in a plan
 that also fails another check. A private address or a worktree path is never
 reworded by the daemon, because only you know what should replace it.
 
+## The string verification value and the parse retry
+
+A task's verification field may be a plain string. The daemon accepts a
+string as an unverified-result summary — `OK` stays `false`, the string
+becomes the result's summary, and no issues are recorded — so a plan whose
+only "mistake" was a string there is no longer rejected as unparseable. A
+missing value or `null` still means "no verification result", and an object
+is still decoded strictly. A verification value of any other kind (a
+number, a boolean, an array) is still a parse error.
+
+A planning answer that is valid JSON but still has a field that cannot be
+parsed is classified as a content failure, not the terminal invalid-response
+class: the planner wrote an answer, and the defect is one it can fix. Output
+that is not valid JSON, is empty, is over the size bound or makes the parser
+panic stays the terminal invalid-response class and takes no retry — see
+[Decompose output unparseable](../glossary.md#decompose-output-unparseable). It is retried
+within the content budget — one retry at the default configuration —
+and the retry prompt carries the parse error back to the planner as the next
+attempt's guidance.
+
+If the budget is spent and the failure is recorded, the reason names the field
+(and the task) that failed to parse — for example the verification field of a
+specific task — so you can reword the spec around exactly that spot. The
+record's category is `content`, its rule is `decompose-parse`, and its
+`retryable` flag is set by whether the content budget still has retries left.
+
 ## Where a planning failure is shown
 
 When planning gives up, the Automaton records one planning failure:
@@ -111,7 +137,7 @@ When planning gives up, the Automaton records one planning failure:
 |---|---|
 | `reason` | What went wrong, in words |
 | `category` | The failure category (for example `content`) |
-| `source` | The rule that tripped, using the same names as the spec check |
+| `source` | The rule that tripped — a spec check name, or a mechanism rule name the spec check does not carry, like `decompose-parse` |
 | `phrases` | The exact offending phrases (at most 20) |
 | `retryable` | Whether retrying may clear it |
 | `retry_counts` | Retries spent per category |
@@ -242,6 +268,13 @@ Things this change leaves for you to decide or confirm:
   REST, MCP and chat surfaces are unchanged.
 - The release-number self-correction rewrites the stored plan, not your spec.
   Read the `auto_correct` line on the decision log the first few times.
+- A fixable parse failure is now retried before it alerts: a plan with a field
+  the planner can fix gets its content retry first, so the "Automaton could not be planned"
+  alert arrives after that retry, not on the first parse failure.
+- A string in a task's `verification` field is accepted, not rejected: it is
+  stored as an unverified result (`ok` false) with the string as its summary.
+  If a task's verification summary is a status word or prose the planner wrote
+  instead of an unverified-check summary, fix that task or re-decompose.
 
 ## Related
 

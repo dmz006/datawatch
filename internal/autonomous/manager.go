@@ -3891,12 +3891,11 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 		return updated, nil
 	}
 	// BL410 remediation (2026-10-13) — bounded, hint-fed retry for an
-	// infra/scope-classified decompose failure, instead of immediately
-	// rolling back to PRDDraft on the very first failure. Parse failures
-	// are NOT in this class: a parse failure means the session DID write
-	// a plan (the session-based decompose fn only returns non-empty
-	// content when the output file was written), so it fails immediately
-	// below rather than consuming infra retry budget. See
+	// classified decompose failure, instead of immediately rolling back to
+	// PRDDraft on the very first failure. Parse failures are included: a
+	// written-but-unparseable plan is a content judgement (never an infra
+	// one) and gets its one guided content retry below, the parse error
+	// riding back to the planner as the next attempt's guidance. See
 	// retryDecomposeFailure's doc comment for the full rationale; see
 	// decomposeStreamingCore's identical loop for the twin copy this
 	// drifted-duplicate pair requires; both tails now route through the
@@ -3935,10 +3934,19 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 			// BL478's 28KB-discarded-plan bug): a parse failure means the
 			// session wrote an output file that failed to parse — a verdict
 			// was produced, so this is NOT an infra-category failure and
-			// must not consume infra retry budget (retrying risks re-running
-			// twice and discarding a good second plan). Fail immediately;
-			// failDecomposeAttempt still records the parse reason on
-			// LastDecomposeFailure.Detail so an operator sees WHY.
+			// never consumes infra retry budget. It IS a fixable content
+			// failure: the parse error names the offending field and task,
+			// so record it as the next attempt's guidance (the loop's
+			// LastDecomposeFailure hint) and let the planner fix it within
+			// the content budget (AutoFixRetries, default 1). Only when the
+			// content budget is spent does the attempt fail.
+			// A DecomposeOutputError (a panic, an over-size or empty output, or
+			// output that is not valid JSON) is terminal: nothing in it names a
+			// field the planner could fix, so it never takes the content retry.
+			if !errors.Is(perr, ErrDecomposeOutputUnparseable) &&
+				m.retryDecomposeFailure(prd, "content", "decompose-parse", perr.Error()) {
+				continue
+			}
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
@@ -4142,11 +4150,20 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 				return m.retryDecomposeWithFeedback(prd, backend, planModel2, effort, prompt+feedback)
 			})
 		if perr != nil {
-			// See Decompose()'s identical branch: a parse failure IS a
+			// See Decompose()'s identical branch: a parse failure is a
 			// written verdict (non-empty content only returns when the
-			// output file was written), so it fails immediately rather than
-			// retrying as infra — 2026-10-19 incident class. The parse
-			// reason still lands on LastDecomposeFailure.Detail.
+			// output file was written), so it never consumes infra budget —
+			// but it DOES retry within the content budget, the parse error
+			// (naming the failing field and task) riding back to the
+			// planner as the next attempt's guidance. Only spent budget
+			// fails the attempt.
+			// A DecomposeOutputError (a panic, an over-size or empty output, or
+			// output that is not valid JSON) is terminal: nothing in it names a
+			// field the planner could fix, so it never takes the content retry.
+			if !errors.Is(perr, ErrDecomposeOutputUnparseable) &&
+				m.retryDecomposeFailure(prd, "content", "decompose-parse", perr.Error()) {
+				continue
+			}
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
