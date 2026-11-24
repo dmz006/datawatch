@@ -330,6 +330,7 @@ test('the member drawer shows the wait, the question and a fork limit', () => {
 
 test('the Inbox row of a decision wait question says waiting for you and keeps the answer controls', () => {
   const sb = loadApp();
+  sb.listSetMode('inbox', 'list'); // this test reads the list row; the tile has its own test below
   const html = sb.questionsCardHtml({ questions: [
     { id: 'q-abc12', label: 'decision', text: 'Is the build good enough?', asked_by: 'decision-wait', options: [{ id: 'continue', label: 'Continue' }] },
     { id: 'q-other', text: 'Another question', asked_by: 'assistant' },
@@ -341,6 +342,23 @@ test('the Inbox row of a decision wait question says waiting for you and keeps t
   assert.match(rows[0], /questions-option-btn/);
   assert.match(rows[0], /questions-open-btn/);
   assert.doesNotMatch(rows[1], /data-decision-wait|waiting-for-you|questions-waiting-note/);
+});
+
+test('the Inbox tile of a decision wait question carries the same waiting-for-you marker, note and answer controls', () => {
+  const sb = loadApp();
+  sb.listSetMode('inbox', 'tiles');
+  const html = sb.questionsCardHtml({ questions: [
+    { id: 'q-abc12', label: 'decision', text: 'Is the build good enough?', asked_by: 'decision-wait', options: [{ id: 'continue', label: 'Continue' }] },
+    { id: 'q-other', text: 'Another question', asked_by: 'assistant' },
+  ] });
+  const tiles = html.split('<div class="work-tile questions-question-tile"').slice(1);
+  assert.equal(tiles.length, 2);
+  assert.match(tiles[0], /data-decision-wait="true"/);
+  assert.match(tiles[0], /data-waiting-for-you="true"[^>]*>Waiting for you</);
+  assert.match(tiles[0], /An Automation member is waiting for your answer\. Only its branch is held; the Automation is not blocked\./);
+  assert.match(tiles[0], /questions-option-btn/);
+  assert.match(tiles[0], /questions-open-btn/);
+  assert.doesNotMatch(tiles[1], /data-decision-wait|waiting-for-you|questions-waiting-note/);
 });
 
 const WAIT_ALERT = {

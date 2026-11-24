@@ -202,7 +202,7 @@ for (const scope of SCOPES) {
 // no scope has a per-scope copy of the logic.
 test('reconcile runs from the shared listLoader paint and the inbox toolbar repaint', () => {
   const src = require('fs').readFileSync(path.join(__dirname, 'app.js'), 'utf8');
-  assert.match(src, /el\.innerHTML = html\(\);\s*if \(opts\.afterPaint\)/);
+  assert.match(src, /el\.innerHTML = html\(\);[^]{0,200}?if \(opts\.afterPaint\)/);
   assert.match(src, /try \{ _listControlsReconcile\(el\); \} catch \(_e\) \{ \/\* ignore \*\/ \}/);
   assert.match(src, /_listControlsReconcile\(el\); \} catch \(_e\) \{ \/\* the toolbar repaint stands \*\/ \}/);
   assert.match(src, /function _listControlsReconcile\(root\)/);

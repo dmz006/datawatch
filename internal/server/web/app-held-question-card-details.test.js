@@ -172,3 +172,22 @@ test('no question id: the row opens nothing and carries no answer control', () =
   assert.ok(!html.includes('held-question-answer'), 'no question id -\u003e no answer button');
   assert.ok(html.includes('data-automaton="prd_79"'), 'the detail link is untouched');
 });
+
+// The tile (Tiles and Compact Inbox modes) shows what the row shows for the
+// same entry: the default, the details link, and an open tile opens the full
+// details on a click anywhere that is not a button or a link.
+test('an open held tile shows the default and the details link and opens the details on click; a shadow tile stays read-only', () => {
+  const sb = loadApp();
+  const open = sb.heldQuestionTileHtml(entry({ default: 'hold' }), false);
+  assert.match(open, /held-question-default[^>]*>[^<]*hold/);
+  assert.match(open, /held-question-detail-link/);
+  assert.match(open, /held-question-answer/);
+  assert.match(open, /event\.target\.closest\('button'\)/);
+  assert.match(open, /window\.openQuestion\('q_201'\)/);
+  const noDefault = sb.heldQuestionTileHtml(entry({ default: '' }), false);
+  assert.match(noDefault, /held-question-default/, 'the forced default-of-hold line still shows');
+  const shadow = sb.heldQuestionTileHtml(entry({}), true);
+  assert.doesNotMatch(shadow, /held-question-answer/);
+  assert.doesNotMatch(shadow, /event\.target\.closest/);
+  assert.match(shadow, /held-question-detail-link/);
+});

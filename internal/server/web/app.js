@@ -50350,10 +50350,21 @@ window.questionTileHtml = function(q) {
       `<button type="button" class="btn-secondary questions-option-btn" data-question-id="${escHtml(id)}" data-option-id="${escHtml(String(o.id))}" title="${escHtml(String(o.tradeoffs || ''))}" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.answerQuestionOption === 'function') window.answerQuestionOption(this)">${escHtml(String(o.label || o.id))}</button>`
     ).join('') + `</div>`
     : '';
-  return `<div class="work-tile questions-question-tile" data-question-id="${escHtml(id)}" style="min-width:0;">` +
-    `<div class="work-tile-head"><span class="work-tile-title">${escHtml(title)}</span>${high}</div>` +
+  // A question a decision wait member asks keeps the same marker, badge and
+  // note as its list row: the member waits for the operator and only its
+  // branch is held, in every view mode.
+  const waitsForYou = e.asked_by === 'decision-wait';
+  const waitBadge = waitsForYou
+    ? `<span class="questions-waiting-badge" data-waiting-for-you="true" style="flex-shrink:0;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--warning,#f59e0b);border:1px solid var(--warning,#f59e0b);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_member_status_waiting_for_operator'))}</span>`
+    : '';
+  const waitNote = waitsForYou
+    ? `<div class="questions-waiting-note" style="margin-top:6px;font-size:11px;color:var(--text2);">${escHtml(t('automation_decision_wait_inbox_note'))}</div>`
+    : '';
+  return `<div class="work-tile questions-question-tile" data-question-id="${escHtml(id)}"${waitsForYou ? ' data-decision-wait="true"' : ''} style="min-width:0;">` +
+    `<div class="work-tile-head"><span class="work-tile-title">${escHtml(title)}</span>${waitBadge}${high}</div>` +
     (meta ? `<div class="work-tile-meta">${meta}</div>` : '') +
     (text ? `<div class="questions-tile-text" style="margin-top:6px;font-size:12px;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(text)}</div>` : '') +
+    waitNote +
     optsHtml +
     `<div class="work-tile-foot" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;"><span style="margin-right:auto;color:var(--text2);font-size:11px;">${escHtml(t('automation_questions_open'))}</span>` +
     `<button type="button" class="btn-secondary questions-open-btn" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(id)}')">${escHtml(t('automation_questions_open'))}</button></div></div>`;
@@ -51035,16 +51046,31 @@ window.heldQuestionTileHtml = function(entry, isShadow) {
     automaton ? `<span class="held-question-automaton">${escHtml(automaton)}</span>` : '',
     task ? `<span class="held-question-task">${escHtml(task)}</span>` : '',
   ].filter(Boolean).join('');
+  const def = String(e.default == null ? '' : e.default);
+  // The default is shown explicitly, as on the row: the entry's own value,
+  // or the forced default-of-hold line.
+  const defLine = def
+    ? `<div class="held-question-default" style="margin-top:2px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('held_question_default_value', [def]))}</div>`
+    : `<div class="held-question-default" style="margin-top:2px;font-size:11px;color:var(--text2);">${escHtml(t('held_question_default_hold'))}</div>`;
   const answerBtn = (question && !isShadow)
     ? `<button type="button" class="btn-secondary held-question-answer" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')">${escHtml(t('held_question_answer'))}</button>`
     : '';
-  return `<div class="work-tile held-question-tile" data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}" style="min-width:0;">` +
+  // An open tile opens the full details on a click anywhere that is not a
+  // button or a link, like the row; the detail link and Answer keep their
+  // own action.
+  const tileOpen = (question && !isShadow)
+    ? ` onclick="if (event.target && (event.target.closest('button') || event.target.closest('a'))) return; if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')" style="min-width:0;cursor:pointer;"`
+    : ` style="min-width:0;"`;
+  const detailLink = window.heldQuestionDetailLinkHtml(e);
+  const controls = [detailLink, answerBtn].filter(Boolean).join('');
+  return `<div class="work-tile held-question-tile" data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}"${tileOpen}>` +
     `<div class="work-tile-head"><span class="work-tile-title held-question-title">${escHtml(title)}</span></div>` +
     (meta ? `<div class="work-tile-meta">${meta}</div>` : '') +
     (text ? `<div class="held-question-text" style="margin-top:6px;font-size:12px;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(text)}</div>` : '') +
     (reason ? `<div class="held-question-reason" style="margin-top:2px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(reason)}</div>` : '') +
     (rec ? `<div class="held-question-recommended" style="margin-top:2px;font-size:11px;color:var(--text);overflow-wrap:anywhere;">${escHtml(t('held_question_recommended', [rec]))}</div>` : '') +
-    (answerBtn ? `<div class="work-tile-actions" style="margin-top:6px;">${answerBtn}</div>` : '') +
+    defLine +
+    (controls ? `<div class="work-tile-actions" style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${controls}</div>` : '') +
     `</div>`;
 };
 
