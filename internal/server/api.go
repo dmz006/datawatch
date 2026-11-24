@@ -416,10 +416,11 @@ type Server struct {
 	// the same backend+model — nil when capacity isn't wired at all.
 	// Autonomous task spawns skip this (they already admit via the
 	// executor's own m.admit()); see handleStartSession's req.OneShot check.
-	capacityAdmit   CapacityAdmitFn
-	capacityBind    CapacityBindFn
-	capacityRelease CapacityReleaseFn
-	inferenceDisp   *inference.Dispatcher
+	capacityUnmapped func() []CapacityUnmapped
+	capacityAdmit    CapacityAdmitFn
+	capacityBind     CapacityBindFn
+	capacityRelease  CapacityReleaseFn
+	inferenceDisp    *inference.Dispatcher
 
 	// summarizerSvc is the response summarizer (nil when disabled).
 	// Wired from main.go after daemon init via SetSummarizerSvc.
@@ -6883,6 +6884,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_count_pool_by_node":           s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
 			"capacity_adopt_before_admit":           s.cfg.Autonomous.CapacityAdoptBeforeAdmitOn(),
 			"capacity_adoption_wait_seconds":        int(s.cfg.Autonomous.CapacityAdoptionWait() / time.Second),
+			"capacity_account_claude_limit":         s.cfg.Autonomous.CapacityAccountClaudeLimit(),
+			"capacity_supervisor_reserve_claude":    s.cfg.Autonomous.CapacitySupervisorReserveClaude(),
+			"capacity_supervisor_reserve_pi":        s.cfg.Autonomous.CapacitySupervisorReservePi(),
+			"capacity_supervisor_reserve_host":      s.cfg.Autonomous.CapacitySupervisorReserveHost(),
+			"capacity_operator_overage_alert":       s.cfg.Autonomous.CapacityOperatorOverageAlert,
 			"capacity_slot_reconcile_grace_seconds": int(s.cfg.Autonomous.CapacitySlotReconcileGrace() / time.Second),
 			"capacity_gpu_util_pct":                 s.cfg.Autonomous.CapacityGPUUtilPct,
 			"capacity_rate_requests":                s.cfg.Autonomous.CapacityRateRequests,
@@ -10958,6 +10964,26 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_adoption_wait_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.CapacityAdoptionWaitSeconds = n
+			}
+		case "autonomous.capacity_account_claude_limit":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityAccountClaudeLimitSetting = &n
+			}
+		case "autonomous.capacity_supervisor_reserve_claude":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacitySupervisorReserveClaudeSetting = &n
+			}
+		case "autonomous.capacity_supervisor_reserve_pi":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacitySupervisorReservePiSetting = &n
+			}
+		case "autonomous.capacity_supervisor_reserve_host":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacitySupervisorReserveHostSetting = &n
+			}
+		case "autonomous.capacity_operator_overage_alert":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityOperatorOverageAlert = b
 			}
 		case "autonomous.capacity_slot_reconcile_grace_seconds":
 			// Range-checked up front by validateSlotReconcileGracePatch.

@@ -302,6 +302,11 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("capacity_strict_node_limit", mcpsdk.Description("Strict per-node limit: verifier and resumed workers never over-admit a compute node (default true; false restores the earlier behaviour)")),
 		mcpsdk.WithBoolean("capacity_count_pool_by_node", mcpsdk.Description("Count an LLM pool by node: sessions piled on one node use at most that node's limit of the pool (default true)")),
 		mcpsdk.WithBoolean("capacity_adopt_before_admit", mcpsdk.Description("After a restart, admit resumed workers before any new work (default true)")),
+		mcpsdk.WithNumber("capacity_account_claude_limit", mcpsdk.Description("Cap on the whole Claude account, drawn on by every claude-code entry (default 2 = claude-code 1 plus claude-lean 1; 0 = unlimited)")),
+		mcpsdk.WithNumber("capacity_supervisor_reserve_claude", mcpsdk.Description("Claude slots above the cap that only supervisor sessions may use (default 1)")),
+		mcpsdk.WithNumber("capacity_supervisor_reserve_pi", mcpsdk.Description("pi slots above the cap that only supervisor sessions may use (default 1)")),
+		mcpsdk.WithNumber("capacity_supervisor_reserve_host", mcpsdk.Description("Host session slots above max_sessions that only supervisor sessions may use (default 4)")),
+		mcpsdk.WithBoolean("capacity_operator_overage_alert", mcpsdk.Description("Raise an alert each time an operator session starts over a pool's limit (default false; the overage is always recorded)")),
 		mcpsdk.WithNumber("capacity_adoption_wait_seconds", mcpsdk.Description("Longest wait, in seconds, for resumed workers to be adopted after a restart (default 30; negative values are rejected)")),
 		mcpsdk.WithNumber("capacity_slot_reconcile_grace_seconds", mcpsdk.Description("How long, in seconds, a capacity slot may look unmatched to a live worker before it is reconciled away (default 60, minimum 10; 0 = default; values 1-9 and negative values are rejected)")),
 		mcpsdk.WithNumber("capacity_rate_requests", mcpsdk.Description("Rate ceiling on each LLM: most task/verifier starts it may take per rolling window; 0 = no requests ceiling (default); negative values are rejected")),
@@ -881,6 +886,14 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			if _, ok := args[k]; ok {
 				body[k] = req.GetBool(k, true)
 			}
+		}
+		for _, k := range []string{"capacity_account_claude_limit", "capacity_supervisor_reserve_claude", "capacity_supervisor_reserve_pi", "capacity_supervisor_reserve_host"} {
+			if _, ok := args[k]; ok {
+				body[k] = int(req.GetFloat(k, 0))
+			}
+		}
+		if _, ok := args["capacity_operator_overage_alert"]; ok {
+			body["capacity_operator_overage_alert"] = req.GetBool("capacity_operator_overage_alert", false)
 		}
 		if _, ok := args["capacity_adoption_wait_seconds"]; ok {
 			body["capacity_adoption_wait_seconds"] = int(req.GetFloat("capacity_adoption_wait_seconds", 0))

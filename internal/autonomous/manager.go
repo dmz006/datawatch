@@ -727,6 +727,14 @@ type Config struct {
 	CapacityCountPoolByNode     *bool `json:"capacity_count_pool_by_node,omitempty"`
 	CapacityAdoptBeforeAdmit    *bool `json:"capacity_adopt_before_admit,omitempty"`
 	CapacityAdoptionWaitSeconds int   `json:"capacity_adoption_wait_seconds,omitempty"`
+	// Admission class settings mirror config.AutonomousConfig: the account:claude
+	// limit (nil = 2, 0 = unlimited), the supervisor buffers above a pool's limit
+	// (nil = Claude 1, pi 1, host 4) and the operator-overage alert.
+	CapacityAccountClaudeLimit      *int `json:"capacity_account_claude_limit,omitempty"`
+	CapacitySupervisorReserveClaude *int `json:"capacity_supervisor_reserve_claude,omitempty"`
+	CapacitySupervisorReservePi     *int `json:"capacity_supervisor_reserve_pi,omitempty"`
+	CapacitySupervisorReserveHost   *int `json:"capacity_supervisor_reserve_host,omitempty"`
+	CapacityOperatorOverageAlert    bool `json:"capacity_operator_overage_alert,omitempty"`
 	// CapacitySlotReconcileGraceSeconds mirrors config.AutonomousConfig (0 = 60,
 	// otherwise at least 10).
 	CapacitySlotReconcileGraceSeconds int `json:"capacity_slot_reconcile_grace_seconds,omitempty"`

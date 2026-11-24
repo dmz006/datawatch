@@ -27221,6 +27221,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.capacity_adopt_before_admit', label: 'After a restart, admit resumed workers before new work', labelKey: 'settings_capacity_adopt_before_admit', type: 'toggle' },
     { key: 'autonomous.capacity_slot_reconcile_grace_seconds', label: 'Slot reconcile grace (sec, default 60, min 10, 0 = 60)', labelKey: 'settings_capacity_slot_reconcile_grace', type: 'number', min: 0, placeholder: '60' },
     { key: 'autonomous.capacity_adoption_wait_seconds', label: 'Restart adoption wait (sec, 0 = 30)', labelKey: 'settings_capacity_adoption_wait', type: 'number', min: 0, placeholder: '30' },
+    { key: 'autonomous.capacity_account_claude_limit', label: 'Claude account cap across all Claude entries (default 2, 0 = unlimited)', labelKey: 'settings_capacity_account_claude_limit', type: 'number', min: 0, placeholder: '2' },
+    { key: 'autonomous.capacity_supervisor_reserve_claude', label: 'Supervisor buffer: Claude slots above the cap (default 1)', labelKey: 'settings_capacity_supervisor_reserve_claude', type: 'number', min: 0, placeholder: '1' },
+    { key: 'autonomous.capacity_supervisor_reserve_pi', label: 'Supervisor buffer: pi slots above the cap (default 1)', labelKey: 'settings_capacity_supervisor_reserve_pi', type: 'number', min: 0, placeholder: '1' },
+    { key: 'autonomous.capacity_supervisor_reserve_host', label: 'Supervisor buffer: host session slots above max sessions (default 4)', labelKey: 'settings_capacity_supervisor_reserve_host', type: 'number', min: 0, placeholder: '4' },
+    { key: 'autonomous.capacity_operator_overage_alert', label: 'Alert when an operator session starts over a limit', labelKey: 'settings_capacity_operator_overage_alert', type: 'toggle' },
     { key: 'autonomous.capacity_gpu_util_pct', label: 'Hold tasks while node GPU is above (% util, 0=off)', labelKey: 'settings_capacity_gpu_util', type: 'number', placeholder: '0' },
     { key: 'autonomous.capacity_rate_requests', label: 'Rate ceiling per LLM: requests per window (0 = none)', labelKey: 'capacity_rate_requests_label', type: 'number', min: 0, placeholder: '0' },
     { key: 'autonomous.capacity_rate_tokens', label: 'Rate ceiling per LLM: tokens per window (0 = none)', labelKey: 'capacity_rate_tokens_label', type: 'number', min: 0, placeholder: '0' },
@@ -38179,10 +38184,23 @@ function capacityNodeT(key, fallback, vars) {
 // unrelated interactive sessions. Label + tooltip make the distinction
 // explicit instead of showing the raw pool key.
 function capacityPoolLabel(p) {
+  return capacityPoolBaseLabel(p) + capacityPoolAdmissionSuffix(p);
+}
+// What the pool is, without the admission notes.
+function capacityPoolBaseLabel(p) {
   if (p.name === 'host') return t('capacity_pool_host')||'Host sessions (all tasks + interactive)';
   if (p.name.startsWith('node:')) return (t('capacity_pool_node')||'Compute node') + ': ' + p.name.slice(5);
   if (p.name.startsWith('llm:')) return (t('capacity_pool_llm')||'LLM') + ': ' + p.name.slice(4);
+  if (p.name.startsWith('account:')) return (t('capacity_pool_account')||'Account') + ': ' + p.name.slice(8);
   return p.name;
+}
+// Operator sessions admitted over the limit, and the buffer only supervisor
+// sessions may use above it.
+function capacityPoolAdmissionSuffix(p) {
+  let out = '';
+  if (p.over > 0) out += ' (' + (t('capacity_pool_over')||'{0} over the limit: operator').replace('{0}', p.over) + ')';
+  if (p.reserve > 0) out += ' (' + (t('capacity_pool_reserve')||'+{0} reserved for supervisors').replace('{0}', p.reserve) + ')';
+  return out;
 }
 function capacityPoolTitle(p) {
   if (p.name === 'host') {

@@ -2025,6 +2025,11 @@ func FormatText(st Status) string {
 	if unknown > 0 {
 		fmt.Fprintf(&b, "Leases with unknown node: %d (counted in host and llm pools, held on no node pool)\n", unknown)
 	}
+	for _, ls := range st.Leases {
+		for _, o := range ls.Overage {
+			fmt.Fprintf(&b, "Operator session %s: %s is %d over its limit of %d\n", ls.Holder, o.Pool, o.Over, o.Limit)
+		}
+	}
 	if len(st.Waiting) == 0 {
 		b.WriteString("Waiting: none\n")
 		return b.String()

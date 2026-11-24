@@ -300,6 +300,29 @@ type capacityResponse struct {
 	// Verifier carries the rolling verifier cost aggregates: queue wait, run
 	// time and outcome category counts.
 	Verifier autonomous.VerifierStatsView `json:"verifier"`
+	// Unmapped lists the subscription backends a start named that resolve to
+	// no LLM entry. They are held to one session, never treated as unlimited.
+	// Omitted when none.
+	Unmapped []CapacityUnmapped `json:"unmapped,omitempty"`
+}
+
+// CapacityUnmapped is one subscription backend with no LLM entry and so no pool
+// of its own.
+type CapacityUnmapped struct {
+	Backend  string    `json:"backend"`
+	Model    string    `json:"model,omitempty"`
+	Count    int       `json:"count"`
+	LastSeen time.Time `json:"last_seen"`
+}
+
+// SetCapacityUnmapped wires the report of subscription backends with no pool.
+func (s *Server) SetCapacityUnmapped(fn func() []CapacityUnmapped) { s.capacityUnmapped = fn }
+
+// SetCapacityUnmapped wires the report of subscription backends with no pool.
+func (s *HTTPServer) SetCapacityUnmapped(fn func() []CapacityUnmapped) {
+	if s.api != nil {
+		s.api.SetCapacityUnmapped(fn)
+	}
 }
 
 // capacityTasksJSON is the per-task part of the capacity response.
@@ -673,6 +696,9 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		out.Pools = append(out.Pools, pj)
+	}
+	if s.capacityUnmapped != nil {
+		out.Unmapped = s.capacityUnmapped()
 	}
 	writeJSONOK(w, out)
 }

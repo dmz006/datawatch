@@ -327,3 +327,16 @@ func TestCapacityText_PrintsCurrentNodeEngineReason(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatCapacityText_ShowsOperatorOverageAndUnmapped(t *testing.T) {
+	body := []byte(`{"pools":[],"leases":[{"holder":"start-1","class":"operator","overage":[{"pool":"llm:claude-code","limit":1,"over":1}]}],"unmapped":[{"backend":"claude-code","count":3}],"waiting":[],"tasks":{"waiting":[],"running":[],"verifying":[]}}`)
+	out, err := FormatCapacityText(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Operator sessions over a limit (1)", "start-1 (operator): llm:claude-code is 1 over its limit of 1", "No LLM entry for backend claude-code (3 starts)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("text missing %q:\n%s", want, out)
+		}
+	}
+}

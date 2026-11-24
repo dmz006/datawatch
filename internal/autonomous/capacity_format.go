@@ -81,8 +81,17 @@ type capacityWaiterView struct {
 type capacityBody struct {
 	Pools  []capacityPoolView `json:"pools"`
 	Leases []struct {
-		NodeUnknown bool `json:"node_unknown"`
+		NodeUnknown bool               `json:"node_unknown"`
+		Holder      string             `json:"holder"`
+		Class       string             `json:"class"`
+		Overage     []capacity.Overage `json:"overage"`
 	} `json:"leases"`
+	// Unmapped lists subscription backends a start named that resolve to no
+	// LLM entry; they are held to one session, never unlimited.
+	Unmapped []struct {
+		Backend string `json:"backend"`
+		Count   int    `json:"count"`
+	} `json:"unmapped"`
 	Waiting []capacityWaiterView  `json:"waiting"`
 	Backoff []capacityBackoffView `json:"backoff"`
 	Budgets []BudgetStatus        `json:"budgets"`
@@ -118,6 +127,18 @@ func FormatCapacityText(body []byte) (string, error) {
 	}
 	if unknown > 0 {
 		fmt.Fprintf(&b, "Leases with unknown node: %d (counted in host and llm pools, held on no node pool)\n", unknown)
+	}
+	var over []string
+	for _, l := range c.Leases {
+		for _, o := range l.Overage {
+			over = append(over, fmt.Sprintf("  %s (%s): %s is %d over its limit of %d", l.Holder, firstNonEmpty(l.Class, "worker"), o.Pool, o.Over, o.Limit))
+		}
+	}
+	if len(over) > 0 {
+		fmt.Fprintf(&b, "Operator sessions over a limit (%d):\n%s\n", len(over), strings.Join(over, "\n"))
+	}
+	for _, u := range c.Unmapped {
+		fmt.Fprintf(&b, "No LLM entry for backend %s (%d starts): held to 1 session until an entry is added\n", u.Backend, u.Count)
 	}
 
 	switch {
