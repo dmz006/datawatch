@@ -6222,7 +6222,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					ls.BackendFamily == "claude-code" && !mgr.TaskDelivered(ls.FullID) {
 					log.Printf("[autonomous] launch failure: session %s task %s/%s ended (%s) with no task delivery recorded; retrying",
 						ls.FullID, task.PRDID, task.ID, ls.State)
-					return autonomouspkg.VerificationResult{}, autonomouspkg.LaunchFailureError(ls.FullID, ls.BackendFamily, string(ls.State))
+					return autonomouspkg.VerificationResult{}, autonomouspkg.LaunchFailureErrorWithReason(ls.FullID, ls.BackendFamily, string(ls.State), mgr.TaskDeliveryFailure(ls.FullID))
 				}
 			}
 			// BL366 — git-diff grounding: capture the worker's actual change.

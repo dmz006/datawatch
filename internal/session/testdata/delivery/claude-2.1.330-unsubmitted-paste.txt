@@ -1,0 +1,14 @@
+user@testhost:~/work/repo$ cd '/work/project' && NO_COLOR=1 claude --dangerously-load-development-channels server:datawatch-testhost-0001 --channels server:datawatch-testhost-0001 --add-dir '/work/project' --permission-mode 'bypassPermissions'; echo 'DATAWATCH_COMPLETE: claude done'
+ ▐▛███▛█   Claude Code v2.1.330
+▝▜██████▀  Sonnet 5.5 with low effort · Claude Max
+ ▝▝   ▝▝   ~/work/project
+
+▎ Channels (experimental) messages from server:datawatch-testhost-0001, server:datawatch-testhost-0001 inject
+▎ directly in this session · restart without Channels to stop
+▎ server:datawatch-testhost-0001 · server: entries need --dangerously-load-development-channels
+
+───────────────────────────────────────────────────────────────────────────────────────────────── task-session ─
+❯ [Pasted text #1 +131 lines][Pasted text #2 +97 lines][Pasted text #3 +36 lines][Pasted text #4 +33 lines][Pasted
+  text #5 +23 lines][Pasted text #6 +25 lines][Pasted text #7 +24 lines][Pasted text #8 +24 lines]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

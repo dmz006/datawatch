@@ -14902,7 +14902,11 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 	//   LLM tasks:   type the task text directly; Claude processes it as a user
 	//                message, runs the work, and emits DATAWATCH_COMPLETE per the
 	//                session CLAUDE.md ("When done: output DATAWATCH_COMPLETE: ...").
-	if targetSess.OneShot {
+	// A claude-code session that is not one-shot takes the same typed path:
+	// the channel notification below never reached the model (every
+	// `session new` build session of 2026-11-23 came up at an empty prompt),
+	// while typing the task is checked by echo and retried.
+	if targetSess.OneShot || targetSess.BackendFamily == "claude-code" {
 		// Deliver a OneShot task at most once per session. The channel
 		// bridge re-POSTs ready every 60 s (readyHeartbeat, so a restarted
 		// daemon re-learns its port); without this claim every heartbeat
@@ -14923,7 +14927,7 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var input string
-		if strings.HasPrefix(targetSess.Task, "!") {
+		if targetSess.OneShot && strings.HasPrefix(targetSess.Task, "!") {
 			input = targetSess.Task + `; echo "DATAWATCH_COMPLETE: shell task done"`
 		} else {
 			input = targetSess.Task

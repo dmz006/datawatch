@@ -36,3 +36,17 @@ func LaunchFailureError(sessionID, backend, state string) error {
 	return &launchFailure{msg: fmt.Sprintf("%s (session=%s, backend=%s, state=%s): %s",
 		LaunchFailureReason, sessionID, backend, state, ErrWorkerStalled)}
 }
+
+// LaunchFailureErrorWithReason is LaunchFailureError for a launch whose
+// delivery failure is known: the message carries that reason instead of the
+// generic "worker stalled" text, and keeps LaunchFailureReason so the
+// infrastructure classifier still reads it as a session killed before
+// delivery. It unwraps to the same two sentinels. An empty reason falls back
+// to LaunchFailureError.
+func LaunchFailureErrorWithReason(sessionID, backend, state, reason string) error {
+	if reason == "" {
+		return LaunchFailureError(sessionID, backend, state)
+	}
+	return &launchFailure{msg: fmt.Sprintf("%s (session=%s, backend=%s, state=%s): %s",
+		LaunchFailureReason, sessionID, backend, state, reason)}
+}
