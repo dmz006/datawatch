@@ -414,7 +414,7 @@ fires on those three conditions.
 
 ## The operator actions
 
-The five ways to change a held task, plus **Accept** for a task whose work is already done. Every action is available on every surface. The table gives the way in on each.
+The five ways to change a held task, plus **Accept** for a task whose work is already done. Every action except Accept is available on every surface; Accept has no web UI button yet. The table gives the way in on each.
 
 | Action | What it does | Web UI | CLI | REST (`resolve_task_review`) | MCP (`autonomous_prd_resolve_task_review`) | Comm channel |
 |---|---|---|---|---|---|---|
@@ -423,7 +423,7 @@ The five ways to change a held task, plus **Accept** for a task whose work is al
 | **Change worker** | Retries with a different backend, model and effort for this task. | **Change worker** (opens a form) | add `--backend`, `--model`, `--effort` | add `"backend"`, `"model"`, `"effort"` | `backend`, `model`, `effort` | add `backend=… model=… effort=…` |
 | **Narrow scope** | Retries with the list of files the task may change cut down. | **Narrow scope** (opens a form) | add `--files a.go,b.go` | add `"files":["a.go","b.go"]` | `files` | add `files=a.go,b.go` |
 | **Cancel** | Cancels the task. The Automaton can roll up without it. | **Cancel task** button on the task | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action cancel` | `{"task_id":"…","action":"cancel"}` | `action=cancel` | `autonomous review-task <automaton> <task> cancel` |
-| **Accept** | Completes a held task with the result or commit its worker already produced, without running it again. Allowed only when the task's last worker session printed a completion marker; otherwise it is refused and the task stays held, so retry or cancel it instead. | **Accept** button on the task | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action accept` | `{"task_id":"…","action":"accept"}` | `action=accept` | `autonomous review-task <automaton> <task> accept` |
+| **Accept** | Completes a held task with the result or commit its worker already produced, without running it again. Allowed only when the task's last worker session printed a completion marker; otherwise it is refused and the task stays held, so retry or cancel it instead. | Not in the web UI yet; use another surface | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action accept` | `{"task_id":"…","action":"accept"}` | `action=accept` | `autonomous review-task <automaton> <task> accept` |
 
 Notes on the actions:
 
