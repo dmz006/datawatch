@@ -6215,6 +6215,14 @@ An Automation's limit on members running at once, its stage gate and its decisio
 |---|---|---|---|
 | Lane fill eligibility reason lists (eleven codes, `work_closed` never a chip) match the code in both openapi files, definitions, operations, the API and command docs, the MCP description and the how-to | **Yes** (`TestLaneFillEligibilityReasonListsMatchTheCode`, `TestLaneFillEligibilityReasonCountIsEleven`) | **No** | The test reads the constants from `lane_fill_eligibility.go`, so a new reason fails it until the docs list it |
 
+## Session start leases
+
+| Interface | Tested | Validated | Test conditions and notes |
+|---|---|---|---|
+| Every caller of `Manager.Start` is on an audited list; every function that opens a session pane is admitted or named; only `Manager.Start` calls the unadmitted half of a start | **Yes** (`TestSessionStartPathsAreAudited`, `TestEverySessionPaneDoorIsAdmittedOrNamed`, `TestAuditedStartPathsEachGiveAReason` in `cmd/datawatch`) | **No** | Static scan of the source with `go/parser`; a new start path fails the test until it is listed with how it admits. The audited list was updated for the schedule fire path that moved into `internal/session/schedule_rearm.go` |
+| Every admission class takes exactly one lease at the manager, `one_shot` and ephemeral workspaces are not exemptions, and the lease is bound to the started session | **Yes** (`TestManagerStart_EveryClassTakesOneLease`, `internal/session`) | **No** | Fake tmux and a recording admitter |
+| A restart in place of an ended session takes a lease | **No, open gap** (`TestManagerRestart_TakesLease` is skipped, with the reason) | **No** | `Manager.Restart` relaunches the pane with no admission; reached by `POST /api/sessions/{id}/restart` and the MCP `restart_session` tool. The fix is the operator's design choice |
+
 ## Operator pause
 
 | Interface | Tested | Validated | Test conditions and notes |

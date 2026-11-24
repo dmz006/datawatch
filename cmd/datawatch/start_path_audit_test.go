@@ -105,14 +105,13 @@ var auditedSessionStarts = map[string]string{
 	"cmd/datawatch/main.go runWorkerBootstrapTask mgr":        "operator: a worker daemon's own bootstrap task, accounted on that daemon's ledger",
 	"cmd/datawatch/main.go runStart mgr":                      "worker class at the head of the queue for a worker session (session.RestartAdmission), operator for any other session: rate-limit profile fallback restart",
 	"cmd/datawatch/main.go runExitHookRestart mgr":            "worker class at the head of the queue for a worker session (session.RestartAdmission), operator for any other session: exit-hook restart",
-	"cmd/datawatch/main.go runScheduler mgr":                  "operator, or supervisor for a schedule whose launch role is supervisor",
 	"internal/mcp/server.go handleStartSession s.manager":     "operator: MCP start without an LLM entry",
 	"internal/pipeline/session_adapter.go StartSession a.mgr": "operator: pipeline adapter start",
 	"internal/router/router.go handleNew r.manager":           "operator: chat new verb",
 	"internal/server/api.go executeCommand s.manager":         "operator: command text new verb",
 	"internal/server/api.go handleWS s.manager":               "operator: federation WebSocket new session",
 	"internal/server/api.go handleStartSession s.manager":     "REST start: admits itself (PreAdmitted), class from the daemon marker",
-	"internal/session/manager.go processScheduledItems m":     "operator, or supervisor for a schedule whose launch role is supervisor",
+	"internal/session/schedule_rearm.go fireDueSession m":     "operator, or supervisor for a schedule whose launch role is supervisor (the one schedule path: FireDueSessions, called by the manager loop and the daemon scheduler)",
 	"internal/supervisorloop/restart.go Check r.Sessions":     "interface call: the daemon wires no implementation yet; any implementation must start through Manager.Start",
 }
 

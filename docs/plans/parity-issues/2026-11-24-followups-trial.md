@@ -44,3 +44,8 @@ Date: 2026-11-24. One draft for the four daemon changes that touch the mobile cl
   `pause_peer_clear` in `internal/server/web/locales/*.json`.
 - No new endpoint, setting or tool. A paused daemon stops placing work on federated hosts and on local and cloud
   queues; it does not pause the federated host itself.
+
+## 5. Session start leases
+
+No client change. A test now lists every session start door; one open gap is recorded in the follow-ups report
+(restarting an ended session in place takes no lease).
