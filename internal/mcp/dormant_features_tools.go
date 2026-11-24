@@ -41,3 +41,13 @@ func (s *Server) handleAutonomousDormantFeatures(_ context.Context, req mcpsdk.C
 	}
 	return textOK(string(out)), nil
 }
+
+// errNoArguments is the refusal for a tool that takes no arguments.
+func errNoArguments(args map[string]any) error {
+	names := make([]string, 0, len(args))
+	for k := range args {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return fmt.Errorf("unknown argument(s): %s; this tool takes no arguments", strings.Join(names, ", "))
+}

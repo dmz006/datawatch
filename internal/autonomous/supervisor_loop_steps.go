@@ -300,6 +300,10 @@ func (c *Coordinator) SetSupervisorLoopSteps(s *SupervisorLoopSteps) {
 	c.mu.Unlock()
 }
 
+// closedOutcomeLedgerStep names the refusal ledger rows of an archive the
+// closed outcome rule refused.
+const closedOutcomeLedgerStep = "archive outcome"
+
 // closeFinishedRecords closes every Automaton that reached a terminal state.
 // Existing function: Manager.Archive (manager.go), which moves a completed,
 // rejected or cancelled record to archived through the store and emits the
@@ -331,6 +335,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		p         *PRD
 		status    PRDStatus
 		cancelled time.Time
+		updated   time.Time
 	}
 	var fins []fin
 	st := s.c.m.Store()
@@ -339,7 +344,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		for _, p := range prds {
 			switch p.Status {
 			case PRDCompleted, PRDRejected, PRDCancelled:
-				f := fin{p: p, status: p.Status}
+				f := fin{p: p, status: p.Status, updated: p.UpdatedAt}
 				if p.Status == PRDCancelled {
 					f.cancelled = s.cancelTime(p, now)
 				}
@@ -365,13 +370,29 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		// reached their state, unless autonomous.archive_keep_unmerged is off.
 		// Cancelled keeps its guard whatever that setting says.
 		if s.archiveBranchCheck != nil && (f.status == PRDCancelled || keepUnmerged) {
+			// A step refused for this record, with the record unchanged since,
+			// is not tried again every pass: the refusal ledger holds it for
+			// refusalRetryHold, and the reason it recorded still shows.
+			ledger := s.c.m.RefusalLedger()
+			if ledger.Blocked(p.ID, "archive", f.updated, now, RefusalRetryHold) {
+				kept++
+				keptBy[f.status]++
+				reasons[p.ID] = ledger.ReasonFor(p.ID, "archive")
+				continue
+			}
 			if keep, ahead := s.archiveBranchCheck(p); keep {
 				kept++
 				keptBy[f.status]++
-				reasons[p.ID] = fmt.Sprintf("branch %s has unmerged work (%d ahead)", p.Git.Branch, ahead)
-				log.Printf("[autonomous] supervisor-loop: kept %s (%s): branch %s, %d commits ahead of base", p.ID, f.status, p.Git.Branch, ahead)
+				reason := fmt.Sprintf("branch %s has unmerged work (%d ahead)", p.Git.Branch, ahead)
+				reasons[p.ID] = reason
+				// Reported once: the first refusal is logged, a repeat after the
+				// hold only advances the ledger entry.
+				if ledger == nil || ledger.RecordFirst(p.ID, "archive", reason, now) {
+					log.Printf("[autonomous] supervisor-loop: kept %s (%s): branch %s, %d commits ahead of base", p.ID, f.status, p.Git.Branch, ahead)
+				}
 				continue
 			}
+			ledger.Clear(p.ID, "archive")
 		}
 		if _, err := s.c.m.Archive(p.ID, supervisorLoopActor); err != nil {
 			if errors.Is(err, ErrClosedOutcomeRefused) {
@@ -379,12 +400,18 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 				// it is and the refusal is on its decision log, once.
 				needOutcome++
 				reasons[p.ID] = err.Error()
-				log.Printf("[autonomous] supervisor-loop: kept %s (%s): %v", p.ID, f.status, err)
+				// Reported once in the ledger and the log. The step is not
+				// held: a recorded outcome or a changed setting closes the
+				// record on the next pass.
+				if l := s.c.m.RefusalLedger(); l == nil || l.RecordFirst(p.ID, closedOutcomeLedgerStep, err.Error(), now) {
+					log.Printf("[autonomous] supervisor-loop: kept %s (%s): %v", p.ID, f.status, err)
+				}
 				continue
 			}
 			errs = append(errs, fmt.Errorf("archive %s: %w", p.ID, err))
 			continue
 		}
+		s.c.m.clearRefusal(p.ID, closedOutcomeLedgerStep)
 		closed++
 	}
 	// Forget first-seen times of records no longer cancelled, so a later

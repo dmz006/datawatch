@@ -1126,16 +1126,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				writeJSONOK(w, withKillDetail(map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions, "memory_strategy": memStrat}))
 				return
 			}
-			// Optional outcome in the same step: ?outcome=&delivered_via=&note=.
-			var cancelErr error
-			if oc, ok := s.autonomousMgr.(outcomeCanceller); ok {
-				q := r.URL.Query()
-				cancelErr = oc.CancelWithOutcome(id, autonomous.OutcomeInput{Outcome: q.Get("outcome"), DeliveredVia: q.Get("delivered_via"), Note: q.Get("note")})
-			} else {
-				cancelErr = s.autonomousMgr.Cancel(id)
-			}
-			if cancelErr != nil {
-				http.Error(w, cancelErr.Error(), http.StatusBadRequest)
+			// Optional outcome and landing decision in the same step:
+			// ?outcome=&delivered_via=&note=&decision=&reason=.
+			q := r.URL.Query()
+			in := autonomous.OutcomeInput{Outcome: q.Get("outcome"), DeliveredVia: q.Get("delivered_via"), Note: q.Get("note")}
+			if err := s.cancelAutomatonWithOutcome(id, in, q.Get("decision"), q.Get("reason")); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			killSessions()
@@ -1242,24 +1238,19 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapAutonomousRun) {
 			return
 		}
-		// An optional body {outcome, delivered_via, note} records the outcome
-		// in the same step; with none, the daemon derives it from the record.
+		// An optional body {outcome, delivered_via, note, decision, reason}
+		// records the outcome and the landing decision in the same step; with
+		// no outcome, the daemon derives it from the record.
 		ob, derr := decodeOptionalOutcome(r)
 		if derr != nil {
 			http.Error(w, "bad request: "+derr.Error(), http.StatusBadRequest)
 			return
 		}
-		var cerr error
-		if oc, ok := s.autonomousMgr.(outcomeCanceller); ok {
-			cerr = oc.CancelWithOutcome(id, ob.input())
-		} else {
-			cerr = s.autonomousMgr.Cancel(id)
-		}
-		if cerr != nil {
-			http.Error(w, cerr.Error(), http.StatusBadRequest)
+		if err := s.cancelAutomatonWithOutcome(id, ob.input(), ob.Decision, ob.Reason); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "cancel", "automaton", id, map[string]any{"outcome": ob.Outcome, "delivered_via": ob.DeliveredVia}) // GH#201 Phase 4
+		s.audit(r.Context(), "cancel", "automaton", id, map[string]any{"outcome": ob.Outcome, "delivered_via": ob.DeliveredVia, "decision": ob.Decision}) // GH#201 Phase 4
 		writeJSONOK(w, map[string]any{"status": "cancelled", "id": id})
 	// BL191 Q1 (v5.2.0) — review/approve gate.
 	case "approve":
@@ -1482,25 +1473,20 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		// An optional body {outcome, delivered_via, note} records the outcome
-		// in the same step; with none, the daemon derives it or refuses.
+		// An optional body {outcome, delivered_via, note, decision, reason}
+		// records the outcome and the landing decision in the same step; with
+		// no outcome, the daemon derives it or refuses.
 		ob, derr := decodeOptionalOutcome(r)
 		if derr != nil {
 			http.Error(w, "bad request: "+derr.Error(), http.StatusBadRequest)
 			return
 		}
-		var updated any
-		var err error
-		if oa, ok := s.autonomousMgr.(outcomeArchiver); ok {
-			updated, err = oa.ArchiveWithOutcome(id, ob.input())
-		} else {
-			updated, err = s.autonomousMgr.Archive(id)
-		}
+		updated, err := s.archiveAutomatonWithOutcome(id, ob.input(), ob.Decision, ob.Reason)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "archive", "automaton", id, map[string]any{"outcome": ob.Outcome, "delivered_via": ob.DeliveredVia}) // GH#201 Phase 4
+		s.audit(r.Context(), "archive", "automaton", id, map[string]any{"outcome": ob.Outcome, "delivered_via": ob.DeliveredVia, "decision": ob.Decision}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "outcome":
 		s.handleClosedOutcomeSet(w, r, id)

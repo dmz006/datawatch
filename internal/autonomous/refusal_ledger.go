@@ -71,6 +71,12 @@ func (l *RefusalLedger) load() {
 // entry: its last-seen time and repeat count advance and it keeps the
 // latest reason; otherwise a new entry is appended, newest first.
 func (l *RefusalLedger) Record(automaton, step, reason string, at time.Time) {
+	l.RecordFirst(automaton, step, reason, at)
+}
+
+// RecordFirst is Record that also says whether this was the first time the
+// refusal was seen, so a caller reports it once and stays quiet on repeats.
+func (l *RefusalLedger) RecordFirst(automaton, step, reason string, at time.Time) bool {
 	if at.IsZero() {
 		at = time.Now()
 	}
@@ -88,7 +94,7 @@ func (l *RefusalLedger) Record(automaton, step, reason string, at time.Time) {
 			e.Repeats++
 			l.dirty = true
 			l.save()
-			return
+			return false
 		}
 	}
 	l.entries = append([]RefusalEntry{{
@@ -100,6 +106,74 @@ func (l *RefusalLedger) Record(automaton, step, reason string, at time.Time) {
 	}
 	l.dirty = true
 	l.save()
+	return true
+}
+
+// RefusalMergeRetryHold is the shorter hold of the merge step: a branch
+// comparison that could not be made is tried again after five minutes, since
+// git usually answers again soon, instead of every idle tick.
+const RefusalMergeRetryHold = 5 * time.Minute
+
+// ReasonFor returns the latest reason recorded for a step of an Automaton, or
+// "" when none is.
+func (l *RefusalLedger) ReasonFor(automaton, step string) string {
+	if l == nil {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, e := range l.entries {
+		if e.Automaton == automaton && e.Step == step {
+			return e.Reason
+		}
+	}
+	return ""
+}
+
+// RefusalRetryHold is how long a refused step is not tried again while the
+// Automaton's record stays unchanged.
+const RefusalRetryHold = 6 * time.Hour
+
+// Blocked says the step was refused for this Automaton recently enough, and
+// the record has not changed since, that trying it again would only be
+// refused again: the entry's last-seen time is within hold of now and the
+// record's last update (updated) is not after it. A change to the record, or
+// the hold running out, lets the step try again.
+func (l *RefusalLedger) Blocked(automaton, step string, updated, now time.Time, hold time.Duration) bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, e := range l.entries {
+		if e.Automaton != automaton || e.Step != step {
+			continue
+		}
+		last, err := time.Parse(time.RFC3339, e.LastSeen)
+		if err != nil {
+			return false
+		}
+		return now.Before(last.Add(hold)) && !updated.After(last)
+	}
+	return false
+}
+
+// Clear forgets the refusal of a step for an Automaton, used when the step
+// succeeds, so a later refusal is reported as new.
+func (l *RefusalLedger) Clear(automaton, step string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for i := range l.entries {
+		if l.entries[i].Automaton == automaton && l.entries[i].Step == step {
+			l.entries = append(l.entries[:i:i], l.entries[i+1:]...)
+			l.dirty = true
+			l.save()
+			return
+		}
+	}
 }
 
 // List returns the recorded refusals, newest first (all of them).
@@ -148,3 +222,10 @@ func (a *API) RefusalLedger() *RefusalLedger { return a.M.RefusalLedger() }
 
 // SetRefusalLedger installs the ledger the read views list refusals from.
 func (a *API) SetRefusalLedger(l *RefusalLedger) { a.M.SetRefusalLedger(l) }
+
+// clearRefusal forgets a refusal after the step went through.
+func (m *Manager) clearRefusal(automaton, step string) {
+	if l := m.RefusalLedger(); l != nil {
+		l.Clear(automaton, step)
+	}
+}

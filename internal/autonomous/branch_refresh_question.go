@@ -102,6 +102,13 @@ func (m *Manager) applyBranchRefreshAnswer(prdID, optionID, questionID, answerID
 	default:
 		return fmt.Errorf("unknown branch refresh option %q", optionID)
 	}
+	if optionID == BranchRefreshOptionLeave {
+		// Leaving the branch alone stops the refresh but must not leave the
+		// work unowned: it also gets a dated decision with a re-ask date.
+		if err := m.recordLeaveAlone(prdID, "operator", "branch refresh: operator chose to leave the branch alone", questionID, answerID); err != nil {
+			return err
+		}
+	}
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return fmt.Errorf("prd %s not found", prdID)

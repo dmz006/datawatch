@@ -45,6 +45,10 @@ type Landing struct {
 	// was recorded. The unlanded list stops honouring the decision once the
 	// branch moves past it. Empty when the tip could not be read.
 	Tip string `json:"tip,omitempty"`
+	// ReaskAt is the date the daemon asks again about a branch that was left
+	// alone (a keep decision or the answer "leave it alone"). Nil means no
+	// re-ask date: the decision stands until someone changes it.
+	ReaskAt *time.Time `json:"reask_at,omitempty"`
 }
 
 // markLandingPendingLocked sets a pending record when the Automaton has a
@@ -119,8 +123,15 @@ func (m *Manager) decideLanding(id, actor, reason string, state LandingState, ki
 			refuse = fmt.Errorf("automaton %q branch %s already landed (commit %s)", id, branch, p.Landing.Commit)
 			return
 		}
-		now := time.Now()
-		p.Landing = &Landing{State: state, Actor: actor, At: now, Reason: reason, Tip: tip}
+		now := m.holdNow()
+		l := &Landing{State: state, Actor: actor, At: now, Reason: reason, Tip: tip}
+		if state == LandingKept {
+			// A kept branch is asked about again on a date, so leaving it
+			// alone never means nobody owns it.
+			r := now.AddDate(0, 0, FinishedWorkReaskDays)
+			l.ReaskAt = &r
+		}
+		p.Landing = l
 		p.UpdatedAt = now
 		p.Decisions = append(p.Decisions, Decision{At: now, Kind: kind, Actor: actor,
 			Note: fmt.Sprintf("landing: branch %s recorded %s: %s", branch, state, reason)})

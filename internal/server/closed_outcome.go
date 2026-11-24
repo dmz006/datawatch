@@ -27,6 +27,11 @@ type closedOutcomeBody struct {
 	DeliveredVia string `json:"delivered_via"`
 	Note         string `json:"note"`
 	Actor        string `json:"actor"`
+	// Decision (keep or drop) and Reason are the landing decision an
+	// archive or cancel may carry (finished_work_api.go); the outcome route
+	// ignores them.
+	Decision string `json:"decision"`
+	Reason   string `json:"reason"`
 }
 
 func (b closedOutcomeBody) input() autonomous.OutcomeInput {

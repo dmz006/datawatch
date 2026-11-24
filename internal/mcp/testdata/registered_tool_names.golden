@@ -89,6 +89,8 @@ autonomous_dormant_features
 autonomous_event_kinds
 autonomous_event_log
 autonomous_events_pending
+autonomous_finished_work
+autonomous_finished_work_run
 autonomous_gate_repair_run
 autonomous_gate_repair_status
 autonomous_held

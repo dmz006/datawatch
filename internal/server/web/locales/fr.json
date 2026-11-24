@@ -6470,5 +6470,22 @@
   "outcome_check_kind_shipped_no_deploy": "Livré, jamais déployé ici",
   "outcome_check_kind_deployed_older_than_shipped": "Version déployée plus ancienne que la livrée",
   "outcome_check_kind_daemon_older_than_shipped": "Daemon plus ancien que la dernière version livrée",
-  "outcome_check_kind_intent_unproven": "Livré, mais les preuves ne sont pas toutes sur la branche de base"
+  "outcome_check_kind_intent_unproven": "Livré, mais les preuves ne sont pas toutes sur la branche de base",
+  "settings_finished_work": "Garde du travail terminé (on refuse d’archiver ou d’annuler un automate dont la branche a des commits absents de la branche par défaut sans décision keep ou drop, interroge sur le travail terminé depuis plus d’un jour et lance l’audit hebdomadaire ; shadow enregistre seulement ; off désactive ; par défaut on)",
+  "finished_work_title": "Travail terminé en attente de fusion",
+  "finished_work_purpose": "Automates terminés dont la branche a encore des commits absents de la branche par défaut. Chacun a un responsable et une question ouverte.",
+  "finished_work_none": "Rien n’attend d’être fusionné.",
+  "finished_work_row": "{0} — {1} : {2} commit(s) sur {3}, responsable {4}, en attente depuis {5}",
+  "finished_work_question": "question {0}",
+  "finished_work_run_sweep": "Lancer le balayage maintenant",
+  "finished_work_run_audit": "Lancer l’audit maintenant",
+  "finished_work_run_failed": "L’exécution du travail terminé a échoué : {0}",
+  "finished_work_run_done": "Travail terminé {0} effectué : {1}",
+  "finished_work_decision_prompt": "{0}\n\nSaisissez keep pour laisser la branche non fusionnée exprès (on vous redemandera dans deux semaines) ou drop pour noter que le travail ne sera pas fusionné.",
+  "finished_work_reason_prompt": "Raison de cette décision (obligatoire)",
+  "finished_work_cause_finished_not_merged": "terminé, non fusionné",
+  "finished_work_cause_code_done_rest_pending": "code terminé, documentation ou portes ouvertes",
+  "finished_work_cause_reask_due": "laissé de côté, redemandé",
+  "finished_work_cause_branch_gone_unlanded": "branche disparue, atterrissage non noté",
+  "finished_work_cause_stuck_no_activity": "bloqué, sans activité depuis une semaine"
 }

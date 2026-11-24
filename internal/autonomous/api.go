@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -1242,6 +1243,9 @@ func (a *API) cancel(id string, in OutcomeInput) error {
 	if !ok {
 		return fmt.Errorf("prd %q not found", id)
 	}
+	if reason := a.M.finishedWorkRefusal(prd, "cancel"); reason != "" {
+		return errors.New(reason)
+	}
 	a.cancelRun(id)          // v5.26.16 — stop the executor goroutine first
 	a.M.killPRDSessions(prd) // kill any task sessions still running
 	outcomeMode := a.M.Config().EffectiveClosedOutcomeArchive()
@@ -1295,7 +1299,7 @@ func (a *API) Approve(id, actor, note string) (any, error) {
 	return out, err
 }
 func (a *API) Archive(id string) (any, error) {
-	out, err := a.M.Archive(id, "operator")
+	out, err := a.M.ArchiveGuarded(id, "operator")
 	if err == nil {
 		a.M.EmitPRDUpdate(id)
 	}
@@ -1662,6 +1666,11 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	// The answer to a branch refresh conflict question sets the Automaton's
 	// refresh state (branch_refresh_question.go).
 	if a.M.onBranchRefreshAnswer(c) {
+		return
+	}
+	// The answer to a finished-work question lands, keeps or drops the work
+	// (finished_work.go).
+	if a.M.onFinishedWorkAnswer(c) {
 		return
 	}
 	// The answer to a planning failure question rewords the spec and plans

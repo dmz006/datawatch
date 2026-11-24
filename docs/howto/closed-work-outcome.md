@@ -71,6 +71,10 @@ refuses:
   explicit operator go-ahead") and which has no recorded outcome. Recording any
   outcome resolves it: that is your decision. A shipped record resolves it too.
 
+A separate guard also refuses to archive or cancel an Automaton whose branch
+holds commits that are not on the default branch until a keep or drop decision
+is recorded for its landing; see [finished-work.md](finished-work.md).
+
 It never archives running, planning, paused, held or queued work, whoever asks.
 The supervisor loop's close step counts the records it kept for want of an
 outcome in its detail line (`kept N with no outcome or an unmet hold`) and does

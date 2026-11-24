@@ -6470,5 +6470,22 @@
   "outcome_check_kind_shipped_no_deploy": "Shipped, never deployed here",
   "outcome_check_kind_deployed_older_than_shipped": "Deployed version older than shipped",
   "outcome_check_kind_daemon_older_than_shipped": "Daemon older than the newest shipped release",
-  "outcome_check_kind_intent_unproven": "Delivered, but the evidence is not all on the base branch"
+  "outcome_check_kind_intent_unproven": "Delivered, but the evidence is not all on the base branch",
+  "settings_finished_work": "Finished-work guard (on refuses to archive or cancel an Automaton whose branch has commits not on the default branch without a keep or drop decision, asks about finished work older than a day and runs the weekly audit; shadow only records; off disables; default on)",
+  "finished_work_title": "Finished work waiting to land",
+  "finished_work_purpose": "Automata that finished while their branch still has commits that are not on the default branch. Each has an owner and an open question.",
+  "finished_work_none": "Nothing is waiting to land.",
+  "finished_work_row": "{0} — {1}: {2} commit(s) on {3}, owner {4}, waiting {5}",
+  "finished_work_question": "question {0}",
+  "finished_work_run_sweep": "Run sweep now",
+  "finished_work_run_audit": "Run audit now",
+  "finished_work_run_failed": "Finished-work run failed: {0}",
+  "finished_work_run_done": "Finished-work {0} done: {1}",
+  "finished_work_decision_prompt": "{0}\n\nType keep to leave the branch unmerged on purpose (you are asked again in two weeks) or drop to record that the work will not be merged.",
+  "finished_work_reason_prompt": "Reason for this decision (required)",
+  "finished_work_cause_finished_not_merged": "finished, not merged",
+  "finished_work_cause_code_done_rest_pending": "code done, docs or gates open",
+  "finished_work_cause_reask_due": "left alone, asked again",
+  "finished_work_cause_branch_gone_unlanded": "branch gone, landing not recorded",
+  "finished_work_cause_stuck_no_activity": "stuck, no activity for a week"
 }

@@ -3,9 +3,11 @@ package autonomous
 import "context"
 
 // ArchiveWithOutcome archives a finished Automaton, recording the outcome in
-// the same step (see Manager.ArchiveWithOutcome), and emits the update.
+// the same step (see Manager.ArchiveWithOutcome), and emits the update. It is
+// an operator surface, so the finished-work guard runs first
+// (Manager.ArchiveGuardedWithOutcome).
 func (a *API) ArchiveWithOutcome(id string, in OutcomeInput) (any, error) {
-	out, err := a.M.ArchiveWithOutcome(id, "operator", in)
+	out, err := a.M.ArchiveGuardedWithOutcome(id, "operator", in)
 	if err == nil {
 		a.M.EmitPRDUpdate(id)
 	}

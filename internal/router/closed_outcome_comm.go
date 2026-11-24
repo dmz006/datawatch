@@ -17,7 +17,7 @@ const (
 	outcomeUsage       = "usage: autonomous outcome <id> outcome=delivered|superseded|dropped|held [via=<id>] [archive=true] [note=<text, last>]"
 	outcomeCheckUsage  = "usage: autonomous outcome-check [run=true]"
 	deployRecordUsage  = "usage: autonomous deploy-record release=<release> [version=<v>] [host=<h>] [health=passed|failed|unchecked] [at=<RFC3339>] [detail=<text, last>]"
-	cancelOutcomeUsage = "usage: autonomous cancel <prd-id> [outcome=delivered|superseded|dropped|held] [via=<id>] [note=<text, last>]"
+	cancelOutcomeUsage = "usage: autonomous cancel <prd-id> [outcome=delivered|superseded|dropped|held] [via=<id>] [note=<text, last> | keep|drop <reason, last>]"
 )
 
 // ClosedOutcomeCommVerbs lists the comm verbs, for the parity test.
@@ -140,4 +140,39 @@ func cancelOutcomePath(id string, tokens []string) (string, bool) {
 		path += "?" + q.Encode()
 	}
 	return path, true
+}
+
+// cancelPath builds the DELETE path of a chat cancel: the optional outcome
+// tokens, then an optional landing decision, "keep <reason>" or
+// "drop <reason>", which takes the rest of the line. A decision word inside a
+// note is part of the note.
+func cancelPath(id string, tokens []string) (string, bool) {
+	head := tokens
+	var decision, reason string
+	for i, tok := range tokens {
+		low := strings.ToLower(tok)
+		if strings.HasPrefix(low, "note=") {
+			break
+		}
+		if low == "keep" || low == "drop" {
+			decision, reason = low, strings.TrimSpace(strings.Join(tokens[i+1:], " "))
+			if reason == "" {
+				return "", false
+			}
+			head = tokens[:i]
+			break
+		}
+	}
+	path, ok := cancelOutcomePath(id, head)
+	if !ok || decision == "" {
+		return path, ok
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	q := url.Values{}
+	q.Set("decision", decision)
+	q.Set("reason", reason)
+	return path + sep + q.Encode(), true
 }

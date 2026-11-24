@@ -699,6 +699,9 @@ type Config struct {
 	// recorded and read) or on (each finding also raises one alert).
 	ClosedOutcomeArchive string `json:"closed_outcome_archive,omitempty"`
 	ClosedOutcomeCheck   string `json:"closed_outcome_check,omitempty"`
+	// FinishedWork mirrors autonomous.finished_work: on (default, empty reads
+	// as on), shadow (record only) or off. See finished_work.go.
+	FinishedWork string `json:"finished_work,omitempty"`
 
 	// Parallel carries autonomous.parallel.*; read it through
 	// EffectiveReadOnlyTasks, never directly.

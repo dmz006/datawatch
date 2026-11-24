@@ -113,6 +113,10 @@ type RepairerHooks struct {
 	Now func() time.Time
 	// StorePath is the file the record persists to; empty keeps it in memory.
 	StorePath string
+	// Ledger, when set, holds repairs that failed or were skipped as unsafe:
+	// such a subject is reported once and not tried again until
+	// RefusalRetryHold has passed. Nil keeps the old behaviour.
+	Ledger *RefusalLedger
 }
 
 // Repairer runs the groups; the unarchive group is one-time.
@@ -225,6 +229,9 @@ func (r *Repairer) runGroup(ctx context.Context, rep Repair, idx int, mode strin
 		if now.Sub(first) < grace {
 			continue // not stuck long enough yet
 		}
+		if r.hooks.Ledger.Blocked(f.Subject, "repair:"+group, time.Time{}, now, RefusalRetryHold) {
+			continue // refused before and not changed: reported once already
+		}
 		added = append(added, r.handle(ctx, rep, mode, f, key))
 	}
 	r.mu.Lock()
@@ -257,6 +264,15 @@ func (r *Repairer) handle(ctx context.Context, rep Repair, mode string, f Repair
 		} else {
 			rec.Kind = RepairDid
 			rec.Done = done
+		}
+	}
+	if led := r.hooks.Ledger; led != nil {
+		step := "repair:" + group
+		switch rec.Kind {
+		case RepairFailed, RepairSkippedUnsafe:
+			led.RecordFirst(f.Subject, step, rec.Done, rec.At)
+		case RepairDid:
+			led.Clear(f.Subject, step)
 		}
 	}
 	r.append(rec)

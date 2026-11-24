@@ -411,10 +411,18 @@ func mergePendingTitle(name string, state PRDStatus, branch string) string {
 // merge_pending_mode is shadow or on. It returns the alert to raise, if any;
 // the caller sends it after the pass. An unknown state changes nothing.
 func (c *Coordinator) mergePendingCheck(prd *PRD, mode, repo string, now time.Time, threshold time.Duration) (title, body string, alert bool) {
-	cmp, ok := c.mergeCompare(repo, prd.Git.Branch)
-	if !ok {
+	// A comparison that could not be made is refused once in the ledger and
+	// not retried every pass while the record is unchanged.
+	ledger := c.m.RefusalLedger()
+	if ledger.Blocked(prd.ID, "merge", prd.UpdatedAt, now, RefusalMergeRetryHold) {
 		return "", "", false
 	}
+	cmp, ok := c.mergeCompare(repo, prd.Git.Branch)
+	if !ok {
+		ledger.RecordFirst(prd.ID, "merge", cmp.Error, now)
+		return "", "", false
+	}
+	ledger.Clear(prd.ID, "merge")
 	name := prd.Title
 	if name == "" {
 		name = prd.ID
