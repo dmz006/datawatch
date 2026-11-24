@@ -61,10 +61,19 @@ type Overage struct {
 	Over int `json:"over"`
 }
 
-// overageAllowed reports whether an operator start may exceed pool. Node
-// engine pools are a hardware limit (engines per GPU) and keep waiting.
-func overageAllowed(pool string) bool {
-	return !strings.HasPrefix(pool, "node:") && !strings.HasPrefix(pool, "node-verify:")
+// overageAllowedLocked reports whether an operator start may exceed pool. A
+// node engine pool (node:<name>, node-verify:<name>) is soft like every other
+// pool, because how many models an engine runs at once is up to the user's
+// hardware; only a node whose operator set hard_limit (SetHardLimit) keeps
+// operator starts waiting for a free engine.
+func (l *Ledger) overageAllowedLocked(pool string) bool {
+	if name, ok := strings.CutPrefix(pool, "node:"); ok {
+		return !l.hard[name]
+	}
+	if name, ok := strings.CutPrefix(pool, "node-verify:"); ok {
+		return !l.hard[name]
+	}
+	return true
 }
 
 // rank orders roles for dispatch; lower is granted first. The zero value and
@@ -515,6 +524,7 @@ type Ledger struct {
 	mu        sync.Mutex
 	limits    map[string]int
 	reserves  map[string]int    // pool → supervisor buffer above the limit
+	hard      map[string]bool   // node name → hard_limit: its engine pools refuse operator overage
 	leases    map[string]*Lease // holder → lease
 	waiters   []*waiter
 	seq       uint64
@@ -556,6 +566,7 @@ func New(opt Options) *Ledger {
 		recordingSince: opt.Clock.Now(),
 		limits:         map[string]int{},
 		reserves:       map[string]int{},
+		hard:           map[string]bool{},
 		leases:         map[string]*Lease{},
 		lastGrant:      map[string]time.Time{},
 		lastModel:      map[string]string{},
@@ -638,6 +649,30 @@ func (l *Ledger) SetReserve(pool string, n int) {
 	l.signalChangedLocked()
 	l.dispatchLocked()
 	l.mu.Unlock()
+}
+
+// SetHardLimit marks a compute node's engine pools (node:<node> and
+// node-verify:<node>) as a physical limit: an operator start waits for a free
+// engine there, as every class did before node pools became soft. Off (the
+// default) lets an operator start go over them with the overage recorded.
+// Workers wait on node pools either way.
+func (l *Ledger) SetHardLimit(node string, hard bool) {
+	l.mu.Lock()
+	if hard {
+		l.hard[node] = true
+	} else {
+		delete(l.hard, node)
+	}
+	l.signalChangedLocked()
+	l.dispatchLocked()
+	l.mu.Unlock()
+}
+
+// HardLimit reports whether node's engine pools are a hard limit.
+func (l *Ledger) HardLimit(node string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.hard[node]
 }
 
 // Reserve returns a pool's supervisor buffer (0 = none).
@@ -845,7 +880,7 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 		if req.Class == ClassSupervisor && lim > 0 {
 			eff = lim + l.reserves[p]
 		}
-		operatorMayExceed := req.Class == ClassOperator && overageAllowed(p)
+		operatorMayExceed := req.Class == ClassOperator && l.overageAllowedLocked(p)
 		if eff > 0 && l.usedLocked(p) >= eff && !operatorMayExceed {
 			if name, ok := strings.CutPrefix(p, "node:"); ok {
 				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
@@ -1262,7 +1297,7 @@ func (l *Ledger) grantLocked(w *waiter, req Request, now time.Time) {
 	var over []Overage
 	if req.Class == ClassOperator {
 		for _, p := range req.Pools {
-			if lim := l.limits[p]; lim > 0 && overageAllowed(p) {
+			if lim := l.limits[p]; lim > 0 && l.overageAllowedLocked(p) {
 				if used := l.usedLocked(p); used >= lim {
 					over = append(over, Overage{Pool: p, Limit: lim, Over: used + 1 - lim})
 				}
