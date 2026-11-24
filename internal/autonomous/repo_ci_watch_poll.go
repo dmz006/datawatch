@@ -254,10 +254,23 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) boo
 		log.Printf("repo ci watch: %s: origin is not resolvable (%v); skipping this repository", repoDir, err)
 		return false
 	}
-	ownerRepo := githubOwnerRepo(originURL)
-	if ownerRepo == "" {
-		log.Printf("repo ci watch: %s: origin %q is not a github origin; skipping this repository", repoDir, originURL)
-		return false
+	// A repository whose origin resolves to a configured git.hosts entry
+	// is listed through the host facade (repo_ci_watch_host.go); every
+	// other repository keeps the gh path and its github-origin check.
+	hostCfg, onHost := p.m.repoCIConfiguredHost(originURL)
+	var ownerRepo string
+	if onHost {
+		ownerRepo = repoCIHostRepoPath(originURL)
+		if ownerRepo == "" {
+			log.Printf("repo ci watch: %s: origin %q has no project path for host %s; skipping this repository", repoDir, originURL, hostCfg.Name)
+			return false
+		}
+	} else {
+		ownerRepo = githubOwnerRepo(originURL)
+		if ownerRepo == "" {
+			log.Printf("repo ci watch: %s: origin %q is not a github origin; skipping this repository", repoDir, originURL)
+			return false
+		}
 	}
 	// 2. Resolve the head (origin/main) and the newest tag_count tags.
 	headSHA, err := d.head(p.ctx, repoDir)
@@ -287,8 +300,16 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) boo
 			}
 		}
 	}
-	// 3. One run list per SHA, then record every run.
+	// 3. One run list per SHA, then record every run. A configured host
+	// records runs only (repo_ci_watch_host.go): its action phase is
+	// GitHub-specific and is not run for host-path runs.
 	for _, ref := range refs {
+		if onHost {
+			if !p.pollRefOnHost(hostCfg, ownerRepo, repoDir, ref) {
+				ok = false
+			}
+			continue
+		}
 		if !p.pollRef(ownerRepo, repoDir, ref) {
 			ok = false
 		}
