@@ -1462,6 +1462,7 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `web_search.url` | string | `""` | Base URL of the SearXNG instance (required when enabled). |
 | `web_search.engine` | string | `bing` | SearXNG engine to use. Only `bing` is reliable; others trigger CAPTCHA/rate-limiting. |
 | `web_search.num_results` | int | `10` | Maximum results returned per query. |
+| `audit.safeguard_alert` | bool | `true` | Raise one alert (and write one `safeguard_action` audit entry) when a pause resume, an attempt-count force reset or a shipped-work force run is made by a caller that is neither the web app (`X-Datawatch-Client: pwa`) nor a session credential. Off stops the alert only; the audit entry is always written. Live, no restart. |
 | `audit.access_log_enabled` | bool | `true` | Log every HTTP request/response, auth failure, and WS connect/disconnect to `access.log` (method, path, status, remote IP, user agent, resolved principal — never the token). |
 | `audit.retention_days` | int | `30` | Prune entries older than this from both `audit.log` and `access.log`. Negative = never prune. |
 | `audit.cef_mirror_enabled` | bool | `false` | Additionally write a CEF-formatted line (`<file>.cef`) alongside every entry, for SIEM forwarding. |
@@ -2403,7 +2404,8 @@ The daemon owns a total attempt count per task so that no reset, cancel, review 
   - REST `autonomous.attempt_cap` on `GET /api/config` and `PUT /api/config` (`internal/server/attempt_cap.go`); task fields on every task view (`TaskEntry`, `ReviewNeededEntry`);
   - MCP `attempt_cap_*` arguments of `autonomous_config_set` (`internal/mcp/attempt_cap_tools.go`);
   - CLI `datawatch autonomous prd-reset-task` (`cmd/datawatch/cli_autonomous_reset_task.go`);
-  - comm `autonomous reset-task <id> <task> [force]`;
+  - comm `autonomous reset-task <id> <task> [force] [reason <text>]`;
+  - the reason travels in the optional `reason` body field (CLI `--reason`, MCP `reason`) to the `reset_task` audit entry and, for an operator force reset from a caller that is not the web app, to the safeguard alert (`Server.noteSafeguardAction`);
   - PWA settings group, project policy field, task badges and the held task's Force reset button (`internal/server/web/app.js`).
 
 ## Model request progress (autonomous.request_watch)
@@ -3664,7 +3666,7 @@ The `projects_defaults` block (`internal/config/projects_defaults.go`) holds thr
 
 ## Operator pause
 
-Package `internal/pause` holds the state (global plus per-project entries, saved to `<data_dir>/pause.json`), the audit hook and the refusal rule for a resume by a non-operator actor. The autonomous manager holds only the read side (`pause.Gate`, `Manager.SetPauseGate`): `Manager.Run` and `API.runLocked` refuse the start of an Automaton that is not already running, lane fill refuses a paused candidate (`operator_pause`), and `admitPreferring` waits before a worker admission (`waitOperatorPause`, poll 5 s). REST `GET|POST /api/pause` and `POST /api/pause/resume` (`internal/server/pause.go`) derive the actor from the credential: a session-scoped credential is always a session and cannot resume. Capabilities `pause:read` and `pause:write`. Audit actions `pause_set`, `pause_resumed`, `pause_resume_refused`.
+Package `internal/pause` holds the state (global plus per-project entries, saved to `<data_dir>/pause.json`), the audit hook and the refusal rule for a resume by a non-operator actor. The autonomous manager holds only the read side (`pause.Gate`, `Manager.SetPauseGate`): `Manager.Run` and `API.runLocked` refuse the start of an Automaton that is not already running, lane fill refuses a paused candidate (`operator_pause`), and `admitPreferring` waits before a worker admission (`waitOperatorPause`, poll 5 s). REST `GET|POST /api/pause` and `POST /api/pause/resume` (`internal/server/pause.go`) derive the actor from the credential: a session-scoped credential is always a session and cannot resume. Capabilities `pause:read` and `pause:write`. Audit actions `pause_set`, `pause_resumed`, `pause_resume_refused`. A resume that takes effect also goes through `Server.noteSafeguardAction` (`internal/server/safeguard_alert.go`), the shared entry point of the interim safeguard alert: it writes a `safeguard_action` audit entry and, for a caller that is neither the web app (`X-Datawatch-Client: pwa`, sent by `apiFetch`) nor a session credential, raises one warn alert unless `audit.safeguard_alert` is off. `reset_task` with an operator `force` and the shipped-work force run call the same helper.
 
 | Config key | Type | Default | Meaning |
 |---|---|---|---|

@@ -813,6 +813,12 @@ audit:
   # entry in both logs, for forwarding to a SIEM (Splunk/QRadar/
   # ArcSight/Sentinel). Opt-in -- most operators don't run a SIEM.
   cef_mirror_enabled: false
+  # Raise one alert each time a safeguard is lowered by a caller that is
+  # neither the web app nor a session credential: an operator pause resume,
+  # an attempt-count force reset, a shipped-work force run. The alert names
+  # the caller, the action, the target and the reason. The action is audited
+  # (safeguard_action) whether or not this is on. Default true.
+  safeguard_alert: true
 
 cross_session:
   # Inject the Cross-Session Communication Rule into spawned

@@ -343,6 +343,15 @@ those clears the count, and a task held at the cap is refused for them with 400.
 `POST /api/autonomous/prds/{id}/resolve_task_review` with `retry` on a task held
 at the cap is refused with a message naming the attempt cap; `cancel` works.
 
+`reset_task` also takes an optional `reason` string. A `force: true` call that
+clears the count (made as the operator) and does not carry the web app's
+`X-Datawatch-Client: pwa` header raises one operator alert and writes a
+`safeguard_action` audit entry that names the Automaton and task, the reason
+(or "no reason given"), the caller's remote address, user agent and claimed
+actor label. The `reset_task` audit entry carries `reason` too. The alert is
+governed by `audit.safeguard_alert` (default on); a session credential never
+clears the count and raises nothing.
+
 ### Clean restart on `reset_task`
 
 `POST /api/autonomous/prds/{id}/reset_task` accepts a `clean_restart` boolean

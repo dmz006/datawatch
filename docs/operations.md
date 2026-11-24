@@ -1115,10 +1115,10 @@ A task keeps a total count of the attempts the daemon has started for it, across
 | Method | How |
 |--------|-----|
 | **YAML** | `config.yaml` → `autonomous.attempt_cap:` with `enabled`, `max_total`, `free_attempts` and `backoff_minutes`; a project's `policy:` block takes `attempt_cap` |
-| **CLI** | `datawatch config set autonomous.attempt_cap.max_total 8`; `datawatch autonomous tasks <id>` shows `attempts_total`; `datawatch autonomous prd-reset-task <id> <task> --force` is the operator's force reset |
+| **CLI** | `datawatch config set autonomous.attempt_cap.max_total 8`; `datawatch autonomous tasks <id>` shows `attempts_total`; `datawatch autonomous prd-reset-task <id> <task> --force --reason "why"` is the operator's force reset; one that does not come from the web app raises an alert (`audit.safeguard_alert`) |
 | **Web UI** | Settings → Automata → Attempt cap; the project policy field **Attempt cap**; each task row shows the count, the hold and the wait, and a held task has a **Force reset** button |
 | **REST API** | `PUT /api/config` with the dotted keys; `GET /api/config` shows the block under `autonomous.attempt_cap`; tasks carry `attempts_total`, `attempt_cap_held`, `attempt_not_before`; `POST /api/autonomous/prds/{id}/reset_task` with `force` |
-| **Comm channel** | `configure autonomous.attempt_cap.max_total=8`; `autonomous reset-task <id> <task> force` |
+| **Comm channel** | `configure autonomous.attempt_cap.max_total=8`; `autonomous reset-task <id> <task> force reason <text>` |
 | **MCP** | `autonomous_config_set` with the `attempt_cap_*` arguments, `config_set`, `autonomous_prd_get`, `autonomous_prd_tasks`, `autonomous_prd_reset_task` with `force` |
 
 | Key | Default | Allowed values and effect |
