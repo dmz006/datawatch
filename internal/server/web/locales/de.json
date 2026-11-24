@@ -6352,5 +6352,22 @@
   "burn_guard_pace_action_release": "aufgehoben",
   "burn_guard_pace_action_would_hold": "würde zurückhalten",
   "burn_guard_pace_action_would_release": "würde aufheben",
-  "burn_guard_pace_action_none": "keine Änderung"
+  "burn_guard_pace_action_none": "keine Änderung",
+  "settings_finished_work": "Wächter für fertige Arbeit (on verweigert Archivieren oder Abbrechen eines Automaten, dessen Branch Commits hat, die nicht im Standard-Branch sind, ohne Entscheidung keep oder drop, fragt nach fertiger Arbeit, die älter als einen Tag ist, und führt das wöchentliche Audit aus; shadow protokolliert nur; off schaltet ab; Standard on)",
+  "finished_work_title": "Fertige Arbeit wartet auf das Mergen",
+  "finished_work_purpose": "Automaten, die fertig wurden, während ihr Branch noch Commits hat, die nicht im Standard-Branch sind. Jeder hat einen Besitzer und eine offene Frage.",
+  "finished_work_none": "Nichts wartet auf das Mergen.",
+  "finished_work_row": "{0} — {1}: {2} Commit(s) auf {3}, Besitzer {4}, wartet seit {5}",
+  "finished_work_question": "Frage {0}",
+  "finished_work_run_sweep": "Durchlauf jetzt starten",
+  "finished_work_run_audit": "Audit jetzt starten",
+  "finished_work_run_failed": "Lauf für fertige Arbeit fehlgeschlagen: {0}",
+  "finished_work_run_done": "Fertige Arbeit {0} abgeschlossen: {1}",
+  "finished_work_decision_prompt": "{0}\n\nkeep eingeben, um den Branch absichtlich ungemergt zu lassen (in zwei Wochen wird erneut gefragt), oder drop, um festzuhalten, dass die Arbeit nicht gemergt wird.",
+  "finished_work_reason_prompt": "Begründung für diese Entscheidung (erforderlich)",
+  "finished_work_cause_finished_not_merged": "fertig, nicht gemergt",
+  "finished_work_cause_code_done_rest_pending": "Code fertig, Doku oder Gates offen",
+  "finished_work_cause_reask_due": "liegen gelassen, erneut gefragt",
+  "finished_work_cause_branch_gone_unlanded": "Branch weg, Landung nicht festgehalten",
+  "finished_work_cause_stuck_no_activity": "hängt, seit einer Woche keine Aktivität"
 }

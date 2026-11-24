@@ -483,9 +483,11 @@ The same read (`housekeeping-repairs`) also returns two lists beside the repair
 groups: `refusals`, the refusal ledger (one entry per Automaton and step that was
 refused, with the latest reason, first and last seen and a repeat count, newest
 first, at most 500), and `finished_work`, the finished-work findings (newest
-first, at most 200). Both are empty lists, never null. The stores are in place
-and read on REST, MCP, CLI and chat, but nothing records into them yet, so
-expect empty lists today.
+first, at most 1000). Both are empty lists, never null. The archive, repair and
+merge steps record a refused step in the ledger and are not tried again every
+pass while the record is unchanged; the finished-work sweep records its findings
+(owner, open question, how long the work has waited). How both work, and how to
+answer the questions, is in [finished-work.md](finished-work.md).
 
 To see which shipped settings are off or in shadow mode and whether each was
 ever exercised, use `datawatch autonomous dormant-features [--json]` (REST

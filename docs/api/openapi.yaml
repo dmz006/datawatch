@@ -4793,6 +4793,113 @@ paths:
               schema: {type: string, example: GET}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/finished-work:
+    get:
+      summary: Finished work waiting to land
+      description: |
+        The Automata whose finished work has not reached the default branch:
+        finished while their branch holds commits that are not on it
+        (`finished_not_merged`), every code task done while docs or gate tasks
+        remain (`code_done_rest_pending`), a branch left alone whose re-ask date
+        came (`reask_due`), and, from the weekly audit, a work branch that is gone
+        with no landing recorded (`branch_gone_unlanded`) and an unfinished
+        Automaton nothing touched for a week (`stuck_no_activity`). Each row has
+        the branch, the commit count, `since` (when the daemon first saw it
+        waiting), the `owner` and the open `question_id`. The mode is
+        `autonomous.finished_work` (on, shadow or off). Read-only: no git runs
+        and nothing changes; only GET is served. A federated peer needs the
+        autonomous read capability.
+      operationId: autonomousFinishedWork
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The digest, possibly with no rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mode, generated_at, waiting]
+                properties:
+                  mode: {type: string, enum: [on, shadow, off]}
+                  generated_at: {type: string, format: date-time}
+                  last_sweep: {type: string, format: date-time, description: "When the last sweep pass ran; absent when it never has"}
+                  last_digest: {type: string, format: date-time, description: "When the last daily digest alert was sent"}
+                  last_audit: {type: string, format: date-time, description: "When the last weekly audit ran"}
+                  audit_record_id: {type: string, description: "The decision record of this week's audit"}
+                  waiting:
+                    type: array
+                    description: Never null.
+                    items:
+                      type: object
+                      properties:
+                        automaton: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        cause: {type: string, enum: [finished_not_merged, code_done_rest_pending, reask_due, branch_gone_unlanded, stuck_no_activity]}
+                        action: {type: string}
+                        branch: {type: string}
+                        ahead: {type: integer, description: "Commits on the branch that are not on the default branch"}
+                        owner: {type: string}
+                        since: {type: string, format: date-time}
+                        question_id: {type: string}
+                        reask_at: {type: string, format: date-time}
+        "503": {description: Autonomous is disabled}
+        "405":
+          description: Method not allowed; only GET is served
+          headers:
+            Allow:
+              schema: {type: string, example: GET}
+  /api/autonomous/finished-work/run:
+    post:
+      summary: Run one finished-work sweep pass or the audit now
+      description: |
+        `run: sweep` makes one bounded pass (at most 100 branch comparisons,
+        resuming after the Automaton the last pass reached): finished work older
+        than a day gets an owner and one open question, code-complete work is
+        offered for landing, and a left-alone branch is asked about again on its
+        re-ask date. `run: audit` reads every Automaton, cancelled, archived and
+        branchless ones included, and writes the result as one decision record per
+        week (a second run in the same week returns the same record). Git is read
+        read-only; neither run merges, touches a session or changes a task or an
+        Automaton status. With `autonomous.finished_work` at `shadow` both record
+        findings only; at `off` they do nothing. A datawatch schedule calls this
+        route to make the weekly audit a standing schedule. Requires the
+        autonomous write capability.
+      operationId: autonomousFinishedWorkRun
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [run]
+              properties:
+                run: {type: string, enum: [sweep, audit]}
+      responses:
+        "200":
+          description: The pass or the audit result (shape by `run`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: {type: string}
+                  examined: {type: integer}
+                  git_checks: {type: integer}
+                  capped: {type: boolean}
+                  found: {type: integer}
+                  younger: {type: integer}
+                  asked: {type: integer}
+                  reasked: {type: integer}
+                  digest_sent: {type: boolean}
+                  scanned: {type: integer}
+                  by_cause: {type: object, additionalProperties: {type: integer}}
+                  decision_record_id: {type: string}
+                  findings: {type: array, items: {type: object}}
+        "400": {description: "run is not sweep or audit"}
+        "405": {description: Method not allowed; only POST is served}
+        "503": {description: Autonomous is disabled}
   /api/autonomous/dormant-features:
     get:
       summary: List the dormant Automata settings
@@ -7322,6 +7429,23 @@ paths:
                   tasks: {type: array, items: {type: object}, description: "The parts moved out of each task, by story and task index"}
         "404": {description: Unknown Automaton, or an Automaton that is not archived}
         "500": {description: The archive file is missing or does not match its marker}
+    post:
+      summary: Archive one finished Automaton (the status change)
+      description: "Moves a completed, rejected or cancelled Automaton to archived. Finished work must never sit unmerged: with autonomous.finished_work on (the default) the archive is refused (400) while the Automaton's branch holds commits that are not on the default branch, or cannot be compared, unless the body carries a landing decision. decision keep records that the branch is kept unmerged on purpose (asked again after 14 days); drop records that the work will not be merged; both need a reason. A record whose shipped record names its work, or whose landing is already landed, kept or dropped, archives as before."
+      operationId: autonomousPRDArchiveStatus
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision: {type: string, enum: [keep, drop]}
+                reason: {type: string, description: "Required with decision"}
+      responses:
+        "200": {description: The archived Automaton}
+        "400": {description: "Not terminal, branch not landed (the message says how to record a decision), or a bad decision"}
   /api/autonomous/archive:
     post:
       summary: Archive finished Automata (dry run by default)
@@ -7467,6 +7591,8 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: hard, in: query, required: false, schema: {type: boolean}, description: "true = permanent delete instead of cancel"}
+        - {name: decision, in: query, required: false, schema: {type: string, enum: [keep, drop]}, description: "Finished work must never sit unmerged: with autonomous.finished_work on (default) a cancel is refused (400) while the branch holds commits that are not on the default branch, unless a landing decision is passed. keep records that the branch is kept unmerged on purpose (asked again after 14 days); drop records that the work will not be merged."}
+        - {name: reason, in: query, required: false, schema: {type: string}, description: "Why; required with decision"}
       responses:
         "200":
           description: OK

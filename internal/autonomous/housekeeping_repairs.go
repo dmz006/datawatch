@@ -268,9 +268,10 @@ func (r *Repairer) handle(ctx context.Context, rep Repair, mode string, f Repair
 	}
 	if led := r.hooks.Ledger; led != nil {
 		step := "repair:" + group
-		if rec.Kind == RepairFailed || rec.Kind == RepairSkippedUnsafe {
+		switch rec.Kind {
+		case RepairFailed, RepairSkippedUnsafe:
 			led.RecordFirst(f.Subject, step, rec.Done, rec.At)
-		} else if rec.Kind == RepairDid {
+		case RepairDid:
 			led.Clear(f.Subject, step)
 		}
 	}

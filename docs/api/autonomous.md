@@ -3786,3 +3786,11 @@ Settings (`PUT /api/config`, one validator for every surface):
 - [howto/automata-orchestrator](../howto/automata-orchestrator.md)
 - [howto/guardrail-library](../howto/guardrail-library.md)
 - [howto/automata-defect-queue](../howto/automata-defect-queue.md)
+
+## Finished work
+
+Finished work must never sit unmerged. Setting `autonomous.finished_work` (`on`, `shadow`, `off`; default `on`). Guide: [../howto/finished-work.md](../howto/finished-work.md).
+
+- `GET /api/autonomous/finished-work` — the work waiting to land: `{mode, generated_at, last_sweep, last_digest, last_audit, audit_record_id, waiting[]}`, each row with `cause`, `branch`, `ahead`, `owner`, `since`, `question_id`, `reask_at`. Read-only; needs `autonomous:read`.
+- `POST /api/autonomous/finished-work/run` with `{"run":"sweep"|"audit"}` — one bounded sweep pass (at most 100 branch comparisons) or the audit now. Needs `autonomous:write`.
+- `DELETE /api/autonomous/prds/{id}` (cancel, with `?decision=keep|drop&reason=...`), `POST /api/autonomous/prds/{id}/cancel` and `POST /api/autonomous/prds/{id}/archive` (body `{"decision","reason"}`) — with the setting on, an Automaton whose branch holds commits not on the default branch is refused with 400 unless a decision is passed. `keep` is asked again after 14 days; `drop` records that the work will not be merged.

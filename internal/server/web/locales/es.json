@@ -6352,5 +6352,22 @@
   "burn_guard_pace_action_release": "liberado",
   "burn_guard_pace_action_would_hold": "retendría",
   "burn_guard_pace_action_would_release": "liberaría",
-  "burn_guard_pace_action_none": "sin cambios"
+  "burn_guard_pace_action_none": "sin cambios",
+  "settings_finished_work": "Guardia de trabajo terminado (on se niega a archivar o cancelar un autómata cuya rama tiene commits que no están en la rama predeterminada sin una decisión keep o drop, pregunta por el trabajo terminado de más de un día y ejecuta la auditoría semanal; shadow solo registra; off desactiva; por defecto on)",
+  "finished_work_title": "Trabajo terminado a la espera de fusionarse",
+  "finished_work_purpose": "Autómatas que terminaron mientras su rama aún tiene commits que no están en la rama predeterminada. Cada uno tiene un responsable y una pregunta abierta.",
+  "finished_work_none": "Nada espera a fusionarse.",
+  "finished_work_row": "{0} — {1}: {2} commit(s) en {3}, responsable {4}, espera desde hace {5}",
+  "finished_work_question": "pregunta {0}",
+  "finished_work_run_sweep": "Ejecutar barrido ahora",
+  "finished_work_run_audit": "Ejecutar auditoría ahora",
+  "finished_work_run_failed": "Falló la ejecución de trabajo terminado: {0}",
+  "finished_work_run_done": "Trabajo terminado {0} completado: {1}",
+  "finished_work_decision_prompt": "{0}\n\nEscribe keep para dejar la rama sin fusionar a propósito (se volverá a preguntar en dos semanas) o drop para registrar que el trabajo no se fusionará.",
+  "finished_work_reason_prompt": "Motivo de esta decisión (obligatorio)",
+  "finished_work_cause_finished_not_merged": "terminado, sin fusionar",
+  "finished_work_cause_code_done_rest_pending": "código listo, documentación o puertas abiertas",
+  "finished_work_cause_reask_due": "dejado en paz, preguntado de nuevo",
+  "finished_work_cause_branch_gone_unlanded": "rama desaparecida, aterrizaje sin registrar",
+  "finished_work_cause_stuck_no_activity": "atascado, sin actividad en una semana"
 }

@@ -27390,6 +27390,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.max_engines_per_node', label: 'Max engines per node (1 = one at a time)', labelKey: 'max_engines_per_node', type: 'number', min: 1, placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
     { key: 'autonomous.shipped_refusal', label: 'Shipped-work rule (on refuses and drops work that already shipped or is closed, shadow only logs, off disables; default on)', labelKey: 'settings_shipped_refusal', type: 'select', options: ['on', 'shadow', 'off'], default: 'on' },
+    { key: 'autonomous.finished_work', label: 'Finished-work guard (on refuses to archive or cancel an Automaton whose branch has commits not on the default branch without a keep or drop decision, asks about finished work older than a day and runs the weekly audit; shadow only records; off disables; default on)', labelKey: 'settings_finished_work', type: 'select', options: ['on', 'shadow', 'off'], default: 'on' },
     { key: 'autonomous.capacity_fallthrough', label: 'Pool fall-through (admit on another idle allowed pool when the requested one is full)', labelKey: 'settings_capacity_fallthrough', type: 'toggle' },
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
     { key: 'autonomous.archive_grace_minutes', label: 'Archive grace for cancelled Automata (min, 0=at once)', labelKey: 'settings_archive_grace_minutes', type: 'number', min: 0, step: 1, placeholder: '60' },
@@ -35504,6 +35505,21 @@ function toggleAutomataSelectAll(checked) {
 }
 window.toggleAutomataSelectAll = toggleAutomataSelectAll;
 
+// Finished work must never sit unmerged: when the daemon refuses a cancel or
+// an archive because the branch holds commits that are not on the default
+// branch, ask for a keep or drop decision and a reason, then repeat the call
+// with the decision. Any other error is passed on unchanged.
+function _automataPostWithDecision(url) {
+  return apiFetch(url, { method: 'POST' }).catch(err => {
+    const msg = String((err && err.message) || err);
+    if (!/keep or drop decision/.test(msg)) throw err;
+    const d = String(window.prompt(t('finished_work_decision_prompt', [msg]), 'keep') || '').trim().toLowerCase();
+    if (d !== 'keep' && d !== 'drop') throw err;
+    const reason = String(window.prompt(t('finished_work_reason_prompt'), '') || '').trim();
+    if (!reason) throw err;
+    return apiFetch(url, { method: 'POST', body: JSON.stringify({ decision: d, reason }) });
+  });
+}
 window.batchAutomataAction = function(action) {
   // v6.12.4 — operator: "click acts on those". Filter the selected
   // set by per-action eligibility BEFORE firing requests, leaving
@@ -35530,8 +35546,8 @@ window.batchAutomataAction = function(action) {
     const reqs = ids.map(id => {
       if (action === 'run')     return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/run', { method: 'POST' });
       if (action === 'approve') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/approve', { method: 'POST' });
-      if (action === 'cancel')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
-      if (action === 'archive') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/archive', { method: 'POST' });
+      if (action === 'cancel')  return _automataPostWithDecision('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel');
+      if (action === 'archive') return _automataPostWithDecision('/api/autonomous/prds/' + encodeURIComponent(id) + '/archive');
       // v6.13.6 — operator: "Delete function says it deleted but it didn't".
       // The DELETE endpoint without ?hard=true only flips status → cancelled
       // (legacy v4.0 behavior). For an actual delete we MUST pass hard=true.
@@ -35839,7 +35855,7 @@ window.automataCancel = function(id, status) {
     ? '⚠️ Planning is running on the server.\n\nCancelling will abort the entire automaton — the plan being generated will be discarded. The server-side planning job may continue briefly before stopping.\n\nCancel the automaton?'
     : (t('automata_confirm_cancel') || 'Cancel automaton "%1$s"?').replace('%1$s', id);
   showConfirmModal(msg, () => {
-    apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
+    _automataPostWithDecision('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel')
       .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
       .catch(e => showError('Cancel failed: ' + (e.message || e)));
   });
@@ -43117,7 +43133,44 @@ window.housekeepingRepairsCardHtml = function(data) {
       lines.join('') + empty + `</div>`;
   }).join('');
   return `<div class="prd-capacity-card housekeeping-repairs-card" style="min-width:0;"><div class="cap-title">${escHtml(t('housekeeping_repairs_card_title'))}${_housekeepingHelpLink('housekeeping_repairs_card', 'housekeeping_repairs_help_link')}</div>` +
-    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('housekeeping_repairs_purpose'))} ${escHtml(t('housekeeping_repairs_grace', [Number(d.grace_seconds) || 0]))}</div>${rows}${_housekeepingIntermittentHtml(d.intermittent_defects)}</div>`;
+    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('housekeeping_repairs_purpose'))} ${escHtml(t('housekeeping_repairs_grace', [Number(d.grace_seconds) || 0]))}</div>${rows}${_housekeepingFinishedWorkHtml(d.finished_work)}${_housekeepingIntermittentHtml(d.intermittent_defects)}</div>`;
+};
+// _housekeepingFinishedWorkHtml draws the finished-work rows of the same view
+// ({ finished_work: [{automaton, title, cause, branch, ahead, owner, since,
+// question_id}] }) with the two run buttons: finished work waiting to land,
+// each with its owner and open question.
+const FINISHED_WORK_CAUSES = { finished_not_merged: 'finished_work_cause_finished_not_merged', code_done_rest_pending: 'finished_work_cause_code_done_rest_pending', reask_due: 'finished_work_cause_reask_due', branch_gone_unlanded: 'finished_work_cause_branch_gone_unlanded', stuck_no_activity: 'finished_work_cause_stuck_no_activity' };
+function _finishedWorkWaited(since) {
+  const ts = Date.parse(since || '');
+  if (isNaN(ts)) return '?';
+  const h = Math.max(0, Math.floor((Date.now() - ts) / 3600000));
+  return h >= 48 ? Math.floor(h / 24) + 'd' : h + 'h';
+}
+function _housekeepingFinishedWorkHtml(list) {
+  const rows = (Array.isArray(list) ? list : []).filter(r => r && typeof r === 'object');
+  const body = rows.length ? rows.slice(0, 30).map(r => {
+    const cause = FINISHED_WORK_CAUSES[r.cause] ? t(FINISHED_WORK_CAUSES[r.cause]) : String(r.cause || '');
+    const q = r.question_id ? ' · ' + t('finished_work_question', [String(r.question_id)]) : '';
+    return `<div class="finished-work-row" data-automaton="${escHtml(String(r.automaton || ''))}" data-cause="${escHtml(String(r.cause || ''))}" style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;margin-top:3px;">${escHtml(t('finished_work_row', [String(r.automaton || ''), String(r.title || ''), Number(r.ahead) || 0, String(r.branch || ''), String(r.owner || ''), _finishedWorkWaited(r.since)]))} · ${escHtml(cause)}${escHtml(q)}</div>`;
+  }).join('') : `<div style="font-size:11px;color:var(--text2);">${escHtml(t('finished_work_none'))}</div>`;
+  return `<div class="finished-work" data-count="${rows.length}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t('finished_work_title'))}</div>` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('finished_work_purpose'))}</div>${body}` +
+    `<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">` +
+    `<button type="button" class="btn-secondary finished-work-run-sweep" style="font-size:11px;padding:3px 10px;" onclick="window.runFinishedWork('sweep', this)">${escHtml(t('finished_work_run_sweep'))}</button>` +
+    `<button type="button" class="btn-secondary finished-work-run-audit" style="font-size:11px;padding:3px 10px;" onclick="window.runFinishedWork('audit', this)">${escHtml(t('finished_work_run_audit'))}</button></div></div>`;
+}
+window.runFinishedWork = function(run, btn) {
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  apiFetch('/api/autonomous/finished-work/run', { method: 'POST', body: JSON.stringify({ run }) })
+    .then(res => {
+      if (typeof showToast === 'function') showToast(t('finished_work_run_done', [run, JSON.stringify(res && (run === 'audit' ? { scanned: res.scanned, findings: (res.findings || []).length } : { found: res.found, asked: res.asked }))]), 'info', 3000);
+      const c = window._listLoaders && window._listLoaders['automation_housekeeping_repairs'];
+      if (c && c.load) c.load();
+    })
+    .catch(err => { if (typeof showToast === 'function') showToast(t('finished_work_run_failed', [String((err && err.message) || err)]), 'error'); })
+    .finally(() => { if (btn) btn.disabled = false; });
 };
 // _housekeepingIntermittentHtml draws the intermittent-test-failure rows of the
 // same view: { intermittent_defects: [{key, test, message, first_lines, date, commit}] }.

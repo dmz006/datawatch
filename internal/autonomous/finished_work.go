@@ -176,6 +176,12 @@ func landingDecided(p *PRD) bool {
 	return false
 }
 
+// landingLanded says the landing record names a merge: the work is on the
+// default branch.
+func landingLanded(p *PRD) bool {
+	return p != nil && p.Landing != nil && p.Landing.State == LandingLanded
+}
+
 // finishedWorkRefusal is the archive and cancel guard. It returns the reason
 // the step must be refused ("" when it may go on): the Automaton has a branch
 // holding commits that are not on the default branch, or the branch cannot be
@@ -821,7 +827,7 @@ func (m *Manager) recordLeaveAlone(id, actor, note, questionID, answerID string)
 	reask := now.AddDate(0, 0, FinishedWorkReaskDays)
 	m.store.WithLock(func() {
 		branch := strings.TrimSpace(p.Git.Branch)
-		if branch != "" && !(p.Landing != nil && p.Landing.State == LandingLanded) {
+		if branch != "" && !landingLanded(p) {
 			state := LandingPending
 			if closedWorkStatus(p.Status) {
 				state = LandingKept
@@ -847,7 +853,7 @@ func (m *Manager) recordLandByHand(id, actor, questionID, answerID string) error
 	now := m.holdNow()
 	reask := now.AddDate(0, 0, FinishedWorkLandReaskDays)
 	m.store.WithLock(func() {
-		if strings.TrimSpace(p.Git.Branch) != "" && !(p.Landing != nil && p.Landing.State == LandingLanded) {
+		if strings.TrimSpace(p.Git.Branch) != "" && !landingLanded(p) {
 			r := reask
 			p.Landing = &Landing{State: LandingPending, Actor: actor, At: now, Reason: "will be landed by hand", ReaskAt: &r}
 		}
@@ -974,7 +980,7 @@ func (m *Manager) auditRecord(ctx context.Context, git MergeGitRunner, repo stri
 		base.ReaskAt = reaskAt.UTC().Format(time.RFC3339)
 	}
 	standingKeep := p.Landing != nil && p.Landing.State == LandingKept && !has
-	if branch != "" && repo != "" && !standingKeep && !(has && !due) {
+	if branch != "" && repo != "" && !standingKeep && (!has || due) {
 		cctx, cancel := context.WithTimeout(ctx, finishedWorkGitTimeout)
 		state, ahead, _ := checkBranchAhead(cctx, git, repo, branch, p.Git.BaseBranch)
 		cancel()

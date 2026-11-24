@@ -3446,6 +3446,16 @@ autonomous:
   # operator runs shipped work anyway with `datawatch autonomous prd-run <id>
   # --force --reason "..."` (audited).
   shipped_refusal: on
+  # autonomous.finished_work — the finished-work guard: finished work must never
+  # sit unmerged. on (the default; empty reads as on) refuses to archive or
+  # cancel an Automaton whose branch holds commits that are not on the default
+  # branch unless a keep or drop decision is recorded, gives finished work
+  # older than a day an owner and one open question (a branch left alone is
+  # asked about again on its re-ask date), sends a daily digest and runs a
+  # weekly audit written as a decision record. shadow records the same findings
+  # and refusals but changes nothing and asks nothing; off disables it.
+  # Applies live. Guide: docs/howto/finished-work.md.
+  finished_work: on
   # Parallel tasks inside one Automaton (autonomous.parallel.*). Every default
   # below is the operator's choice for this installation; other users may
   # change any of them. Operator guide: docs/howto/automaton-parallel-tasks.md;
