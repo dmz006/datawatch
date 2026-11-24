@@ -1887,6 +1887,9 @@ type Manager struct {
 	// a task held by a pause re-checks it; zero means the default.
 	pauseGate pause.Gate
 	pausePoll time.Duration
+	// mergeHoldBack is the failure backoff of each Automaton's merge hold pass
+	// (merge_hold.go), keyed by Automaton id and guarded by mu.
+	mergeHoldBack map[string]*mergeHoldBackoff
 
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger

@@ -915,9 +915,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 				return ctx.Err()
 			case <-holdTick:
-				if _, merr := m.MergeCompletedTasks(ctx, prd); merr != nil {
-					log.Printf("[autonomous] %s merge hold pass: %v", prdID, merr)
-				}
+				m.runMergeHoldPass(ctx, prd)
 				reviewDecisions()
 			case <-wake:
 				// An operator review decision landed while tasks were running.

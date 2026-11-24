@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/dmz006/datawatch/internal/pause"
 )
 
 func TestMergeHoldReason(t *testing.T) {
@@ -172,5 +175,100 @@ func TestMergeHoldDocumentationTaskSeesEarlierCode(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(doc.WorktreePath, "a.txt"))
 	if err != nil || string(b) != "a\n" {
 		t.Fatalf("later worktree lacks the earlier task's file: %q %v", b, err)
+	}
+}
+
+// A merge hold pass is a new piece of work the engine starts on its own, so it
+// stays quiet while the operator has paused the project and resumes when the
+// pause ends (item 17, item 22).
+func TestMergeHoldPass_SkippedWhilePaused(t *testing.T) {
+	f := holdFixture(t)
+	ps := newPauseStore(t)
+	f.m.SetPauseGate(ps)
+	if _, err := ps.Pause(pause.ScopeGlobal, "", "freeze", "operator"); err != nil {
+		t.Fatal(err)
+	}
+	wake := make(chan struct{})
+	close(wake)
+	if !f.m.awaitMergeLanding(context.Background(), f.prd, wake) {
+		t.Fatal("awaitMergeLanding reported a stopped context")
+	}
+	if st := f.task("t1").MergeState; st == MergeStateMerged {
+		t.Fatalf("a paused project ran a merge pass: t1 merge state %q", st)
+	}
+	if _, err := ps.Resume(pause.ScopeGlobal, "", "operator", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !f.m.awaitMergeLanding(context.Background(), f.prd, wake) {
+		t.Fatal("awaitMergeLanding reported a stopped context")
+	}
+	if st := f.task("t1").MergeState; st != MergeStateMerged {
+		t.Fatalf("after the resume the pass must land the merge, t1 merge state %q", st)
+	}
+}
+
+func TestMergeHoldPass_BacksOffWhileMergeStaysBlocked(t *testing.T) {
+	f := newMergeFixture(t, "", map[string]string{"shared.txt": mergeBase})
+	f.addTask("t1", nil, "a.txt", "a\n")
+	f.prd.Story[0].Tasks = append(f.prd.Story[0].Tasks,
+		Task{ID: "t2", PRDID: f.prd.ID, Title: "next", Status: TaskPending})
+	f.seal()
+	f.dirtyTree()
+	now := time.Unix(1_000_000, 0)
+	old := mergeHoldClock
+	mergeHoldClock = func() time.Time { return now }
+	t.Cleanup(func() { mergeHoldClock = old })
+	ctx := context.Background()
+
+	if !f.m.runMergeHoldPass(ctx, f.prd) {
+		t.Fatal("the first pass must run")
+	}
+	if f.task("t1").MergeBlock == nil {
+		t.Fatal("the dirty project tree must leave a merge block")
+	}
+	if st := f.m.mergeHoldBack[f.prd.ID]; st == nil || st.fails != 1 {
+		t.Fatalf("backoff state after one blocked pass = %+v", st)
+	}
+	// Inside the wait no pass runs.
+	now = now.Add(mergeHoldPoll / 2)
+	if f.m.runMergeHoldPass(ctx, f.prd) {
+		t.Fatal("a pass ran inside the backoff")
+	}
+	// After the wait it runs, stays blocked and the wait doubles.
+	now = now.Add(mergeHoldPoll)
+	if !f.m.runMergeHoldPass(ctx, f.prd) {
+		t.Fatal("the pass must run once the backoff ended")
+	}
+	if st := f.m.mergeHoldBack[f.prd.ID]; st.fails != 2 || !st.next.Equal(now.Add(2*mergeHoldPoll)) {
+		t.Fatalf("second blocked pass: %+v, want the next try in %s", st, 2*mergeHoldPoll)
+	}
+	// The wait never passes the cap.
+	for i := 0; i < 20; i++ {
+		now = now.Add(mergeHoldBackoffMax + time.Second)
+		f.m.runMergeHoldPass(ctx, f.prd)
+	}
+	if st := f.m.mergeHoldBack[f.prd.ID]; st.next.Sub(now) > mergeHoldBackoffMax {
+		t.Fatalf("backoff %s passes the cap %s", st.next.Sub(now), mergeHoldBackoffMax)
+	}
+	// Once the tree is clean the pass merges and the backoff is cleared.
+	f.cleanTree()
+	now = now.Add(mergeHoldBackoffMax + time.Second)
+	f.m.runMergeHoldPass(ctx, f.prd)
+	if st := f.m.mergeHoldBack[f.prd.ID]; st != nil || f.task("t1").MergeState != MergeStateMerged {
+		t.Fatalf("a working pass must clear the backoff: state %+v, merge %q", st, f.task("t1").MergeState)
+	}
+}
+
+func TestMergeRetryPass_SkipsPausedProject(t *testing.T) {
+	f := holdFixture(t)
+	ps := newPauseStore(t)
+	f.m.SetPauseGate(ps)
+	_, _ = ps.Pause(pause.ScopeGlobal, "", "freeze", "operator")
+	if n := f.m.MergeRetryPass(context.Background()); n != 0 || f.task("t1").MergeState == MergeStateMerged {
+		t.Fatalf("a paused project merged %d task(s)", n)
+	}
+	_, _ = ps.Resume(pause.ScopeGlobal, "", "operator", "")
+	if n := f.m.MergeRetryPass(context.Background()); n != 1 {
+		t.Fatalf("after the resume the retry pass merged %d task(s), want 1", n)
 	}
 }

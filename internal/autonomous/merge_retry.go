@@ -51,6 +51,11 @@ func (m *Manager) MergeRetryPass(ctx context.Context) int {
 		if !ok {
 			continue
 		}
+		// A paused project is left alone: the timed retry is work the engine
+		// starts by itself, and the operator resumes it.
+		if _, blocked := m.pauseBlock(snap.ProjectDir); blocked {
+			continue
+		}
 		started := time.Now()
 		n, err := m.MergeCompletedTasks(ctx, prd)
 		total += n

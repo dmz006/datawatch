@@ -6,6 +6,7 @@ package autonomous
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -14,6 +15,22 @@ import (
 // mergeHoldPoll is how often an executor with a task held for a merge looks
 // again. The merge retry timer lands the merge; this poll notices it.
 var mergeHoldPoll = 5 * time.Second
+
+// mergeHoldBackoffMax caps the wait between two failed merge hold passes of one
+// Automaton. The wait starts at mergeHoldPoll and doubles with each failure.
+var mergeHoldBackoffMax = 5 * time.Minute
+
+// mergeHoldClock is the time source of the merge hold backoff; tests replace it.
+var mergeHoldClock = time.Now
+
+// mergeHoldBackoff is one Automaton's failure state: consecutive failed passes,
+// the earliest time the next pass may run, and the last error text (so a
+// repeated identical failure is logged once, not on every retry).
+type mergeHoldBackoff struct {
+	fails   int
+	next    time.Time
+	lastErr string
+}
 
 // mergeHoldReason returns a plain sentence when t must not start because
 // another task of the Automaton that has its own branch is completed and not
@@ -91,9 +108,95 @@ func (m *Manager) mergeHoldPending(prd *PRD) bool {
 	return false
 }
 
+// runMergeHoldPass runs one ordered merge pass for an Automaton that has a task
+// held for a merge, and keeps the engine quiet while it cannot help:
+//   - the operator pause holds it (a merge pass is work the engine starts by
+//     itself; the operator resumes it);
+//   - after a failed pass the next one waits, doubling from mergeHoldPoll up to
+//     mergeHoldBackoffMax, and the same failure is logged once, so a pass that
+//     fails on the same cause (uncommitted changes in a task worktree) does not
+//     retry every few seconds for ever. A pass that works clears the backoff.
+//
+// It reports whether the pass ran.
+func (m *Manager) runMergeHoldPass(ctx context.Context, prd *PRD) bool {
+	var dir string
+	m.store.WithLock(func() { dir = prd.ProjectDir })
+	if _, blocked := m.pauseBlock(dir); blocked {
+		return false
+	}
+	now := mergeHoldClock()
+	m.mu.Lock()
+	st := m.mergeHoldBack[prd.ID]
+	m.mu.Unlock()
+	if st != nil && now.Before(st.next) {
+		return false
+	}
+	n, err := m.MergeCompletedTasks(ctx, prd)
+	// A pass that merged nothing while a finished task carries a merge block
+	// (uncommitted changes, a conflict) is as unproductive as an error: the
+	// block is recorded and alerted once, so the retry only needs to look
+	// again later.
+	blocked := err == nil && n == 0 && m.mergeBlockedTask(prd)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if (err == nil && !blocked) || ctx.Err() != nil {
+		delete(m.mergeHoldBack, prd.ID)
+		return true
+	}
+	if blocked {
+		err = errMergeStillBlocked
+	}
+	if m.mergeHoldBack == nil {
+		m.mergeHoldBack = map[string]*mergeHoldBackoff{}
+	}
+	if st == nil {
+		st = &mergeHoldBackoff{}
+		m.mergeHoldBack[prd.ID] = st
+	}
+	st.fails++
+	wait := mergeHoldPoll
+	for i := 1; i < st.fails && wait < mergeHoldBackoffMax; i++ {
+		wait *= 2
+	}
+	if wait > mergeHoldBackoffMax {
+		wait = mergeHoldBackoffMax
+	}
+	st.next = now.Add(wait)
+	if msg := err.Error(); msg != st.lastErr {
+		st.lastErr = msg
+		if blocked {
+			return true
+		}
+		log.Printf("[autonomous] %s merge hold pass: %v (next try in %s)", prd.ID, err, wait)
+	}
+	return true
+}
+
+// errMergeStillBlocked marks a merge hold pass that landed nothing because a
+// finished task's merge carries a block (see MergeBlock).
+var errMergeStillBlocked = errors.New("merge still blocked")
+
+// mergeBlockedTask reports whether a completed task of prd that waits to merge
+// carries a merge block.
+func (m *Manager) mergeBlockedTask(prd *PRD) bool {
+	found := false
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.WorktreeBranch != "" && t.Status == TaskCompleted && t.MergeBlock != nil &&
+					(t.MergeState == "" || t.MergeState == MergeStatePending) {
+					found = true
+				}
+			}
+		}
+	})
+	return found
+}
+
 // awaitMergeLanding waits one poll interval (or a wake nudge), then runs the
-// ordered merge pass so a merge that can land does. It reports false when ctx
-// ended, so the caller stops waiting.
+// ordered merge pass (runMergeHoldPass) so a merge that can land does. It
+// reports false when ctx ended, so the caller stops waiting.
 func (m *Manager) awaitMergeLanding(ctx context.Context, prd *PRD, wake <-chan struct{}) bool {
 	timer := time.NewTimer(mergeHoldPoll)
 	defer timer.Stop()
@@ -103,8 +206,6 @@ func (m *Manager) awaitMergeLanding(ctx context.Context, prd *PRD, wake <-chan s
 	case <-wake:
 	case <-timer.C:
 	}
-	if _, err := m.MergeCompletedTasks(ctx, prd); err != nil {
-		log.Printf("[autonomous] %s merge hold pass: %v", prd.ID, err)
-	}
+	m.runMergeHoldPass(ctx, prd)
 	return ctx.Err() == nil
 }
