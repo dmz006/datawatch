@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -357,5 +360,107 @@ func TestOutcomeCheckTimingAt500Automata(t *testing.T) {
 	}
 	if r.Scanned < 500 || len(r.Findings) != 250 {
 		t.Fatalf("scanned=%d findings=%d, want 500 scanned and 250 unlabelled", r.Scanned, len(r.Findings))
+	}
+}
+
+// The proof runs through the production git runner: a temp repository holds one
+// file and one symbol on its default branch.
+func TestOutcomeCheckIntentProofRealGit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	repo := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(repo, "internal", "foo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "internal", "foo", "bar.go"), []byte("package foo\n\nfunc FooBar() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-q", "-m", "init")
+
+	cfg := DefaultConfig()
+	cfg.ClosedOutcomeCheck = ClosedOutcomeShadow
+	cfg.WorktreeBaseRepo = repo
+	m := newEmitManager(t, cfg, nil)
+	mk := func(spec string) string {
+		p := coPRD(t, m, PRDArchived)
+		m.Store().MutatePRD(p.ID, func(p *PRD) bool {
+			p.Spec, p.ClosedOutcome = spec, OutcomeDelivered
+			p.Story[0].Tasks[0].Status = TaskCompleted
+			return true
+		})
+		return p.ID
+	}
+	good := mk("Adds `FooBar` in internal/foo/bar.go.")
+	bad := mk("Adds `FooBar` and `MissingThing` in internal/foo/bar.go.")
+	r := m.RunOutcomeCheck(context.Background())
+	if hasFindingKind(r, good, FindingIntentUnproven) {
+		t.Errorf("evidence that is on the base branch must prove, got %v", findingKindsOf(r, good))
+	}
+	if !hasFindingKind(r, bad, FindingIntentUnproven) {
+		t.Errorf("a symbol that is not on the base branch must be unproven, got %v", findingKindsOf(r, bad))
+	}
+	if r.Proof.Checked != 2 || r.Proof.Proven != 1 {
+		t.Errorf("proof = %+v, want 2 checked and 1 proven", r.Proof)
+	}
+}
+
+// A host deploys after ship only while the loop and its step are on, a deploy
+// hook is wired, and the hook has not said it is not configured.
+func TestDeploysAfterShipFollowsTheStepAndTheHook(t *testing.T) {
+	set := supervisorloop.DefaultSettings()
+	set.Enabled = true
+	notConfigured := false
+	hooks := SupervisorLoopHooks{
+		Settings: func() supervisorloop.Settings { return set },
+		Deploy: func(context.Context) (string, error) {
+			if notConfigured {
+				return "", ErrSupervisorStepNotConfigured
+			}
+			return "ok", nil
+		},
+	}
+	h, steps, _ := newStepsRig(t, hooks)
+	coShippedIn(t, h.m, PRDCompleted, "v9.5.0")
+	if !steps.DeploysAfterShip() {
+		t.Fatal("a wired deploy hook on an enabled loop means the host deploys after ship")
+	}
+	notConfigured = true
+	steps.RunPass(context.Background())
+	if steps.DeploysAfterShip() {
+		t.Fatal("a deploy hook that reports not configured means no deploy after ship")
+	}
+	notConfigured = false
+	steps.RunPass(context.Background())
+	if !steps.DeploysAfterShip() {
+		t.Fatal("a deploy that ran again makes the host a deploying one again")
+	}
+	set.Steps = map[string]bool{stepDeployAfterShip: false}
+	if steps.DeploysAfterShip() {
+		t.Fatal("the step switched off means no deploy after ship")
+	}
+	set.Steps = nil
+	set.Enabled = false
+	if steps.DeploysAfterShip() {
+		t.Fatal("the loop switched off means no deploy after ship")
+	}
+	var nilSteps *SupervisorLoopSteps
+	if nilSteps.DeploysAfterShip() {
+		t.Fatal("no steps means no deploy after ship")
+	}
+	_, bare, _ := newStepsRig(t, SupervisorLoopHooks{Settings: func() supervisorloop.Settings { return set }})
+	set.Enabled = true
+	if bare.DeploysAfterShip() {
+		t.Fatal("no deploy hook means no deploy after ship")
 	}
 }

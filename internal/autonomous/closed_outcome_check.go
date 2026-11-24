@@ -415,7 +415,7 @@ func (m *Manager) alertOutcomeFindings(rep OutcomeCheckReport) {
 // ---- intent proof ----
 
 var (
-	proofPathRe = regexp.MustCompile("(?:^|[^\\w/.-])((?:[\\w.-]+/)+[\\w.-]+\\.\\w{1,5})")
+	proofPathRe = regexp.MustCompile(`(?:^|[^\w/.-])((?:[\w.-]+/)+[\w.-]+\.\w{1,5})`)
 	proofTickRe = regexp.MustCompile("`([A-Za-z_][\\w.]{5,60})`")
 	proofTestRe = regexp.MustCompile(`\b(Test\w{6,60})\b`)
 )
@@ -583,7 +583,7 @@ func (m *Manager) runIntentProof(ctx context.Context, rep *OutcomeCheckReport, p
 			if p == nil || p.IsTemplate || !closedWorkStatus(p.Status) {
 				continue
 			}
-			if p.ClosedOutcome == OutcomeDelivered && p.DeliveredVia == "" && !(hasShippedRecord(p) && p.ShippedSource == ShippedSourceMergeStep) {
+			if p.ClosedOutcome == OutcomeDelivered && p.DeliveredVia == "" && (!hasShippedRecord(p) || p.ShippedSource != ShippedSourceMergeStep) {
 				cands = append(cands, p)
 			}
 		}

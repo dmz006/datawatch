@@ -144,6 +144,7 @@ type SupervisorLoopSteps struct {
 	infraRetried  map[string]bool      // held tasks already retried by the loop
 	cancelSeen    map[string]time.Time // first pass that saw a cancelled record with no cancel decision
 	lastDeployed  string               // newest shipped release already deployed
+	deployNoConf  bool                 // the deploy hook last said it is not configured
 	lastConflict  string               // newest merge conflict recorded
 	heldReasons   map[string]string    // transient: record id -> why the last close pass kept it
 }
@@ -494,6 +495,9 @@ func (s *SupervisorLoopSteps) deployAfterShip(ctx context.Context) (string, erro
 		return "nothing newly shipped", nil
 	}
 	detail, err := s.hooks.Deploy(ctx)
+	s.mu.Lock()
+	s.deployNoConf = errors.Is(err, ErrSupervisorStepNotConfigured)
+	s.mu.Unlock()
 	if errors.Is(err, ErrSupervisorStepNotConfigured) {
 		return stepNotConfigured, nil
 	}
@@ -516,6 +520,22 @@ func (s *SupervisorLoopSteps) deployAfterShip(ctx context.Context) (string, erro
 	s.lastDeployed = release
 	s.mu.Unlock()
 	return fmt.Sprintf("deployed %s: %s", release, detail), nil
+}
+
+// DeploysAfterShip says this host deploys after ship: the loop and its
+// deploy_after_ship step are on, a deploy hook is wired, and the hook has not
+// said it is not configured. The closed work check reads it.
+func (s *SupervisorLoopSteps) DeploysAfterShip() bool {
+	if s == nil || s.hooks.Deploy == nil {
+		return false
+	}
+	set := s.settings()
+	if !set.Enabled || !stepEnabled(set, stepDeployAfterShip) {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.deployNoConf
 }
 
 // recordDeploy writes the deploy record onto every Automaton shipped in release.

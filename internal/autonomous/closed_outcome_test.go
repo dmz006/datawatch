@@ -257,3 +257,33 @@ func TestClosedOutcomeModeDefaults(t *testing.T) {
 		t.Errorf("unset check mode = %q, want shadow", got)
 	}
 }
+
+// Recording the shipped state of a finished Automaton labels it delivered in
+// the same step, so a finished record is never left unlabelled; running work
+// and a record that already has an outcome keep theirs.
+func TestClosedOutcomeShippedRecordLabelsFinishedWork(t *testing.T) {
+	m := coMgr(t, ClosedOutcomeOn)
+	at := time.Now()
+	done := coPRD(t, m, PRDCancelled)
+	if _, err := m.RecordPRDShipped(done.ID, "v9.0.1", at, "abc1234", ShippedSourceMergeStep); err != nil {
+		t.Fatal(err)
+	}
+	if got := coGet(t, m, done.ID); got.ClosedOutcome != OutcomeDelivered || got.Status != PRDCancelled {
+		t.Fatalf("status=%s outcome=%q, want cancelled + delivered", got.Status, got.ClosedOutcome)
+	}
+	run := coPRD(t, m, PRDRunning)
+	if _, err := m.RecordPRDShipped(run.ID, "v9.0.1", at, "def5678", ShippedSourceMergeStep); err != nil {
+		t.Fatal(err)
+	}
+	if got := coGet(t, m, run.ID); got.ClosedOutcome != "" {
+		t.Fatalf("running work has no closed outcome, got %q", got.ClosedOutcome)
+	}
+	kept := coPRD(t, m, PRDArchived)
+	m.Store().MutatePRD(kept.ID, func(p *PRD) bool { p.ClosedOutcome = OutcomeSuperseded; p.DeliveredVia = done.ID; return true })
+	if _, err := m.RecordPRDShipped(kept.ID, "v9.0.1", at, "aaa1111", ShippedSourceBackfill); err != nil {
+		t.Fatal(err)
+	}
+	if got := coGet(t, m, kept.ID); got.ClosedOutcome != OutcomeSuperseded {
+		t.Fatalf("an explicit outcome is kept, got %q", got.ClosedOutcome)
+	}
+}

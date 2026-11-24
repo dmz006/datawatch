@@ -21,16 +21,16 @@ func ParseOutcomeCheckBody(b []byte) (OutcomeCheckReport, error) {
 // verb: the mode, what was scanned, the findings by kind, then the intent
 // proof counts.
 func RenderOutcomeCheck(w io.Writer, rep OutcomeCheckReport) {
-	fmt.Fprintf(w, "Closed work check: mode %s, %d Automata scanned", rep.Mode, rep.Scanned)
+	_, _ = fmt.Fprintf(w, "Closed work check: mode %s, %d Automata scanned", rep.Mode, rep.Scanned)
 	if !rep.RunAt.IsZero() {
-		fmt.Fprintf(w, ", at %s", rep.RunAt.Format("2006-01-02 15:04 MST"))
+		_, _ = fmt.Fprintf(w, ", at %s", rep.RunAt.Format("2006-01-02 15:04 MST"))
 	}
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 	if rep.DeploysAfterShip {
-		fmt.Fprintf(w, "This host deploys after ship (running %s).\n", orDash(rep.RunningVersion))
+		_, _ = fmt.Fprintf(w, "This host deploys after ship (running %s).\n", orDash(rep.RunningVersion))
 	}
 	if len(rep.Findings) == 0 {
-		fmt.Fprintln(w, "No findings.")
+		_, _ = fmt.Fprintln(w, "No findings.")
 	}
 	kinds := make([]string, 0, len(rep.Counts))
 	for k := range rep.Counts {
@@ -38,7 +38,7 @@ func RenderOutcomeCheck(w io.Writer, rep OutcomeCheckReport) {
 	}
 	sort.Strings(kinds)
 	for _, k := range kinds {
-		fmt.Fprintf(w, "%s: %d\n", strings.ReplaceAll(k, "_", " "), rep.Counts[k])
+		_, _ = fmt.Fprintf(w, "%s: %d\n", strings.ReplaceAll(k, "_", " "), rep.Counts[k])
 		for _, f := range rep.Findings {
 			if f.Kind != k {
 				continue
@@ -47,11 +47,11 @@ func RenderOutcomeCheck(w io.Writer, rep OutcomeCheckReport) {
 			if who == "" {
 				who = "daemon"
 			}
-			fmt.Fprintf(w, "  %s  %s\n", who, f.Detail)
+			_, _ = fmt.Fprintf(w, "  %s  %s\n", who, f.Detail)
 		}
 	}
 	if rep.Proof.Checked > 0 {
-		fmt.Fprintf(w, "Intent proof: %d checked, %d proven, %d partial, %d unproven.\n",
+		_, _ = fmt.Fprintf(w, "Intent proof: %d checked, %d proven, %d partial, %d unproven.\n",
 			rep.Proof.Checked, rep.Proof.Proven, rep.Proof.Partial, rep.Proof.Unproven)
 	}
 }
