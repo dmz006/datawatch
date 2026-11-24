@@ -210,6 +210,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if err := m.refuseHeld(prd); err != nil {
 		return err
 	}
+	if err := m.refuseClosedWork(prd); err != nil {
+		return err
+	}
 	if err := m.refusePaused(prd); err != nil {
 		return err
 	}

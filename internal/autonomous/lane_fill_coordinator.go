@@ -405,6 +405,11 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	if !c.Ready() {
 		return
 	}
+	// Shipped queued work is dropped from the queue at the end of every poll,
+	// on every path out of it and whatever the lane fill modes are, so no
+	// queue keeps it. It runs last so this poll's snapshot still refuses it
+	// as already_shipped and the decision shows the reason first.
+	defer c.m.DeliverShippedQueued()
 	c.laneFillAuditModeChange(kinds)
 	if kinds.allOff() {
 		c.laneFillResetAlerts()
@@ -581,6 +586,9 @@ type laneFillRaw struct {
 	branch, worktreeDir string
 	// reviewOutcome is the Automaton's last blocked rules review record, if any.
 	reviewOutcome *RulesReviewOutcome
+	// shippedRelease and shippedCommit are the Automaton's own shipped record,
+	// empty when none is set or an operator force covers it.
+	shippedRelease, shippedCommit string
 	// hold is a copy of the hold record of a held Automaton, nil otherwise.
 	hold *HoldState
 	// projectDir is the Automaton's project directory, for the operator pause.
@@ -624,6 +632,9 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 				defect:        EffectiveKind(p, nil) == PRDKindBug,
 				reviewOutcome: p.RulesReviewOutcome,
 				projectDir:    p.ProjectDir,
+			}
+			if hasShippedRecord(p) && !overrideCovers(p) {
+				r.shippedRelease, r.shippedCommit = strings.TrimSpace(p.MergedInRelease), strings.TrimSpace(p.MergeCommit)
 			}
 			if p.Hold != nil {
 				h := *p.Hold
@@ -715,6 +726,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 	c.lf.mu.Unlock()
 	grace := 3 * time.Duration(cfg.EffectivePollSeconds()) * time.Second
 
+	shippedRule := mcfg.EffectiveShippedRefusal() == ShippedRefusalOn
 	var running []LaneOccupant
 	var waiting []LaneFillWaitingOcc
 	var cands []LaneFillCandidate
@@ -769,6 +781,9 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 			InAutomation:         r.automationID != "",
 			BackendChangeAllowed: prdLLMOverrideAllowed(r.status),
 			CoverageGateBlocked:  c.m.planCoverageGateBlocks(r.id),
+		}
+		if shippedRule {
+			cand.ShippedRelease, cand.ShippedCommit = r.shippedRelease, r.shippedCommit
 		}
 		cand.NeedsMergeFlag = c.laneFillNeedsMerge(ctx, probe, cand)
 		if cfg.EffectiveRequireConfirmedProposal() && laneFillQueuedStatus(cand.Status) {

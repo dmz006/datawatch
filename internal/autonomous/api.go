@@ -915,6 +915,25 @@ func (a *API) Run(id string) error {
 	return err
 }
 
+// RunForced is Run with the operator's explicit force past the shipped-work
+// rule: it records the audited override on the Automaton (who, why, which
+// merge commit; see Manager.ForceClosedWork) and then runs it. A reason is
+// required. An Automaton that already carries a force for its current record
+// just runs.
+func (a *API) RunForced(id, actor, reason string) error {
+	if p, ok := a.M.Store().GetPRD(id); ok {
+		var covered bool
+		a.M.readLocked(func() { covered = overrideCovers(p) })
+		if !covered {
+			if _, err := a.M.ForceClosedWork(id, actor, reason); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := a.runLocked(id, nil)
+	return err
+}
+
 // ScanFixLoop runs the scan-fix loop for one Automaton: scan; while
 // the scan still has findings at or above the fail-on severity, open a
 // corrective task for them, execute it, and re-scan — up to
@@ -992,6 +1011,11 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 	// its status: nothing starts it until the operator releases the hold.
 	if p, ok := a.M.Store().GetPRD(id); ok {
 		if err := a.M.refuseHeld(p); err != nil {
+			return false, err
+		}
+		// Closed or shipped work is refused before the pause, so a shipped
+		// Automaton reports already_shipped and not a pause wait.
+		if err := a.M.refuseClosedWork(p); err != nil {
 			return false, err
 		}
 		// A paused project is refused the same way, before a slot is claimed.

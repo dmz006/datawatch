@@ -3629,6 +3629,13 @@ type AutonomousConfig struct {
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
+	// ShippedRefusal sets the shipped-work rule: the daemon refuses to start,
+	// approve or decompose an Automaton whose own record says its work already
+	// shipped (release and merge commit both set) or that is archived,
+	// cancelled, completed or rejected, and marks shipped queued work
+	// delivered. "on" (the default; empty reads as on) enforces it, "shadow"
+	// only logs what it would refuse, "off" disables it.
+	ShippedRefusal string `yaml:"shipped_refusal,omitempty" json:"shipped_refusal,omitempty"`
 	// UsageBackoff controls automatic per-backend back-off after a rate or
 	// usage limit is detected: "pause_backend" (default) holds new work for
 	// the affected backend until its reset time; "off" disables it. An

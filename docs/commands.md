@@ -1522,7 +1522,7 @@ the lane counts line, the per-kind modes line when a kind's mode differs from th
 eligible counts, the same `Waiting with no live work` block when an Automaton is waiting, then the newest five decisions (`limit` is how many decisions are read). A decision that
 refused an Automaton shows its reason code in brackets in front of the reason text, for example
 `[held] ...`; the codes are `operator_hold`, `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`,
-`proposal_missing`, `main_carries_work`, `worktree_invalid` and `plan_coverage_blocked` (a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment). And
+`proposal_missing`, `main_carries_work`, `worktree_invalid`, `plan_coverage_blocked` (a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment) and `already_shipped` (the Automaton's own record already carries a release and a merge commit: it never starts and is marked delivered). And
 `autonomous set-lane-preference <prd-id> <gpu|claude|any>` sets the lane an Automaton may take.
 
 Comm channel for lane utilization: `autonomous lane-utilization [window]` replies with a short summary of at most 15 lines: one line per lane with its busy percent and an `[IDLE with eligible work ...]` flag, the lane fill mode, the newest decision, and plan usage in points and tokens (never dollars). `window` is a duration such as `6h`, `24h` or `7d` from 1h to 30d (default 24h); a bad window is refused before anything is sent.

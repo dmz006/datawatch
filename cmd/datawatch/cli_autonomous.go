@@ -181,7 +181,7 @@ Subcommands:
   prd-get <id>                    Fetch one PRD with story+task tree
   prd-plan <id>                   Run the LLM planning phase for a PRD (alias: prd-decompose)
   prd-decompose <id>              Run the LLM planning phase for a PRD (alias: prd-plan)
-  prd-run <id>                    Kick the executor for a PRD
+  prd-run <id>                    Kick the executor for a PRD (--force --reason "..." runs shipped work anyway; audited)
   prd-cancel <id>                 Cancel + archive a PRD
   failure-escalation show|set|clear|global  Show, set or clear the failure escalation policy (per Automaton, per task, or the daemon default)
   resolve-review <id> --task T --action retry|cancel  Retry or cancel a task held for operator review (status lists held tasks under review_needed)
@@ -1330,14 +1330,28 @@ func newAutonomousPRDPlanCmd() *cobra.Command {
 }
 
 func newAutonomousPRDRunCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	var reason string
+	cmd := &cobra.Command{
 		Use:   "prd-run <id>",
-		Short: "Kick the executor for a PRD",
-		Args:  cobra.ExactArgs(1),
+		Short: "Kick the executor for a PRD (refused for shipped or closed work; --force --reason runs shipped work anyway)",
+		Long: "Kick the executor for an Automaton. The daemon refuses to start an Automaton whose own record says " +
+			"its work already shipped (a release and a merge commit both set) and any archived, cancelled, completed " +
+			"or rejected one; the error names the reason (already_shipped or work_closed) and shipped queued work is " +
+			"marked delivered. --force with --reason runs shipped work anyway: it is audited with who and why and " +
+			"covers only that merge commit.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/run", nil)
+			if !force {
+				return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/run", nil)
+			}
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/run",
+				map[string]any{"force": true, "reason": reason})
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false, "run an Automaton whose shipped record would refuse it (needs --reason; audited)")
+	cmd.Flags().StringVar(&reason, "reason", "", "why the shipped work should run again (required with --force)")
+	return cmd
 }
 
 func newAutonomousPRDCancelCmd() *cobra.Command {

@@ -515,7 +515,7 @@ func prettyJSON(body string) string {
 //	autonomous list
 //	autonomous get <prd-id>
 //	autonomous decompose <prd-id>
-//	autonomous run <prd-id>
+//	autonomous run <prd-id> [--force <reason>]
 //	autonomous cancel <prd-id>
 //	autonomous learnings
 //	autonomous create <spec…> [--parent <automaton-id>]
@@ -1156,7 +1156,18 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous run failed", "usage: autonomous run <prd-id>")
 			return
 		}
-		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/run", "")
+		// "autonomous run <id> --force <reason…>" runs shipped work past the
+		// daemon's shipped-work rule; the reason is required and audited.
+		body := ""
+		if len(args) > 2 {
+			if args[2] != "--force" {
+				r.reply("autonomous run failed", "usage: autonomous run <prd-id> [--force <reason>]")
+				return
+			}
+			b, _ := json.Marshal(map[string]any{"force": true, "reason": strings.Join(args[3:], " ")})
+			body = string(b)
+		}
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/run", body)
 		if err != nil {
 			r.reply("autonomous run failed", err.Error())
 			return

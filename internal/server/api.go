@@ -6883,6 +6883,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_idle_nudge_seconds":              s.cfg.Autonomous.WorkerIdleNudgeSeconds,
 			"worker_idle_nudge_stall_seconds":        s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
 			"capacity_enabled":                       s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
+			"shipped_refusal":                        s.cfg.Autonomous.EffectiveShippedRefusal(),
 			"capacity_wait_timeout_seconds":          s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"archive_grace_minutes":                  s.cfg.Autonomous.ArchiveGraceMinutesOrDefault(),
 			"archive_keep_unmerged":                  s.cfg.Autonomous.ArchiveKeepUnmergedOrDefault(),
@@ -8057,6 +8058,19 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, k+": must be a boolean (true or false)", http.StatusBadRequest)
 				return
 			}
+		}
+	}
+	// The shipped-work rule mode is on, shadow or off. Anything else rejects the
+	// whole PUT before a value is applied.
+	if v, ok := patch["autonomous.shipped_refusal"]; ok {
+		mode, isStr := v.(string)
+		if !isStr {
+			http.Error(w, "autonomous.shipped_refusal: must be \"on\", \"shadow\" or \"off\"", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateShippedRefusal(mode); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
 		}
 	}
 	// The decision gate mode is shadow or on. Anything else rejects the whole
@@ -10974,6 +10988,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_enabled":
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.CapacityEnabled = &b
+			}
+		case "autonomous.shipped_refusal":
+			// Validated in handlePutConfig to on, shadow, off or empty.
+			if mode, ok := v.(string); ok {
+				cfg.Autonomous.ShippedRefusal = strings.ToLower(strings.TrimSpace(mode))
 			}
 		case "autonomous.capacity_strict_node_limit":
 			if b, ok := v.(bool); ok {

@@ -128,6 +128,12 @@ type LaneFillCandidate struct {
 	// acknowledgment (Manager.planCoverageGateBlocks); a needs_review
 	// candidate with it is refused by the plan-coverage rule.
 	CoverageGateBlocked bool `json:"coverage_gate_blocked,omitempty"`
+	// ShippedRelease and ShippedCommit are the Automaton's own shipped record
+	// as the snapshot read it, set only while the shipped-work rule is on and
+	// no operator force covers the record. Both set refuses the candidate
+	// with already_shipped.
+	ShippedRelease string
+	ShippedCommit  string
 	// InAutomation: a member of an Automation, which starts it.
 	InAutomation bool
 	// BackendChangeAllowed says whether the set-llm status rules allow

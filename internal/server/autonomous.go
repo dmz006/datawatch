@@ -1172,11 +1172,33 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapAutonomousRun) {
 			return
 		}
-		if err := s.autonomousMgr.Run(id); err != nil {
+		// An optional body {force, reason} lifts the shipped-work rule for this
+		// Automaton's record: audited, with who and why (see RunForced).
+		var req struct {
+			Force  bool   `json:"force"`
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		var details map[string]any
+		if req.Force {
+			f, ok := s.autonomousMgr.(closedWorkForcer)
+			if !ok {
+				http.Error(w, "force is not available", http.StatusNotImplemented)
+				return
+			}
+			if err := f.RunForced(id, s.auditActor(r.Context()), req.Reason); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			details = map[string]any{"force": true, "reason": req.Reason}
+		} else if err := s.autonomousMgr.Run(id); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "run", "automaton", id, nil) // GH#201 Phase 4
+		s.audit(r.Context(), "run", "automaton", id, details) // GH#201 Phase 4
 		got, _ := s.autonomousMgr.GetPRD(id)
 		s.writeAutonomousResult(w, r, got, "", "", "")
 	// v6.13.1 — operator-reported: "multi-select automata - once selected
@@ -5527,6 +5549,13 @@ func (s *Server) handleAutomatonHold(w http.ResponseWriter, r *http.Request, id 
 		"reason": req.Reason, "condition": req.Condition, "until": req.Until, "extended": extend, "kind": action,
 	})
 	writeJSONOK(w, updated)
+}
+
+// closedWorkForcer is the optional part of the Automata manager that runs an
+// Automaton past the shipped-work rule with an audited reason. A sub-interface
+// so minimal AutonomousAPI test doubles keep compiling.
+type closedWorkForcer interface {
+	RunForced(id, actor, reason string) error
 }
 
 // handleAutomatonReleaseHold serves POST /api/autonomous/prds/{id}/release_hold.
