@@ -88,7 +88,7 @@ candidates so you can repeat the call with an id.
 | Plans write API | `POST /api/plans` (create), `PATCH /api/plans/{ref}` (rename, edit goal), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_rename`, `plan_edit`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|rename\|edit\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|rename\|edit\|move\|attach\|detach`. See *Ordering and linking plans* below. |
 | Plans roll-up | `GET /api/plans/rollup?project=&dry_run=true` (preview) and `POST /api/plans/rollup` (apply), MCP `plan_rollup`, CLI `datawatch plans rollup [--project P] [--dry-run] [--json]`, chat `autonomous plan rollup [dry-run] [project=P]`. See *Rolling plan status up from the work* below. |
 | Release plans | `GET`, `PUT` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive` and `/restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`, and `GET /api/projects/{name}/plans?archived=`. MCP `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert`, and `plan_create` and `plan_migrate` with their release forms. CLI `datawatch plan theme list\|add\|rename\|remove\|place\|unplace\|reorder\|reorder-items`, `archive`, `restore`, `unattributed`, `attach` (several ids), `migrate --release`, `row-plans list\|convert`. Chat `autonomous plan themes\|theme\|archive\|restore\|unattributed\|attach\|migrate release`. Web: the release controls of the Plans sub-tab. See *Release plans and themes* and the sections after it. |
-| Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
+| Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]` (prints the server summary line verbatim, then lists each kind, including the *needs review* and *history without an Automaton* sections), chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
 | PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter, a multi-select state chip set and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a multi-select state chip set (no chip picked means all states, several picked match *any* of them, **All** clears the set), a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The state picks are remembered in this browser, separately for the Records sub-tab and the Registry and findings section. The sections hide themselves when plan records are off. |
 
 Each created or changed record writes one `plan_record_created` or
@@ -637,8 +637,13 @@ Nothing here turns on by itself. These are yours to settle:
 - **Migration conflicts.** A title already taken by a record the migration did
   not make is left alone and listed as a conflict; rename one side by hand and
   run the migration again.
-- **Backlog order.** Open rows with no Automaton become backlog plans ordered by
-  their old row number. Check that this is the order you want.
+- **Migration needs-review rows.** Open rows with no derivable name are listed
+  under *needs review* and are never created — not even on apply — and they are
+  listed again on every run until they get a name. Give such a row a title (or
+  a resolvable Automaton/Automation link) and run the migration again.
+- **Backlog order.** Open rows with no Automaton and a derivable name become
+  backlog plans ordered by their old row number. Check that this is the order
+  you want.
 - **The state chip sets.** The Plans browser, the Records sub-tab and the
   Registry and findings card now filter state with multi-select chip sets, and
   each remembers its picks in the browser that made them. Check that the chip
@@ -731,12 +736,15 @@ Nothing here turns on by itself. These are yours to settle:
 
 ## Building plans from arcs and rows
 
-Every preview and every apply starts with one count line: created (would
-create in a preview), linked, already present, history without an Automaton,
-needs review and conflicts. For each conflict the answer also says which plan
-or record already holds the item (`held_by`) and what the migration would have
-changed (`would_change`); nothing of it is written. A second apply changes
-nothing.
+`datawatch plans migrate` prints the server summary line verbatim — created
+(would create in a preview), linked, already present, history without an
+Automaton, needs review and conflicts — and then lists each kind, with a
+section headed `Needs review (N, not made into plans):` and the existing
+`History without an Automaton (N, not made into plans):` section. `--json` is
+unchanged and carries `needs_review`. For each conflict the answer also says
+which plan or record already holds the item (`held_by`) and what the migration
+would have changed (`would_change`); nothing of it is written. A second apply
+changes nothing.
 
 A plan groups work to come and links down to Automations and Automata. The
 migration builds plans from what you already have:
@@ -746,14 +754,18 @@ migration builds plans from what you already have:
   (planned, active, done) becomes the plan state, and the plan links to that
   Automation.
 - Every registry row whose text or links name an Automaton or Automation id
-  becomes a plan linked to it. The plan is titled `Plan: <row title>`, because a
-  title is unique inside a project and the row keeps its own. See *How a plan
-  gets its title* below.
-- Every open row that names none becomes a backlog plan, ordered by its old row
-  number. A closed row that names none is left out.
+  becomes a plan linked to it, so long as a name can be derived (from the row,
+  or from the named item); a row that names one but gives no name at all is
+  listed under *needs review* instead. The plan is titled `Plan: <row title>`,
+  because a title is unique inside a project and the row keeps its own. See
+  *How a plan gets its title* below.
+- Every open row that names none and has a derivable name becomes a backlog
+  plan, ordered by its old row number. A closed row that names none is left
+  out of the plans and listed under *history without an Automaton*.
 
 It previews by default. Read the lists (would create, would link, left alone,
-conflicts), then apply:
+conflicts) and the two sections for the rows that never become plans (history
+without an Automaton, needs review), then apply:
 
 ```
 datawatch plans migrate            # preview, writes nothing
@@ -784,18 +796,22 @@ the first one that reads like a name:
   a title. If nothing in the row is a title but the row names an Automaton (or
   an Automation), the plan takes that one's own title, on one line, at most 100
   characters with `Plan: ` included. A description gives only its first clause, and the status column is never
-  used. A row with neither a name nor a linked Automaton is listed under
-  `needs review` in the preview (`needs_review` in the result) and is not
-  created on apply; give the row a title and run the migration again.
+  used. A row with neither a name nor a linked Automaton (or Automation) to
+  take a name from is listed under `needs review` in the preview
+  (`needs_review` in the result) and is not created on apply; give the row a
+  title and run the migration again.
 - The row's status is kept as the plan's status; a done row becomes a finished
   plan.
 
-The preview line ends with three counts, `titles derived N, from linked
-Automaton K, fell back M`: how many of the plans this run makes got a title from
-their row, how many took the title of the Automaton or Automation the row
-names, and how many were named `(untitled row N)`. A plan that already exists
-is never renamed, and it is counted in none of them, so after an apply all
-three read 0.
+The command then prints a titles line, `titles derived N, from linked
+Automaton K, fell back M`: how many of the plans this run makes got a title
+from their row, how many took the title of the Automaton or Automation the row
+names, and how many rows gave no name at all (the rows listed under
+`needs review`, which are never created). A plan that already exists is never
+renamed, and it is counted in none of them, so on a second run the first two
+counts read 0. The fell-back count is the exception: because those rows were
+never created, the next run lists them under `needs review` again and counts
+them again, until a row gets a name.
 
 ## Reading plans
 
