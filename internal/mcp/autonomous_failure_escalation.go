@@ -50,10 +50,10 @@ func (s *Server) handleAutonomousPRDSetFailureEscalation(_ context.Context, req 
 
 func (s *Server) toolAutonomousPRDResolveTaskReview() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_resolve_task_review",
-		mcpsdk.WithDescription("The operator's decision on a task held for review (status review_needed). action=retry requeues it, optionally with a changed spec, worker (backend, model, effort), narrowed file scope (files), read_only mark or report_path (the one file a read-only task may write, under .datawatch/reports/; the task must be read-only after the change and a read-only task must have no planned files). A refused change leaves the task held. action=cancel cancels it. It works while the Automaton is running and other tasks are live. A task that is not held answers 409."),
+		mcpsdk.WithDescription("The operator's decision on a task held for review (status review_needed). action=retry requeues it, optionally with a changed spec, worker (backend, model, effort), narrowed file scope (files), read_only mark or report_path (the one file a read-only task may write, under .datawatch/reports/; the task must be read-only after the change and a read-only task must have no planned files). A refused change leaves the task held. action=cancel cancels it. action=accept completes it, and is only allowed when the task's last worker session left a completion marker; a held task without a marker answers 409 to an accept. It works while the Automaton is running and other tasks are live. A task that is not held answers 409."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID held for review")),
-		mcpsdk.WithString("action", mcpsdk.Required(), mcpsdk.Description("retry or cancel")),
+		mcpsdk.WithString("action", mcpsdk.Required(), mcpsdk.Description("retry, cancel or accept (accept completes the held task; only allowed when its last worker session left a completion marker)")),
 		mcpsdk.WithString("spec", mcpsdk.Description("retry only: replacement task spec")),
 		mcpsdk.WithString("backend", mcpsdk.Description("retry only: worker backend for the task")),
 		mcpsdk.WithString("model", mcpsdk.Description("retry only: worker model for the task")),

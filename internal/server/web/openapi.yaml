@@ -8781,7 +8781,7 @@ paths:
         "501": {description: "The daemon does not offer failure escalation operations"}
   /api/autonomous/prds/{id}/resolve_task_review:
     post:
-      summary: Retry or cancel a task held for operator review
+      summary: Retry, cancel or accept a task held for operator review
       description: |
         The operator's decision on a task whose status is review_needed. A
         retry requeues the task; it may carry a replaced spec, a worker (backend,
@@ -8792,7 +8792,10 @@ paths:
         path, a report path on a task that is not read-only, or a read-only task
         left with planned files) answers 400 and leaves the task held. The held
         attempt report is cleared, and the operator's note is
-        given to the next attempt. A cancel cancels the task. The call works
+        given to the next attempt. A cancel cancels the task. An accept completes
+        the held task; it is only allowed when the task's last worker session left
+        a completion marker, otherwise the call answers 409.
+        The call works
         while the Automaton is running other tasks: it answers at once and starts
         no second executor, because the running executor picks the decision up.
         A task that is not held answers 409. Requires the `autonomous:write` capability for
@@ -8809,7 +8812,7 @@ paths:
               required: [task_id, action]
               properties:
                 task_id: {type: string, description: "The held task"}
-                action: {type: string, enum: [retry, cancel]}
+                action: {type: string, enum: [retry, cancel, accept], description: "The decision; accept is only allowed when the task's last worker session left a completion marker."}
                 spec: {type: string, description: "Retry only. A replacement task spec."}
                 backend: {type: string, description: "Retry only. Worker backend for this task."}
                 model: {type: string, description: "Retry only. Worker model for this task."}
