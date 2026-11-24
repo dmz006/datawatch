@@ -81,6 +81,40 @@ outcome in its detail line (`kept N with no outcome or an unmet hold`) and does
 not raise an error for them; each refusal is written once to the Automaton's
 decision log as `closed_outcome_refused`.
 
+## Closed records stay closed
+
+A record is **closed** when it is cancelled, rejected or archived, or when it
+carries any recorded outcome, whatever its status reads. The daemon's own
+recovery never touches a closed record:
+
+- the restart pass does not release its protected-paths holds, reset its tasks,
+  plan, resume, recover or park it;
+- the periodic passes (boot reconcile, stuck-running watchdog, merge retry,
+  verifier and judge reconcile, held questions, the housekeeping repairs, gate
+  repair, the supervisor loop's retry and the security failure stop) skip it;
+- lane fill never lists it, starts it or plans it;
+- an answer to one of its questions is not applied, and the record says so once
+  (`closed_record_answer_ignored`);
+- a task reset or task review by anything other than you (a repair, a loop, a
+  session with its own credential, a federation peer) is refused;
+- no start door runs a record that carries an outcome, whatever
+  `autonomous.shipped_refusal` says.
+
+If a record carries an outcome but reads **running**, the daemon puts its closed
+status back (from the record's own cancel, reject or archive entry), ends the
+worker sessions that reopening started, and records `closed_record_restored`
+with the reason. It does this before boot resume and on every poll.
+
+Only you reopen a closed record: your own task reset (web app, CLI, chat or the
+MCP tool without a session credential), reset to draft, or the force past the
+shipped-work rule. Each one clears the outcome and records
+`closed_outcome_cleared` with what it was. There is no setting that turns this
+rule off.
+
+One exception to "never touched": the one-time unarchive repair still looks at
+an older archived record that has **no** outcome, and only moves it to another
+finished status.
+
 ## Record an outcome
 
 | Surface | How |
