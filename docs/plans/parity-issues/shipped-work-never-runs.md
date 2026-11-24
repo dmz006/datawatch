@@ -22,7 +22,7 @@ The daemon now refuses to start, approve or decompose an Automaton whose own rec
 
 | Key | English |
 |---|---|
-| `settings_shipped_refusal` | Shipped-work rule (on refuses and drops shipped or closed Automata, shadow only logs, off disables; default on) |
+| `settings_shipped_refusal` | Shipped-work rule (on refuses and drops work that already shipped or is closed, shadow only logs, off disables; default on) |
 | `lane_fill_eligibility_already_shipped` | Already shipped |
 
 The PWA ships real translations of `lane_fill_eligibility_already_shipped` in de, es, fr and ja; the settings label stays English in those four, as the neighbouring settings rows do.

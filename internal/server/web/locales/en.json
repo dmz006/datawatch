@@ -2332,7 +2332,7 @@
   "settings_capacity_adoption_wait": "Restart adoption wait (sec, 0 = 30)",
   "settings_capacity_slot_reconcile_grace": "Slot reconcile grace (sec, default 60, min 10, 0 = 60)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
-  "settings_shipped_refusal": "Shipped-work rule (on refuses and drops shipped or closed Automata, shadow only logs, off disables; default on)",
+  "settings_shipped_refusal": "Shipped-work rule (on refuses and drops work that already shipped or is closed, shadow only logs, off disables; default on)",
   "max_engines_per_node": "Max engines per node (1 = one at a time)",
   "settings_max_concurrent_tasks": "Max concurrent tasks per Automaton (1 = one at a time)",
   "settings_max_concurrent_tasks_hint": "Daemon-wide default. An Automaton's own setting overrides it.",

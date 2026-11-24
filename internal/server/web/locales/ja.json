@@ -2289,7 +2289,7 @@
   "settings_capacity_adoption_wait": "Restart adoption wait (sec, 0 = 30)",
   "settings_capacity_slot_reconcile_grace": "スロット照合の猶予時間(秒、既定 60、最小 10、0 = 60)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
-  "settings_shipped_refusal": "Shipped-work rule (on refuses and drops shipped or closed Automata, shadow only logs, off disables; default on)",
+  "settings_shipped_refusal": "Shipped-work rule (on refuses and drops work that already shipped or is closed, shadow only logs, off disables; default on)",
   "max_engines_per_node": "ノードあたりの最大エンジン数（1 = 1 件ずつ）",
   "settings_max_concurrent_tasks": "オートマトンあたりの最大同時タスク数（1 = 1 件ずつ）",
   "settings_max_concurrent_tasks_hint": "デーモン全体の既定値です。オートマトン個別の設定が優先されます。",

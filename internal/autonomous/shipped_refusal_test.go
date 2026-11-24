@@ -209,8 +209,21 @@ func TestLaneFillDropsShippedAutomataFromTheQueue(t *testing.T) {
 			t.Errorf("Automaton %s: want one shipped_refusal decision, got %d", p.ID, n)
 		}
 	}
-	if st := h.status(); st.QueuedEligible.Claude != 0 && countCallPrefix(h.fake.all(), "run:") == 0 {
-		t.Errorf("queued eligible = %+v, shipped work counts in no total", st.QueuedEligible)
+	// The refusal shows in the lane fill status with its code and the release,
+	// before the Automaton is dropped, so the operator sees why.
+	st := h.status()
+	for _, p := range []*PRD{landing, approved, draft} {
+		d, ok := holdStartDecisionFor(st, p.ID)
+		if !ok {
+			t.Errorf("no refusal decision for shipped Automaton %s in %+v", p.ID, st.Decisions)
+			continue
+		}
+		if d.EligibilityReason != LaneFillReasonAlreadyShipped || d.Action != LaneFillActionBlocked {
+			t.Errorf("decision = %+v, want a blocked decision with code %s", d, LaneFillReasonAlreadyShipped)
+		}
+		if !strings.Contains(d.Reason, shippedRelease) {
+			t.Errorf("refusal text %q must name the release %s", d.Reason, shippedRelease)
+		}
 	}
 }
 

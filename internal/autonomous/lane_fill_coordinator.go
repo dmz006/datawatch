@@ -405,9 +405,11 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	if !c.Ready() {
 		return
 	}
-	// Shipped queued work is dropped from the queue first, whatever the lane
-	// fill modes are, so no queue ever keeps it.
-	c.m.DeliverShippedQueued()
+	// Shipped queued work is dropped from the queue at the end of every poll,
+	// on every path out of it and whatever the lane fill modes are, so no
+	// queue keeps it. It runs last so this poll's snapshot still refuses it
+	// as already_shipped and the decision shows the reason first.
+	defer c.m.DeliverShippedQueued()
 	c.laneFillAuditModeChange(kinds)
 	if kinds.allOff() {
 		c.laneFillResetAlerts()
