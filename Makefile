@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
+.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-leftover-daemons check-go-pins check-absolute-symlinks check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs help check-toolchain \
@@ -291,6 +291,13 @@ check-trivy-version:
 	bash scripts/check-trivy-version-single.sh
 	bash scripts/tests/check-trivy-version-single_test.sh
 
+# Tracked symlinks must carry relative targets: an absolute target pins the
+# tree to one host. The checker reports the path and the class of problem and
+# never echoes the offending target.
+check-absolute-symlinks:
+	bash scripts/check-no-absolute-symlink-targets.sh
+	bash scripts/tests/check-no-absolute-symlink-targets_test.sh
+
 check-internal-refs:
 	bash scripts/check-no-internal-refs.sh
 
@@ -349,7 +356,7 @@ check-dependabot-security-only:
 	bash scripts/check-dependabot-security-only.sh
 	bash scripts/check-dependabot-security-only_test.sh
 
-lint: check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-service-scope check-go-pins check-internal-refs check-sarif-upload check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies check-plans-links check-gofmt
+lint: check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-service-scope check-go-pins check-absolute-symlinks check-internal-refs check-sarif-upload check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies check-plans-links check-gofmt
 	golangci-lint run ./...
 
 # Local, non-uploading CodeQL run compared with GitHub's alerts. Long running
