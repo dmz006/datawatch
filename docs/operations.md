@@ -3811,6 +3811,41 @@ See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#5h-how-a-sent-mess
 for the operator-facing description and what to do when a message is still
 unsent.
 
+### Task delivery to a Claude session (what the daemon checks on screen)
+
+A Claude session started with a task gets that task typed into its input box by
+the daemon, once. Two things start the delivery, and they share one claim so the
+task is typed once whichever comes first: the channel bridge's ready call, and
+the daemon's own trigger, which runs 20 s after the session starts if no ready
+call has claimed it (a session whose bridge never reports ready, or whose ready
+call is lost, still gets its task). It applies to every Claude session with a
+task, one-shot or not.
+
+The daemon decides from the screen, not from the session state name. The box is
+ready when all of these hold:
+
+- no choice dialog is open (the development-channels notice, the folder trust
+  prompt, an MCP prompt or any numbered choice);
+- the agent is not working: no spinner line, no running tool line, no
+  `esc to interrupt` in the footer;
+- the input row holds nothing but a suggestion. The suggestion text is never
+  inspected, so a new Claude Code version with other wording still works. A row
+  that holds a `[Pasted text #N +M lines]` chip, or the start of the task itself,
+  is an unsent task and is never pasted over;
+- a session that reads `running` is also treated as idle only once the screen has
+  stood still for a second (running is also what a working agent reads);
+  `waiting_input` needs no extra wait.
+
+The typed text is then verified by echo and the Enter is re-sent when the box
+still holds it (see the section above). When no attempt finds a ready box within
+`session.task_delivery_window_seconds` × `session.task_delivery_attempts`, the
+session is ended and the failure says what the last screen showed, for example
+`last screen: a startup dialog was still waiting for an answer`, `the agent was
+working, not at an empty prompt` or `the input box already holds text, so nothing
+more was typed`. The Automaton task shows that reason; it no longer reads
+"worker stalled". The recorded panes the tests run against are in
+`internal/session/testdata/delivery`.
+
 ### Browser Auto-Refresh
 
 When the daemon is updated and restarted, connected browsers automatically reload to
