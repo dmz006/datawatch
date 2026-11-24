@@ -11858,6 +11858,29 @@ paths:
                   margin: {type: number}
                   last_projection: {type: object, description: "Projected weekly burn (projected), the pace line (line), the margin and how far it is over (over_by)"}
                   last_decision: {type: object, description: "The last evaluation: direction (hold, climb, step_back, disabled), rung, level, previous and reason"}
+                  pace:
+                    type: object
+                    description: "The pace policy (usage.burn_guard.mode). It holds new work at the window pause line (window_stop_percent) and at the weekly pace line plus week_tolerance, and lifts the hold when the reading drops or the window or the week resets. Running sessions finish and operator and supervisor sessions are never held. In shadow it only records what it would hold."
+                    properties:
+                      mode: {type: string, enum: [off, shadow, "on"], description: "off decides nothing, shadow records without holding, on holds new worker admission; unset reads shadow"}
+                      enforcing: {type: boolean, description: True only in mode on}
+                      held: {type: boolean, description: True when any entry's new work is held now}
+                      entries:
+                        type: array
+                        description: One state per guarded LLM entry
+                        items:
+                          type: object
+                          properties:
+                            llm: {type: string}
+                            held: {type: boolean, description: A real hold is in force}
+                            would_hold: {type: boolean, description: The shadow path would hold; nothing is held}
+                            rule: {type: string, enum: [window_pause_line, weekly_pace_line]}
+                            since: {type: string, format: date-time}
+                            last: {$ref: "#/components/schemas/BurnGuardPaceDecision"}
+                      log:
+                        type: array
+                        description: The recent decisions that changed the verdict or the hold, newest first, at most 100
+                        items: {$ref: "#/components/schemas/BurnGuardPaceDecision"}
         "401": {$ref: "#/components/responses/Unauthorized"}
   /api/usage/burn-guard/run:
     post:
@@ -13521,6 +13544,35 @@ components:
             example: "unauthorized"
 
   schemas:
+    BurnGuardPaceDecision:
+      type: object
+      description: One pace policy decision with the evidence it was made on
+      properties:
+        at: {type: string, format: date-time}
+        entry: {type: string, description: The LLM entry}
+        mode: {type: string, enum: [off, shadow, "on"]}
+        hold: {type: boolean, description: "The verdict, whatever the mode: the policy wants new work held"}
+        rule: {type: string, enum: [window_pause_line, weekly_pace_line], description: The line that says so}
+        action: {type: string, enum: [none, hold, release, would_hold, would_release]}
+        held_after: {type: boolean}
+        reason: {type: string}
+        week_read_at: {type: string, format: date-time}
+        week_percent: {type: number, description: The newest weekly reading}
+        week_points_since: {type: number}
+        week_estimated: {type: number, description: The reading plus the burn since it times points_to_week_factor}
+        week_line: {type: number, description: The weekly pace line now}
+        week_tolerance: {type: number}
+        week_reset: {type: boolean}
+        window_read_at: {type: string, format: date-time}
+        window_percent: {type: number, description: The newest session (window) reading}
+        window_points_since: {type: number}
+        window_estimated: {type: number}
+        window_stop_percent: {type: number, description: The pause line}
+        window_start: {type: string, format: date-time}
+        window_end: {type: string, format: date-time}
+        window_reset: {type: boolean}
+        reading_age_minutes: {type: integer}
+        stale: {type: boolean}
     PlanRecord:
       type: object
       description: A registry row or a finding. The title comes first and the id second.

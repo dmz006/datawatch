@@ -82,6 +82,9 @@ type burnGuardAdmission struct {
 	ledger *capacity.Ledger
 	bo     *autonomouspkg.Backoff
 	now    func() time.Time
+	// pace is the registry the pace policy holds new work through (see
+	// burn_guard_pace_wiring.go); nil means the daemon's own.
+	pace *paceHolds
 }
 
 // entry finds the registry entry that serves backend (the entry name is the backend name).
@@ -254,7 +257,7 @@ func claudeTranscriptDir() string {
 // wireBurnGuard attaches and starts the burn guard. A failure is logged; the daemon runs without the guard.
 func wireBurnGuard(ctx context.Context, cfg *config.Config, httpServer *server.HTTPServer, mgr *session.Manager, led *capacity.Ledger) {
 	adm := burnGuardAdmission{
-		cfg: cfg, ledger: led, bo: autonomousBackoff,
+		cfg: cfg, ledger: led, bo: autonomousBackoff, pace: burnGuardPaceHolds,
 		reg: func() *inference.Registry { return httpServer.InferenceRegistry() },
 	}
 	if err := httpServer.AttachBurnGuard(adm, burnGuardSessions{mgr: mgr}, claudeTranscriptDir()); err != nil {

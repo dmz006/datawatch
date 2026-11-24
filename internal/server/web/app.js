@@ -39776,6 +39776,44 @@ function _burnGuardLastCheckText(st) {
 // and the last decision. It links into the burn guard section of the Settings page
 // rather than hosting the settings controls. `config` is accepted for backward
 // compatibility but is not drawn. Every value is escaped; nothing is written here.
+const BURN_GUARD_PACE_RULE_KEYS = { window_pause_line: 'burn_guard_pace_rule_window_pause_line', weekly_pace_line: 'burn_guard_pace_rule_weekly_pace_line' };
+const BURN_GUARD_PACE_ACTION_KEYS = { hold: 'burn_guard_pace_action_hold', release: 'burn_guard_pace_action_release', would_hold: 'burn_guard_pace_action_would_hold', would_release: 'burn_guard_pace_action_would_release', none: 'burn_guard_pace_action_none' };
+const BURN_GUARD_PACE_MODE_KEYS = { off: 'burn_guard_pace_mode_off', shadow: 'burn_guard_pace_mode_shadow', on: 'burn_guard_pace_mode_on' };
+const BURN_GUARD_PACE_LOG_SHOWN = 5;
+
+// The pace policy block of the burn guard card: the mode, the hold it keeps (or, in
+// shadow, the hold it would keep) with its rule and reason, and the newest decisions it
+// recorded. Draws only what the status carries; an older daemon with no `pace` draws nothing.
+function _burnGuardPaceHtml(pace) {
+  if (!pace || typeof pace !== 'object') return '';
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  const mode = pace.mode === 'off' || pace.mode === 'on' ? pace.mode : 'shadow';
+  const rule = (r) => (has(BURN_GUARD_PACE_RULE_KEYS, r) ? t(BURN_GUARD_PACE_RULE_KEYS[r]) : String(r || ''));
+  const when = (v) => { const d = v ? new Date(v) : null; return d && !isNaN(d.getTime()) ? d.toLocaleString() : ''; };
+  const rows = [`<div data-burn-guard="pace-mode" style="font-size:12px;font-weight:600;">${escHtml(t('burn_guard_pace_line', [t(BURN_GUARD_PACE_MODE_KEYS[mode])]))}</div>`];
+  let any = false;
+  (Array.isArray(pace.entries) ? pace.entries : []).forEach((e) => {
+    const reason = (e.last && e.last.reason) || '';
+    if (e.held) {
+      any = true;
+      rows.push(`<div data-burn-guard="pace-held" style="font-size:12px;color:var(--warn,#f59e0b);">${escHtml(t('burn_guard_pace_held', [e.llm || '', rule(e.rule), when(e.since), reason]))}</div>`);
+    } else if (e.would_hold) {
+      any = true;
+      rows.push(`<div data-burn-guard="pace-would-hold" style="font-size:12px;">${escHtml(t('burn_guard_pace_would_hold', [e.llm || '', rule(e.rule), reason]))}</div>`);
+    }
+  });
+  if (!any) rows.push(`<div data-burn-guard="pace-none" style="font-size:12px;color:var(--text2);">${escHtml(t('burn_guard_pace_none'))}</div>`);
+  const log = (Array.isArray(pace.log) ? pace.log : []).slice(0, BURN_GUARD_PACE_LOG_SHOWN);
+  if (log.length) {
+    const items = log.map((d) => {
+      const ak = has(BURN_GUARD_PACE_ACTION_KEYS, d.action) ? BURN_GUARD_PACE_ACTION_KEYS[d.action] : '';
+      return `<li style="font-size:11px;color:var(--text2);">${escHtml(t('burn_guard_pace_log_line', [when(d.at), ak ? t(ak) : String(d.action || ''), rule(d.rule), d.reason || '']))}</li>`;
+    }).join('');
+    rows.push(`<div data-burn-guard="pace-log" style="font-size:11px;"><div style="color:var(--text2);">${escHtml(t('burn_guard_pace_log_title'))}</div><ul style="margin:2px 0 0 16px;padding:0;">${items}</ul></div>`);
+  }
+  return `<div data-burn-guard="pace" data-pace-mode="${escHtml(mode)}" style="display:flex;flex-direction:column;gap:3px;">${rows.join('')}</div>`;
+}
+
 window.burnGuardCardHtml = function (status, config, opts) {
   opts = opts || {};
   const st = status || null;
@@ -39825,6 +39863,7 @@ window.burnGuardCardHtml = function (status, config, opts) {
     }
     if (st.last_error) parts.push(`<div data-burn-guard="last-error" style="font-size:12px;color:var(--error,#ef4444);">${escHtml(st.last_error)}</div>`);
   }
+  if (st) { const paceHtml = _burnGuardPaceHtml(st.pace); if (paceHtml) parts.push(paceHtml); }
   parts.push(window.burnGuardSettingsHtml());
   return `<div class="usage-calc-section burn-guard-card" data-burn-guard="card" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">${parts.join('')}</div>`;
 };

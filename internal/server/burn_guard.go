@@ -116,6 +116,9 @@ type BurnGuardInputs struct {
 	// entry, and for an api or local entry only with a dollar budget set. nil means
 	// it always applies (the behaviour before billing modes).
 	Applies func(backend string) bool
+	// PaceLogPath is the JSON-lines file the pace policy appends its decisions to and
+	// reads the recent ones back from at start; empty keeps them in memory only.
+	PaceLogPath string
 }
 
 // BurnGuardNotifier raises the alert and the queue question of one step.
@@ -148,6 +151,9 @@ type BurnGuardStatus struct {
 	// Entries is one status per guarded entry, the first entry first. The fields
 	// above repeat the first entry's.
 	Entries []BurnGuardEntryStatus `json:"entries,omitempty"`
+	// Pace is the pace policy: its mode, the hold it keeps and the decisions it recorded
+	// with their evidence.
+	Pace *BurnGuardPaceStatus `json:"pace,omitempty"`
 }
 
 // BurnGuardEntryStatus is one guarded entry's state.
@@ -196,6 +202,9 @@ type BurnGuard struct {
 	questionStore autonomous.BurnGuardQuestionStore
 	entries       map[string]*guardedEntry // entries other than the first, by name
 	rungSink      func(oldRung, newRung string)
+	pace          map[string]*paceState // the pace policy's state by entry name
+	paceOrder     []string
+	paceLog       []burnguard.PaceDecision // newest first
 }
 
 // NewBurnGuard builds the runner. store may be nil (no persistence across restarts).
@@ -222,6 +231,7 @@ func NewBurnGuard(in BurnGuardInputs, adm BurnGuardAdmission, sessions BurnGuard
 		refitWake: make(chan struct{}, 1),
 	}
 	g.status.Coefficients = g.fitter.Coefficients()
+	g.paceLog = loadPaceLog(in.PaceLogPath)
 	return g, nil
 }
 
@@ -311,6 +321,7 @@ func (g *BurnGuard) Status() BurnGuardStatus {
 		t := st.LastChange
 		s.LastChangeAt = &t
 	}
+	s.Pace = g.paceStatusLocked()
 	return s
 }
 
@@ -389,6 +400,11 @@ func entryStateName(enabled bool, d burnguard.Decision, proj burnguard.Projectio
 type guardedEntry struct {
 	ladder *burnguard.Ladder
 	fitter *burnguard.Fitter
+	// buckets, through and coef are the token data and prices of the entry's last
+	// projection, which the pace policy prices the burn since a reading from.
+	buckets []burnguard.Bucket
+	through time.Time
+	coef    burnguard.Coefficients
 }
 
 // entryState returns (building on first use) the state of entry e. The first entry uses
@@ -510,6 +526,9 @@ func (g *BurnGuard) tickEntry(ctx context.Context, cfg config.BurnGuardConfig, e
 		g.status.LastError = ""
 	}
 	g.mu.Unlock()
+	// The pace policy runs last, so an error it reports is not cleared by the ladder's own
+	// clean tick.
+	g.tickPace(cfg, e, first, enabled, es, proj, now, readings)
 	return d, proj, enabled
 }
 
@@ -579,6 +598,7 @@ func (g *BurnGuard) project(ctx context.Context, cfg config.BurnGuardConfig, e c
 		// Bought extra credit is the account reading's (the first entry's).
 		extra = 0
 	}
+	es.buckets, es.through, es.coef = buckets, through, coef
 	return burnguard.ProjectEntry(burnguard.EntryProjectInput{
 		ProjectInput: burnguard.ProjectInput{
 			Readings: readings, Reset: reset, Now: now,
@@ -844,6 +864,7 @@ func (s *Server) AttachBurnGuard(adm BurnGuardAdmission, sessions BurnGuardSessi
 	in.StoreFor = func(entry string) burnguard.StateStore {
 		return burnGuardFileStore{path: filepath.Join(s.usageDataDir(), "burn_guard_state."+safeEntryFileName(entry)+".json")}
 	}
+	in.PaceLogPath = filepath.Join(s.usageDataDir(), "burn_guard_pace.jsonl")
 	g, err := NewBurnGuard(in, adm, sessions, burnGuardNotifier{s: s},
 		burnGuardFileStore{path: filepath.Join(s.usageDataDir(), "burn_guard_state.json")})
 	if err != nil {

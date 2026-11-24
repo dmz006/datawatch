@@ -316,6 +316,17 @@ func (s *Server) buildUsage(ctx context.Context) (int, string, error) {
 				line += ", projected over target"
 			}
 		}
+		if pc := st.Pace; pc != nil {
+			line += ", pace policy " + pc.Mode
+			for _, e := range pc.Entries {
+				switch {
+				case e.Held:
+					line += fmt.Sprintf(", %s new work held (%s)", e.LLM, e.Rule)
+				case e.WouldHold:
+					line += fmt.Sprintf(", %s would be held (%s, shadow)", e.LLM, e.Rule)
+				}
+			}
+		}
 		parts = append(parts, line)
 	}
 	if s.usageCalc != nil {
