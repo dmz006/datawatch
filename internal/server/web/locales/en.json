@@ -2337,6 +2337,7 @@
   "settings_capacity_supervisor_reserve_claude": "Supervisor buffer: Claude slots above the cap (default 1)",
   "settings_capacity_supervisor_reserve_pi": "Supervisor buffer: pi slots above the cap (default 1)",
   "settings_capacity_supervisor_reserve_host": "Supervisor buffer: host session slots above max sessions (default 4)",
+  "settings_capacity_operator_reserve_host": "Operator allowance: host session slots above max sessions (default 5, 0 = none)",
   "settings_capacity_supervisor_credential_enabled": "Supervisor credential makes a REST start the supervisor class",
   "settings_capacity_operator_overage_alert": "Alert when an operator session starts over a limit",
   "settings_capacity_slot_reconcile_grace": "Slot reconcile grace (sec, default 60, min 10, 0 = 60)",

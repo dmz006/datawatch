@@ -4,6 +4,13 @@ import "testing"
 
 func TestCapacityAdmissionDefaults(t *testing.T) {
 	var a AutonomousConfig
+	if a.CapacityOperatorReserveHost() != 5 || (*AutonomousConfig)(nil).CapacityOperatorReserveHost() != 5 {
+		t.Fatalf("operator allowance default = %d, want 5", a.CapacityOperatorReserveHost())
+	}
+	zero := 0
+	if z := (&AutonomousConfig{CapacityOperatorReserveHostSetting: &zero}); z.CapacityOperatorReserveHost() != 0 {
+		t.Fatal("explicit 0 must stay 0")
+	}
 	if a.CapacityAccountClaudeLimit() != 2 || a.CapacitySupervisorReserveClaude() != 1 ||
 		a.CapacitySupervisorReservePi() != 1 || a.CapacitySupervisorReserveHost() != 4 {
 		t.Fatalf("defaults wrong: %d %d %d %d", a.CapacityAccountClaudeLimit(), a.CapacitySupervisorReserveClaude(), a.CapacitySupervisorReservePi(), a.CapacitySupervisorReserveHost())
@@ -30,6 +37,7 @@ func TestCapacityAdmissionRejectsNegative(t *testing.T) {
 		{CapacitySupervisorReserveClaudeSetting: &neg},
 		{CapacitySupervisorReservePiSetting: &neg},
 		{CapacitySupervisorReserveHostSetting: &neg},
+		{CapacityOperatorReserveHostSetting: &neg},
 	} {
 		if validateCapacityAdmission(&a) == nil {
 			t.Fatalf("negative value accepted: %+v", a)

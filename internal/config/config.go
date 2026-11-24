@@ -3686,6 +3686,12 @@ type AutonomousConfig struct {
 	CapacitySupervisorReserveClaudeSetting *int `yaml:"capacity_supervisor_reserve_claude,omitempty" json:"capacity_supervisor_reserve_claude,omitempty"`
 	CapacitySupervisorReservePiSetting     *int `yaml:"capacity_supervisor_reserve_pi,omitempty" json:"capacity_supervisor_reserve_pi,omitempty"`
 	CapacitySupervisorReserveHostSetting   *int `yaml:"capacity_supervisor_reserve_host,omitempty" json:"capacity_supervisor_reserve_host,omitempty"`
+	// CapacityOperatorReserveHostSetting is the operator allowance: how many
+	// sessions above session.max_sessions an operator start may take before it is
+	// refused (unset = 5; 0 = operators stop at the cap). Workers never use it;
+	// supervisors have their own host slots. Using it raises an alert and is
+	// recorded on the session. Read live.
+	CapacityOperatorReserveHostSetting *int `yaml:"capacity_operator_reserve_host,omitempty" json:"capacity_operator_reserve_host,omitempty"`
 	// CapacitySupervisorCredentialEnabled: a supervisor credential (a named,
 	// revocable token an operator mints) makes a REST session start the
 	// supervisor class, for an external supervisor until the daemon runs that job

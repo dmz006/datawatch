@@ -735,6 +735,7 @@ func (a *API) SetConfig(v any) error {
 		"capacity_supervisor_reserve_claude": cfg.CapacitySupervisorReserveClaude,
 		"capacity_supervisor_reserve_pi":     cfg.CapacitySupervisorReservePi,
 		"capacity_supervisor_reserve_host":   cfg.CapacitySupervisorReserveHost,
+		"capacity_operator_reserve_host":     cfg.CapacityOperatorReserveHost,
 	} {
 		if p != nil && *p < 0 {
 			return fmt.Errorf("config: %s must be >= 0", k)

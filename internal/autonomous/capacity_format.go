@@ -88,6 +88,12 @@ type capacityBody struct {
 	} `json:"leases"`
 	// Unmapped lists subscription backends a start named that resolve to no
 	// LLM entry; they are held to one session, never unlimited.
+	SessionCap *struct {
+		Max           int `json:"max"`
+		Active        int `json:"active"`
+		OperatorSlots int `json:"operator_slots"`
+		Over          int `json:"over"`
+	} `json:"session_cap"`
 	Unmapped []struct {
 		Backend string `json:"backend"`
 		Count   int    `json:"count"`
@@ -136,6 +142,9 @@ func FormatCapacityText(body []byte) (string, error) {
 	}
 	if len(over) > 0 {
 		fmt.Fprintf(&b, "Operator sessions over a limit (%d):\n%s\n", len(over), strings.Join(over, "\n"))
+	}
+	if sc := c.SessionCap; sc != nil && sc.Over > 0 {
+		fmt.Fprintf(&b, "Host session cap: %d running against %d, %d over (operator allowance %d)\n", sc.Active, sc.Max, sc.Over, sc.OperatorSlots)
 	}
 	for _, u := range c.Unmapped {
 		fmt.Fprintf(&b, "No LLM entry for backend %s (%d starts): held to 1 session until an entry is added\n", u.Backend, u.Count)

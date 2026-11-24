@@ -2294,6 +2294,7 @@
   "settings_capacity_supervisor_reserve_claude": "Búfer de supervisor: ranuras de Claude sobre el límite (predeterminado 1)",
   "settings_capacity_supervisor_reserve_pi": "Búfer de supervisor: ranuras de pi sobre el límite (predeterminado 1)",
   "settings_capacity_supervisor_reserve_host": "Búfer de supervisor: ranuras de sesión del host sobre el máximo (predeterminado 4)",
+  "settings_capacity_operator_reserve_host": "Margen de operador: ranuras de sesión del host sobre el máximo (predeterminado 5, 0 = ninguna)",
   "settings_capacity_supervisor_credential_enabled": "La credencial de supervisor hace que un inicio REST sea de clase supervisor",
   "settings_capacity_operator_overage_alert": "Avisar cuando una sesión de operador empieza por encima de un límite",
   "settings_capacity_slot_reconcile_grace": "Plazo de gracia de conciliación de ranuras (s, predeterminado 60, mín. 10, 0 = 60)",

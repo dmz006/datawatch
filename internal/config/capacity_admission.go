@@ -17,6 +17,9 @@ const (
 	// DefaultCapacitySupervisorReserveHost is the host session slots only the
 	// supervisor class may use above the session cap.
 	DefaultCapacitySupervisorReserveHost = 4
+	// DefaultCapacityOperatorReserveHost is the host session slots above
+	// session.max_sessions that only operator starts may use.
+	DefaultCapacityOperatorReserveHost = 5
 )
 
 func intOr(p *int, def int) int {
@@ -51,6 +54,15 @@ func (a *AutonomousConfig) CapacitySupervisorReservePi() int {
 	return intOr(a.CapacitySupervisorReservePiSetting, DefaultCapacitySupervisorReservePi)
 }
 
+// CapacityOperatorReserveHost is the effective operator allowance above
+// session.max_sessions (0 = operators stop at the cap too).
+func (a *AutonomousConfig) CapacityOperatorReserveHost() int {
+	if a == nil {
+		return DefaultCapacityOperatorReserveHost
+	}
+	return intOr(a.CapacityOperatorReserveHostSetting, DefaultCapacityOperatorReserveHost)
+}
+
 // CapacitySupervisorReserveHost is the effective host session-slot buffer.
 func (a *AutonomousConfig) CapacitySupervisorReserveHost() int {
 	if a == nil {
@@ -73,6 +85,7 @@ func validateCapacityAdmission(a *AutonomousConfig) error {
 		"capacity_supervisor_reserve_claude": a.CapacitySupervisorReserveClaudeSetting,
 		"capacity_supervisor_reserve_pi":     a.CapacitySupervisorReservePiSetting,
 		"capacity_supervisor_reserve_host":   a.CapacitySupervisorReserveHostSetting,
+		"capacity_operator_reserve_host":     a.CapacityOperatorReserveHostSetting,
 	} {
 		if p != nil && *p < 0 {
 			return fmt.Errorf("autonomous.%s: %d must be >= 0", k, *p)

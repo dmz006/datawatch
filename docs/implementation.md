@@ -229,6 +229,15 @@ except the adoption wait, which is read once as the ledger starts):
   (unset = 4) (ints >= 0): the supervisor buffers above a pool's limit. The host buffer also
   raises the session manager's hard session cap for the supervisor class
   (`Manager.SetSupervisorSlots`).
+- `autonomous.capacity_operator_reserve_host` (int >= 0, unset = 5): the operator allowance above
+  `session.max_sessions`. `Manager.startSession` lets an operator start (`AdmitClass` empty or
+  `operator`) run while active < max + allowance (`SetOperatorSlots`), sets `Session.OverSessionCap`
+  (`over_session_cap`, how far over the cap) and calls the hook that raises one alert per use
+  (`overSessionCapNotice`); past it the start is refused with `max sessions (N) reached and the operator
+  allowance of M above it is used up; raise autonomous.capacity_operator_reserve_host ...`. A worker
+  never uses it, and the supervisor class keeps its own `capacity_supervisor_reserve_host` slots.
+  `GET /api/capacity` carries `session_cap` (`max`, `active`, `operator_slots`, `supervisor_slots`,
+  `over`). The cap value (`session.max_sessions`) is unchanged.
 - Supervisor credential (a removable stopgap for the external detector timer):
   `internal/server/supervisor_credential.go`. `POST/GET/DELETE /api/capacity/supervisor-credential`
   mint (token shown once), list names and revoke; admin token only (a session-scoped token or a federation

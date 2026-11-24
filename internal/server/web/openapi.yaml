@@ -5780,6 +5780,15 @@ paths:
                               limit: {type: integer}
                               over: {type: integer, description: "Used count after the grant minus the limit"}
                   waiting: {type: array, items: {type: object}}
+                  session_cap:
+                    type: object
+                    description: The host session cap (session.max_sessions) with the allowances above it. Absent when no cap is set. over is how far running sessions are above max (operator sessions started into the operator allowance).
+                    properties:
+                      max: {type: integer}
+                      active: {type: integer}
+                      operator_slots: {type: integer, description: "autonomous.capacity_operator_reserve_host: slots above max only operator starts may use"}
+                      supervisor_slots: {type: integer, description: "autonomous.capacity_supervisor_reserve_host: slots above max only supervisor starts may use"}
+                      over: {type: integer}
                   unmapped:
                     type: array
                     description: Subscription backends a start named that resolve to no LLM entry. Each is held to one session, never treated as unlimited. Absent when none.

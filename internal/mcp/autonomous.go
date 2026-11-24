@@ -306,6 +306,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("capacity_supervisor_reserve_claude", mcpsdk.Description("Claude slots above the cap that only supervisor sessions may use (default 1)")),
 		mcpsdk.WithNumber("capacity_supervisor_reserve_pi", mcpsdk.Description("pi slots above the cap that only supervisor sessions may use (default 1)")),
 		mcpsdk.WithNumber("capacity_supervisor_reserve_host", mcpsdk.Description("Host session slots above max_sessions that only supervisor sessions may use (default 4)")),
+		mcpsdk.WithNumber("capacity_operator_reserve_host", mcpsdk.Description("Host session slots above session.max_sessions that only operator starts may use (default 5; 0 = operators stop at the cap); an alert is raised when it is used")),
 		mcpsdk.WithBoolean("capacity_supervisor_credential_enabled", mcpsdk.Description("Whether a supervisor credential makes a REST session start the supervisor class (default true; false makes every credential do nothing)")),
 		mcpsdk.WithBoolean("capacity_operator_overage_alert", mcpsdk.Description("Raise an alert each time an operator session starts over a pool's limit (default false; the overage is always recorded)")),
 		mcpsdk.WithNumber("capacity_adoption_wait_seconds", mcpsdk.Description("Longest wait, in seconds, for resumed workers to be adopted after a restart (default 30; negative values are rejected)")),
@@ -888,7 +889,7 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 				body[k] = req.GetBool(k, true)
 			}
 		}
-		for _, k := range []string{"capacity_account_claude_limit", "capacity_supervisor_reserve_claude", "capacity_supervisor_reserve_pi", "capacity_supervisor_reserve_host"} {
+		for _, k := range []string{"capacity_account_claude_limit", "capacity_supervisor_reserve_claude", "capacity_supervisor_reserve_pi", "capacity_supervisor_reserve_host", "capacity_operator_reserve_host"} {
 			if _, ok := args[k]; ok {
 				body[k] = int(req.GetFloat(k, 0))
 			}

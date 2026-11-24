@@ -3493,6 +3493,13 @@ autonomous:
   capacity_supervisor_reserve_claude: 1
   capacity_supervisor_reserve_pi: 1
   capacity_supervisor_reserve_host: 4
+  # capacity_operator_reserve_host (default 5): host session slots above
+  # session.max_sessions that only operator starts may use. An operator start at
+  # the cap goes into this allowance (an alert is raised and the session records
+  # how far over the cap it is); past it the start is refused with a reason that
+  # names this setting. Workers never use it; supervisors have the slots above.
+  # 0 = operators stop at the cap. Read live. The cap itself is unchanged.
+  capacity_operator_reserve_host: 5
   capacity_operator_overage_alert: false
   # capacity_supervisor_credential_enabled (default true): a supervisor
   # credential (minted with `datawatch capacity supervisor-credential mint`) makes

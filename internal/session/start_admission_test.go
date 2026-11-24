@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -155,5 +156,62 @@ func TestManagerStart_PassesRestartFlagToAdmitter(t *testing.T) {
 	}
 	if len(rec.got) != 1 || rec.got[0].Class != "worker" || !rec.got[0].Restart {
 		t.Fatalf("admission = %+v, want worker class with Restart", rec.got)
+	}
+}
+
+// An operator start at max_sessions succeeds into the operator allowance and
+// records how far over the cap it is; past the allowance it is refused with a
+// reason that names the setting; a worker never uses the allowance.
+func TestManagerStart_OperatorAllowanceAboveSessionCap(t *testing.T) {
+	mgr := admissionManager(t)
+	mgr.SetMaxSessions(1)
+	mgr.SetOperatorSlots(2)
+	var over []int
+	mgr.SetOverSessionCapHook(func(class string, overBy int) { over = append(over, overBy) })
+	dir := t.TempDir()
+	if _, err := mgr.Start(context.Background(), "echo a", "", dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(over) != 0 {
+		t.Fatalf("a start within the cap reported over-cap: %v", over)
+	}
+	// A worker is refused at the cap: the allowance is for operators.
+	_, err := mgr.Start(context.Background(), "echo w", "", dir, &StartOptions{AdmitClass: "worker"})
+	if err == nil || strings.Contains(err.Error(), "allowance") {
+		t.Fatalf("worker err = %v, want the plain cap refusal", err)
+	}
+	// Operators go into the allowance (no options, or class operator).
+	s2, err := mgr.Start(context.Background(), "echo b", "", dir, &StartOptions{AdmitClass: "operator"})
+	if err != nil {
+		t.Fatalf("operator start at the cap: %v", err)
+	}
+	if s2.OverSessionCap != 1 {
+		t.Fatalf("OverSessionCap = %d, want 1 (one over max_sessions)", s2.OverSessionCap)
+	}
+	if _, err := mgr.Start(context.Background(), "echo c", "", dir, nil); err != nil {
+		t.Fatalf("second operator start into the allowance: %v", err)
+	}
+	if len(over) != 2 || over[0] != 1 || over[1] != 2 {
+		t.Fatalf("over-cap reports = %v, want [1 2]", over)
+	}
+	_, err = mgr.Start(context.Background(), "echo d", "", dir, nil)
+	if err == nil || !strings.Contains(err.Error(), "autonomous.capacity_operator_reserve_host") || !strings.Contains(err.Error(), "max sessions (1)") {
+		t.Fatalf("past the allowance err = %v, want a plain reason naming autonomous.capacity_operator_reserve_host", err)
+	}
+	// Supervisors keep their own host slots, separate from the allowance.
+	mgr.SetSupervisorSlots(1)
+	if _, err := mgr.Start(context.Background(), "echo s", "", dir, &StartOptions{AdmitClass: "supervisor"}); err == nil {
+		t.Fatal("the supervisor limit is cap plus supervisor slots; with 3 running (cap 1 + 2 operator) it must be full")
+	}
+}
+
+func TestManagerSessionCapStatus(t *testing.T) {
+	mgr := admissionManager(t)
+	mgr.SetMaxSessions(1)
+	mgr.SetOperatorSlots(2)
+	mgr.SetSupervisorSlots(1)
+	st := mgr.SessionCap()
+	if st.Max != 1 || st.OperatorSlots != 2 || st.SupervisorSlots != 1 || st.Active != 0 || st.Over != 0 {
+		t.Fatalf("status = %+v", st)
 	}
 }

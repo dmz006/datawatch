@@ -6891,6 +6891,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_supervisor_reserve_claude":     s.cfg.Autonomous.CapacitySupervisorReserveClaude(),
 			"capacity_supervisor_reserve_pi":         s.cfg.Autonomous.CapacitySupervisorReservePi(),
 			"capacity_supervisor_reserve_host":       s.cfg.Autonomous.CapacitySupervisorReserveHost(),
+			"capacity_operator_reserve_host":         s.cfg.Autonomous.CapacityOperatorReserveHost(),
 			"capacity_operator_overage_alert":        s.cfg.Autonomous.CapacityOperatorOverageAlert,
 			"capacity_supervisor_credential_enabled": s.cfg.Autonomous.CapacitySupervisorCredentialOn(),
 			"capacity_slot_reconcile_grace_seconds":  int(s.cfg.Autonomous.CapacitySlotReconcileGrace() / time.Second),
@@ -10988,6 +10989,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_supervisor_credential_enabled":
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.CapacitySupervisorCredentialEnabled = &b
+			}
+		case "autonomous.capacity_operator_reserve_host":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityOperatorReserveHostSetting = &n
 			}
 		case "autonomous.capacity_operator_overage_alert":
 			if b, ok := v.(bool); ok {

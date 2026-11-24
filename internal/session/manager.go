@@ -499,6 +499,10 @@ type Manager struct {
 	// supervisorSlots is how many sessions above maxSessions the supervisor
 	// admission class may start (the host buffer); see SetSupervisorSlots.
 	supervisorSlots int
+	// operatorSlots is how many sessions above maxSessions an operator start
+	// may take (the operator allowance); overSessionCap is told when one does.
+	operatorSlots  int
+	overSessionCap func(class string, overBy int)
 
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
@@ -2422,7 +2426,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	// the launch fails.
 	admit := m.startAdmitter()
 	if admit == nil || (opt != nil && opt.PreAdmitted) {
-		return m.startSession(ctx, task, groupID, projectDir, opts...)
+		sess, err := m.startSession(ctx, task, groupID, projectDir, opts...)
+		m.noteOverSessionCap(sess)
+		return sess, err
 	}
 	class := ""
 	backend, model, role := "", "", ""
@@ -2444,7 +2450,68 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return nil, err
 	}
 	bind(sess.FullID)
+	m.noteOverSessionCap(sess)
 	return sess, nil
+}
+
+// noteOverSessionCap tells the daemon (its hook) that an operator start went
+// into the allowance above max_sessions.
+func (m *Manager) noteOverSessionCap(sess *Session) {
+	if sess == nil || sess.OverSessionCap == 0 {
+		return
+	}
+	m.mu.Lock()
+	hook := m.overSessionCap
+	m.mu.Unlock()
+	if hook != nil {
+		hook("operator", sess.OverSessionCap)
+	}
+}
+
+// SetOperatorSlots sets the allowance above max_sessions that only operator
+// starts may use (0 = none).
+func (m *Manager) SetOperatorSlots(n int) {
+	if n < 0 {
+		n = 0
+	}
+	m.mu.Lock()
+	m.operatorSlots = n
+	m.mu.Unlock()
+}
+
+// SetOverSessionCapHook sets the function called when an operator start goes
+// into the allowance: the class and how far over max_sessions the start is.
+func (m *Manager) SetOverSessionCapHook(fn func(class string, overBy int)) {
+	m.mu.Lock()
+	m.overSessionCap = fn
+	m.mu.Unlock()
+}
+
+// SessionCapStatus is the host session cap and its two allowances.
+type SessionCapStatus struct {
+	Max             int `json:"max"`
+	Active          int `json:"active"`
+	OperatorSlots   int `json:"operator_slots"`
+	SupervisorSlots int `json:"supervisor_slots"`
+	// Over is how far active is above Max (operator allowance in use).
+	Over int `json:"over,omitempty"`
+}
+
+// SessionCap reports the cap, the running count and the allowances.
+func (m *Manager) SessionCap() SessionCapStatus {
+	active := 0
+	for _, s := range m.store.List() {
+		if s.Hostname == m.hostname && (s.State == StateRunning || s.State == StateWaitingInput) {
+			active++
+		}
+	}
+	m.mu.Lock()
+	st := SessionCapStatus{Max: m.maxSessions, Active: active, OperatorSlots: m.operatorSlots, SupervisorSlots: m.supervisorSlots}
+	m.mu.Unlock()
+	if st.Max > 0 && active > st.Max {
+		st.Over = active - st.Max
+	}
+	return st
 }
 
 // AdmitClassForLaunchRole is the admission class of a scheduled spawn: the
@@ -2538,6 +2605,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	}
 
 	// Check max sessions (count only running/waiting sessions on this host)
+	overSessionCap := 0 // how far over max_sessions this operator start is
 	if m.maxSessions > 0 {
 		all := m.store.List()
 		active := 0
@@ -2547,13 +2615,27 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 			}
 		}
 		limit := m.maxSessions
-		if opt != nil && opt.AdmitClass == "supervisor" {
-			m.mu.Lock()
+		usesAllowance := false
+		m.mu.Lock()
+		switch {
+		case opt != nil && opt.AdmitClass == "supervisor":
 			limit += m.supervisorSlots
-			m.mu.Unlock()
+		case opt == nil || opt.AdmitClass == "" || opt.AdmitClass == "operator":
+			// An operator start may go into the operator allowance above the
+			// cap. A worker (or any other class) never does.
+			limit += m.operatorSlots
+			usesAllowance = m.operatorSlots > 0
 		}
+		operatorSlots := m.operatorSlots
+		m.mu.Unlock()
 		if active >= limit {
+			if usesAllowance {
+				return nil, fmt.Errorf("max sessions (%d) reached and the operator allowance of %d above it is used up; raise autonomous.capacity_operator_reserve_host to allow more operator sessions", m.maxSessions, operatorSlots)
+			}
 			return nil, fmt.Errorf("max sessions (%d) reached", m.maxSessions)
+		}
+		if usesAllowance && active >= m.maxSessions {
+			overSessionCap = active + 1 - m.maxSessions
 		}
 	}
 
@@ -2734,20 +2816,21 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	}
 
 	sess := &Session{
-		ID:            id,
-		FullID:        fullID,
-		Name:          sessionName,
-		Task:          task,
-		ProjectDir:    projectDir,
-		TmuxSession:   tmuxSession,
-		LogFile:       "", // will be set after tracker creation
-		State:         StateRunning,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-		Hostname:      m.hostname,
-		GroupID:       groupID,
-		BackendFamily: backendName,
-		Effort:        m.resolveEffort(opt),
+		OverSessionCap: overSessionCap,
+		ID:             id,
+		FullID:         fullID,
+		Name:           sessionName,
+		Task:           task,
+		ProjectDir:     projectDir,
+		TmuxSession:    tmuxSession,
+		LogFile:        "", // will be set after tracker creation
+		State:          StateRunning,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		Hostname:       m.hostname,
+		GroupID:        groupID,
+		BackendFamily:  backendName,
+		Effort:         m.resolveEffort(opt),
 	}
 	if opt != nil && opt.EphemeralWorkspace {
 		sess.EphemeralWorkspace = true

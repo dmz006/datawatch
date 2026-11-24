@@ -16,6 +16,7 @@ import (
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/inference"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // SetCapacity wires the admission ledger exposed at GET /api/capacity.
@@ -309,6 +310,10 @@ type capacityResponse struct {
 	// no LLM entry. They are held to one session, never treated as unlimited.
 	// Omitted when none.
 	Unmapped []CapacityUnmapped `json:"unmapped,omitempty"`
+	// SessionCap is the host session cap (session.max_sessions) with the
+	// operator allowance and supervisor slots above it; over is set while
+	// operator sessions run above the cap.
+	SessionCap *session.SessionCapStatus `json:"session_cap,omitempty"`
 }
 
 // CapacityUnmapped is one subscription backend with no LLM entry and so no pool
@@ -704,6 +709,11 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.capacityUnmapped != nil {
 		out.Unmapped = s.capacityUnmapped()
+	}
+	if s.manager != nil {
+		if sc := s.manager.SessionCap(); sc.Max > 0 {
+			out.SessionCap = &sc
+		}
 	}
 	writeJSONOK(w, out)
 }

@@ -256,3 +256,34 @@ func TestManagerStartAdmitterRestartedWorkerStartsBeforeFreshWork(t *testing.T) 
 		t.Fatal("no grant after the slot freed")
 	}
 }
+
+func TestSyncAdmissionPoolsSetsOperatorAllowance(t *testing.T) {
+	cfg := config.DefaultConfig()
+	reg := admissionRegistry(t)
+	led := capacity.New(capacity.Options{})
+	mgr, err := session.NewManager("h", t.TempDir(), "echo", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	syncAdmissionPoolsFor(cfg, reg, led, mgr)
+	if got := mgr.SessionCap().OperatorSlots; got != 5 {
+		t.Fatalf("operator slots = %d, want the default 5", got)
+	}
+	three := 3
+	cfg.Autonomous.CapacityOperatorReserveHostSetting = &three
+	syncAdmissionPoolsFor(cfg, reg, led, mgr)
+	if got := mgr.SessionCap().OperatorSlots; got != 3 {
+		t.Fatalf("operator slots = %d, want 3 after the setting changed", got)
+	}
+}
+
+func TestOverSessionCapNoticeNamesTheSetting(t *testing.T) {
+	cfg := config.DefaultConfig()
+	var title, body string
+	overSessionCapNotice(cfg, func(ti, bo string) { title, body = ti, bo })("operator", 2)
+	if title == "" || !strings.Contains(body, "autonomous.capacity_operator_reserve_host") || !strings.Contains(body, "2 above") {
+		t.Fatalf("alert = %q / %q", title, body)
+	}
+	overSessionCapNotice(cfg, nil)("operator", 1) // no alert function: no panic
+}

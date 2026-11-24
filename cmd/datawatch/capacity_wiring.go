@@ -1299,6 +1299,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	})
 	// Every other start path (chat, MCP, schedules, WebSocket, restarts, the
 	// pipeline adapter) admits at the manager, so no start is unaccounted.
+	mgr.SetOverSessionCapHook(overSessionCapNotice(cfg, alertFn))
 	mgr.SetStartAdmitter(managerStartAdmitter(cfg, led, resolve, func() string { return cfg.Session.LLMBackend }))
 	httpServer.SetCapacityUnmapped(func() []server.CapacityUnmapped {
 		src := unmappedBackends.list()

@@ -734,6 +734,7 @@ type Config struct {
 	CapacitySupervisorReserveClaude *int `json:"capacity_supervisor_reserve_claude,omitempty"`
 	CapacitySupervisorReservePi     *int `json:"capacity_supervisor_reserve_pi,omitempty"`
 	CapacitySupervisorReserveHost   *int `json:"capacity_supervisor_reserve_host,omitempty"`
+	CapacityOperatorReserveHost     *int `json:"capacity_operator_reserve_host,omitempty"`
 	CapacityOperatorOverageAlert    bool `json:"capacity_operator_overage_alert,omitempty"`
 	// CapacitySupervisorCredentialEnabled mirrors config.AutonomousConfig (nil = on).
 	CapacitySupervisorCredentialEnabled *bool `json:"capacity_supervisor_credential_enabled,omitempty"`

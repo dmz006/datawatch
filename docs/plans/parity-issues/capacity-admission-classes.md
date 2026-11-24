@@ -14,6 +14,11 @@ Five settings under `autonomous`, all read live:
   sessions may use (default 1).
 - `autonomous.capacity_supervisor_reserve_pi` — pi slots above the cap (default 1).
 - `autonomous.capacity_supervisor_reserve_host` — host session slots above `session.max_sessions` (default 4).
+- `autonomous.capacity_operator_reserve_host` — whole number, host session slots above `session.max_sessions`
+  only operator starts may use (default 5, `0` = none). Locale key `settings_capacity_operator_reserve_host`.
+  `GET /api/capacity` carries `session_cap` (`max`, `active`, `operator_slots`, `supervisor_slots`, `over`) and a
+  session record carries `over_session_cap`; the apps may show "N over the session cap" on a session started
+  into the allowance.
 - `autonomous.capacity_operator_overage_alert` — switch; raise an alert each time an operator session starts
   over a pool's limit (default off).
 

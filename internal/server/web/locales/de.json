@@ -2290,6 +2290,7 @@
   "settings_capacity_supervisor_reserve_claude": "Supervisor-Puffer: Claude-Plätze über der Obergrenze (Standard 1)",
   "settings_capacity_supervisor_reserve_pi": "Supervisor-Puffer: pi-Plätze über der Obergrenze (Standard 1)",
   "settings_capacity_supervisor_reserve_host": "Supervisor-Puffer: Host-Sitzungsplätze über max. Sitzungen (Standard 4)",
+  "settings_capacity_operator_reserve_host": "Operator-Kontingent: Host-Sitzungsplätze über max. Sitzungen (Standard 5, 0 = keine)",
   "settings_capacity_supervisor_credential_enabled": "Supervisor-Zugangsdaten machen einen REST-Start zur Supervisor-Klasse",
   "settings_capacity_operator_overage_alert": "Warnen, wenn eine Operator-Sitzung über einem Limit startet",
   "settings_capacity_slot_reconcile_grace": "Karenzzeit für Slot-Abgleich (Sek., Standard 60, min. 10, 0 = 60)",

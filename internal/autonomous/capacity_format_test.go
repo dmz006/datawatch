@@ -340,3 +340,16 @@ func TestFormatCapacityText_ShowsOperatorOverageAndUnmapped(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatCapacityText_ShowsHostSessionCapOver(t *testing.T) {
+	body := []byte(`{"pools":[],"leases":[],"session_cap":{"max":20,"active":22,"operator_slots":5,"over":2},"waiting":[],"tasks":{"waiting":[],"running":[],"verifying":[]}}`)
+	out, err := FormatCapacityText(body)
+	if err != nil || !strings.Contains(out, "Host session cap: 22 running against 20, 2 over (operator allowance 5)") {
+		t.Fatalf("text %q err %v", out, err)
+	}
+	body = []byte(`{"pools":[],"leases":[],"session_cap":{"max":20,"active":3,"operator_slots":5},"waiting":[],"tasks":{"waiting":[],"running":[],"verifying":[]}}`)
+	out, _ = FormatCapacityText(body)
+	if strings.Contains(out, "Host session cap") {
+		t.Fatalf("within the cap nothing is shown: %q", out)
+	}
+}

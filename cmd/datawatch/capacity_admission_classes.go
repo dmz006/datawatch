@@ -96,6 +96,7 @@ func syncAdmissionPools(cfg *config.Config, reg *inference.Registry, led *capaci
 func syncAdmissionPoolsFor(cfg *config.Config, reg *inference.Registry, led *capacity.Ledger, mgr *session.Manager) {
 	if mgr != nil {
 		mgr.SetSupervisorSlots(cfg.Autonomous.CapacitySupervisorReserveHost())
+		mgr.SetOperatorSlots(cfg.Autonomous.CapacityOperatorReserveHost())
 	}
 	setLimit := func(pool string, n int) {
 		if led.Limit(pool) != n {
@@ -199,6 +200,18 @@ func operatorOverageNotice(cfg *config.Config, alertFn func(title, body string))
 			parts = append(parts, fmt.Sprintf("%s is %d over its limit of %d", o.Pool, o.Over, o.Limit))
 		}
 		alertFn("Operator session started over a capacity limit", fmt.Sprintf("Session %s was admitted as an operator start: %s. Autonomous work waits until the pool is back under its limit.", ls.Holder, strings.Join(parts, "; ")))
+	}
+}
+
+// overSessionCapNotice is the session manager's hook for an operator start that
+// went into the operator allowance above session.max_sessions: one alert each
+// time, naming how far over the cap the host is and the setting.
+func overSessionCapNotice(cfg *config.Config, alertFn func(title, body string)) func(class string, overBy int) {
+	return func(_ string, overBy int) {
+		if alertFn == nil {
+			return
+		}
+		alertFn("Operator session started above the session cap", fmt.Sprintf("An operator session started %d above session.max_sessions (%d), using the operator allowance of %d slots (autonomous.capacity_operator_reserve_host). Autonomous work does not use it and waits.", overBy, cfg.Session.MaxSessions, cfg.Autonomous.CapacityOperatorReserveHost()))
 	}
 }
 
