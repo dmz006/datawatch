@@ -27,9 +27,9 @@ binary running at **datawatch v9.182.3**.
 
 In plain terms, an operator who does nothing special gets exactly what the
 docs promise, from
-[Claude model defaults: which model runs when nobody names one](../../howto/claude-model-defaults.md)
+[Claude model defaults: which model runs when nobody names one](../../../../howto/claude-model-defaults.md)
 and
-[Explicit-model policy: never start Claude Code without a model](../../howto/explicit-model-policy.md):
+[Explicit-model policy: never start Claude Code without a model](../../../../howto/explicit-model-policy.md):
 
 - A session or autonomous run nobody gave a model for runs on **`sonnet`** —
   a daemon default passed explicitly to the CLI, never your Claude
@@ -92,4 +92,4 @@ check:
   operators want one for throwaway runs, that is a separate ask, not part of
   this fix.
 
-Report path: `docs/plans/reports/claude-explicit-model-policies-final-gate-report.md`
+Report path: `docs/plans/reports/archive/2026-11/claude-explicit-model-policies-final-gate-report.md`
