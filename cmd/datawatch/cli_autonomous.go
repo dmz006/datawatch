@@ -77,6 +77,8 @@ Subcommands:
   gate-repair run [--automaton ID --task ID] [--json]
                                   Run one gate repair pass (or repair one failed task gate); prints the
                                   run's outcomes and the fresh status
+  dormant-features [--json]       Automata settings that are off or in shadow mode: key, state, default,
+                                  purpose and whether the feature was ever exercised (read only)
   supervisor-watch [--json]       Supervisor watch read: the mode, the last poll, one line per finding
                                   (kind, state, last seen, the operator line) and the comparison
                                   against the supervisor script's output
@@ -396,6 +398,7 @@ Subcommands:
 		newAutonomousHousekeepingRepairsCmd(),
 		newAutonomousGateRepairsCmd(),
 		newAutonomousGateRepairCmd(),
+		newAutonomousDormantFeaturesCmd(),
 		newAutonomousDecisionsCmd(),
 		// Decision records: the structured operator decisions on the Automaton.
 		newDecisionRecordsCmd(),

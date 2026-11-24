@@ -79,3 +79,17 @@ func TestHousekeepingRepairsCLIJSONAndErrors(t *testing.T) {
 		t.Error("an extra argument must be refused")
 	}
 }
+
+func TestHousekeepingRepairsCLIPrintsRefusalsAndFinishedWork(t *testing.T) {
+	const body = `{"grace_seconds":120,"groups":[],"refusals":[{"automaton":"a1","step":"merge","reason":"main moved","first_seen":"2026-11-10T09:00:00Z","last_seen":"2026-11-10T10:00:00Z","repeats":2}],"finished_work":[{"automaton":"a2","title":"Add paging","status":"completed","cause":"work not on main","action":"merge it","at":"2026-11-10T11:00:00Z"}]}`
+	housekeepingRepairsDaemon(t, 200, body)
+	out, err := runHousekeepingRepairsCmd(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, frag := range []string{"Refusals (1)", "a1 merge: main moved (repeats 2", "Finished work (1)", "a2 Add paging", "action: merge it"} {
+		if !strings.Contains(out, frag) {
+			t.Errorf("output lacks %q:\n%s", frag, out)
+		}
+	}
+}

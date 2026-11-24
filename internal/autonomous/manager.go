@@ -1465,6 +1465,12 @@ type Manager struct {
 	// gateRepairer is the gate repair engine (report/on) for failed gates.
 	// Guarded by mu.
 	gateRepairer *GateRepairer
+	// refusalLedger records the refused Automaton steps the housekeeping
+	// read view lists (refusal_ledger.go). Guarded by mu.
+	refusalLedger *RefusalLedger
+	// finishedWork holds the finished-work sweep findings the housekeeping
+	// read view lists (finished_work_sweep.go). Guarded by mu.
+	finishedWork *FinishedWorkSweep
 	// laneUtilUsage supplies plan usage to LaneUtilization (lane_utilization.go).
 	// Guarded by mu; nil means no usage is reported.
 	laneUtilUsage LaneUtilizationUsageSource
@@ -3317,6 +3323,8 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		supervisorWatchAlerted: map[string]bool{},
 		dataDir:                dataDir,
 		templates:              newTemplateStore(dataDir),
+		refusalLedger:          NewRefusalLedger(dataDir),
+		finishedWork:           NewFinishedWorkSweep(dataDir),
 		decompose:              decompose,
 		types:                  types,
 		// cleanup status — in memory and persisted next to the

@@ -4793,6 +4793,120 @@ paths:
               schema: {type: string, example: GET}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/dormant-features:
+    get:
+      summary: List the dormant Automata settings
+      description: |
+        The Automata settings whose current value is off or in shadow mode, so
+        an operator can see which shipped features are not doing anything yet.
+        Each row gives the setting `key`, a plain `name`, its `default`, its
+        `current` value, `state` (off or shadow), a one-sentence `purpose`,
+        `ever_exercised` (whether a record of the feature running exists),
+        `last_exercised` (the time of the latest record, empty when none) and
+        `evidence` (a short description of the record, or why none exists).
+        Read-only: the route reads the config the daemon runs with, runs no
+        Automaton and never writes a setting; only GET is served. A federated
+        peer needs the autonomous read capability.
+      operationId: autonomousDormantFeatures
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Dormant Automata settings, possibly an empty list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [features]
+                properties:
+                  features:
+                    type: array
+                    description: Never null; an empty list when every setting is on or exercised.
+                    items:
+                      type: object
+                      required: [key, name, default, current, state, purpose, ever_exercised, last_exercised, evidence]
+                      properties:
+                        key: {type: string, example: "autonomous.scan.fix_loop_enabled"}
+                        name: {type: string, example: "Scan fix loop"}
+                        default: {type: string, example: "off"}
+                        current: {type: string, example: "off"}
+                        state: {type: string, enum: [off, shadow]}
+                        purpose: {type: string}
+                        ever_exercised: {type: boolean}
+                        last_exercised: {type: string, description: "Time of the latest record; empty when none"}
+                        evidence: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405":
+          description: Method not allowed; only GET is served
+          headers:
+            Allow:
+              schema: {type: string, example: GET}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/housekeeping-repairs:
+    get:
+      summary: Housekeeping repairs status
+      description: |
+        The housekeeping repair groups of the Automata (task_chain, advance_judge,
+        lane_fill, leftovers, planning): per group the mode in effect (off, report
+        or on), what a report-mode pass would do (`would`), what an on-mode pass
+        did (`did`) and the cases that failed or were skipped as unsafe. The body
+        also carries two lists, both empty rather than null when there is nothing
+        to show:
+        `refusals` is the refusal ledger, newest first: `automaton` the Automaton,
+        `step` the step that was refused, `reason` why, `first_seen` and
+        `last_seen` the time range, and `repeats` how many times it was refused.
+        `finished_work` is the finished-work sweep, newest first: `automaton`,
+        `title`, `status`, `cause`, `action` and `at`, the time of the finding.
+        Read-only: the route runs no repair, raises no alert and cannot change a
+        mode; a group's mode changes only through the existing config set paths.
+        A federated peer needs the autonomous read capability.
+      operationId: autonomousHousekeepingRepairs
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Housekeeping repairs, refusals and finished work
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  refusals:
+                    type: array
+                    description: Refused Automaton steps, newest first; never null.
+                    items:
+                      type: object
+                      properties:
+                        automaton: {type: string}
+                        step: {type: string}
+                        reason: {type: string}
+                        first_seen: {type: string, format: date-time}
+                        last_seen: {type: string, format: date-time}
+                        repeats: {type: integer, minimum: 1}
+                  finished_work:
+                    type: array
+                    description: Finished-work sweep findings, newest first; never null.
+                    items:
+                      type: object
+                      properties:
+                        automaton: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        cause: {type: string}
+                        action: {type: string}
+                        at: {type: string, format: date-time}
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405":
+          description: Method not allowed; only GET is served
+          headers:
+            Allow:
+              schema: {type: string, example: GET}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/request-watch:
     get:
       summary: Request watch status
@@ -13714,7 +13828,7 @@ components:
           items: {$ref: "#/components/schemas/RemoteReapEntry"}
         held:
           type: array
-          description: The branches kept, with the reason: not merged, too new, no remote ref, or an unverifiable backup
+          description: "The branches kept, with the reason: not merged, too new, no remote ref, or an unverifiable backup"
           items: {$ref: "#/components/schemas/RemoteReapEntry"}
         report_only: {type: boolean, description: True while autonomous.remote_reap_enabled is false or unset (the default)}
     RemoteReapSurfaceReport:
