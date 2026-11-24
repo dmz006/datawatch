@@ -202,3 +202,19 @@ func TestQuestionHeldJSONPrintsTheRawBody(t *testing.T) {
 	}
 	wantContains(t, out, `"mode": "on"`, `"q_held_1"`, `"shadow"`)
 }
+
+// A held entry carries the question's own text; the CLI prints it on an
+// "ask:" line (newlines folded) so the operator sees what is being asked.
+func TestQuestionHeldPrintsTheQuestionText(t *testing.T) {
+	body := `{"mode":"on","states":["blocked"],"open":[{"question_id":"q_held_5","state":"blocked","prd_id":"prd-5","title":"Five","text":"Ship the change?\nOr wait for review.","default":"hold"}],"shadow":[]}`
+	d := &questionRouteDaemon{routes: map[string]questionRouteReply{
+		"GET /api/autonomous/held-questions": {body: body},
+	}}
+	withHeldRouteServer(t, d)
+
+	out, err := runQuestionCmd(t, "held")
+	if err != nil {
+		t.Fatalf("err: %v (output: %s)", err, out)
+	}
+	wantContains(t, out, "q_held_5", "ask: Ship the change? Or wait for review.", "default: hold")
+}

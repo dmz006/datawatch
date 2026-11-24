@@ -32,12 +32,12 @@ to its tab without changing the other tabs.
 
 | Sub-tab | What is on it |
 |---|---|
-| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting; see [What the Inbox counts](#what-the-inbox-counts). |
+| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. The count badge on the tab counts only what awaits your action — it never counts the read-only cards; see [What the Inbox counts](#what-the-inbox-counts). |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release plan and its stages appear here when they ship. A **Focus** button in the header of an Automation's page opens its timeline (see [projects-tab.md](projects-tab.md#focus-on-one-automation)). |
 | **Resources** | The **Usage calculator** card at the top — one card: a verdict sentence and three fixed-size graphs (weekly allowance, pace line, burn per day) — then the capacity and queue card, the lane fill rows with their node, and the Automata ship status card; see [automata-resources.md](automata-resources.md) and [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
 | **Progress and cost** | The Progress card (the kind table, work left and completion range; see [automata-progress.md](automata-progress.md)), the three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the four titled cost chart cards (cost over time, tool usage, retries and failure categories, combined report; see [cost-report.md](cost-report.md#the-chart-cards-on-the-automata-page)). The all-projects Gantt and the cost and billing report appear here when they ship. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
 | *(Setup and policy, removed)* | The sub-tab no longer exists. The onboarding and requirements report, the supervisor loop runs and counts, the release readiness bar, the model request watch and the merge shadow now show on the Events tab, and only while they have something to show. The merge pipeline, decision records folder, usage reading and extra credit settings are in **Settings → General → Automata**. The placement axes and the tag sweep are under **Settings → General → Automata → Placement tags**; see [automata-tags](automata-tags.md). |
-| **Housekeeping** | An action list: the **Unlanded work** card (archived Automaton branches whose work is not on the default branch, each with a recommendation and Keep, Archive branch and Delete worktree buttons; Delete worktree writes a backup bundle first), the uncommitted work card with a **Commit** button that shows the diff and takes a message. The safe-to-delete report, the cleanup history, the skipped-by-reason counts and the **Fix permissions** button (for removals the file system refused) moved to the Cleanup card on the Events tab. |
+| **Housekeeping** | An action list: the **Unlanded work** card (archived Automaton branches whose work is not on the default branch, each with a recommendation and Keep, Archive branch and Delete worktree buttons; Delete worktree writes a backup bundle first), the uncommitted work card with a **Commit** button that shows the diff and takes a message. It also carries an **Open questions** card that mirrors the Inbox's open list — the same questions, in the same scope order, and the search box stays in the Inbox only. The safe-to-delete report, the cleanup history, the skipped-by-reason counts and the **Fix permissions** button (for removals the file system refused) moved to the Cleanup card on the Events tab. |
 
 ## What an Automation is
 
@@ -131,18 +131,34 @@ the CLI and the comm channel return everything.
 
 ### What the Inbox counts
 
-The badge on the Inbox tab and the lists under it always agree, because both are cut
-by the same scope. The scope is the header scope; on the Projects sub-tab it is the
+The badge on the Inbox tab counts only what awaits your action, and the lists under
+it are cut by the same scope, so the badge and the cards always agree.
+
+**What counts toward the badge.**
+
+- **Triage records** — only the ones whose card carries an action button (**Retry**,
+  **Resolve review**, **Cancel**). The **merge blocked** card is read-only: its
+  next action (commit or discard the worktree's edits, after which the merge is
+  retried automatically) is text on the card, not a button, so those records do
+  not count.
+- **Open questions** — every open question in the list.
+- **Held questions** — only the open held entries. In shadow mode the would-be
+  holds still render beneath them, but they never count.
+- **Never counted** — the security failure report and the supervisor watch findings
+  are read-only cards. They still render (the watch findings on the Events tab),
+  but they add nothing to the badge.
+
+**The badge also follows the scope.** The scope is the header scope; on the Projects sub-tab it is the
 same thing as the **Project** picker, so choosing a project in either place gives
 the same Inbox:
 
 - **All (the Overview).** Nothing is cut. The badge counts everything
   waiting on you in every project, and its tooltip and screen-reader label read
-  *N waiting on you across all projects*.
+  *N waiting on you to act across all projects*.
 - **One project in scope.** The badge and each card (open
   questions, held questions, Triage, security failure report and the supervisor
   watch findings) keep only the items that belong to that project, and the label
-  reads *N waiting on you*. This holds on every sub-tab, not just the Projects
+  reads *N waiting on you to act*. This holds on every sub-tab, not just the Projects
   sub-tab. Changing the scope, or the `#projects` address, recounts from the data
   already loaded; nothing is fetched again.
 - **One plan in scope.** The same, narrowed to the items that name the plan's
@@ -155,10 +171,56 @@ item, or on the Automaton the item names. Only when no such tag exists is the
 directory used: the item's own project directory, the Automaton's, or, for a
 security failure, the repository name matched against the project directory's name.
 An item with neither a link nor a directory belongs to no project, so it shows only
-in Overview. If a selected project has nothing waiting, the badge is hidden.
+in Overview. If a selected project has nothing waiting on you, the badge is hidden.
 
 This is a display rule of the web app only. REST, MCP, the CLI and the comm channel
 still return every item, unfiltered.
+
+### The view switch (List, Tiles, Compact)
+
+Above the three Inbox lists (Triage, open questions, held questions) is a
+**view switch** with three buttons — **List**, **Tiles**, **Compact** — the
+same three modes the Sessions list offers. One switch covers all three Inbox
+lists: the mode you pick applies to Triage, open questions and held questions
+together, and it is remembered on this device, the same way the Sessions list
+remembers its mode, so it comes back when you reopen the tab.
+
+- **List** — the densest view, one line per item.
+- **Tiles** — one full card per item.
+- **Compact** — smaller cards, several to a row.
+
+Until you press a button, the mode follows the window width (wide: Tiles,
+mid-width: Compact, narrow: List); once you press one, that choice wins on
+this device. Switching only repaints the lists from the data already loaded —
+nothing is fetched again, and the badge counts the same items before and
+after. The choice is stored in your browser, not on the daemon, so it does
+not follow you to another browser or phone, and clearing the browser's site
+data resets it to the defaults.
+
+The flat **Automata** list and the **Automations** list carry the same view
+switch, above their lists and next to the **Group by** dropdown described
+next.
+
+### The Group by dropdown
+
+The **Automata** and **Automations** lists carry, next to the view switch, a
+**Group by** select. The choices are **No grouping** (the default), **tag**,
+**state**, **node**, **project**, and each tag prefix — **automation:**,
+**stage:**, **kind:**, **compute:**, **peer:**, **backend:**, **lane:**,
+**role:** and **project:**. Each group draws under its header, with a
+collapse toggle, the item count and the state mix; long groups page with a
+**Show more** button. The choice, the collapsed groups and the per-group
+paging are remembered on this device, per list.
+
+The dropdown also keeps its state across a list's refreshes. When the list
+redraws — the next poll, a filter, coming back to the sub-tab — the select is
+patched in place instead of replaced while you are in it, so an open or
+focused dropdown keeps its open state and focus, and the selection you made is
+restored onto it. When a redraw does stand a new toolbar (because the mode or
+group changed), the new select is drawn with your stored group, never back to
+the default. Because the choice is stored on this device, it also comes back
+after a page reload. Whatever the refresh, the group you chose is the group
+the list shows.
 
 ### The needs-attention card
 
@@ -172,21 +234,39 @@ Each card shows:
 
 - **Headline.** What happened, in one line: *Stopped: the task "…" failed*,
   *Blocked: …*, or *Ready to merge: branch … is waiting*.
-- **Reason.** The reason recorded for it, cut to two lines. Open details to read
-  the whole record.
+- **Reason.** The reason recorded for it. A **blocked** card shows the whole
+  reason — the block reason is the decision you are waiting on — and, under
+  it, a small line naming where the reason came from: *the Automaton set this
+  reason for itself* (`blocked_reason`), *from a guardrail verdict (decision
+  note or policy guard)* (`verdict`), *from a task error or an ended session*
+  (`task_error`) or *a task is held for operator review* (`task_review`). A
+  **failed** card and a ready-to-merge card keep the reason cut to two lines —
+  the full text is in the detail panel.
+- **Next step.** The failed card and a blocked card with a reason both carry
+  one concrete line saying how to unblock, picked by the reason's kind:
+  *resolve the review and it runs again*, *fix the error, then reset the task
+  to run it again — or cancel the Automaton*, *read the verdict, clear the
+  block, then reset the task — or cancel the Automaton*, or *clear the cause
+  named in the reason, then reset the task — or cancel the Automaton*. A card
+  with no reason text at all (a failed one with no error, a blocked one with
+  no recorded reason) gets the plain line instead, which already says what to
+  do: open the details, check the task output, then reset the task or cancel
+  the Automaton.
 - **Automaton and Automation.** An **Automaton** chip, and an **in Automation
   *name*** chip when the Automaton belongs to an Automation.
 - **Wait time.** *waiting …*, how long the Automaton has been waiting on you.
 
-The card has up to four buttons:
+The card has up to four buttons, and on the card each action button carries a
+short line naming what it does:
 
-- **Open details** opens the detail panel. A click anywhere on the card, outside
-  a button, does the same.
-- **Retry** resets the failed task so it runs again. It appears only when the
-  record names a task.
-- **Resolve review** sends a task that is held for review back to its worker. It
+- **Open details** opens the detail panel — the whole record, the full reason,
+  notes and retry budget. A click anywhere on the card, outside a button, does
+  the same.
+- **Retry** (*resets the task and runs it again from where it failed*). It
+  appears only when the record names a task.
+- **Resolve review** (*answers the review so the held task runs again*). It
   appears when a task is held for review or the branch is ready to merge.
-- **Cancel** cancels the Automaton.
+- **Cancel** (*stops the Automaton and archives it*).
 
 Open questions and held questions sit above the Triage card on Inbox, so they
 are the first things you see. You answer an open question in place, on its own
@@ -195,20 +275,31 @@ questions, Triage, security failure report, supervisor watch.
 
 ### The held-questions card
 
-The held-questions card lists tasks that an Automaton has held for an operator
-decision. An Automaton holds a task when it names a question it cannot settle
-itself while the task is in one of the held states: by default `review_held`,
-`decompose_blocked`, `decompose_stalled`, `decompose_failed` and
-`decompose_rejected`. The card's badge shows the mode the feature is in:
+The held-questions card lists Automata that are held for an operator
+decision. The daemon raises a question when an Automaton sits in one of the
+held states: by default `blocked`, `review_held`, `revision_requested`,
+`awaiting_decision` and `pending_insert` (the pass covers whichever subset
+`autonomous.questions.held_states` names). The card's badge shows the mode
+the feature is in:
 
 - **shadow** (the default) records the questions it would have held as *would-be*
   questions, and holds no task.
 - **on** holds the task and lists it here until you answer.
 - **off** turns the feature off.
 
-Each held entry shows the recommended option, *Held on the default: hold* (what
-happens if you do nothing), a link to open the Automaton or task, and an
-**Answer** button, which opens the question so you can respond.
+Each held entry shows the Automaton's title and id, the question's id, and the
+held task and held-state chips when there is one, the **question's own text** (what
+is being asked), cut to three lines — click the row to open the full question and
+read it in whole — the one-line reason, the recommended option, the default
+(*Default: …* from the record, or *Held on the default: hold* when the record
+carries none), a link that opens the Automaton detail (labelled *Open task in
+Automaton* when the entry names a task, *Open Automaton* otherwise), an open
+row's **Answer** button, and a small line
+naming where the hold's mode and states are set (**Settings**). For an open
+entry a click anywhere on the row, outside a button or link, opens the same
+full question the **Answer** button opens. A **shadow** entry is read-only:
+same facts, but no answer button and no row click — it is a would-be hold,
+not an open question.
 
 To view or change the mode or the held states, open **Settings** under **Automata**
 and look at **Held questions mode** (`autonomous.questions.held_mode`) or **Held
@@ -227,7 +318,8 @@ never blanks the cards.
 - **Inbox:** the needs-attention card above, the open questions (see
   [Questions](#questions-rest-only-for-now)), the held-question card and the
   security failure card. The supervisor watch card is in the Events tab. The badge on the tab
-  counts what is waiting on you.
+  counts only what is waiting on you to act — the read-only cards (the security
+  failure report, the merge-blocked card) still render but never add to it.
 - **Resources:** the **Usage calculator** card at the top — one card: a
   verdict sentence and three fixed-size graphs (weekly allowance, pace line,
   burn per day; see
@@ -256,6 +348,9 @@ never blanks the cards.
   branch and Delete worktree buttons; Delete worktree first writes a git
   bundle backup and removes nothing if the backup fails. The uncommitted work
   card has a **Commit** button that shows the diff and asks for a message.
+  The **Open questions** card shows the same live open list the Inbox shows —
+  the same questions and the same hand-off to answer, filtered by the project
+  in the same scope — while the search box for it stays on the Inbox only.
   The safe-to-delete report, the cleanup history, the skipped-by-reason
   counts and the permission problem with its **Fix permissions** button are on
   the Events tab. Details and every surface:

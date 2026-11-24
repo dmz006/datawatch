@@ -1612,6 +1612,10 @@ function listLoader(opts) {
     el.innerHTML = html();
     st.painted = st.hasData && !st.error; st.paintedData = st.data;
     if (opts.afterPaint) opts.afterPaint(el, keep, st.data);
+    // The innerHTML replacement above rebuilt any .list-controls this body
+    // drew; put the scope's live toolbar back and restore its selection.
+    // A reconcile failure must never fail the paint.
+    try { _listControlsReconcile(el); } catch (_e) { /* ignore */ }
   }
   function schedule() {
     if (st.pollTimer) clearTimeout(st.pollTimer);
@@ -1810,6 +1814,9 @@ function handleMessage(msg) {
       if (document.getElementById('automationQuestionsCard') &&
           typeof window.refreshAutomationQuestions === 'function') {
         window.refreshAutomationQuestions();
+        // The Housekeeping card mirrors the same live list; its loader only
+        // exists while its sub-tab is shown, so this is a no-op otherwise.
+        if (typeof window.refreshAutomationQuestionsHousekeeping === 'function') window.refreshAutomationQuestionsHousekeeping();
         const qr = (msg.data && typeof msg.data === 'object') ? msg.data : {};
         const _qstr = (v) => ((typeof v === 'string' || typeof v === 'number') ? String(v).trim() : '');
         const qname = _qstr(qr.label) || _qstr(qr.id);
@@ -17684,6 +17691,7 @@ const DOCS_LINKS_BY_KEY = {
   unlanded_work_card: 'howto/automaton-worktree-cleanup.md#unlanded-branches-finished-work-that-never-reached-the-default-branch',
   uncommitted_work_commit: 'howto/automaton-uncommitted-work.md',
   cleanup_permission_fix: 'howto/automaton-worktree-cleanup.md#skipped-by-reason-permission-errors-and-the-fix',
+  housekeeping_questions_card: 'howto/automation-tab.md#questions',
   // Checks and ship status cards (Automation Overview) and their Settings groups.
   checks_findings_card: DOCS_DEFINITIONS + '#checks',
   ship_status_card: DOCS_DEFINITIONS + '#ship-steps',
@@ -41570,6 +41578,15 @@ const TRIAGE_BUDGET_ROWS = [
   ['scope', 'triage_budget_scope'],
   ['policy', 'triage_budget_policy'],
 ];
+// TRIAGE_REASON_SOURCE_KEYS maps a blocked record's reason_source to the
+// locale key of the small source label drawn under its reason. A source not
+// listed here (including 'none') gets no label: there is nothing to explain.
+const TRIAGE_REASON_SOURCE_KEYS = {
+  blocked_reason: 'triage_reason_source_blocked_reason',
+  verdict: 'triage_reason_source_verdict',
+  task_error: 'triage_reason_source_task_error',
+  task_review: 'triage_reason_source_task_review',
+};
 // _triageKey returns the locale key for an API value, or '' for anything that
 // is not one of the map's keys (including inherited names such as "constructor").
 function _triageKey(map, v) {
@@ -41639,15 +41656,19 @@ function _triageInReview(record) {
 }
 // _triageButtons renders the action row. Retry needs a task; Resolve review
 // needs a merge-pending record or a task held for review; Cancel is always
-// there.
-function _triageButtons(record, prdID, taskID) {
+// there. With withDescs (the card) each of those three draws a short line
+// naming what it actually does; the detail panel keeps the bare buttons.
+function _triageButtons(record, prdID, taskID, withDescs) {
   const id = escHtml(prdID);
   const taskAttr = taskID ? ` data-task-id="${escHtml(taskID)}"` : '';
-  const btn = (action, key) => `<button type="button" class="btn-secondary triage-btn triage-btn-${action}" data-action="${action}" data-prd-id="${id}"${taskAttr} data-status="${escHtml(record.status || '')}">${escHtml(t(key))}</button>`;
+  const desc = (key) => (withDescs
+    ? `<span class="triage-btn-desc" style="display:block;margin-top:3px;font-size:11px;font-weight:400;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t(key))}</span>`
+    : '');
+  const btn = (action, key, descKey) => `<button type="button" class="btn-secondary triage-btn triage-btn-${action}" data-action="${action}" data-prd-id="${id}"${taskAttr} data-status="${escHtml(record.status || '')}">${escHtml(t(key))}${descKey ? desc(descKey) : ''}</button>`;
   const parts = [btn('open-detail', 'triage_action_open_details')];
-  if (taskID) parts.push(btn('retry', 'triage_action_retry'));
-  if (record.status === 'merge_pending' || _triageInReview(record)) parts.push(btn('resolve-review', 'triage_action_resolve_review'));
-  parts.push(btn('cancel', 'triage_action_cancel'));
+  if (taskID) parts.push(btn('retry', 'triage_action_retry', 'triage_btn_desc_retry'));
+  if (record.status === 'merge_pending' || _triageInReview(record)) parts.push(btn('resolve-review', 'triage_action_resolve_review', 'triage_btn_desc_resolve_review'));
+  parts.push(btn('cancel', 'triage_action_cancel', 'triage_btn_desc_cancel'));
   return `<div class="triage-actions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-width:0;">${parts.join('')}</div>`;
 }
 // _automationHelpLinkHtml is the '?' help affordance on an Inbox card. It opens
@@ -41706,8 +41727,26 @@ window.triageCardHtml = function(record) {
   const chips = `<div class="triage-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-width:0;">${kindChip}${ownerChip}</div>`;
   const reason = M.triageReason(record);
   const reasonText = reason.text || t(reason.key);
-  const reasonHtml = `<div class="triage-reason" style="margin-top:6px;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(reasonText)}</div>`;
-  return `<div class="prd-capacity-card triage-card" data-prd-id="${escHtml(prdID)}" style="min-width:0;">${head}${headline}${chips}${reasonHtml}${_triageWaitLine(record)}${_triageButtons(record, prdID, taskID)}</div>`;
+  // A blocked card shows its full reason — the block reason is the decision
+  // the operator is waiting on. Failed and merge-pending cards keep the
+  // two-line clamp; their full text is in the detail panel.
+  const isBlocked = record.status === 'blocked';
+  const clampStyle = isBlocked ? '' : 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;';
+  const reasonHtml = `<div class="triage-reason" style="margin-top:6px;color:var(--text2);${clampStyle}overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(reasonText)}</div>`;
+  // A blocked card adds the source label under its reason and — when the
+  // record carries a reason — one concrete next step. A blocked record with
+  // no reason adds neither: its honest no-reason line already names the
+  // next step.
+  let guidanceHtml = '';
+  if (isBlocked) {
+    const srcKey = _triageKey(TRIAGE_REASON_SOURCE_KEYS, record.reason_source);
+    if (srcKey) guidanceHtml += `<div class="triage-reason-source" style="margin-top:2px;font-size:11px;opacity:.8;overflow-wrap:anywhere;">${escHtml(t(srcKey))}</div>`;
+  }
+  // The failed and blocked cards both carry one concrete next step; the
+  // source label above is for blocked cards only.
+  const hint = M.triageUnblockHint(record);
+  if (hint) guidanceHtml += `<div class="triage-unblock" style="margin-top:4px;overflow-wrap:anywhere;">${escHtml(t(hint.key))}</div>`;
+  return `<div class="prd-capacity-card triage-card" data-prd-id="${escHtml(prdID)}" style="min-width:0;">${head}${headline}${chips}${reasonHtml}${guidanceHtml}${_triageWaitLine(record)}${_triageButtons(record, prdID, taskID, true)}</div>`;
 };
 // _triageCardClick is the single delegated handler for every triage card.
 // Buttons dispatch their action; a click elsewhere on the card opens details.
@@ -41840,8 +41879,51 @@ function _triageBindClick() {
 // operator. The loader still owns the loading and failed states.
 window.triageListHtml = function(body) {
   const recs = (body && Array.isArray(body.records)) ? body.records : [];
-  return recs.map(r => window.triageCardHtml(r)).join('') ||
-    `<div class="list-state-empty triage-list-empty" style="text-align:center;padding:20px;color:var(--text2);min-width:0;">${escHtml(t('triage_empty'))}</div>`;
+  if (!recs.length) {
+    return `<div class="list-state-empty triage-list-empty" style="text-align:center;padding:20px;color:var(--text2);min-width:0;">${escHtml(t('triage_empty'))}</div>`;
+  }
+  const mode = _inboxViewMode();
+  if (mode === 'list') return recs.map(r => window.triageCardHtml(r)).join('');
+  return renderInboxTileGrid(recs.map(r => window.triageTileHtml(r)).join(''), mode);
+};
+// triageTileHtml is the tile-grid counterpart of triageCardHtml: the same
+// headline, the record status, the owner, the reason (fully shown for a
+// blocked record, clamped otherwise), the wait line and the action buttons
+// without their description lines so the tile stays compact. It keeps the
+// triage-card class and the data attributes, so the one delegated click
+// handler opens details and dispatches the buttons exactly as on the card.
+// A merge_blocked record keeps its own card in every mode: the block rows
+// need the full card width.
+window.triageTileHtml = function(record) {
+  if (record && typeof record === 'object' && record.status === 'merge_blocked') return window.mergeBlockedTriageCardHtml(record);
+  _triageBindClick();
+  if (!record || typeof record !== 'object') {
+    return `<div class="work-tile triage-tile" style="color:var(--text2);min-width:0;">${escHtml(t('triage_record_empty'))}</div>`;
+  }
+  const M = window.AutomataTriageModel;
+  const prdID = String(record.prd_id || '');
+  const taskID = String(record.task_id || '');
+  _triageRemember(record, prdID, taskID);
+  const status = String(record.status || '');
+  const statusChip = status
+    ? `<span class="work-tile-status" style="flex-shrink:0;font-size:11px;padding:1px 8px;border:1px solid var(--border);border-radius:10px;color:var(--text2);">${escHtml(status)}</span>`
+    : '';
+  const owner = M.triageOwnerLabel(record);
+  const meta = [
+    prdID ? `<span class="triage-prd">${escHtml(prdID)}</span>` : '',
+    owner ? `<span class="triage-owner">${escHtml(t('triage_in_automation', [owner]))}</span>` : '',
+  ].filter(Boolean).join('');
+  const reason = M.triageReason(record);
+  const reasonText = reason.text || t(reason.key);
+  const isBlocked = status === 'blocked';
+  const clampStyle = isBlocked ? '' : 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;';
+  const reasonHtml = `<div class="triage-tile-reason" style="margin-top:6px;font-size:12px;color:var(--text2);${clampStyle}overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(reasonText)}</div>`;
+  return `<div class="work-tile triage-tile triage-card" data-prd-id="${escHtml(prdID)}" style="min-width:0;cursor:pointer;">` +
+    `<div class="work-tile-head"><span class="work-tile-title triage-headline">${escHtml(_triageHeadlineText(record))}</span>${statusChip}</div>` +
+    (meta ? `<div class="work-tile-meta">${meta}</div>` : '') +
+    reasonHtml + _triageWaitLine(record) +
+    _triageButtons(record, prdID, taskID, false) +
+    `</div>`;
 };
 
 // ── Security failure card ───────────────────────────────────────────────────
@@ -48025,6 +48107,17 @@ registerAutomationCardSlot('housekeeping', {
   mount: () => listLoaderAll([_automationUnlandedWorkLoader()]),
   stop: () => _automationStopLoaders(['automation_unlanded_work']),
 });
+// The open-questions card mirrors the Inbox card's live list (see
+// _automationHkQuestionsLoader) below the Unlanded work card; polled only
+// while the Housekeeping sub-tab is shown, with unique element ids so it
+// never collides with the Inbox card's.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationHkQuestionsCard',
+  order: 110,
+  html: _automationPlaceholderHTML('automationHkQuestionsCard'),
+  mount: () => listLoaderAll([_automationHkQuestionsLoader()]),
+  stop: () => _automationStopLoaders(['automation_hk_questions']),
+});
 // The safe-to-delete report and the cleanup status render under the event
 // stream on the Automata Events sub-tab (the Housekeeping sub-tab keeps only
 // its action cards). Both keep their loaders and poll only while the Events
@@ -48778,10 +48871,13 @@ registerAutomationCardSlot(COST_CHARTS_TAB, {
   mount: () => { window.costChartsLoad(); },
   stop: () => { _costCharts.gen++; _costCharts.loading = false; },
 });
-// The Inbox sub-tab counts everything waiting on the operator, from the data
-// its own loaders already fetch: triage items, open questions, held questions,
-// security failures and open supervisor-watch findings. The counts live here
-// by source key so the badge stays current while another sub-tab is shown.
+// The Inbox sub-tab counts only what waits on the operator to act, from the
+// data its own loaders already fetch: open questions, held questions in the
+// open list (never the shadow would-be list), and Triage records whose card
+// carries an action button. The security-failure report and the supervisor
+// watch findings are read-only cards, so they still render but no longer
+// contribute to the count. The counts live here by source key so the badge
+// stays current while another sub-tab is shown.
 const _automationInboxCounts = {};
 const _automationInboxRaw = {};
 const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'automation_held_automata', 'supervisor'];
@@ -48902,10 +48998,23 @@ function _inboxScopeData(key, data) {
   return data;
 }
 
+// _triageRecordActionable is true when the record's Inbox card carries an
+// action button (Retry, Resolve review or Cancel). The merge_blocked card
+// is the one the operator can only select, so it is read-only and not
+// counted. Pure: the record is the only read.
+function _triageRecordActionable(record) {
+  return !!(record && typeof record === 'object') && record.status !== 'merge_blocked';
+}
+
 function _automationInboxCountOf(key, data) {
   data = _inboxScopeData(key, data);
-  if (key === 'automation_triage') return (data && Array.isArray(data.records)) ? data.records.length : 0;
-  if (key === 'automation_security_failure') return Array.isArray(data) ? data.length : 0;
+  if (key === 'automation_triage') {
+    const recs = (data && Array.isArray(data.records)) ? data.records : [];
+    return recs.filter(_triageRecordActionable).length;
+  }
+  // The security-failure report and the supervisor watch findings are
+  // read-only cards: they still render, but they no longer count.
+  if (key === 'automation_security_failure' || key === 'supervisor') return 0;
   if (key === 'automation_held_automata') return (data && Array.isArray(data.held)) ? data.held.length : 0;
   if (key === 'automation_questions') {
     if (!data || data.__automationQuestionsDisabled) return 0;
@@ -48913,10 +49022,6 @@ function _automationInboxCountOf(key, data) {
     return list.length;
   }
   if (key === 'automation_held_questions') return (data && Array.isArray(data.open)) ? data.open.filter(e => e && typeof e === 'object').length : 0;
-  if (key === 'supervisor') {
-    const f = (data && typeof data === 'object' && Array.isArray(data.findings)) ? data.findings : [];
-    return f.filter(x => x && typeof x === 'object' && !x.resolved).length;
-  }
   return 0;
 }
 
@@ -49000,6 +49105,10 @@ const _AUTOMATION_SUBTABS = [
     bodyHTML: () => `${_automataScopeNoteHtml()}
       <!-- Inbox order: the queue and hold cards first, then the triage card
            (the failed and blocked records), then the rest. -->
+      <!-- The view-mode switch (List / Tiles / Compact) for the three Inbox
+           lists below. Switching repaints from the data already loaded and
+           never touches the Inbox badge count. -->
+      <div id="inboxViewModeToggle">${_inboxViewToggleHtml()}</div>
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
@@ -50245,15 +50354,15 @@ const _automationQuestionsState = { searchText: '', history: false, historyList:
 window._automationQuestionsState = _automationQuestionsState;
 let _automationQuestionsSearchTimer = null;
 
-// _automationQuestionsListFetch is the loader's fetch override. It builds the
-// full URL itself (the loader's url field is the no-search form) so a paused
-// search is committed on Enter as well as after the input pause. A 503 from
-// the list route means the questions switch is off: resolve a disabled
-// sentinel instead of failing, so the card paints only the disabled text.
-function _automationQuestionsListFetch(opts) {
-  // In history mode the same search field filters both decided states:
-  // the text parameter rides on each of the two state requests.
-  const text = (_automationQuestionsState.searchText || '').trim();
+// _automationQuestionsFetchCore is the one definition of the questions list
+// route, token, active-server proxy prefix, the 503-disabled sentinel and the
+// history merge. 'text' is the already-trimmed search text ('' asks for the
+// whole list). It builds the full URL itself (a loader's url field is the
+// no-search form) so a paused search is committed on Enter as well as after
+// the input pause. A 503 from the list route means the questions switch is
+// off: resolve a disabled sentinel instead of failing, so the card paints
+// only the disabled text.
+function _automationQuestionsFetchCore(text, opts) {
   const textQ = text ? '&text=' + encodeURIComponent(text) : '';
   const token = localStorage.getItem('cs_token') || '';
   const headers = { 'Content-Type': 'application/json' };
@@ -50271,6 +50380,8 @@ function _automationQuestionsListFetch(opts) {
       return r.text().then(tx => Promise.reject(new Error(tx || r.statusText)));
     });
   };
+  // In history mode the same search text rides on both decided-state
+  // requests (answered + withdrawn).
   if (_automationQuestionsState.history) {
     // History: the two decided states on the same route, merged and
     // dated, newest first (the history ordering is the card's own).
@@ -50287,6 +50398,11 @@ function _automationQuestionsListFetch(opts) {
     });
   }
   return one('state=open&limit=50' + textQ);
+}
+// _automationQuestionsListFetch is the Inbox card's loader fetch override:
+// the shared search field's text rides on the request.
+function _automationQuestionsListFetch(opts) {
+  return _automationQuestionsFetchCore((_automationQuestionsState.searchText || '').trim(), opts);
 }
 
 // _automationQuestionsLoadQuality reads queue_preview_lines from
@@ -50424,9 +50540,66 @@ window.questionsCardHtml = function(body) {
   if (!list.length) {
     return `<div style="color:var(--text2);">${escHtml(t('automation_questions_empty'))}</div>`;
   }
-  return `<div class="questions-queue-list">${list.map(_automationQuestionsRowHtml).join('')}</div>`;
+  const mode = _inboxViewMode();
+  if (mode === 'list') {
+    return `<div class="questions-queue-list">${list.map(_automationQuestionsRowHtml).join('')}</div>`;
+  }
+  return renderInboxTileGrid(list.map(q => window.questionTileHtml(q)).join(''), mode);
+};
+// questionTileHtml draws one open question for the tile grid: the label (or
+// the first line of the question) as the title, the high marker, the id /
+// asker / age as the meta line, the escaped question text clamped, and the
+// same in-place option buttons and Open action the row carries.
+window.questionTileHtml = function(q) {
+  const e = (q && typeof q === 'object') ? q : {};
+  const id = String(e.id == null ? '' : e.id);
+  const text = String(e.text == null ? '' : e.text);
+  const label = String(e.label == null ? '' : e.label);
+  const firstLine = text.split('\n').find(l => String(l).trim()) || '';
+  const title = label || firstLine || id || t('automation_questions_title');
+  const high = e.priority === 'high'
+    ? `<span class="work-tile-status" style="flex-shrink:0;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_questions_high'))}</span>`
+    : '';
+  const age = _automationQuestionsAgeText(e);
+  const meta = [
+    id ? `<span class="questions-id">${escHtml(id)}</span>` : '',
+    `<span class="questions-meta">${escHtml(t('automation_questions_by'))} ${escHtml(e.asked_by || '')}</span>`,
+    age ? `<span class="questions-age">${escHtml(t('automation_questions_age', [age]))}</span>` : '',
+  ].filter(Boolean).join('');
+  const opts = Array.isArray(e.options) ? e.options.filter(o => o && typeof o === 'object' && o.id) : [];
+  const optsHtml = opts.length
+    ? `<div class="work-tile-actions questions-options" style="margin-top:6px;">` + opts.map(o =>
+      `<button type="button" class="btn-secondary questions-option-btn" data-question-id="${escHtml(id)}" data-option-id="${escHtml(String(o.id))}" title="${escHtml(String(o.tradeoffs || ''))}" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.answerQuestionOption === 'function') window.answerQuestionOption(this)">${escHtml(String(o.label || o.id))}</button>`
+    ).join('') + `</div>`
+    : '';
+  // A question a decision wait member asks keeps the same marker, badge and
+  // note as its list row: the member waits for the operator and only its
+  // branch is held, in every view mode.
+  const waitsForYou = e.asked_by === 'decision-wait';
+  const waitBadge = waitsForYou
+    ? `<span class="questions-waiting-badge" data-waiting-for-you="true" style="flex-shrink:0;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--warning,#f59e0b);border:1px solid var(--warning,#f59e0b);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_member_status_waiting_for_operator'))}</span>`
+    : '';
+  const waitNote = waitsForYou
+    ? `<div class="questions-waiting-note" style="margin-top:6px;font-size:11px;color:var(--text2);">${escHtml(t('automation_decision_wait_inbox_note'))}</div>`
+    : '';
+  return `<div class="work-tile questions-question-tile" data-question-id="${escHtml(id)}"${waitsForYou ? ' data-decision-wait="true"' : ''} style="min-width:0;">` +
+    `<div class="work-tile-head"><span class="work-tile-title">${escHtml(title)}</span>${waitBadge}${high}</div>` +
+    (meta ? `<div class="work-tile-meta">${meta}</div>` : '') +
+    (text ? `<div class="questions-tile-text" style="margin-top:6px;font-size:12px;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(text)}</div>` : '') +
+    waitNote +
+    optsHtml +
+    `<div class="work-tile-foot" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;"><span style="margin-right:auto;color:var(--text2);font-size:11px;">${escHtml(t('automation_questions_open'))}</span>` +
+    `<button type="button" class="btn-secondary questions-open-btn" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(id)}')">${escHtml(t('automation_questions_open'))}</button></div></div>`;
 };
 
+// _automationQuestionsOpenBody is the one scope cut + renderer for the live
+// open-question list: the decoded API body ({count, questions} or the 503
+// disabled sentinel), the Inbox project scope, and the shared row renderer. The
+// Inbox card and the Housekeeping card both paint this, so the two sub-tabs
+// can never disagree over which questions are open.
+function _automationQuestionsOpenBody(body) {
+  return window.questionsCardHtml(_inboxScopeData('automation_questions', body));
+}
 // _automationQuestionsLoader polls the open question list beside the capacity,
 // lane fill and triage cards. Its failed state is the list loader's banner,
 // like the capacity card.
@@ -50439,7 +50612,51 @@ function _automationQuestionsLoader() {
     onData: data => _automationInboxCountSet('automation_questions', data),
     render: body => _automationQuestionsState.history
       ? window.questionsHistoryHtml(body)
-      : window.questionsCardHtml(_inboxScopeData('automation_questions', body)),
+      : _automationQuestionsOpenBody(body),
+  });
+}
+
+// ── Housekeeping open-questions card ─────────────────────────────────────────
+// _automationHkQuestionsLoader polls the same live open-question list the Inbox
+// card shows — same route (GET /api/questions?state=open&limit=50) through the
+// shared _automationQuestionsFetchCore, and the same scope cut + row renderer
+// through _automationQuestionsOpenBody — under its own unique element ids and
+// its own list loader, so the two cards never share an id and each loader stops
+// on leaving its sub-tab (the slot's mount/stop and _automationStopLoaders).
+//
+// The Inbox search box is Inbox-only: it lives in the Inbox card's HTML and the
+// shared state it writes drives only the Inbox card. This mirror never reads
+// _automationQuestionsState.searchText — its fetch passes '' (the whole live
+// list), so its text can never diverge from the Inbox card's. It DOES inherit
+// the Inbox scope: with one project selected, the Housekeeping card shows only
+// that project's open questions; in the overview it shows all of them.
+//
+// The card follows the other Housekeeping slot cards (repairs, Unlanded
+// work): it renders as a hidden empty placeholder shell (the registry
+// "placeholder" shape) and the loader reveals it and paints the card —
+// title, help link and the shared open-body rows — when the list arrives.
+function _automationHkQuestionsCardHtml(body) {
+  return `<div class="cap-title" style="font-weight:600;font-size:13px;margin-bottom:6px;">${escHtml(t('housekeeping_questions_card_title'))}${_housekeepingHelpLink('housekeeping_questions_card', 'housekeeping_questions_help_link')}</div>` +
+    `<div id="automationHkQuestionsBody" class="questions-body">${_automationQuestionsOpenBody(body)}</div>`;
+}
+function _automationHkQuestionsLoader() {
+  return window._listLoaders.automation_hk_questions || listLoader({
+    key: 'automation_hk_questions', el: 'automationHkQuestionsCard', url: '/api/questions?state=open&limit=50', pollMs: 5000,
+    fetch: (url, opts) => _automationQuestionsFetchCore('', opts),
+    failedText: msg => t('automation_questions_failed', [msg]),
+    // Only live while the card's sub-tab is shown: the card's element exists
+    // exactly while the Housekeeping body is mounted (unique id, not the
+    // Inbox one).
+    active: () => !!(typeof document !== 'undefined' && document.getElementById && document.getElementById('automationHkQuestionsCard')),
+    render: body => {
+      const h = _automationHkQuestionsCardHtml(body);
+      // The shell is display:none until the list arrives; painting it means
+      // it has content (rows, the empty message, or the 503 note), so it can
+      // be shown. Same reveal rule as the Unlanded work card.
+      const el = typeof document !== 'undefined' && document.getElementById ? document.getElementById('automationHkQuestionsCard') : null;
+      if (el) el.style.display = '';
+      return h;
+    },
   });
 }
 
@@ -50476,6 +50693,15 @@ window.onAutomationQuestionsSearchKeydown = onAutomationQuestionsSearchKeydown;
 // poll tick.
 window.refreshAutomationQuestions = function() {
   const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl) ctl.load();
+};
+// window.refreshAutomationQuestionsHousekeeping is the live-refresh entry point
+// for the Housekeeping mirror: it refreshes the same open list under the
+// card's own loader. It is a no-op unless that sub-tab is shown (its loader
+// exists only while the Housekeeping sub-tab is mounted), so the live WS
+// refresh task can always call it and it lands exactly where the card is.
+window.refreshAutomationQuestionsHousekeeping = function() {
+  const ctl = window._listLoaders && window._listLoaders.automation_hk_questions;
   if (ctl) ctl.load();
 };
 
@@ -50861,8 +51087,9 @@ window.openQuestion = function(id) {
 //     report carries (the route defaults to shadow when unset),
 //   • the held entries: the Automaton's title and id, the held task and
 //     its held-state id, the one-line reason, the recommended option
-//     when the record carries one, the forced default-of-hold line,
-//     the detail link and the answer button — the existing answer
+//     when the record carries one, the default (the entry's own value
+//     when present, the forced default-of-hold line otherwise), the
+//     detail link and the answer button — the existing answer
 //     control (window.openQuestion(id)), rendered through the guarded
 //     inline call the queue rows use,
 //   • in shadow only, beneath the held list: the would-be questions —
@@ -50900,8 +51127,11 @@ window.heldQuestionModeBadgeHtml = function(mode) {
 window.heldQuestionDetailLinkHtml = function(entry) {
   const e = (entry && typeof entry === 'object') ? entry : {};
   // The report (internal/server/held_questions.go) names the Automaton
-  // via automaton_id — that is the id renderPRDDetailView takes.
-  const prdId = String(e.automaton_id == null ? '' : e.automaton_id);
+  // via prd_id — that is the id renderPRDDetailView takes. The old
+  // automaton_id name is accepted as a fallback for entries carried by
+  // an older bundle.
+  const rawPrd = (e.prd_id != null && String(e.prd_id) !== '') ? e.prd_id : e.automaton_id;
+  const prdId = String(rawPrd == null ? '' : rawPrd);
   if (!prdId) return '';
   const task = String(e.task_id == null ? '' : e.task_id);
   const label = task ? t('held_question_open_task') : t('held_question_open_automaton');
@@ -50910,19 +51140,35 @@ window.heldQuestionDetailLinkHtml = function(entry) {
 
 // heldQuestionRowHtml is one held (or would-be) entry: the Automaton's
 // title, its id chip, the held task chip, the held-state chip, the
-// one-line reason, the recommended option and the forced
-// default-of-hold when the record carries them, and finally the
-// controls line — the detail link and the answer button (the guarded
-// hand-off to window.openQuestion, the existing answer control).
+// question text clamped to three lines (the full text lives in the
+// details the row opens), the one-line reason, the recommended option
+// and the default when the record carries them, and finally the
+// controls line — the detail link and, for open entries, the answer
+// button (the guarded hand-off to window.openQuestion, the existing
+// answer control).
+//
+// The report (internal/server/held_questions.go) names the Automaton
+// via title/prd_id and carries the question's own text; the old
+// automaton_title/automaton_id names are accepted as fallbacks.
+//
+// An open row opens the full details when clicked anywhere that is not
+// a button or a link — the guarded hand-off to window.openQuestion,
+// the same call the Answer button makes — so a button or link click
+// never double-opens. A shadow row is read-only: no answer button, no
+// row click, only the detail link.
 window.heldQuestionRowHtml = function(entry, isShadow) {
   const e = (entry && typeof entry === 'object') ? entry : {};
   const question = String(e.question_id == null ? '' : e.question_id);
-  const title = String(e.automaton_title == null ? '' : e.automaton_title);
-  const automaton = String(e.automaton_id == null ? '' : e.automaton_id);
+  const rawTitle = (e.title != null && String(e.title) !== '') ? e.title : e.automaton_title;
+  const title = String(rawTitle == null ? '' : rawTitle);
+  const rawPrd = (e.prd_id != null && String(e.prd_id) !== '') ? e.prd_id : e.automaton_id;
+  const automaton = String(rawPrd == null ? '' : rawPrd);
+  const text = String(e.text == null ? '' : e.text);
   const task = String(e.task_id == null ? '' : e.task_id);
   const state = String(e.state == null ? '' : e.state);
   const reason = String(e.reason == null ? '' : e.reason);
   const rec = String(e.recommended_option == null ? '' : e.recommended_option);
+  const def = String(e.default == null ? '' : e.default);
   const chip = (cls, text) => `<span class="held-question-chip ${cls}" style="font-size:10px;color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:0 5px;white-space:nowrap;">${escHtml(text)}</span>`;
   const chips = [
     question ? chip('held-question-id', question) : '',
@@ -50932,14 +51178,23 @@ window.heldQuestionRowHtml = function(entry, isShadow) {
   ].filter(Boolean).join('');
   const line1 = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;">
     <span class="held-question-title" style="font-weight:600;overflow-wrap:anywhere;">${escHtml(title)}</span>${chips}</div>`;
+  // The question's own text is the main line: clamped to three lines
+  // here; the details the row opens show it in full.
+  const textLine = text
+    ? `<div class="held-question-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(text)}</div>`
+    : '';
   const reasonLine = reason
     ? `<div class="held-question-reason" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(reason)}</div>`
     : '';
   const recLine = rec
     ? `<div class="held-question-recommended" style="font-size:12px;color:var(--text);">${escHtml(t('held_question_recommended', [rec]))}</div>`
     : '';
-  const defLine = `<div class="held-question-default" style="font-size:12px;color:var(--text2);">${escHtml(t('held_question_default_hold'))}</div>`;
-  const answerBtn = question
+  // The default is shown explicitly: the entry's own default value when
+  // the record carries one, the forced default-of-hold line otherwise.
+  const defLine = def
+    ? `<div class="held-question-default" style="font-size:12px;color:var(--text2);">${escHtml(t('held_question_default_value', [def]))}</div>`
+    : `<div class="held-question-default" style="font-size:12px;color:var(--text2);">${escHtml(t('held_question_default_hold'))}</div>`;
+  const answerBtn = (question && !isShadow)
     ? `<button type="button" class="held-question-answer btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')">${escHtml(t('held_question_answer'))}</button>`
     : '';
   const controls = [window.heldQuestionDetailLinkHtml(e), answerBtn].filter(Boolean).join('<span style="color:var(--border);">·</span>');
@@ -50947,8 +51202,14 @@ window.heldQuestionRowHtml = function(entry, isShadow) {
   // line; an open entry is a real hold, and the line names where to change
   // or view it (the Settings page under Automata, a navigation link only).
   const changeLine = isShadow ? '' : `<div class="held-question-change" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_question_held_change'))} <a href="javascript:void(0)" class="held-question-settings-link" onclick="if (typeof window.openAutomataSettings === 'function') window.openAutomataSettings()" style="color:var(--accent,#2f6feb);text-decoration:none;">${escHtml(t('nav_settings'))}</a></div>`;
-  return `<div class="held-question-row" style="padding:6px 0;border-top:1px solid var(--border);" data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}">`
-    + line1 + reasonLine + recLine + defLine + changeLine
+  // Open rows open the details on a click anywhere that is not a button
+  // or a link (buttons and links keep their own action; the handler
+  // bails out when the click lands on one, so nothing double-opens).
+  const rowOpen = (question && !isShadow)
+    ? ` onclick="if (event.target && (event.target.closest('button') || event.target.closest('a'))) return; if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')" style="padding:6px 0;border-top:1px solid var(--border);cursor:pointer;"`
+    : ` style="padding:6px 0;border-top:1px solid var(--border);"`;
+  return `<div class="held-question-row"${rowOpen} data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}">`
+    + line1 + textLine + reasonLine + recLine + defLine + changeLine
     + `<div style="margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${controls}</div></div>`;
 };
 
@@ -50974,7 +51235,10 @@ window.heldQuestionsCardHtml = function(body) {
   const shadow = Array.isArray(body.shadow) ? body.shadow.filter(e => e && typeof e === 'object') : [];
   let html = `<div class="held-question-mode-line" style="display:flex;align-items:center;gap:8px;">${window.heldQuestionModeBadgeHtml(mode)}</div>`;
   if (open.length) {
-    html += `<div class="held-question-list">${open.map(e => window.heldQuestionRowHtml(e)).join('')}</div>`;
+    const mode = _inboxViewMode();
+    html += (mode === 'list')
+      ? `<div class="held-question-list">${open.map(e => window.heldQuestionRowHtml(e)).join('')}</div>`
+      : renderInboxTileGrid(open.map(e => window.heldQuestionTileHtml(e, false)).join(''), mode);
   } else {
     html += `<div class="held-question-empty" style="color:var(--text2);font-size:12px;">${escHtml(t('held_question_empty'))}</div>`;
   }
@@ -50984,6 +51248,52 @@ window.heldQuestionsCardHtml = function(body) {
       <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e, true)).join('')}</div></div>`;
   }
   return `<div class="held-question-body" style="display:flex;flex-direction:column;gap:4px;">${html}</div>`;
+};
+// heldQuestionTileHtml draws one held question for the tile grid: the title
+// (or the question id) as the tile title, the escaped question text clamped,
+// the reason and the recommended option when present, and the same Answer
+// button the row carries (a shadow tile never has one).
+window.heldQuestionTileHtml = function(entry, isShadow) {
+  const e = (entry && typeof entry === 'object') ? entry : {};
+  const question = String(e.question_id == null ? '' : e.question_id);
+  const rawTitle = (e.title != null && String(e.title) !== '') ? e.title : e.automaton_title;
+  const title = String(rawTitle == null ? '' : rawTitle) || question;
+  const text = String(e.text == null ? '' : e.text);
+  const reason = String(e.reason == null ? '' : e.reason);
+  const rec = String(e.recommended_option == null ? '' : e.recommended_option);
+  const task = String(e.task_id == null ? '' : e.task_id);
+  const automaton = String((e.prd_id != null && String(e.prd_id) !== '') ? e.prd_id : e.automaton_id);
+  const meta = [
+    question ? `<span class="held-question-id">${escHtml(question)}</span>` : '',
+    automaton ? `<span class="held-question-automaton">${escHtml(automaton)}</span>` : '',
+    task ? `<span class="held-question-task">${escHtml(task)}</span>` : '',
+  ].filter(Boolean).join('');
+  const def = String(e.default == null ? '' : e.default);
+  // The default is shown explicitly, as on the row: the entry's own value,
+  // or the forced default-of-hold line.
+  const defLine = def
+    ? `<div class="held-question-default" style="margin-top:2px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('held_question_default_value', [def]))}</div>`
+    : `<div class="held-question-default" style="margin-top:2px;font-size:11px;color:var(--text2);">${escHtml(t('held_question_default_hold'))}</div>`;
+  const answerBtn = (question && !isShadow)
+    ? `<button type="button" class="btn-secondary held-question-answer" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')">${escHtml(t('held_question_answer'))}</button>`
+    : '';
+  // An open tile opens the full details on a click anywhere that is not a
+  // button or a link, like the row; the detail link and Answer keep their
+  // own action.
+  const tileOpen = (question && !isShadow)
+    ? ` onclick="if (event.target && (event.target.closest('button') || event.target.closest('a'))) return; if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')" style="min-width:0;cursor:pointer;"`
+    : ` style="min-width:0;"`;
+  const detailLink = window.heldQuestionDetailLinkHtml(e);
+  const controls = [detailLink, answerBtn].filter(Boolean).join('');
+  return `<div class="work-tile held-question-tile" data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}"${tileOpen}>` +
+    `<div class="work-tile-head"><span class="work-tile-title held-question-title">${escHtml(title)}</span></div>` +
+    (meta ? `<div class="work-tile-meta">${meta}</div>` : '') +
+    (text ? `<div class="held-question-text" style="margin-top:6px;font-size:12px;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escHtml(text)}</div>` : '') +
+    (reason ? `<div class="held-question-reason" style="margin-top:2px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(reason)}</div>` : '') +
+    (rec ? `<div class="held-question-recommended" style="margin-top:2px;font-size:11px;color:var(--text);overflow-wrap:anywhere;">${escHtml(t('held_question_recommended', [rec]))}</div>` : '') +
+    defLine +
+    (controls ? `<div class="work-tile-actions" style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${controls}</div>` : '') +
+    `</div>`;
 };
 
 // _automationHeldQuestionsLoader is the held section on GET
@@ -70349,7 +70659,7 @@ function _tileGridHTML(innerHTML, scope) {
 function _tileSyncModes() {
   const mode = _tileRowMode(_tileViewportWidth());
   document.querySelectorAll('.work-tile-grid').forEach(el => {
-    if (el.classList && typeof el.classList.contains === 'function' && el.classList.contains('session-tile-grid-compact')) return;
+    if (el.classList && typeof el.classList.contains === 'function' && (el.classList.contains('session-tile-grid-compact') || el.classList.contains('inbox-tile-grid-compact'))) return;
     if (!el.dataset.tileChosen) el.dataset.tileMode = mode;
   });
 }
@@ -70574,17 +70884,124 @@ function _listMoreHTML(scope, key, pg) {
   return `<div class="list-show-more" style="text-align:center;margin:8px;"><button type="button" class="btn-secondary" onclick="listShowMore('${escJsAttr(scope)}','${escJsAttr(String(key))}')">${escHtml(_tagT('list_show_more', 'Show more'))} (${step} / ${pg.remaining})</button></div>`;
 }
 
-// _listControlsHTML is the toolbar: the list/tiles/compact toggle and the group-by select.
+// _listControlsHTML is the toolbar: the list/tiles/compact toggle and the
+// group-by select. `opts.noMode` omits the mode buttons (the tag list);
+// `opts.noGroup` omits the group select — the Inbox uses this toolbar for the
+// mode switch only, its three lists have no grouping.
 function _listControlsHTML(scope, o) {
   const opts = o || {};
   const mode = _listModeGet(scope, _tileViewportWidth());
   const labels = { list: _tagT('list_mode_list', 'List'), tiles: _tagT('list_mode_tiles', 'Tiles'), compact: _tagT('list_mode_compact', 'Compact') };
   const toggle = LIST_MODES.map(m => `<button type="button" class="tag-view-btn${mode === m ? ' active' : ''}" aria-pressed="${mode === m}" onclick="listSetMode('${escJsAttr(scope)}','${m}')">${escHtml(labels[m])}</button>`).join('');
-  const cur = _listGroupGet(scope);
-  const axes = ['none', 'tag', 'state', 'node', 'project'].concat(LIST_GROUP_PREFIXES.map(p => 'prefix:' + p));
-  const axisLabel = (a) => a === 'none' ? _tagT('list_group_by_none', 'No grouping') : (a.indexOf('prefix:') === 0 ? a.slice(7) + ':' : a);
-  const sel = `<select class="list-group-select" aria-label="${escHtml(_tagT('list_group_by', 'Group by'))}" onchange="listSetGroup('${escJsAttr(scope)}',this.value)">${axes.map(a => `<option value="${escHtml(a)}"${a === cur ? ' selected' : ''}>${escHtml(axisLabel(a))}</option>`).join('')}</select>`;
+  let sel = '';
+  if (!opts.noGroup) {
+    const cur = _listGroupGet(scope);
+    const axes = ['none', 'tag', 'state', 'node', 'project'].concat(LIST_GROUP_PREFIXES.map(p => 'prefix:' + p));
+    const axisLabel = (a) => a === 'none' ? _tagT('list_group_by_none', 'No grouping') : (a.indexOf('prefix:') === 0 ? a.slice(7) + ':' : a);
+    sel = `<select class="list-group-select" aria-label="${escHtml(_tagT('list_group_by', 'Group by'))}" onchange="listSetGroup('${escJsAttr(scope)}',this.value)">${axes.map(a => `<option value="${escHtml(a)}"${a === cur ? ' selected' : ''}>${escHtml(axisLabel(a))}</option>`).join('')}</select>`;
+  }
   return `<div class="list-controls" data-list-scope="${escHtml(scope)}" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0;"><div class="tag-view-switch" role="group">${opts.noMode ? '' : toggle}</div>${sel}</div>`;
+}
+
+// ── Keeping the group-by dropdown alive across repaints ─────────────────────
+// A list repaint replaces the panel's innerHTML, which would drop the
+// group-by select's focus and open state, and a repaint landing between the
+// user's change and the next paint could reset what the select shows.
+// _listControlsLive holds the last drawn .list-controls element per scope so
+// _listControlsReconcile (run right after every paint that may draw them)
+// puts that element back in place when its inputs (scope, mode, group) did
+// not change or the select has focus, patching it in place otherwise.
+// The stored group (_listGroupGet) is the only source of truth for the
+// selection, so the choice always survives a full page reload and sub-tab
+// switches. One implementation for every scope — the element names itself
+// with data-list-scope — no per-scope copies.
+const _listControlsLive = {};
+
+// _listControlsSignature is the toolbar's inputs: scope, mode and group.
+function _listControlsSignature(scope) {
+  return scope + '|' + _listModeGet(scope, _tileViewportWidth()) + '|' + _listGroupGet(scope);
+}
+
+function _listControlsSelectOf(el) {
+  return el && typeof el.querySelector === 'function' ? el.querySelector('select.list-group-select') : null;
+}
+
+// _listControlsKeep puts the live element back where the fresh one stands,
+// syncing the fresh node's inputs into it in place: the select's options
+// (only if they differ) and its selection (always from the stored group),
+// and the mode buttons' active/pressed state.
+function _listControlsKeep(live, fresh, scope, focused) {
+  const lSel = _listControlsSelectOf(live);
+  const fSel = _listControlsSelectOf(fresh);
+  if (lSel && fSel) {
+    try {
+      if (lSel.innerHTML !== fSel.innerHTML) lSel.innerHTML = fSel.innerHTML;
+      const cur = _listGroupGet(scope);
+      if (lSel.value !== cur) lSel.value = cur;
+    } catch (_e) { /* a stub DOM may not accept writes; the paint stands */ }
+  }
+  try {
+    const lBtns = live.querySelectorAll ? live.querySelectorAll('.tag-view-btn') : null;
+    const fBtns = fresh.querySelectorAll ? fresh.querySelectorAll('.tag-view-btn') : null;
+    if (lBtns && fBtns && lBtns.length === fBtns.length) {
+      Array.prototype.forEach.call(lBtns, (b, i) => {
+        const fb = fBtns[i];
+        if (!b || !fb || !b.classList) return;
+        b.classList.toggle('active', !!(fb.classList && fb.classList.contains && fb.classList.contains('active')));
+        if (b.setAttribute) b.setAttribute('aria-pressed', fb.getAttribute ? fb.getAttribute('aria-pressed') : '');
+      });
+    }
+  } catch (_e) { /* button state is decorative; the paint stands */ }
+  if (typeof fresh.replaceWith === 'function') {
+    try { fresh.replaceWith(live); } catch (_e) { return; }
+  }
+  // Focus and the open state ride with the moved element; re-assert both so
+  // a repaint can never leave the select blurred with a stale selection.
+  if (lSel && typeof lSel.focus === 'function') {
+    try { lSel.focus(); } catch (_e) {}
+    try { const cur = _listGroupGet(scope); if (lSel.value !== cur) lSel.value = cur; } catch (_e) {}
+  }
+}
+
+// _listControlsReconcile runs on a painted container: every .list-controls
+// node it drew is checked against the scope's live element, and the stored
+// group is shown in the select that stands for it.
+function _listControlsReconcile(root) {
+  if (typeof document === 'undefined' || !root || typeof root.querySelectorAll !== 'function') return;
+  let freshList = null;
+  try { freshList = root.querySelectorAll('.list-controls[data-list-scope]'); } catch (_e) { return; }
+  if (!freshList || !freshList.length) return;
+  Array.prototype.forEach.call(freshList, fEl => {
+    if (!fEl || typeof fEl.getAttribute !== 'function') return;
+    const scope = fEl.getAttribute('data-list-scope');
+    if (!scope) return;
+    const sig = _listControlsSignature(scope);
+    // The stored group is always what the standing select shows, fresh node
+    // or live element alike.
+    const fSel = _listControlsSelectOf(fEl);
+    try {
+      const cur = _listGroupGet(scope);
+      if (fSel && fSel.value !== cur) fSel.value = cur;
+    } catch (_e) {}
+    const live = _listControlsLive[scope];
+    let keeper = fEl;
+    if (live && live !== fEl) {
+      const focused = !!(document.activeElement === (live._listControlsSel || null));
+      // Inputs unchanged, or the select is focused/open: keep the live
+      // element instead of rebuilding, so focus and the open state survive.
+      if (live._listControlsSig === sig || focused) {
+        _listControlsKeep(live, fEl, scope, focused);
+        keeper = live;
+      }
+      // else: the inputs changed and nothing is focused — the fresh element
+      // stands, its select already carrying the stored selection.
+    }
+    try {
+      keeper._listControlsSig = sig;
+      keeper._listControlsSel = _listControlsSelectOf(keeper);
+    } catch (_e) {}
+    _listControlsLive[scope] = keeper;
+  });
 }
 
 // _listBodyHTML draws a list's items in the chosen group-by: one grid per group,
@@ -70600,8 +71017,53 @@ function _listBodyHTML(scope, items, renderTile) {
   }).join('');
 }
 
+// ── Inbox view modes ─────────────────────────────────────────────────────────
+// The Inbox sub-tab lists (Triage, Open questions, Held questions) share one
+// view mode — List / Tiles / Compact — remembered per device under the shared
+// list-mode storage with scope 'inbox'. Switching paints the lists that
+// already have data straight from that data (no refetch) and repaints the
+// toggle row at the top of the Inbox. It never reads or writes the Inbox
+// badge counts, so the badge on the sub-tab is unaffected.
+const INBOX_VIEW_LOADER_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions'];
+// renderInboxTileGrid wraps the tile HTML in the shared .work-tile grid.
+// Compact pins data-tile-mode to "tile" (like the Sessions compact grid), so
+// the resize handler's per-width rewrite is skipped via the
+// .inbox-tile-grid-compact class; tiles follow the viewport.
+function renderInboxTileGrid(innerHTML, mode) {
+  const grid = mode === 'compact' ? 'tile' : _tileRowMode(_tileViewportWidth());
+  return `<div class="work-tile-grid inbox-tile-grid${mode === 'compact' ? ' inbox-tile-grid-compact' : ''}" data-tile-mode="${grid}">${innerHTML}</div>`;
+}
+// _inboxViewMode is the Inbox's shared mode: the remembered choice, or the
+// viewport default (tiles at 720px and up, compact below).
+function _inboxViewMode() {
+  return _listModeGet('inbox', _tileViewportWidth());
+}
+// _inboxViewToggleHtml is the [List] [Tiles] [Compact] row shown at the top
+// of the Inbox sub-tab: the shared list-controls toggle without the group-by
+// select, which the Inbox lists do not have.
+function _inboxViewToggleHtml() {
+  return _listControlsHTML('inbox', { noGroup: true });
+}
+// _inboxViewRepaint repaints the Inbox lists from their already-loaded data
+// (a list with no data yet is left alone) and the toggle row. It does not
+// load anything.
+function _inboxViewRepaint() {
+  const L = (typeof window !== 'undefined' && window._listLoaders) ? window._listLoaders : null;
+  INBOX_VIEW_LOADER_KEYS.forEach(k => {
+    const l = L && L[k];
+    if (l && l.state && l.state.hasData && typeof l.paint === 'function') l.paint();
+  });
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('inboxViewModeToggle');
+  if (el && 'innerHTML' in el) el.innerHTML = _inboxViewToggleHtml();
+  if (typeof _listControlsReconcile === 'function') {
+    try { _listControlsReconcile(el); } catch (_e) { /* the toolbar repaint stands */ }
+  }
+}
+
 function _listRepaint(scope) {
   if (scope === 'session') { if (typeof renderSessionsView === 'function') renderSessionsView(); return; }
+  if (scope === 'inbox') { if (typeof _inboxViewRepaint === 'function') _inboxViewRepaint(); return; }
   if (typeof _tagBrowseRepaint === 'function') _tagBrowseRepaint(scope);
 }
 if (typeof window !== 'undefined') {

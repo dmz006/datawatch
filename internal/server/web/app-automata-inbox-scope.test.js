@@ -78,13 +78,15 @@ test('held questions are scoped to the project', () => {
   assert.equal(count(s, 'automation_held_questions', data), 1);
 });
 
-test('security failures are scoped, with the repo name as a directory fallback', () => {
+test('security failures render scoped but no longer count (read-only card)', () => {
   const s = setup('alpha');
   const data = [{ id: 's1', repo: 'github.com/acme/alpha' }, { id: 's2', repo: 'acme/beta' }, { id: 's3' }];
-  assert.equal(count(s, 'automation_security_failure', data), 1);
+  assert.equal(count(s, 'automation_security_failure', data), 0);
+  s.__d = data;
+  assert.equal(vm.runInContext(`_inboxScopeData('automation_security_failure', __d).length`, s), 1, 'the list still holds the scoped entry');
 });
 
-test('supervisor findings are scoped and resolved ones do not count', () => {
+test('supervisor findings render scoped but never count (read-only card)', () => {
   const s = setup('alpha');
   const data = { findings: [
     { id: 'f1', system_tags: ['project:alpha'] },
@@ -92,14 +94,14 @@ test('supervisor findings are scoped and resolved ones do not count', () => {
     { id: 'f3', project_dir: '/work/beta' },
     { id: 'f4' },
   ] };
-  assert.equal(count(s, 'supervisor', data), 1);
+  assert.equal(count(s, 'supervisor', data), 0);
+  s.__d = data;
+  assert.equal(vm.runInContext(`_inboxScopeData('supervisor', __d).findings.length`, s), 2, 'the list still holds the scoped projects alpha findings');
 });
 
 test('items with no project count only under the Overview', () => {
   const s = setup('');
   assert.equal(count(s, 'automation_questions', { questions: questions() }), 4);
-  assert.equal(count(s, 'automation_security_failure', [{ id: 'a' }, { id: 'b' }]), 2);
-  select(s, 'alpha');
   assert.equal(count(s, 'automation_security_failure', [{ id: 'a' }, { id: 'b' }]), 0);
 });
 

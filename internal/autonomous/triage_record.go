@@ -102,10 +102,24 @@ type TriageRecord struct {
 	// Error is the failed (or blocked) task's error text (capped). It is
 	// empty when the Automaton carries no failed/blocked task.
 	Error string `json:"error,omitempty"`
-	// BlockedReason is the Automaton's own block reason
-	// (PRD.BlockedReason), kept separate from Error so a block reason is
-	// never rendered as a task's error.
+	// BlockedReason is the record's block reason text: the Automaton's
+	// own block reason (PRD.BlockedReason) when it set one, else a
+	// reason derived from the facts on the Automaton (see ReasonSource)
+	// so the card can show the operator what happened. It is kept
+	// separate from Error so a block reason is never rendered as a
+	// task's error.
 	BlockedReason string `json:"blocked_reason,omitempty"`
+	// ReasonSource names where a blocked record's reason text came from.
+	// Set only for blocked records. "blocked_reason" — the Automaton set
+	// one itself (BlockedReason is its exact text, unchanged). One of
+	// the derived sources when the Automaton recorded no reason of its
+	// own: "verdict" — the latest block guardrail verdict's note, or the
+	// latest "blocked" Decision's note; "task_error" — a failed, blocked
+	// or held task's error text, or the reason its session ended;
+	// "task_review" — a task is held for operator review. "none" — a
+	// blocked record with no reason recorded at all. Failed records
+	// leave the field empty (absent): their reason is the Error text.
+	ReasonSource string `json:"reason_source,omitempty"`
 	// SessionEndReason carries why the task's live sessions were ended,
 	// read structurally from the task, falling back to the newest
 	// ended_sessions decision note.
@@ -140,6 +154,16 @@ type TriageRecord struct {
 // the order they appear in the record.
 var TriageRetryCategories = []string{"infra", "content", "scope", "policy"}
 
+// Blocked-record reason sources, in the order the derivation walks the
+// Automaton's facts (most specific first).
+const (
+	triageReasonSourceBlockedReason = "blocked_reason"
+	triageReasonSourceVerdict       = "verdict"
+	triageReasonSourceTaskError     = "task_error"
+	triageReasonSourceTaskReview    = "task_review"
+	triageReasonSourceNone          = "none"
+)
+
 // BuildTriageRecord is the pure builder: it reads only prd and the
 // caller-supplied resolved budget (no store, no I/O). It returns nil
 // when prd is not in a failed or blocked state. automationName and
@@ -170,8 +194,14 @@ func BuildTriageRecord(prd *PRD, budget TriageRetryBudget, automationName, membe
 		rec.Error = capTriageText(task.Error)
 		rec.SessionEndReason = triageSessionEndReason(prd, task)
 	}
-	if prd.Status == PRDBlocked && prd.BlockedReason != "" {
-		rec.BlockedReason = capTriageText(prd.BlockedReason)
+	if prd.Status == PRDBlocked {
+		if prd.BlockedReason != "" {
+			// The Automaton set its own block reason; it always wins, unchanged.
+			rec.BlockedReason = capTriageText(prd.BlockedReason)
+			rec.ReasonSource = triageReasonSourceBlockedReason
+		} else {
+			rec.BlockedReason, rec.ReasonSource = deriveTriageBlockedReason(prd)
+		}
 	}
 	return rec
 }
@@ -183,6 +213,85 @@ func capTriageText(s string) string {
 		return s[:maxTriageErrorLen]
 	}
 	return s
+}
+
+// triageHeldTask is the task of prd held for operator review
+// (TaskReviewNeeded): the most recently updated one wins, since that is
+// the hold the operator is being asked about. Nil when none is held.
+func (prd *PRD) triageHeldTask() *Task {
+	var held *Task
+	for i := range prd.Story {
+		for j := range prd.Story[i].Tasks {
+			t := &prd.Story[i].Tasks[j]
+			if t.Status != TaskReviewNeeded {
+				continue
+			}
+			if held == nil || t.UpdatedAt.After(held.UpdatedAt) {
+				held = t
+			}
+		}
+	}
+	return held
+}
+
+// deriveTriageBlockedReason is the blocked record's reason when the
+// Automaton records no block reason of its own (prd.BlockedReason
+// empty). It reads only the facts already on the Automaton, walking
+// them in order of specificity: the latest block guardrail verdict
+// (blockedReasonFromVerdicts), else the latest "blocked" Decision's
+// note (latestBlockedReason) — source "verdict"; then the error text
+// of the record's failed or blocked task, or of a held task, or the
+// reason the task's session ended — source "task_error"; then the
+// held-for-review state of the task itself — source "task_review".
+// Nothing recorded returns "" and "none".
+func deriveTriageBlockedReason(prd *PRD) (string, string) {
+	if prd == nil {
+		return "", triageReasonSourceNone
+	}
+	// A block verdict, or a "blocked" Decision, says why it was blocked
+	// and is the most specific fact on the Automaton.
+	if reason := blockedReasonFromVerdicts(prd.Verdicts); reason != "" {
+		return capTriageText(reason), triageReasonSourceVerdict
+	}
+	if reason := latestBlockedReason(prd.Decisions); reason != "" {
+		return capTriageText(reason), triageReasonSourceVerdict
+	}
+	task := prd.triageFailureTask()
+	held := prd.triageHeldTask()
+	// The task's own failure text — or why its session ended — is next
+	// most specific; it is the same task the record points at.
+	if task != nil && task.Error != "" {
+		return capTriageText(task.Error), triageReasonSourceTaskError
+	}
+	if held != nil && held.Error != "" {
+		return capTriageText(held.Error), triageReasonSourceTaskError
+	}
+	if task != nil {
+		if reason := triageSessionEndReason(prd, task); reason != "" {
+			return capTriageText(reason), triageReasonSourceTaskError
+		}
+	}
+	// A task held for operator review may carry no other text: name the
+	// task and say it is waiting for the operator.
+	if held != nil {
+		return capTriageText(triageHeldTaskReason(held)), triageReasonSourceTaskReview
+	}
+	return "", triageReasonSourceNone
+}
+
+// triageHeldTaskReason renders the one-line reason for a
+// held-for-review task that carries no other text: it names the task
+// and says it is held, waiting for the operator to retry or cancel it.
+func triageHeldTaskReason(t *Task) string {
+	title := strings.TrimSpace(t.Title)
+	if title == "" {
+		title = t.ID
+	}
+	line := "task " + title
+	if title != t.ID {
+		line += " (id " + t.ID + ")"
+	}
+	return line + " is held, waiting for the operator to retry or cancel it"
 }
 
 // triageFailureTask is the task the record points at: the newest

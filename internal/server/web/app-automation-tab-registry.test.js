@@ -52,7 +52,7 @@ const PLACEHOLDERS = {
   automations: ['automationReleaseArcCard', 'automationGanttCard'],
   resources: ['automationLaneUtilizationCard', 'automationVerifierSlotsCard'],
   progress: ['automationAllProjectsGanttCard'],
-  housekeeping: ['automationHousekeepingRepairsCard', 'automationGateRepairCard', 'automationStaleWorktreesCard'],
+  housekeeping: ['automationHousekeepingRepairsCard', 'automationGateRepairCard', 'automationStaleWorktreesCard', 'automationHkQuestionsCard'],
 };
 
 // The Progress tab's headline row holds two more cards, and the cost chart cards follow them; all hidden until they have a value.
@@ -133,7 +133,7 @@ test('card ownership: each tab body holds exactly its fixed cards then its place
       seen.set(c, id);
     });
   }
-  assert.equal(seen.size, 5 + 2 + 4 + 1 + 3 + 10 + 1, 'total distinct card ids (fixed 15 + placeholders 10 + cost charts 1)');
+  assert.equal(seen.size, 5 + 2 + 4 + 1 + 3 + 11 + 1, 'total distinct card ids (fixed 15 + placeholders 11 + cost charts 1)');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[0], 'automationQuestionsCard', 'open questions card is first on Inbox');
   assert.equal(cardIds(bodyOf((sb.switchAutomationSubtab('inbox'), out.view)))[2], 'automationTriageCard', 'triage card follows the question and held cards');
 });
@@ -167,7 +167,7 @@ test('slots: a slot registered on resources appears only there, after the fixed 
       assert.match(body, new RegExp('<div id="' + p + '" class="prd-capacity-slot" style="display:none;[^"]*"></div>'), p + ' is a hidden empty placeholder on ' + tab);
     }
   }
-  assert.equal(Object.values(PLACEHOLDERS).flat().length, 8, 'eight placeholders');
+  assert.equal(Object.values(PLACEHOLDERS).flat().length, 9, 'nine placeholders');
 });
 
 test('inbox badge: summed count from the existing routes, aria-label, hidden at zero, kept when another tab is shown', async () => {
@@ -197,13 +197,13 @@ test('inbox badge: summed count from the existing routes, aria-label, hidden at 
   const m = inbox.inner.match(/<span class="automation-subtab-badge" aria-label="([^"]*)" style="([^"]*)">(\d+)<\/span>/);
   assert.ok(m, 'Inbox carries span.automation-subtab-badge: ' + inbox.inner);
   assert.equal(m[3], '4', 'badge is the summed count: 2 triage + 1 question + 1 held question');
-  assert.equal(m[1], '4 waiting on you across all projects', 'aria-label');
+  assert.equal(m[1], '4 waiting on you to act across all projects', 'aria-label');
   assert.doesNotMatch(m[2], /display:none/, 'visible when non-zero');
 
   sb.switchAutomationSubtab('progress');
   inbox = stripButtons(out.view).find(b => b.id === 'inbox');
   assert.equal(inbox.active, false, 'Inbox no longer active');
-  assert.match(inbox.inner, /automation-subtab-badge" aria-label="4 waiting on you across all projects" style="[^"]*">4</, 'badge stays on Inbox behind Progress');
+  assert.match(inbox.inner, /automation-subtab-badge" aria-label="4 waiting on you to act across all projects" style="[^"]*">4</, 'badge stays on Inbox behind Progress');
   for (const b of stripButtons(out.view).filter(b => b.id !== 'inbox')) assert.doesNotMatch(b.inner, /badge/, b.id + ' has no badge');
 
   // In-place update through the DOM: a stub badge gets the count text and aria-label.
@@ -212,7 +212,7 @@ test('inbox badge: summed count from the existing routes, aria-label, hidden at 
   sb.document.querySelector = sel => (/data-subtab="inbox"\] \.automation-subtab-badge/.test(sel) ? badge : null);
   vm.runInContext('_automationUpdateInboxBadge()', sb);
   assert.equal(badge.textContent, '4');
-  assert.equal(attrs['aria-label'], '4 waiting on you across all projects');
+  assert.equal(attrs['aria-label'], '4 waiting on you to act across all projects');
   assert.equal(badge.style.display, '');
 });
 
@@ -220,7 +220,7 @@ test('inbox badge: zero is hidden', () => {
   const { sb, out } = loadView();
   sb.renderAutonomousView();
   const inbox = stripButtons(out.view).find(b => b.id === 'inbox');
-  assert.match(inbox.inner, /<span class="automation-subtab-badge" aria-label="0 waiting on you across all projects" style="display:none;">0<\/span>/, 'zero count is hidden but present');
+  assert.match(inbox.inner, /<span class="automation-subtab-badge" aria-label="0 waiting on you to act across all projects" style="display:none;">0<\/span>/, 'zero count is hidden but present');
 });
 
 test('strip behaviour: style.css rules for the sliding strip', () => {

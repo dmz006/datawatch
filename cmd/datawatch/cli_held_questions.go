@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -29,6 +30,7 @@ type cliHeldOpen struct {
 	AutomationID      string `json:"automation_id,omitempty"`
 	Title             string `json:"title,omitempty"`
 	Reason            string `json:"reason,omitempty"`
+	Text              string `json:"text,omitempty"`
 	RecommendedOption string `json:"recommended_option,omitempty"`
 	Default           string `json:"default,omitempty"`
 	CreatedAt         string `json:"created_at,omitempty"`
@@ -96,6 +98,9 @@ func renderHeldQuestions(w io.Writer, body []byte) error {
 			line += "  task " + q.TaskID
 		}
 		_, _ = fmt.Fprintln(w, line)
+		if q.Text != "" {
+			_, _ = fmt.Fprintln(w, "    ask: "+strings.ReplaceAll(q.Text, "\n", " "))
+		}
 		if q.Reason != "" {
 			_, _ = fmt.Fprintln(w, "    why: "+q.Reason)
 		}

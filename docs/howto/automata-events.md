@@ -114,9 +114,10 @@ The cost chart entries that the Events stream shows at the top are not tied to
 a project, so they are left out while a project or plan scope (or the Project
 filter) is on.
 
-**The Inbox follows the scope too.** The **Inbox** badge and its cards count only
-the items of the scoped project (and plan); under **All** they count everything
-waiting on you. See [What the Inbox counts](automation-tab.md#what-the-inbox-counts).
+**The Inbox follows the scope too.** The **Inbox** badge and its cards show only
+the items of the scoped project (and plan); under **All** the badge counts everything
+waiting on you to act. The read-only cards (the security failure report, the
+supervisor watch findings) render but never count. See [What the Inbox counts](automation-tab.md#what-the-inbox-counts).
 
 **On every other surface**
 
