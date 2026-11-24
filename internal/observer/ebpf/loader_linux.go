@@ -6,9 +6,12 @@
 // loader (loadNetprobeObjects) plus the four kprobes
 // (tcp/udp_sendmsg + tcp/udp_recvmsg-return) into a working probe.
 //
-// Like the v1 stats tracer (BL181), we pre-load kernel BTF via
-// btf.LoadKernelSpec so the loader doesn't read /proc/self/mem
-// (no CAP_SYS_PTRACE needed).
+// Kernel BTF is pre-loaded via btf.LoadKernelSpec (CO-RE types).
+// That does NOT avoid the /proc/self/mem read: the cilium library
+// reads it to detect the kernel version of every kprobe program whose
+// spec has none, and a daemon started from a binary with file
+// capabilities is not dumpable, so the read is refused. The version
+// is therefore set on the specs (internal/ebpfkver) before the load.
 //
 // Failure to attach any single kprobe is non-fatal — partial mode
 // is still useful (e.g. tx-only). The Loaded() flag stays true as
@@ -18,13 +21,18 @@
 package ebpf
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"strings"
 	"sync"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
+
+	"github.com/dmz006/datawatch/internal/ebpfkver"
 )
 
 // realLinuxKprobeProbe is the working implementation. It owns the
@@ -100,16 +108,47 @@ func (r *realLinuxKprobeProbe) Read() []ProcessNet {
 	return out
 }
 
+// preparedNetprobeSpec returns the embedded collection spec ready to load.
+func preparedNetprobeSpec() (*ebpf.CollectionSpec, error) {
+	spec, err := loadNetprobe()
+	if err != nil {
+		return nil, err
+	}
+	if err := ebpfkver.PrepareKprobes(spec); err != nil {
+		return nil, fmt.Errorf("kernel version for kprobes: %w", err)
+	}
+	return spec, nil
+}
+
+// removeMemlock raises RLIMIT_MEMLOCK; a variable so tests can fake it.
+var removeMemlock = rlimit.RemoveMemlock
+
+// loadFailureReason turns a load error into the message shown in
+// host.ebpf.message. A permission error gets the cause and the remedy.
+func loadFailureReason(err error) string {
+	msg := fmt.Sprintf("LoadAndAssign: %v", err)
+	if errors.Is(err, fs.ErrPermission) || strings.Contains(err.Error(), "permission denied") {
+		msg += " — the kernel refused the load: the binary needs its file capabilities (run `datawatch setup ebpf` with sudo; every release replaces the file and removes them) and the daemon must be restarted afterwards to pick them up"
+	}
+	return msg
+}
+
+// assignNetprobe loads the spec into the kernel and assigns the objects.
+// It is a variable so tests can substitute a fake that returns a chosen error.
+var assignNetprobe = func(spec *ebpf.CollectionSpec, objs *netprobeObjects, opts *ebpf.CollectionOptions) error {
+	return spec.LoadAndAssign(objs, opts)
+}
+
 // loadAndAttach is the constructor that the probe_linux.go entry
 // point delegates to once CAP_BPF + generated objects are present.
 // On any error returns a NoopProbe with the reason — the daemon
 // keeps running, just without per-pid net telemetry.
 func loadAndAttach() (NetProbe, error) {
-	if err := rlimit.RemoveMemlock(); err != nil {
+	if err := removeMemlock(); err != nil {
 		return NewNoopProbe(fmt.Sprintf("ebpf rlimit.RemoveMemlock: %v", err)), nil
 	}
 
-	spec, err := loadNetprobe()
+	spec, err := preparedNetprobeSpec()
 	if err != nil {
 		return NewNoopProbe(fmt.Sprintf("loadNetprobe: %v", err)), nil
 	}
@@ -120,8 +159,8 @@ func loadAndAttach() (NetProbe, error) {
 	}
 
 	objs := &netprobeObjects{}
-	if err := spec.LoadAndAssign(objs, &collOpts); err != nil {
-		return NewNoopProbe(fmt.Sprintf("LoadAndAssign: %v", err)), nil
+	if err := assignNetprobe(spec, objs, &collOpts); err != nil {
+		return NewNoopProbe(loadFailureReason(err)), nil
 	}
 
 	probe := &realLinuxKprobeProbe{objs: objs}

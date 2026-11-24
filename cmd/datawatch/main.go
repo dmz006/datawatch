@@ -11188,7 +11188,7 @@ func installPrebuiltBinary(version string, progress func(downloaded, total int64
 		return err
 	}
 	fmt.Println("[update] Installing new binary...")
-	if err := replaceExecutable(selfPath, newMain); err != nil {
+	if err := replaceMainBinary(selfPath, newMain); err != nil {
 		return err
 	}
 	fmt.Printf("[update] Successfully updated to v%s.\n", version)
@@ -11290,7 +11290,7 @@ func installBareBinary(url, version string, progress func(downloaded, total int6
 	if err := os.Chmod(newBin, 0755); err != nil {
 		return err
 	}
-	if err := replaceExecutable(selfPath, newBin); err != nil {
+	if err := replaceMainBinary(selfPath, newBin); err != nil {
 		return err
 	}
 	fmt.Printf("[update] Successfully updated to v%s.\n", version)
@@ -11467,6 +11467,20 @@ func downloadChannelBinary(dataDir, targetVersion string) (string, error) {
 		return "", err
 	}
 	return dst, nil
+}
+
+// replaceMainBinary replaces the running datawatch binary and then restores
+// its eBPF capabilities: capabilities live on the file, so a new file has
+// none. With the passwordless rule installed they are re-applied with
+// sudo -n; otherwise the one command to run is printed. See
+// docs/howto/ebpf-process-telemetry.md.
+func replaceMainBinary(dest, src string) error {
+	hadCaps := ebpfCapsBeforeReplace(dest)
+	if err := replaceExecutable(dest, src); err != nil {
+		return err
+	}
+	reapplyEBPFCapsAfterReplace(dest, hadCaps)
+	return nil
 }
 
 func replaceExecutable(dest, src string) error {
@@ -18143,10 +18157,33 @@ func newCmdCmd() *cobra.Command {
 func newSetupEBPFCmd() *cobra.Command {
 	var disable bool
 	var target string
+	var sudoers, installSudoers, removeSudoers, status, reapply bool
 	cmd := &cobra.Command{
 		Use:   "ebpf",
 		Short: "Enable or disable eBPF per-session network/CPU tracing (requires sudo)",
+		Long: `Grant the daemon its eBPF capabilities (cap_bpf, cap_perfmon, cap_sys_resource) on the
+binary file, so it runs without root. Capabilities live on the file and every release
+replaces the file, so each release removes them: after an install, run this command with
+sudo, then restart the daemon.
+
+To keep it working across releases without a root shell, a sudoers rule can let you set
+exactly those capabilities on exactly this binary without a password:
+
+  --sudoers          print the rule and the file it belongs in (changes nothing)
+  --install-sudoers  validate the rule with visudo, then install it with sudo (one password prompt)
+  --remove-sudoers   remove the rule (only a file this command wrote)
+  --status           say whether the file has the capabilities, whether the running daemon
+                     holds them and whether the passwordless rule is present
+  --reapply          after a release: re-apply with sudo -n when the rule exists, otherwise
+                     print the one command to run (never prompts)
+
+See docs/howto/ebpf-process-telemetry.md.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			for mode, on := range map[string]bool{"sudoers": sudoers, "install-sudoers": installSudoers, "remove-sudoers": removeSudoers, "status": status, "reapply": reapply} {
+				if on {
+					return runEBPFHostMode(cmd.Context(), realEBPFSetupEnv(cmd.OutOrStdout()), mode, target)
+				}
+			}
 			cfg, err := setupLoadOrInit()
 			if err != nil {
 				return err
@@ -18204,6 +18241,8 @@ func newSetupEBPFCmd() *cobra.Command {
 			} else {
 				fmt.Println("All prerequisites met.")
 			}
+			fmt.Println("Note: every release replaces the binary file and removes these capabilities.")
+			fmt.Println("      Keep them across releases with a passwordless rule: datawatch setup ebpf --sudoers")
 
 			if target == "stats" {
 				// Standalone Shape B daemon has no config file managed
@@ -18239,6 +18278,13 @@ func newSetupEBPFCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&disable, "disable", false, "Disable eBPF tracing")
 	cmd.Flags().StringVar(&target, "target", "", "Patch a specific binary instead of the running datawatch (\"stats\" → datawatch-stats; default: this binary)")
+	cmd.Flags().BoolVar(&sudoers, "sudoers", false, "Print the sudoers rule that lets this user set the eBPF capabilities on this binary without a password, and the file it belongs in")
+	cmd.Flags().BoolVar(&installSudoers, "install-sudoers", false, "Validate the sudoers rule with visudo and install it as a root-owned drop-in with sudo")
+	cmd.Flags().BoolVar(&removeSudoers, "remove-sudoers", false, "Remove the sudoers drop-in this command installed")
+	cmd.Flags().BoolVar(&status, "status", false, "Show whether the file has the capabilities, the running daemon holds them and the passwordless rule is present")
+	cmd.Flags().BoolVar(&reapply, "reapply", false, "After a release: re-apply the capabilities with sudo -n when the rule exists, otherwise print the command to run")
+	cmd.MarkFlagsMutuallyExclusive("disable", "sudoers", "install-sudoers", "remove-sudoers", "status", "reapply")
+	cmd.MarkFlagsMutuallyExclusive("sudoers", "install-sudoers", "remove-sudoers", "status", "reapply")
 	return cmd
 }
 

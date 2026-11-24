@@ -134,6 +134,7 @@ you already have a daemon you can talk to.
 | [Pipeline + session chaining](pipeline-chaining.md) | Chain tasks into DAG pipelines with before/after gates; combine with manual sessions |
 | [Cross-agent memory](cross-agent-memory.md) | Use episodic memory + the knowledge graph across builds, tests, and federated peers |
 | [Federated observer](federated-observer.md) | Multi-host stats + envelope tree across primary + Shape A/B/C peers |
+| [eBPF per-process telemetry](ebpf-process-telemetry.md) | Grant the daemon its eBPF capabilities without root (install, `datawatch setup ebpf`, restart), keep them across releases with a passwordless sudoers rule (print, install, remove, status), what an update does after replacing the binary, the security note, and reading the result in the observer stats |
 | [Peer TLS verification](peer-tls-verification.md) | Every `https://` peer link verifies by default: the `tls_cert_fingerprint` leaf pin (all 5 surfaces), the warned `tls_skip_verify` / `DATAWATCH_OBSERVER_PUSH_INSECURE` / `observer.federation.insecure` opt-outs, deriving the fingerprint with openssl, and what breaks when upgrading a fleet |
 | [Daemon operations](daemon-operations.md) | Day-two operator workflow: start / stop / restart / upgrade / diagnose / reload / logs |
 | [Testing against a running daemon](testing-against-a-running-daemon.md) | Point the functional-smoke and E2E test scripts at a daemon you already have running (CI-deployed, sandbox, dev) instead of a fresh throwaway one — `DW_BASE` / `TEST_BASE` reference |

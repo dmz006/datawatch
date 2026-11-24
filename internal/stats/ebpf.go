@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/cilium/ebpf/rlimit"
+
+	"github.com/dmz006/datawatch/internal/ebpfsetup"
 )
 
 // HasCapBPF checks if the given binary has CAP_BPF capability set.
@@ -21,6 +23,18 @@ func HasCapBPF(binaryPath string) bool {
 	return strings.Contains(string(out), "cap_bpf")
 }
 
+// setCapCommand is the command SetCapBPF runs: sudo, the absolute setcap path,
+// the capability list and the binary. The sudoers rule printed by
+// `datawatch setup ebpf --sudoers` pins exactly this argument list, so both
+// come from internal/ebpfsetup.
+func setCapCommand(binaryPath string) ([]string, error) {
+	setcap, err := ebpfsetup.FindSetcap()
+	if err != nil {
+		return nil, err
+	}
+	return append([]string{"sudo", "-S"}, setcap, ebpfsetup.CapList, binaryPath), nil
+}
+
 // SetCapBPF sets CAP_BPF, CAP_PERFMON, and CAP_SYS_RESOURCE on the binary using sudo.
 // CAP_SYS_RESOURCE is required so rlimit.RemoveMemlock() can raise RLIMIT_MEMLOCK to
 // unlimited at daemon start — without it the eBPF collector fails on systems where the
@@ -30,7 +44,11 @@ func SetCapBPF(binaryPath string) error {
 		return fmt.Errorf("binary not found: %s", binaryPath)
 	}
 
-	cmd := exec.Command("sudo", "-S", "setcap", "cap_bpf,cap_perfmon,cap_sys_resource+ep", binaryPath)
+	argv, err := setCapCommand(binaryPath)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
