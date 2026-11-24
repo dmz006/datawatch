@@ -4056,6 +4056,18 @@ autonomous:
   # is pruned. Unset or 0 reads the default of 30 days; negative is a config
   # error.
   reaped_branch_backup_days: 30
+  # Turns the remote branch reap on. false or unset (the default) keeps the
+  # pass report-only: it reports what it would delete from origin and deletes
+  # nothing. When on, an Automaton work branch is deleted from origin only
+  # when it is fully merged into the project's default branch, its tip is
+  # older than remote_reap_retention_days, and the tip is kept in a backup ref
+  # that is verified before the delete. It never runs on a timer; the
+  # operator runs a pass.
+  remote_reap_enabled: false
+  # Whole days the tip of a fully merged remote branch must be older than
+  # before it may be reaped. Unset or 0 reads the default of 30 days;
+  # negative is a config error.
+  remote_reap_retention_days: 30
   # Run the security pattern scan over the task's worktree right before
   # the completion commit. Warn-only: findings are recorded on the task
   # (up to 20, full text) plus a cumulative counter

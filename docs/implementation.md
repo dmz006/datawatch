@@ -3669,3 +3669,7 @@ Package `internal/pause` holds the state (global plus per-project entries, saved
 | Config key | Type | Default | Meaning |
 |---|---|---|---|
 | `pause.start_paused` | bool | `false` | A daemon with no saved pause state starts globally paused. A saved state always wins. Read at daemon start. |
+
+## Remote branch reap settings (autonomous.remote_reap_enabled, autonomous.remote_reap_retention_days)
+
+`autonomous.remote_reap_enabled` (bool, default `false`) turns the remote branch reap on; while it is off the pass only reports, and it never runs on a timer. `autonomous.remote_reap_retention_days` (whole days) is how old the tip of a fully merged remote branch must be before it may be reaped; unset or 0 reads the default of 30, and a negative value is a config error when the config loads. Code: `internal/config/config.go` (`RemoteReapEnabled`, `RemoteReapRetentionDays`, `EffectiveRemoteReapRetentionDays`) and `internal/autonomous/remote_reap.go`. The operator-facing description is in [howto/automation-cleanup-passes.md](howto/automation-cleanup-passes.md).
