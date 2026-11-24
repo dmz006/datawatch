@@ -301,6 +301,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/usage/extra-credit", api.handleUsageExtraCredit)
 	apiMux.HandleFunc("/api/usage/advice", api.handleUsageAdvice)
 	apiMux.HandleFunc("/api/usage/autolanes", api.handleUsageAutoLanes)
+	apiMux.HandleFunc("/api/pause", api.handlePause)
+	apiMux.HandleFunc("/api/pause/resume", api.handlePauseResume)
 	apiMux.HandleFunc("/api/usage/burn-guard", api.handleBurnGuardStatus)
 	apiMux.HandleFunc("/api/usage/burn-guard/run", api.handleBurnGuardRun)
 	apiMux.HandleFunc("/api/usage/burn-guard/config", api.handleBurnGuardConfig)

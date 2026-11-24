@@ -447,3 +447,17 @@ const (
 	// actor, automata_held, order.
 	ActionPlanRecordRestored = "plan_record_restored"
 )
+
+// Audit action names for the operator pause service. Subject: the scope
+// ("global") or the paused project directory.
+const (
+	// ActionPauseSet — new work was paused. Details: scope, project, reason.
+	ActionPauseSet = "pause_set"
+	// ActionPauseResumed — a pause was cleared (one scope, or all). Details:
+	// scope, project, note.
+	ActionPauseResumed = "pause_resumed"
+	// ActionPauseResumeRefused — a resume was refused because the caller was
+	// not the operator (a worker, watcher, supervisor, model or session).
+	// Details: scope, project, note.
+	ActionPauseResumeRefused = "pause_resume_refused"
+)

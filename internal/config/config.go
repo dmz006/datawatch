@@ -797,6 +797,11 @@ type Config struct {
 	// All keys are reachable through every config channel per the parity rule.
 	Usage UsageConfig `yaml:"usage,omitempty" json:"usage,omitempty"`
 
+	// Pause configures the operator pause service (global and per-project
+	// "paused by operator"). The pause state itself is runtime state the
+	// operator sets, not configuration; this section only holds the default.
+	Pause PauseConfig `yaml:"pause,omitempty" json:"pause,omitempty"`
+
 	// Plugins (BL33, v3.11.0) — subprocess plugin framework.
 	// Disabled by default. See docs/api/plugins.md.
 	Plugins PluginsConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
@@ -9965,4 +9970,14 @@ func ParseArchiveGraceMinutes(v any) (int, error) {
 		return ParseArchiveGraceMinutes(n)
 	}
 	return 0, fmt.Errorf("%s: must be a whole number of minutes >= 0, got %v", key, v)
+}
+
+// PauseConfig is the operator pause service's configuration.
+type PauseConfig struct {
+	// StartPaused makes a daemon that has no saved pause state start globally
+	// paused: new work is not admitted until the operator resumes. Default
+	// false. A saved state (a pause or a resume the operator made) always wins
+	// over this setting, so a resume survives a restart. Read at daemon start;
+	// a change applies at the next start.
+	StartPaused bool `yaml:"start_paused,omitempty" json:"start_paused,omitempty"`
 }

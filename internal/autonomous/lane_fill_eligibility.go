@@ -49,6 +49,10 @@ const (
 	// AcknowledgePlanCoverage with a non-empty note, or a re-decompose with a
 	// covering plan.
 	LaneFillReasonPlanCoverageBlocked = "plan_coverage_blocked"
+	// LaneFillReasonOperatorPause: the operator has paused new work, globally
+	// or for the Automaton's project. Lane fill neither starts nor decomposes
+	// it until the operator resumes.
+	LaneFillReasonOperatorPause = "operator_pause"
 )
 
 // LaneFillRefusal is why lane fill will not take a queued Automaton: a stable
@@ -314,6 +318,9 @@ func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now ti
 	}
 	if !laneFillQueuedStatus(c.Status) {
 		return "", ""
+	}
+	if c.PausedReason != "" {
+		return LaneFillReasonOperatorPause, c.PausedReason
 	}
 	if c.HoldReason != "" {
 		code = c.HoldCode

@@ -443,6 +443,9 @@ func (m *Manager) admitPreferring(ctx context.Context, prd *PRD, t *Task, backen
 	if role != capacity.RoleWorker {
 		return m.acquireLease(ctx, prd, t, backend, model, role, nil, prefer)
 	}
+	if err := m.waitOperatorPause(ctx, prd, t); err != nil {
+		return err
+	}
 	if err := m.waitAutomationBudget(ctx, prd, t); err != nil {
 		return err
 	}

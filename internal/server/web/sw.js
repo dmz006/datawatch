@@ -135,6 +135,7 @@ self.addEventListener('fetch', event => {
     url.pathname === '/app.js' ||
     url.pathname === '/splash-art.js' ||
     url.pathname === '/app-merge-shadow-card.js' ||
+    url.pathname === '/app-pause.js' ||
     url.pathname === '/branch_refresh_ui.js' ||
     url.pathname === '/app-packs-settings-fields.js' ||
     url.pathname === '/app-packs-subtab.js' ||

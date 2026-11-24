@@ -54,6 +54,7 @@ import (
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
+	"github.com/dmz006/datawatch/internal/pause"
 	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/profile"
@@ -405,6 +406,8 @@ type Server struct {
 	capacityWatchdogThreshold time.Duration
 	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
 	usageBackoff *autonomous.Backoff
+	// pauseStore is the operator pause service (see pause.go); nil = not wired.
+	pauseStore *pause.Store
 	// backoffReserve is the review-reserve gate (nil = not wired); the usage
 	// back-off status uses it to report the per-hour reserve usage per
 	// backed-off backend.
@@ -9980,6 +9983,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// See https://github.com/dmz006/datawatch/issues/19.
 		case "autonomous.enabled":
 			cfg.Autonomous.Enabled = toBool(v)
+		case "pause.start_paused":
+			// Read once at daemon start (a saved pause state wins over it).
+			cfg.Pause.StartPaused = toBool(v)
 		case "autonomous.project_link_backfill_apply":
 			cfg.Autonomous.ProjectLinkBackfillApply = toBool(v)
 		// Planning routing switches; the rules, ladders and classes go
