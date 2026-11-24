@@ -1766,6 +1766,7 @@
   "settings_progress_since": "進捗の開始日（YYYY-MM-DD、空 = 最初のレコードの作成日）",
   "settings_progress_snapshot_retention_days": "進捗スナップショットの保持期間（保持日数、0 = 90）",
   "settings_undeclared_edit_mode": "未宣言の編集モード（off | warn | block、デフォルト: warn）",
+  "settings_drift_mode": "ファイルドリフトモード（block | warn、デフォルト: block）",
   "settings_usage_backoff": "使用量バックオフ（pause_backend | off、デフォルト: pause_backend）",
   "settings_usage_calculator_variant": "Usage calculator layout (pace-gauge | lane-planner | burn-ledger | all)",
   "settings_usage_calculator_policy": "Usage calculator policy",

@@ -27609,6 +27609,7 @@ const GENERAL_CONFIG_FIELDS = [
     // warning state only, block = gate approval (server display default is
     // block when unset). Min ratio 0..1 (server default 1.0).
     { key: 'autonomous.plan_coverage_check', label: 'Plan coverage check (off | warn | block, default block)', labelKey: 'settings_plan_coverage', type: 'select', options: ['off', 'warn', 'block'], default: 'block' },
+    { key: 'autonomous.drift_mode', label: 'File drift mode (block | warn, default block)', labelKey: 'settings_drift_mode', type: 'select', options: ['block', 'warn'], default: 'block' },
     { key: 'autonomous.undeclared_edit_mode', label: 'Undeclared edit mode (off | warn | block, default warn)', labelKey: 'settings_undeclared_edit_mode', type: 'select', options: ['off', 'warn', 'block'], default: 'warn' },
     { key: 'autonomous.plan_coverage_min_ratio', label: 'Plan coverage min ratio (requirement coverage 0-1, default 1.0)', labelKey: 'settings_plan_coverage_min_ratio', type: 'number', placeholder: '1.0', min: 0.1, max: 1, step: 0.1, default: '1' },
     // Plan-coverage filters (both on by default): suppress findings for

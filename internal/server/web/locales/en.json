@@ -2194,6 +2194,7 @@
   "settings_progress_since": "Progress start date (YYYY-MM-DD, empty = first record's creation date)",
   "settings_progress_snapshot_retention_days": "Progress snapshot retention (days kept, 0 = 90)",
   "settings_undeclared_edit_mode": "Undeclared edit mode (off | warn | block, default warn)",
+  "settings_drift_mode": "File drift mode (block | warn, default block)",
   "settings_usage_backoff": "Usage back-off (pause_backend | off, default pause_backend)",
   "settings_usage_calculator_variant": "Usage calculator layout (pace-gauge | lane-planner | burn-ledger | all)",
   "settings_usage_calculator_policy": "Usage calculator policy",
