@@ -450,7 +450,7 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 		costPerHour                                              float64
 		tagsCSV, allowedCSV, deniedCSV                           string
 		pinnedModel                                              string
-		allowModelSwap                                           bool
+		allowModelSwap, hardLimit                                bool
 		tlsCAFile, tlsCertFingerprint                            string
 		tlsInsecureSkipVerify                                    bool
 		verifyTLS                                                bool
@@ -506,6 +506,7 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 				"node_pinned_model":        pinnedModel,
 				"allow_model_swap":         allowModelSwap,
 				"session_slots":            sessionSlots,
+				"hard_limit":               hardLimit,
 				"verifier_context_mb":      verifierContextMB,
 				"tls_ca_file":              tlsCAFile,
 				"tls_cert_fingerprint":     tlsCertFingerprint,
@@ -561,6 +562,7 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 	cmd.Flags().IntVar(&priority, "priority", 50, "scheduling priority 0-100 (higher = preferred)")
 	cmd.Flags().Float64Var(&costPerHour, "cost-per-hour", 0, "USD/hour cost for scheduler accounting")
 	cmd.Flags().IntVar(&sessionSlots, "session-slots", 0, "worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory; capped by max_concurrent_sessions). Update replaces the whole node, so omitting this clears the override")
+	cmd.Flags().BoolVar(&hardLimit, "hard-limit", false, "treat this node's engine slots as a physical limit: an operator start waits for a free engine instead of going over (default off: an operator start may go over and the overage is recorded; workers wait either way). Update replaces the whole node, so pass --hard-limit again to keep it")
 	cmd.Flags().IntVar(&verifierSlots, "verifier-slots", -1, "worker slots for verifiers on this node (-1 = unset: 1 if the node hosts a local engine, else 0; explicit 0 = no verifier slots). Update replaces the whole node, so -1 clears the override")
 	cmd.Flags().IntVar(&verifierMinFreeMB, "verifier-min-free-mem-mb", -1, "free GPU memory in MB required before a verifier slot starts here (-1 = unset: 1024 MB; 0 turns the check off). Update replaces the whole node, so -1 resets the default")
 	cmd.Flags().IntVar(&verifierContextMB, "verifier-context-mb", 0, "extra context memory in MB one verifier slot holds, used to size the advice figure from the node's free GPU memory (0 = none). Update replaces the whole node, so omitting this clears it to 0")

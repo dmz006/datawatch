@@ -1123,6 +1123,10 @@ type ComputeNodeYAML struct {
 	// SessionSlots is the operator's worker count for this node (0 = derive
 	// from observer GPU data). Must not be negative.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
+	// HardLimit makes this node's engine pools a physical limit for every
+	// class (operator starts wait for a free engine). Default false: the
+	// pools are soft and an operator start may go over them.
+	HardLimit bool `yaml:"hard_limit,omitempty" json:"hard_limit,omitempty"`
 	// VerifierSlots is the operator's verifier worker count for this node.
 	// Nil (unset) = default; explicit 0 = verifier disabled on this node.
 	// Must not be negative.

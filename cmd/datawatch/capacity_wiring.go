@@ -1481,6 +1481,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		if reg := httpServer.ComputeRegistry(); reg != nil {
 			nodes := reg.List()
 			nodeHealth.refresh(nodes)
+			syncNodeHardLimits(led, nodes)
 			hosting := map[string]bool{}
 			for _, entryNodes := range engineNodes(httpServer.InferenceRegistry()) {
 				for _, node := range entryNodes {
@@ -2081,4 +2082,15 @@ func nodeInPooledEntry(reg *inference.Registry, node string) bool {
 		}
 	}
 	return false
+}
+
+// syncNodeHardLimits copies each compute node's own hard_limit setting onto the
+// ledger: on, that node's engine pools (node: and node-verify:) keep operator
+// starts waiting for a free engine; off (the default), an operator start may go
+// over them with the overage recorded. A peer's node setting is its own: only
+// this daemon's registry feeds this daemon's ledger.
+func syncNodeHardLimits(led *capacity.Ledger, nodes []*compute.Node) {
+	for _, n := range nodes {
+		led.SetHardLimit(n.Name, n.HardLimit)
+	}
 }

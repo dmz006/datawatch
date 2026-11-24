@@ -20641,6 +20641,7 @@ func computeNodeFromConfig(c config.ComputeNodeYAML) compute.Node {
 		NodePinnedModel:       c.NodePinnedModel,
 		AllowModelSwap:        c.AllowModelSwap,
 		SessionSlots:          c.SessionSlots,
+		HardLimit:             c.HardLimit,
 		VerifierSlots:         c.VerifierSlots,
 		VerifierMinFreeMemMB:  c.VerifierMinFreeMemMB,
 		VerifierContextMB:     c.VerifierContextMB,
