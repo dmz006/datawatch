@@ -643,6 +643,11 @@ type PRD struct {
 	// decompose and on ResetToDraft. Persisted by SavePRD, so it survives
 	// a daemon restart.
 	DecomposeSessionFailures int `json:"decompose_session_failures,omitempty"`
+	// AutoPlanStarts counts planner starts the engine made by itself (lane fill,
+	// boot restart, replan) since the last accepted plan or hold. Reaching
+	// autoPlanStartLimit holds the Automaton (planning_gate.go). Operator-run
+	// plans are not counted.
+	AutoPlanStarts int `json:"auto_plan_starts,omitempty"`
 	// CIWatch is this automaton's own record of whether CI actually
 	// passed for the commit it pushed, written by the ci-watch
 	// completion guardrail. nil = ci-watch never ran for this PRD.

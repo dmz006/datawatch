@@ -3560,7 +3560,7 @@ autonomous:
   # of waiting. Off = a task always waits for its own pool. The alternates are
   # the other lane fill backend (autonomous.lane_fill claude_backend or
   # gpu_backend) first, then LLM entries marked fallthrough_target; a disabled,
-  # full or non-serving backend is skipped, and only workers fall through.
+  # full or non-serving backend is skipped, and only workers and planners fall through.
   capacity_fallthrough: false
   # Node over-admission rules (all default true; false restores the earlier
   # behaviour). capacity_strict_node_limit: a session adopted onto a full node

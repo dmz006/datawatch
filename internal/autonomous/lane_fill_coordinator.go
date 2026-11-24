@@ -1092,7 +1092,16 @@ func (c *Coordinator) laneFillDecompose(rec *laneFillRecords, e *laneFillEntry, 
 
 	go func() {
 		defer c.lf.wg.Done()
-		_, err := ls.Decompose(d.PRDID)
+		// The engine's own start goes through the planning gate: a paused
+		// project, an Automaton that already has a plan and one whose plans
+		// keep failing are refused here, whatever the poll decided.
+		var err error
+		if prd, ok := c.m.store.GetPRD(d.PRDID); ok {
+			err = c.m.gateAutomaticPlanning(prd)
+		}
+		if err == nil {
+			_, err = ls.Decompose(d.PRDID)
+		}
 		c.lf.mu.Lock()
 		delete(c.lf.decomposing, d.PRDID)
 		c.lf.mu.Unlock()

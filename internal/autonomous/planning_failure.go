@@ -225,7 +225,7 @@ func (m *Manager) planningReplan(prdID string) error {
 		return fn(prdID)
 	}
 	go func() {
-		if _, err := m.Decompose(prdID); err != nil {
+		if _, err := m.DecomposeAutomatic(prdID); err != nil {
 			log.Printf("[autonomous] prd=%s planning again after the spec was reworded: %v", prdID, err)
 		}
 	}()

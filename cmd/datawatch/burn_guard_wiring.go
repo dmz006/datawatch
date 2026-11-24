@@ -28,24 +28,46 @@ const burnGuardBackoffSource = "burn_guard"
 
 // burnGuardInflight holds the inflight caps the guard has lowered, by LLM entry name.
 // syncLLMLimits consults it on every pass, so the 10s limit sync does not undo a lowered cap.
-var burnGuardInflight = &inflightOverrides{m: map[string]int{}}
+// A lowered cap is kept only while the entry's own effective cap is still what it was when
+// the guard lowered it (see get); the pool limit always follows the entry once the operator
+// changes it.
+var burnGuardInflight = &inflightOverrides{m: map[string]inflightOverride{}}
+
+// inflightOverride is one lowered cap and the entry's effective cap at the time the guard
+// lowered it, which tells a later reader whether the operator has changed the entry since.
+type inflightOverride struct {
+	value    int
+	baseline int
+}
 
 type inflightOverrides struct {
 	mu sync.Mutex
-	m  map[string]int
+	m  map[string]inflightOverride
 }
 
-func (o *inflightOverrides) get(name string) (int, bool) {
+// get returns the lowered cap for name, if the guard still holds one. effective is the
+// entry's effective cap now: when it differs from the one the guard lowered from, the
+// operator changed the entry after the lowering, so the lowered cap is dropped and the
+// entry's value stands.
+func (o *inflightOverrides) get(name string, effective int) (int, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	v, ok := o.m[name]
-	return v, ok
+	if !ok {
+		return 0, false
+	}
+	if v.baseline != effective {
+		delete(o.m, name)
+		return 0, false
+	}
+	return v.value, true
 }
 
-func (o *inflightOverrides) set(name string, n int) {
+// set records the cap the guard lowered name to and the entry's effective cap it lowered from.
+func (o *inflightOverrides) set(name string, n, baseline int) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	o.m[name] = n
+	o.m[name] = inflightOverride{value: n, baseline: baseline}
 }
 
 func (o *inflightOverrides) clear(name string) {
@@ -108,10 +130,11 @@ func (a burnGuardAdmission) InflightCap(backend string) int {
 	if err != nil {
 		return 0
 	}
-	if v, ok := burnGuardInflight.get(l.Name); ok {
+	effective := inference.EffectiveMaxInflight(*l, a.cfg.Autonomous.PlanTierMaxInflight)
+	if v, ok := burnGuardInflight.get(l.Name, effective); ok {
 		return v
 	}
-	return inference.EffectiveMaxInflight(*l, a.cfg.Autonomous.PlanTierMaxInflight)
+	return effective
 }
 
 func (a burnGuardAdmission) SetInflight(backend string, n int) error {
@@ -124,7 +147,7 @@ func (a burnGuardAdmission) SetInflight(backend string, n int) error {
 	if n == original {
 		burnGuardInflight.clear(l.Name)
 	} else {
-		burnGuardInflight.set(l.Name, n)
+		burnGuardInflight.set(l.Name, n, original)
 	}
 	if a.ledger != nil {
 		a.ledger.SetLimit("llm:"+l.Name, n)

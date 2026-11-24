@@ -34,6 +34,8 @@ What a pause holds, for the paused scope:
 - A start by `autonomous run` (or the Run button) is refused, naming the reason. The status is left alone.
 - Lane fill skips the Automaton and shows the refusal `operator_pause`.
 - A worker task about to start waits with the reason `paused by operator (...)`. It does not fail and does not count as a retry. When you resume, it starts.
+- Planning the engine starts by itself waits too: lane fill's decompose of a draft, the planner restart after a daemon restart (it starts when you resume) and the re-plan after a reworded spec. An Automaton that is already planned is never planned again by the engine, and one whose plans keep failing is held after three engine starts without an accepted plan, with one alert; releasing the hold gives it three more. A decompose you start yourself is never held or counted.
+- Merge passes wait: the merge hold pass of a running Automaton and the timed merge retry skip a paused project and look again when you resume. A hold pass that keeps failing, or stays blocked by uncommitted changes, waits longer each time (5 seconds, doubling up to 5 minutes) and logs the same failure once.
 - After a daemon restart the pause is still in force: the state is saved in `pause.json` in the data directory. An Automaton that was running is re-attached so work already in flight is adopted, but it starts nothing new until you resume.
 
 What a pause does not hold: tasks already holding a slot, their verification

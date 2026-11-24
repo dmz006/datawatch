@@ -724,3 +724,67 @@ func contains(ss []string, want string) bool {
 var testTarget = EntryTarget{Backend: "paid-a", RouteTo: "local-b"}
 
 func newTestLadder(store StateStore) (*Ladder, error) { return NewEntryLadder(store, testTarget) }
+
+// inflightReleases returns the release actions of a decision that set an inflight cap.
+func inflightReleases(d Decision) []Action {
+	var out []Action
+	for _, a := range d.Actions {
+		if a.Kind == ActionSetInflight && a.Release {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// The guard restores only a cap it lowered itself. When the operator sets a cap
+// after the lowering, the release leaves the operator's value alone (item 27).
+func TestLadderRelease_KeepsCapTheOperatorRaisedAfterLowering(t *testing.T) {
+	cases := []struct {
+		name     string
+		applyCap int // the cap when the guard lowered it
+		nowCap   int // the entry's cap at the step back
+		restore  bool
+		want     int // the restored value when restore is true
+	}{
+		{"operator raised above the original", 3, 4, false, 0},
+		{"operator lowered below the lowered cap", 3, 1, false, 0},
+		{"operator raised from a cap that was already one", 1, 2, false, 0},
+		{"cap still where the guard left it", 3, 2, true, 3},
+		{"cap already back at the original", 3, 3, true, 3},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			st := &memStore{}
+			s := settings()
+			s.Ladder = []string{RungLowerInflight}
+			l, _ := newTestLadder(st)
+			at := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+			if _, err := l.Tick(TickInput{Projection: proj(20), Settings: s, Now: at, InflightCap: c.applyCap}); err != nil {
+				t.Fatal(err)
+			}
+			// The daemon restarts, a new ladder over the same saved state, and the
+			// entry's cap is whatever the operator left it at.
+			l2, err := newTestLadder(st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d, err := l2.Tick(TickInput{Projection: proj(-10), Settings: s, Now: at.Add(time.Hour), InflightCap: c.nowCap})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d.Direction != DirectionStepBack || len(l2.State().Applied) != 0 || l2.State().OriginalInflight != 0 {
+				t.Fatalf("step back did not clear the rung: %+v state %+v", d, l2.State())
+			}
+			rel := inflightReleases(d)
+			switch {
+			case c.restore && (len(rel) != 1 || rel[0].Value != c.want):
+				t.Fatalf("release actions %+v, want one restoring %d", rel, c.want)
+			case !c.restore && len(rel) != 0:
+				t.Fatalf("the guard restored the cap to %d over the operator's %d: %+v", rel[0].Value, c.nowCap, rel)
+			}
+			if !c.restore && !strings.Contains(d.AlertText, "kept") {
+				t.Fatalf("the alert must say the cap was kept: %q", d.AlertText)
+			}
+		})
+	}
+}

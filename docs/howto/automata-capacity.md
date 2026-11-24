@@ -433,8 +433,12 @@ whose requested pool cannot be granted right now is admitted on another
 allowed backend and model that has room, instead of waiting. The first
 alternate the ledger would grant wins, in preference order. If the
 requested pool has room, or no alternate does, nothing changes and the task
-waits as usual. Only worker tasks fall through; verifiers, judges and
-planners do not.
+waits as usual. Worker tasks and planners fall through; verifiers and
+judges do not. A planner is judged on its own pools (the host pool is left out,
+as when it is admitted), only moves to an alternate that can name its model,
+looks again on every wait pass like a task, runs on the alternate for that
+attempt only (the Automaton keeps its own planning backend), and the Automaton
+records a `planner_fallthrough` decision naming both backends.
 
 The requested pool is the one the task's **effective backend** maps to. The
 backend is resolved in this order: task, story, PRD, Automaton, the
