@@ -1275,6 +1275,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolMatrixStatus(), tracked(s.handleMatrixStatus))
 	mcpSrv.AddTool(s.toolMatrixTest(), tracked(s.handleMatrixTest))
 
+	// Git hosts — readiness list + per-host test connection.
+	mcpSrv.AddTool(s.toolGitHostsStatus(), tracked(s.handleGitHostsStatus))
+	mcpSrv.AddTool(s.toolGitHostsTest(), tracked(s.handleGitHostsTest))
+	mcpSrv.AddTool(s.toolGitHostsStats(), tracked(s.handleGitHostsStats))
+
 	return s
 }
 
