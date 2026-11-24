@@ -58,7 +58,7 @@ expect_flagged "session-kill-all-after-pipe" "true | tmux $KSESS -a"
 # The fixture words are assembled at run time so this file never carries the banned literals.
 PK_WORD="pk""ill"; KA_WORD="kill""all"
 expect_flagged "name-kill-tmux" "$PK_WORD -9 tmux"
-expect_flagged "name-killall-tmux" "$KA_WORD tmux"
+expect_flagged "name-kill-all-tmux" "$KA_WORD tmux"
 
 expect_clean "server-kill-scoped-socket" "tmux -S /tmp/throwaway.sock $KS"
 expect_clean "session-kill-by-target" "tmux $KSESS -t one"
