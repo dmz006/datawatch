@@ -258,6 +258,10 @@ type SystemStats struct {
 	// and per role (see WorkerStartupStats). Always present; both maps are
 	// empty when no attempt carries a startup size.
 	WorkerStartup WorkerStartupStats `json:"worker_startup"`
+	// Git host counters: configured hosts, operations by kind over the
+	// window, failed operations and the time of the last success. Filled
+	// through SetGitHostStatsFunc; nil (omitted) when no host is configured.
+	GitHosts *GitHostStats `json:"git_hosts,omitempty"`
 }
 
 // CommChannelStat holds detailed stats for a communication channel or LLM backend.
@@ -363,6 +367,18 @@ type SecretScanStats struct {
 	LastRefusalAt time.Time `json:"last_refusal_at"`
 }
 
+// GitHostStats is the git host counter block surfaced in SystemStats.GitHosts.
+// Operations maps a kind (push, pull_request, merge, tag, ci_read) to its
+// count over the last WindowSeconds; Failed counts failed operations over the
+// same window; LastSuccessAt is zero before any successful operation.
+type GitHostStats struct {
+	Configured    int            `json:"configured"`
+	WindowSeconds int64          `json:"window_seconds"`
+	Operations    map[string]int `json:"operations"`
+	Failed        int            `json:"failed"`
+	LastSuccessAt time.Time      `json:"last_success_at"`
+}
+
 // Collector periodically samples system metrics and stores them in a ring buffer.
 type Collector struct {
 	mu      sync.RWMutex
@@ -429,6 +445,8 @@ type Collector struct {
 	// workerStartupStatsFn populates the worker_startup block (WorkerStartup
 	// field) from the attempt startup records.
 	workerStartupStatsFn func(*SystemStats)
+	// gitHostStatsFn populates the git host counters (GitHosts field).
+	gitHostStatsFn func(*SystemStats)
 
 	// uiPromptsFn returns the daemon-side in-memory interstitial UI-prompt
 	// dismissal outcome counters (from the session manager).
@@ -567,6 +585,12 @@ func (c *Collector) SetWebSearchStatsFunc(fn func(*SystemStats)) {
 // startup averages (SystemStats.WorkerStartup) on each snapshot.
 func (c *Collector) SetWorkerStartupStatsFunc(fn func(*SystemStats)) {
 	c.workerStartupStatsFn = fn
+}
+
+// SetGitHostStatsFunc sets a callback that populates the git host counters
+// (SystemStats.GitHosts) on each snapshot.
+func (c *Collector) SetGitHostStatsFunc(fn func(*SystemStats)) {
+	c.gitHostStatsFn = fn
 }
 
 // SetSecretScanStatsFunc sets a callback that populates the pre-push
@@ -733,6 +757,9 @@ func (c *Collector) collect() {
 	}
 
 	// Pre-push secret-scan counters
+	if c.gitHostStatsFn != nil {
+		c.gitHostStatsFn(&s)
+	}
 	if c.secretScanStatsFn != nil {
 		c.secretScanStatsFn(&s)
 	}

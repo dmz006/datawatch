@@ -150,3 +150,64 @@ func TestCurrentBranch(t *testing.T) {
 		t.Errorf("got %q", b)
 	}
 }
+
+// TestSignedTag covers the unsigned path (annotated tag, real repo), the
+// signed path argument list and the signing key argument. No GPG key is
+// needed: the argument list is checked directly.
+func TestSignedTag(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("unsigned creates annotated tag", func(t *testing.T) {
+		work, _ := tagRepo(t)
+		if err := CreateTagForHost(ctx, work, "v2.0.0", "Release 2.0.0", GitHostConfig{Name: "gh"}); err != nil {
+			t.Fatal(err)
+		}
+		if typ := tgit(t, work, "cat-file", "-t", "refs/tags/v2.0.0"); typ != "tag" {
+			t.Errorf("unsigned tag must be annotated, got %s", typ)
+		}
+		got := TagCreateArgsForHost("v2.0.0", "Release 2.0.0", GitHostConfig{})
+		want := TagCreateArgs("v2.0.0", "Release 2.0.0")
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("unsigned args = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("signed uses -s with message", func(t *testing.T) {
+		got := TagCreateArgsForHost("v2.0.0", "Release", GitHostConfig{SignTags: true})
+		want := []string{"tag", "-s", "v2.0.0", "-m", "Release"}
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("signed args = %v, want %v", got, want)
+		}
+		for _, a := range got {
+			if a == "-u" {
+				t.Errorf("no signing key set, -u must be absent: %v", got)
+			}
+		}
+	})
+
+	t.Run("signing key adds -u before tag name", func(t *testing.T) {
+		got := TagCreateArgsForHost("v2.0.0", "Release", GitHostConfig{SignTags: true, SigningKey: "ABCD1234"})
+		want := []string{"tag", "-s", "-u", "ABCD1234", "v2.0.0", "-m", "Release"}
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("keyed args = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("signing key ignored when signing is off", func(t *testing.T) {
+		got := TagCreateArgsForHost("v2.0.0", "Release", GitHostConfig{SigningKey: "ABCD1234"})
+		for _, a := range got {
+			if a == "-u" || a == "-s" {
+				t.Errorf("unsigned path must not sign: %v", got)
+			}
+		}
+	})
+
+	t.Run("invalid tag name rejected", func(t *testing.T) {
+		work, _ := tagRepo(t)
+		for _, bad := range []string{"-x", "+v1", "a b", ""} {
+			if err := CreateTagForHost(ctx, work, bad, "m", GitHostConfig{SignTags: true}); err == nil {
+				t.Errorf("tag %q must be rejected", bad)
+			}
+		}
+	})
+}

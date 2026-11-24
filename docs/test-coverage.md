@@ -82,7 +82,7 @@ Key packages with dedicated test suites:
 | `internal/router` | 68 | Comm-channel parser + handlers, profile + agent integration |
 | `internal/session` | 63 | Session manager, store, tracker, AgentID round-trip, ProjectGit |
 | `internal/auth` | 15 | Token broker (mint/revoke/sweep), audit log, persistence |
-| `internal/git` | 13 | GitHub CLI shell-out, GitLab stub, Provider interface |
+| `internal/git` | 16 | GitHub CLI shell-out (PR/issue/release), GitLab CLI (MR/issue/release + `glab` credential-helper transport), plain git (clone/push), secret scan, Provider interface |
 | `internal/server` | 43 | REST handlers, config GET/PUT, session forwarding |
 | `internal/config` | 34 | Config Load/Save round-trip incl. all config sections |
 | `internal/profile` | 18 | Project + Cluster Profile schema, validation, encrypted store |

@@ -351,6 +351,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newAlertsCmd(),
 		newLinkCmd(),
 		newConfigCmd(),
+		newGitHostsListCmd(),
+		newGitCmd(),
 		newProfileCmd(),
 		newAgentCmd(),
 		newSetupCmd(),
@@ -4252,7 +4254,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			httpServer.SetAuditLog(auditLog)
 			wiredAuditLog = auditLog
 			shutdownAudit = auditLog
-			setBackoffAuditLog(auditLog) // BL428 Phase 4: automatic back-off set/auto-clear events
+			setBackoffAuditLog(auditLog)     // BL428 Phase 4: automatic back-off set/auto-clear events
+			gitpkg.SetHostAuditLog(auditLog) // host git operations (MR, issue, release, tag) are audited
 			if cfg.Audit.CEFMirrorEnabled {
 				if err := auditLog.EnableCEFMirror(); err != nil {
 					fmt.Printf("[warn] audit log CEF mirror failed: %v\n", err)
@@ -4507,6 +4510,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if vaultHealth := httpServer.StartVaultHealth(ctx); vaultHealth != nil {
 				defer vaultHealth.Stop()
 			}
+			// Git host token fallback: a git.hosts entry whose credential
+			// source is a vault secret name (or that names a fallback secret)
+			// has the secret read here, by name, inside the host command
+			// runner and passed only to that child process. The value is
+			// never returned to a caller, logged or stored.
+			gitpkg.SetHostSecretResolver(func(name string) (string, error) {
+				sec, err := secretsStore.Get(name)
+				if err != nil {
+					return "", err
+				}
+				return sec.Value, nil
+			})
 			// Call-time ${secret:name} API-key resolution in the inference
 			// dispatcher: the dispatcher was created above, before the
 			// secrets store existed, with its creation block already closed,
@@ -7153,6 +7168,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// autonomous.merge_shadow — the finish-time shadow merge plan reads
 			// its enabled switch and gate timeout from it.
 			amgr.SetMergeShadowConfig(cfg.Autonomous.MergeShadow)
+			// Repo CI watch: the configured git.hosts, so a watched repository
+			// whose origin resolves to one is polled through the host facade.
+			hostsForCI := make([]gitpkg.GitHostConfig, 0, len(cfg.Git.Hosts))
+			for _, h := range cfg.Git.Hosts {
+				hostsForCI = append(hostsForCI, gitpkg.GitHostConfig{
+					Name: h.Name, Kind: h.Kind, BaseURL: h.BaseURL,
+					CredentialSource: h.CredentialSource, VaultSecret: h.VaultSecret,
+				})
+			}
+			amgr.SetRepoCIGitHosts(hostsForCI)
 			// autonomous.shipped.backfill_on_start (default off) — now that the
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
@@ -9682,6 +9707,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// Pre-push secret-scan counters (runs, findings, shadow reports,
 		// refusals). Copied from the git package's package-level counters;
 		// nil (key omitted from the JSON) when the daemon never scanned.
+		statsCollector.SetGitHostStatsFunc(func(s *statspkg.SystemStats) {
+			if len(cfg.Git.Hosts) == 0 {
+				return
+			}
+			ho := gitpkg.HostOpStatsSnapshot()
+			s.GitHosts = &statspkg.GitHostStats{
+				Configured:    len(cfg.Git.Hosts),
+				WindowSeconds: int64(ho.Window / time.Second),
+				Operations:    ho.Operations,
+				Failed:        ho.Failed,
+				LastSuccessAt: ho.LastSuccessAt,
+			}
+		})
 		statsCollector.SetSecretScanStatsFunc(func(s *statspkg.SystemStats) {
 			ss := gitpkg.SecretScanStatsSnapshot()
 			if ss.Runs == 0 && ss.Findings == 0 && ss.ShadowReports == 0 && ss.Refusals == 0 {
@@ -12792,6 +12830,12 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		}
 		fmt.Printf("Set %s = %d\n", key, n)
 		return nil
+	}
+	// git.hosts.<name>.<field> keys take the dedicated helper: it builds the
+	// body with the field's real type, and a set of the credential source
+	// prints the host's readiness result after the daemon accepts it.
+	if isGitHostKey(key) {
+		return runGitHostsConfigSet(os.Stdout, loopbackBaseURL(cfg), cfg.Server.Token, key, value)
 	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {

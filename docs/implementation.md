@@ -1550,6 +1550,34 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `git.push_remote` | string | `origin` | Remote name the finished branch is pushed to. Read live on every push attempt. |
 | `git.release_ci_window_minutes` | int | `60` (when unset) | Minutes the release CI (the workflows listed in the release config) is waited for; applies only when `autonomous.push_and_tag` is on. `0` or unset reads as `60`. See `docs/howto/release-push-and-tag.md`. |
 
+### Git hosts (`git.hosts`)
+
+`git.hosts` is the list of git hosts datawatch may push to and read CI or release state from. Each entry is a `GitHostConfig` in `internal/config/git_hosts.go`; `loadGitHosts` applies the defaults at config load and `ValidateGitHosts` reports every problem in one pass, so a malformed list fails the load with all errors listed. The dotted-key helpers in the same file — `GetGitHostField`, `SetGitHostField` and `ValidateGitHostsPatch` — give every operator surface one addressing scheme, `git.hosts.<name>.<field>`; a field write requires an existing host, only a whole-list write creates or removes one, and a patch is validated against the final list before anything is kept.
+
+| Field (`git.hosts[].<field>`) | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | required | Lowercase slug (letters, digits, single hyphens), unique within the list. It is the `<name>` part of the dotted key `git.hosts.<name>.<field>` and cannot be changed through the dotted-key setter. |
+| `kind` | string | required | `github`, `gitlab`, `gitea`, `bitbucket` or `git` (a plain remote). |
+| `base_url` | string | empty | Web/API base URL. Required for `gitea`, `bitbucket` and `git`; for `gitlab` required only when self-hosted (empty = gitlab.com); for `github` empty = github.com. Resolved by kind at use time. |
+| `credential_source` | string | `host_login` | How the token is obtained: `host_login` (the login already configured on the host), `vault` (read the secrets vault entry named by `vault_secret`) or `broker` (ask the credential broker). |
+| `vault_secret` | string | empty | Name of the secrets vault entry holding the token. Required when `credential_source` is `vault`. Only the entry name is stored; the secret value never is. |
+| `sign_tags` | bool | `false` | Sign the tags datawatch creates for this host. |
+| `signing_key` | string | empty | Key id used when signing tags. Empty uses the git default signing key. |
+
+**Ready, tested, audited.** `internal/git/host_status.go` — `CheckHostReadiness` (15-second `hostCheckTimeout` per command: `gh auth status` / `glab auth status` for the forge kinds, `git ls-remote` for the plain ones; a plain-language `problem` and `fix_command`, never a token). `internal/git/host_connection.go` — `TestHostConnection` runs the readiness check first, then one read-only probe (`gh api user`, `glab api user`, or `git ls-remote`) under the same deadline, returning `ok`, `account`, `message`, `fix_command`. Served by `GET /api/git/hosts` and `POST /api/git/hosts/{name}/test` in `internal/server/git_hosts_api.go`; mirrored by the MCP tools `git_hosts_status` / `git_hosts_test` in `internal/mcp/git_hosts_tools.go`, `datawatch git-hosts` and the dotted-key config verbs in `cmd/datawatch/cli_git_hosts.go`, and the comm `configure git.hosts` lines.
+
+**The host facade.** `internal/git/host_facade.go` works against a host entry instead of a forge name: `ResolveProjectHost` picks the entry whose `base_url` hostname matches the project's remote (with the built-in `github.com`/`gitlab.com` defaults), and `OpenChangeRequest`, `FileIssue`, `PublishRelease` dispatch to the kind's provider — `NewGitHub` (`internal/git/github.go`), `NewGitLab` (`internal/git/gitlab.go`, MR/issue/release via `glab`), or `NewGenericGit` (`internal/git/generic_git.go`) for the plain kinds, where PR open, issue and release return the explicit `ErrNoForgeAPI` answer and clone/push proceed over plain `git`. Every completed operation writes one operator audit entry through `RecordHostAudit` / `recordHostOperation` (`internal/git/host_audit.go`) under the `host_git_operation` action in `internal/audit/host_git_events.go`; entries carry the host name and kind, the operation, the repository and the ref or title, and the credential source — never a token.
+
+**GitLab transport.** `internal/git/gitlab_transport.go` — `ConfigureGitLabTransport` writes the repository-local git credential helper `credential.<base>.helper = !glab auth git-credential` so HTTPS clone and push ride the login `glab` already holds (SSH remotes are left alone), and `CloneGitLabRepo` clones `host.BaseURL` + repo path (default `https://gitlab.com`) with the host command environment. No token is read, stored or logged in the transport.
+
+**Repo CI watch host polling.** `internal/autonomous/repo_ci_watch_host.go` — `SetRepoCIGitHosts` (wired from `cmd/datawatch/main.go`) installs the entries; `repoCIConfiguredHost` takes the configured entry a watched repository's origin belongs to (a built-in default never selects the host path) and `repoCIHostRuns` lists that ref's runs through `git.LatestRuns` (`internal/git/ci_watch.go` — `gh run list --repo` / `glab api .../pipelines`, 15-second bound) instead of the per-SHA `gh` path. Read-only on that branch: the watch records host-listed runs and never reruns, cancels or deletes them, and runs without start times never become `hung`.
+
+**Host tags.** `internal/git/tag.go` — `CreateTagForHost` / `TagCreateArgsForHost`: a tag created against a host entry with `sign_tags: true` is signed (`git tag -s`, plus `-u <signing_key>` when set), `sign_tags: false` produces an annotated tag; the completed tag is audit-logged like the other facade operations. As of this tree no shipping path calls it yet.
+
+**Merge pipeline host steps.** `internal/mergepipeline/run.go` — the `Runner` carries `Hosts` and the project's `RemoteURL`; `configuredHost` resolves the configured entry the remote belongs to, and the steps that file issues take the facade path when one is found — `RunParityIssueOnHost` in `internal/mergepipeline/posthook_builtins.go` files the post-ship `parity_issue` through `git.FileIssue` instead of the plain `gh` runner — while a runner without hosts keeps the `gh` path unchanged.
+
+Surfaces: `config.yaml` (`git.hosts`), `GET /api/config` and `PUT /api/config`, `GET /api/git/hosts` (list with readiness), `POST /api/git/hosts/{name}/test` (connection test), the MCP git-hosts tools, `datawatch config set git.hosts.<name>.<field>`, the comm `configure` verb, and the Settings card in the PWA. Operator walkthrough: [`docs/howto/git-hosts.md`](howto/git-hosts.md) and [`docs/howto/connect-git-host.md`](howto/connect-git-host.md).
+
 ### Session list views
 
 `GET /api/sessions` accepts three optional query parameters. Without any
@@ -3748,3 +3776,8 @@ Package `internal/pause` holds the state (global plus per-project entries, saved
 | Config key | Type | Default | Meaning |
 |---|---|---|---|
 | `pause.start_paused` | bool | `false` | A daemon with no saved pause state starts globally paused. A saved state always wins. Read at daemon start. |
+
+## Git host counters in system stats (`git_hosts`)
+
+- `internal/git/host_op_counters.go`: in-memory outcomes of host operations (push, pull request, merge, tag, CI read) over the last hour, plus the time of the last success. No store; reset on restart. Recorded in `PushToBranch`, `PushToDefaultBranch`, `OpenChangeRequest`, `CreateTagForHost` and `LatestRuns`. The merge kind is reserved and stays zero until a host merge call exists.
+- `internal/stats/collector.go`: `SystemStats.GitHosts` (`configured`, `window_seconds`, `operations`, `failed`, `last_success_at`), filled through `SetGitHostStatsFunc`; omitted when no `git.hosts` entry is configured.

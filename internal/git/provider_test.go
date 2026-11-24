@@ -61,9 +61,6 @@ func TestGitLab_StubReturnsNotImplemented(t *testing.T) {
 	if err := g.RevokeToken(context.Background(), "tok"); !errors.Is(err, ErrNotImplemented) {
 		t.Errorf("RevokeToken err=%v want ErrNotImplemented", err)
 	}
-	if _, err := g.OpenPR(context.Background(), PROptions{}); !errors.Is(err, ErrNotImplemented) {
-		t.Errorf("OpenPR err=%v want ErrNotImplemented", err)
-	}
 }
 
 func TestResolve_Routing(t *testing.T) {
@@ -325,13 +322,6 @@ func TestGitHub_CreateIssue_GhFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "HTTP 403") {
 		t.Errorf("error missing gh stderr: %v", err)
-	}
-}
-
-func TestGitLab_CreateIssue_Stub(t *testing.T) {
-	_, err := NewGitLab().CreateIssue(context.Background(), IssueOptions{Repo: "g/p", Title: "x"})
-	if err != ErrNotImplemented {
-		t.Errorf("err=%v want ErrNotImplemented", err)
 	}
 }
 

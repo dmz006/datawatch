@@ -75,6 +75,9 @@ documenting coverage gaps and the reasoning behind them.
 |-------------|----------|--------|-------|
 | `GET /api/config` | `get_config` | Complete | v2.2.1 |
 | `PUT /api/config` | — | Not in MCP | Config changes should be deliberate human actions, not AI-driven. Security boundary: AI agents shouldn't modify daemon config |
+| `GET /api/git/hosts` | `git_hosts_status` | Complete | the configured git hosts (kind, base URL, credential source, vault entry name) with live readiness — logged in, account, token scopes, `problem` and `fix_command` when something is missing; needs the config-read capability; never returns a token |
+| `POST /api/git/hosts/{name}/test` | `git_hosts_test` (`name` required) | Complete | connection test for one host: readiness plus one read-only probe (`gh api user`, `glab api user`, or `git ls-remote`); unknown name is a 404 (a tool error via MCP) |
+| `PUT /api/config` keys `git.hosts` (list) and `git.hosts.<name>.<field>` (field) | — | Not in MCP | git host list and field writes — the operator surfaces: REST `PUT /api/config`, CLI `datawatch config set git.hosts.<name>.<field> <value>`, comm `configure git.hosts.<name>.<field>=<value>`; the patch is judged atomically on the load rules (a single write may set `credential_source: vault` together with its `vault_secret`); a dotted key addresses an existing host; whole-list writes create or remove |
 | `GET /api/backends` | — | Not in MCP | Backend list is static — MCP clients can read from `get_config` section |
 | `GET /api/info` | `get_version` | Complete | Version + hostname |
 

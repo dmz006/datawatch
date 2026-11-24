@@ -7731,6 +7731,66 @@ print(all(not s.get(k) for k in ("build_command","install_command","restart_comm
 fi
 
 # ---------------------------------------------------------------------------
+H "Git hosts (git.hosts: /api/git/hosts and /api/git/hosts/{name}/test)"
+# Read-only checks: the howto files exist on disk, the config reference and
+# glossary document the setting, then the API behaviour — the list answers
+# with a hosts array (empty is fine on a fresh daemon), an unknown host name
+# is 404 on the test route, a non-POST on the test route is 405, and an
+# unknown action under the prefix is 404. No host is created, so no cleanup
+# entry is needed.
+for _HF in "docs/howto/git-hosts.md" "docs/howto/connect-git-host.md"; do
+  _FP="$SMOKE_DIR/../$_HF"
+  [[ -f "$_FP" ]] \
+    && ok "git hosts: howto file exists: $_HF" \
+    || ko "git hosts: howto file missing: $_HF"
+done
+_REF="$SMOKE_DIR/../docs/config-reference.yaml"
+_ref_keys_ok=0
+if [[ -f "$_REF" ]]; then
+  _ref_keys_ok=1
+  grep -q "hosts: \[\]" "$_REF" || _ref_keys_ok=0
+  grep -q "git.hosts.<name>.<field>" "$_REF" || _ref_keys_ok=0
+  for _K in kind base_url credential_source vault_secret sign_tags signing_key; do
+    grep -q "$_K" "$_REF" || _ref_keys_ok=0
+  done
+fi
+if [[ "$_ref_keys_ok" == "1" ]]; then
+  ok "git hosts: config reference documents git.hosts (name/kind/base_url/credential_source/vault_secret/sign_tags/signing_key)"
+else
+  ko "git hosts: config reference (docs/config-reference.yaml) does not document the git.hosts settings"
+fi
+_DEFS="$SMOKE_DIR/../docs/datawatch-definitions.md"
+if [[ -f "$_DEFS" ]] && grep -q "## Git hosts" "$_DEFS" && grep -q "\*\*Git host\*\*" "$_DEFS"; then
+  ok "git hosts: glossary defines Git host(s) and has a Git hosts section"
+else
+  ko "git hosts: datawatch-definitions glossary is missing the Git host entries"
+fi
+GH_LIST=$(curl "${curl_args[@]}" "$BASE/api/git/hosts" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d["hosts"],list);print("ok")' 2>/dev/null || echo "")
+if [[ "$GH_LIST" == "ok" ]]; then
+  ok "git hosts: GET /api/git/hosts returns a hosts list"
+else
+  ko "git hosts: GET /api/git/hosts did not return a hosts list"
+fi
+GH_404=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/git/hosts/no-such-host/test" 2>/dev/null || echo "000")
+if [[ "$GH_404" == "404" ]]; then
+  ok "git hosts: POST /api/git/hosts/{unknown}/test is refused with HTTP 404"
+else
+  ko "git hosts: unknown host test answered HTTP $GH_404, expected 404"
+fi
+GH_405=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/git/hosts/no-such-host/test" 2>/dev/null || echo "000")
+if [[ "$GH_405" == "405" ]]; then
+  ok "git hosts: GET /api/git/hosts/{name}/test is refused with HTTP 405"
+else
+  ko "git hosts: GET on the test route answered HTTP $GH_405, expected 405"
+fi
+GH_BADACT=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/git/hosts/no-such-host/bogus" 2>/dev/null || echo "000")
+if [[ "$GH_BADACT" == "404" ]]; then
+  ok "git hosts: an unknown action under /api/git/hosts/{name} is HTTP 404"
+else
+  ko "git hosts: unknown action answered HTTP $GH_BADACT, expected 404"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

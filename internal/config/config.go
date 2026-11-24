@@ -440,6 +440,10 @@ type GitConfig struct {
 	// checks on a release to finish before it gives up and reports the
 	// release as not confirmed (default 60).
 	ReleaseCIWindowMinutes int `yaml:"release_ci_window_minutes" json:"release_ci_window_minutes"`
+	// Hosts is the list of git hosts datawatch may push to (name, kind,
+	// base URL, credential source, vault secret name, tag signing). See
+	// GitHostConfig and ValidateGitHosts; defaults apply at load.
+	Hosts []GitHostConfig `yaml:"hosts,omitempty" json:"hosts,omitempty"`
 }
 
 // GitSecretScanConfig is the git.secret_scan block: which detectors
@@ -9631,6 +9635,9 @@ func Load(path string) (*Config, error) {
 	if err := validateLoaded(cfg); err != nil {
 		return nil, err
 	}
+	if err := loadGitHosts(cfg); err != nil {
+		return nil, err
+	}
 	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
 		return nil, err
 	}
@@ -9696,6 +9703,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 	cfg.DeprecatedKeys = detectDeprecatedKeys(cfg)
 	applyDefaults(cfg)
 	if err := validateLoaded(cfg); err != nil {
+		return nil, err
+	}
+	if err := loadGitHosts(cfg); err != nil {
 		return nil, err
 	}
 	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
