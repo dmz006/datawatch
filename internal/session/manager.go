@@ -6008,6 +6008,13 @@ func (m *Manager) MainPromptReady(fullID string) bool {
 	if err != nil || content == "" {
 		return false
 	}
+	return panePromptReady(content)
+}
+
+// panePromptReady is the screen test behind MainPromptReady: a "❯" input row
+// and no choice dialog on screen. Pure, so the CLI-version canary can replay
+// recorded panes through it.
+func panePromptReady(content string) bool {
 	lower := strings.ToLower(StripANSI(content))
 	for _, phrase := range activeChoiceDialogPhrases {
 		if strings.Contains(lower, phrase) {

@@ -835,6 +835,17 @@ version text change again. The same three fields (`patterns_version`,
 recheck responses, the capacity status, the autonomous status, the MCP
 tools and the CLI status output.
 
+**Screen canary for Claude Code.** The version text above also drives a second
+check that needs no operator action. When the daemon starts, and again every
+half hour, it reads the installed Claude Code version; if the text is new
+(or none was recorded) it replays the real screen captures the daemon ships
+(an idle box, a working agent, an open dialog, an unsent paste) through the
+prompt-ready and task-delivery checks. If any capture no longer reads the way
+it was recorded, the daemon raises **one** warning alert naming the version and
+the captures, once per version change. The run only reads: it does not update
+Claude Code and does not touch a session. The last checked version is kept in
+the data directory (`claude_cli_canary_version`); there is no setting.
+
 ## Per-LLM dollar budget
 
 The in-flight caps limit how many sessions run at once. A dollar budget
