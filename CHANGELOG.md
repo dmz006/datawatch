@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.6 — Web app update loop fixed: one service worker address and one reload per release change
+
+### Fixed
+- The installed web app no longer reloads in a loop. It registered two different service worker addresses on every load, so it treated each load as an update: it showed the update banner about a second after opening, reloaded itself every thirty seconds, and made the update splash flash and vanish. It now registers one versioned address, raises the banner only for a real release change, and reloads at most once per tab for that change.
+- After a real release change the page could hang blank for several minutes because the new service worker waited for its own navigation while activating; it no longer waits.
+
+### Documentation
+- The web app setup and operations pages describe the update flow, with a browser test story for the steady state.
+
 ## v9.187.5 — eBPF probes load, and setup ebpf can print, install and remove a sudoers rule
 
 ### Fixed
