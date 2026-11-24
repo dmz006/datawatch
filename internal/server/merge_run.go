@@ -18,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/deploy"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 )
 
@@ -195,6 +197,35 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 	return runner
 }
 
+// withGitHosts gives the Runner the configured git.hosts and the repository's
+// origin URL. When the origin belongs to one of the hosts, the post-ship steps
+// that leave the machine (the parity issue) go through the git host facade;
+// with no hosts configured, or no origin, the Runner is left exactly as built
+// and keeps the ShipRunner (gh) path.
+func withGitHosts(hosts []config.GitHostConfig) mergeRunnerOption {
+	return func(r *mergepipeline.Runner) {
+		if len(hosts) == 0 {
+			return
+		}
+		out, err := git.Run(context.Background(), r.Dir, "remote", "get-url", "origin")
+		remote := strings.TrimSpace(out)
+		if err != nil || remote == "" {
+			return
+		}
+		mirror := make([]git.GitHostConfig, 0, len(hosts))
+		for _, h := range hosts {
+			mirror = append(mirror, toGitHostCheckConfig(h))
+		}
+		r.Hosts = mirror
+		r.RemoteURL = remote
+	}
+}
+
+// gitHostsOption is the option for a request-path run.
+func (s *Server) gitHostsOption() mergeRunnerOption {
+	return withGitHosts(s.configuredGitHosts())
+}
+
 // handleAutonomousMergeRun serves POST /api/autonomous/merge/run. It runs the
 // merge synchronously and answers with the recorded run. A step that fails
 // answers 200 with "result":"failed" and the steps that ran, so the caller
@@ -239,7 +270,7 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.statePath(), s.mergeShipRunner(), s.planRecordsOption()).Run(ctx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.statePath(), s.mergeShipRunner(), s.planRecordsOption(), s.gitHostsOption()).Run(ctx, mergepipeline.RunRequest{
 		Title: body.Title, Branches: body.Branches, AutomatonID: body.Automaton,
 	})
 	if err == nil && body.Automaton != "" {

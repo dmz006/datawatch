@@ -35,11 +35,13 @@ func NewSupervisorLoopHooks(mgr *autonomous.Manager, cfg *config.Config, setting
 	// The daemon's own merge runs gate the registry_row hook the same way
 	// the request path does: write-through records the row, off edits the
 	// registry file as before.
-	var popt mergeRunnerOption
-	if len(planStore) > 0 && planStore[0] != nil {
-		popt = func(r *mergepipeline.Runner) {
+	// The configured git hosts are read from the live config on every run, so
+	// a host added later is seen by the next merge.
+	popt := func(r *mergepipeline.Runner) {
+		if len(planStore) > 0 && planStore[0] != nil {
 			withPlanRecords(planStore[0](), cfg.Autonomous.PlanRecords.EffectiveWriteThrough())(r)
 		}
+		withGitHosts(cfg.Git.Hosts)(r)
 	}
 	h.Deploy = func(ctx context.Context) (string, error) { return supervisorLoopDeploy(ctx, mgr, dataDir, mergeCfg()) }
 	h.MergeUntilConflict = func(ctx context.Context) (autonomous.SupervisorMergeResult, error) {
