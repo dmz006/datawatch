@@ -6357,6 +6357,11 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 	if !ok {
 		return nil, nil, fmt.Errorf("prd %q not found", prdID)
 	}
+	// Same rule as SetPRDLLM: the worker LLM does not move while the plan is
+	// being written.
+	if prd.Status == PRDPlanning {
+		return nil, nil, planInProgressErr(prdID)
+	}
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
 		if EffectiveOverrideQueuedTasks(m.cfg.OverrideQueuedTasks) {
 			return m.applyQueuedStoryLLM(prdID, storyID, backend, effort, model, actor)
@@ -6417,6 +6422,11 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	// Same rule as SetPRDLLM: the worker LLM does not move while the plan is
+	// being written.
+	if prd.Status == PRDPlanning {
+		return nil, nil, planInProgressErr(prdID)
 	}
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
 		if EffectiveOverrideQueuedTasks(m.cfg.OverrideQueuedTasks) {
