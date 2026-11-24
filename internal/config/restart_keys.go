@@ -8,8 +8,9 @@ import (
 
 // Live settings. A config key either takes effect the moment it is saved, or
 // is read once at daemon start and needs a restart. restartRequiredKeys names
-// the second kind: the one list PUT /api/config, the startup log line and the
-// web app use. An entry ending in ".*" matches every key below that prefix; any
+// the second kind: the one list PUT /api/config and the startup log line use.
+// The reload reply keeps its own literal list in internal/server/reload.go,
+// which two parity tests read from the source. An entry ending in ".*" matches every key below that prefix; any
 // other entry matches that key exactly. A key not listed here is applied live.
 var restartRequiredKeys = []string{
 	"pin_check_seconds", // pin keepers start once at daemon boot

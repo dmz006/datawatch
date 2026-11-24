@@ -176,8 +176,12 @@ func (s *Server) reload() ReloadResult {
 	*s.cfg = *newCfg
 
 	// Fields we don't attempt to hot-apply (operator must restart).
-	// The shared list PUT /api/config and the start-up log line use.
-	res.RequiresRestart = config.RestartRequiredKeys()
+	res.RequiresRestart = []string{
+		"server.host", "server.port",
+		"signal.account_number", "signal.group_id",
+		"mcp.sse_host", "mcp.sse_port", "mcp.public_url", "mcp.resource_subscriptions",
+		"database.*", "agents.*",
+	}
 
 	return res
 }
