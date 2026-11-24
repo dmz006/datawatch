@@ -1101,6 +1101,17 @@ paths:
         kept; an unset key reads as 30). A bad lane fill value rejects the whole PUT with
         400 and nothing is written. GET returns the values in effect and the running planner picks up
         changes without a restart.
+        `autonomous.merge_shadow.enabled` (true|false, default true; false turns the
+        finish-time shadow merge plan off), `autonomous.merge_shadow.gate_timeout`
+        (a Go duration such as `20m`; default `20m`; the gate deadline the shadow
+        merge waits for), `autonomous.merge_shadow.plan_keep` (whole number >= 1,
+        default 200; how many finished-Automaton plans are kept per project) and
+        `autonomous.merge_shadow.agreement_streak` (whole number >= 1, default 5; the
+        agreement streak threshold — an Automaton that lands with enough stored
+        zero-major-difference comparisons in a row is treated as agreed, see
+        docs/howto/merge-shadow.md). A bad merge shadow value rejects the whole PUT
+        with 400 and nothing is written; GET /api/config returns the values in
+        effect.
         `autonomous.failure_escalation.enabled` (true|false, default true),
         `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
         `autonomous.failure_escalation.steps` (a JSON array of step objects, or the text
@@ -3416,6 +3427,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MergeStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/merge/shadow:
+    get:
+      summary: Shadow merge state
+      description: |
+        The finished Automaton's shadow merge plans and the stored comparisons with
+        real merges, per project. Each project entry carries the stored plans, the
+        stored comparisons (each with its differences and the matched/different split
+        at the release sizes), the matched/different comparison counts per release
+        size (patch, minor, major or none), and the `streak`: the agreement streak
+        against the `autonomous.merge_shadow.agreement_streak` threshold (default 5)
+        — `length` the most recent consecutive zero-major-difference comparisons, `total`
+        the comparisons counted, `threshold` the value in effect and `met` whether the
+        streak meets it (`streak` is absent for a project with no stored comparisons).
+        Read-only, same data as the `autonomous_merge_shadow_status` MCP tool; see
+        docs/howto/merge-shadow.md. A federated peer needs the autonomous read
+        capability.
+      operationId: autonomousMergeShadow
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, required: false, description: "Only that project's entry", schema: {type: string}}
+      responses:
+        "200":
+          description: Shadow merge status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [projects]
+                properties:
+                  projects:
+                    type: array
+                    items: {type: object, description: The shadow state for one project}
+                    description: One entry per project with stored shadow plans
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}

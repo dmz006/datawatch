@@ -535,3 +535,125 @@ func TestComparisonStoreDirBlockedByFile(t *testing.T) {
 		t.Error("ListComparisons over blocked store dir: want error")
 	}
 }
+
+// streakComparison builds one stored comparison with the given Automaton id,
+// created-at stamp and per-major / per-minor difference counts.
+func streakComparison(id string, at time.Time, majors, minors int) *Comparison {
+	c := &Comparison{
+		AutomatonID: id,
+		ReleaseSize: ReleaseSizeMinor,
+		Matched:     5,
+		Differences: []Difference{},
+		CreatedAt:   at,
+	}
+	for i := 0; i < majors; i++ {
+		c.Differences = append(c.Differences, Difference{
+			Field: "version", Planned: "9.120.0", Landed: "9.119.0", Severity: SeverityMajor,
+		})
+		c.Different++
+	}
+	for i := 0; i < minors; i++ {
+		c.Differences = append(c.Differences, Difference{
+			Field: "readme_line", Planned: "a", Landed: "b", Severity: SeverityMinor,
+		})
+		c.Different++
+	}
+	return c
+}
+
+// TestAgreementStreakEmptyHistory is the empty input: zero length, zero
+// total, and a threshold of any size is unmet.
+func TestAgreementStreakEmptyHistory(t *testing.T) {
+	s := AgreementStreakOf(nil)
+	if s.Length != 0 || s.Total != 0 {
+		t.Fatalf("empty: streak = %+v, want {0 0}", s)
+	}
+	if s.Meets(5) {
+		t.Error("empty: Meets(5) = true, want false")
+	}
+	if !s.Meets(0) {
+		t.Error("empty: Meets(0) should hold")
+	}
+}
+
+// TestAgreementStreakMinorDifferencesOnly is the minor-only case: minor
+// differences do not break the streak, so a run of three merges each with
+// only minor differences is a streak of three over three — short of a
+// threshold of five.
+func TestAgreementStreakMinorDifferencesOnly(t *testing.T) {
+	base := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	comps := []*Comparison{
+		streakComparison("auto-1", base, 0, 1),
+		streakComparison("auto-2", base.Add(time.Minute), 0, 2),
+		streakComparison("auto-3", base.Add(2*time.Minute), 0, 0),
+	}
+	s := AgreementStreakOf(comps)
+	if s.Length != 3 || s.Total != 3 {
+		t.Fatalf("minor-only: streak = %+v, want {3 3}", s)
+	}
+	if s.Meets(5) {
+		t.Error("minor-only: 3 of 5 should be unmet")
+	}
+	if !s.Meets(3) {
+		t.Error("minor-only: 3 of 3 should be met")
+	}
+}
+
+// TestAgreementStreakBrokenByMajor is the broken case: the oldest merge held
+// a major difference, so the streak stops there (two) even though the two
+// newest merges agree, and the run is short of its threshold.
+func TestAgreementStreakBrokenByMajor(t *testing.T) {
+	base := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	comps := []*Comparison{
+		streakComparison("auto-1", base, 1, 1), // major: the streak stops here
+		streakComparison("auto-2", base.Add(time.Minute), 0, 1),
+		streakComparison("auto-3", base.Add(2*time.Minute), 0, 0),
+		streakComparison("auto-4", base.Add(3*time.Minute), 0, 0),
+	}
+	s := AgreementStreakOf(comps)
+	if s.Length != 3 || s.Total != 4 {
+		t.Fatalf("broken: streak = %+v, want {3 4}", s)
+	}
+}
+
+// TestAgreementStreakMeetsThreshold is the met case: five newest merges
+// without a major difference meet the threshold of five, even though an
+// older major difference broke off the tail of the history.
+func TestAgreementStreakMeetsThreshold(t *testing.T) {
+	base := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	comps := []*Comparison{
+		streakComparison("auto-0", base, 1, 0),
+	}
+	for i := 1; i <= 5; i++ {
+		comps = append(comps, streakComparison("auto-x", base.Add(time.Duration(i)*time.Minute), 0, 0))
+	}
+	s := AgreementStreakOf(comps)
+	if s.Length != 5 || s.Total != 6 {
+		t.Fatalf("met: streak = %+v, want {5 6}", s)
+	}
+	if !s.Meets(5) {
+		t.Error("met: 5 of 5 should be met")
+	}
+	if s.Meets(6) {
+		t.Error("met: 5 of 6 should be unmet")
+	}
+}
+
+// TestAgreementStreakShuffledInput is the order-independence check: the
+// same records in reverse input order give the same streak.
+func TestAgreementStreakShuffledInput(t *testing.T) {
+	base := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	comps := []*Comparison{
+		streakComparison("auto-1", base, 0, 1),
+		streakComparison("auto-2", base.Add(time.Minute), 1, 0),
+		streakComparison("auto-3", base.Add(2*time.Minute), 0, 0),
+	}
+	forward := AgreementStreakOf(comps)
+	backward := AgreementStreakOf([]*Comparison{comps[2], comps[1], comps[0]})
+	if forward != backward {
+		t.Fatalf("shuffled: forward %+v != backward %+v", forward, backward)
+	}
+	if forward.Length != 1 || forward.Total != 3 {
+		t.Fatalf("shuffled: streak = %+v, want {1 3}", forward)
+	}
+}

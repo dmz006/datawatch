@@ -4128,6 +4128,8 @@
   "settings_merge_shadow_gate_timeout_help": "How long each gate of the shadow merge may wait before the run gives up. A Go duration such as 20m; the run gets this budget per gate. Default 20m.",
   "settings_merge_shadow_plan_keep": "Merge shadow plans kept per project (whole number, minimum 1, default 200)",
   "settings_merge_shadow_plan_keep_help": "How many shadow merge plans are kept per project, newest first; older ones are dropped. Default 200; minimum 1.",
+  "settings_merge_shadow_agreement_streak": "Merge shadow agreement streak threshold (whole number, minimum 1, default 5)",
+  "settings_merge_shadow_agreement_streak_help": "How many of the most recent stored comparisons in a row must have no major difference before the project's agreement streak reads met. Default 5; minimum 1. It approves nothing by itself.",
   "post_ship_hook_add": "Ajouter un hook",
   "post_ship_hook_empty": "Pas encore de hooks — ajoutez-en un.",
   "post_ship_hook_max": "Au maximum {max} hooks.",

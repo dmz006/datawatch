@@ -10535,7 +10535,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// check here is left unchanged.
 			applyLaneFillValue(&cfg.Autonomous.LaneFill, strings.TrimPrefix(k, laneFillKeyPrefix), v)
 		case mergeShadowKeyPrefix + "enabled", mergeShadowKeyPrefix + "gate_timeout",
-			mergeShadowKeyPrefix + "plan_keep":
+			mergeShadowKeyPrefix + "plan_keep", mergeShadowKeyPrefix + "agreement_streak":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
 			applyMergeShadowValue(&cfg.Autonomous.MergeShadow, strings.TrimPrefix(k, mergeShadowKeyPrefix), v)
