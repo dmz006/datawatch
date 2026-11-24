@@ -38,10 +38,10 @@ test('the picker is offered only where the pause targets all servers', () => {
   }
   const opts = plain(load('all').window.pauseTargetOptions());
   assert.deepEqual(opts, [
-    { value: '', label: 'pause_target_local' },
+    { value: '', label: 'This server only' },
     { value: 'pi-box', label: 'Pi box' },
     { value: 'gpu-1', label: 'gpu-1' },
-    { value: 'all', label: 'pause_target_all' },
+    { value: 'all', label: 'All servers' },
   ]);
 });
 
@@ -116,8 +116,8 @@ test('looking at all servers asks for every peer state and lists each one', asyn
   sb.window._pause.state = state;
   const html = sb.window.pauseBodyHtml();
   assert.match(html, /down-1[^<]*connection refused/);
-  assert.match(html, /pi-box[^<]*pause_peer_paused/);
-  assert.match(html, /gpu-1[^<]*pause_peer_clear/);
+  assert.match(html, /pi-box[^<]*: paused/);
+  assert.match(html, /gpu-1[^<]*: not paused/);
 });
 
 test('the window and the badge say the pause is for automation work, in every language', () => {

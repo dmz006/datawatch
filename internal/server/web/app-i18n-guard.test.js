@@ -141,8 +141,8 @@ test('when the bundle becomes ready the badge and an open window repaint in the 
 
   p.becomeReady(localeBundle('de'));
   assert.equal(p.label.textContent, 'Pausiert', 'the badge was not repainted in German');
-  assert.equal(p.btn.title, 'Neue Arbeit ist pausiert');
-  assert.match(p.holder.innerHTML, /Eine Pause stoppt neue Arbeit/, 'the open window was not repainted');
+  assert.equal(p.btn.title, 'Die Arbeit der Automaten ist pausiert');
+  assert.match(p.holder.innerHTML, /Eine Pause hindert diesen Server/, 'the open window was not repainted');
 });
 
 test('a bundle that is already ready paints the translation at once', async () => {
