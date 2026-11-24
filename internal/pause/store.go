@@ -142,6 +142,24 @@ func Open(path string, startPaused bool, now func() time.Time) (*Store, error) {
 	return s, nil
 }
 
+// OpenFailClosed is Open for the daemon: when the state file cannot be read it
+// returns a store that is globally paused (by the config actor, with the read
+// error as the reason) together with the error, so a damaged file stops new
+// work instead of silently clearing the operator's pause. The first resume
+// rewrites the file.
+func OpenFailClosed(path string, startPaused bool, now func() time.Time) (*Store, error) {
+	s, err := Open(path, startPaused, now)
+	if err == nil {
+		return s, nil
+	}
+	if now == nil {
+		now = time.Now
+	}
+	s = &Store{path: path, now: now}
+	s.st.Global = &Entry{Scope: ScopeGlobal, Reason: "pause state unreadable, paused until the operator resumes: " + err.Error(), By: ActorConfig, At: now().UTC()}
+	return s, err
+}
+
 // SetAudit sets the hook that receives every pause, resume and refused resume.
 func (s *Store) SetAudit(fn func(Event)) {
 	s.mu.Lock()

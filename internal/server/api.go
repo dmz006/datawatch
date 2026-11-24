@@ -9983,6 +9983,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// See https://github.com/dmz006/datawatch/issues/19.
 		case "autonomous.enabled":
 			cfg.Autonomous.Enabled = toBool(v)
+		case "pause.start_paused":
+			// Read once at daemon start (a saved pause state wins over it).
+			cfg.Pause.StartPaused = toBool(v)
 		case "autonomous.project_link_backfill_apply":
 			cfg.Autonomous.ProjectLinkBackfillApply = toBool(v)
 		// Planning routing switches; the rules, ladders and classes go

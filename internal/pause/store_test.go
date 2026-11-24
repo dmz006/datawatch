@@ -225,3 +225,35 @@ func TestPausedAfterPauseIsRepeatedKeepsFirstAuthor(t *testing.T) {
 		t.Fatalf("a repeat pause replaces the reason: %+v %v", e, err)
 	}
 }
+
+func TestOpenFailClosedPausesWhenTheFileIsDamaged(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "pause.json")
+	if err := writeFile(p, []byte("{not json")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := OpenFailClosed(p, false, fixedClock())
+	if err == nil {
+		t.Fatal("the damage must be reported")
+	}
+	b, blocked := s.Blocked("/x")
+	if !blocked || !strings.Contains(b.Reason, "unreadable") || b.By != ActorConfig {
+		t.Fatalf("a damaged state must pause, never read as unpaused: %+v %v", b, blocked)
+	}
+	// The operator can resume; the resume rewrites a good file.
+	if ok, err := s.Resume(ScopeGlobal, "", "operator", ""); err != nil || !ok {
+		t.Fatalf("resume = %v %v", ok, err)
+	}
+	if _, err := Open(p, false, fixedClock()); err != nil {
+		t.Fatalf("the file must be readable again: %v", err)
+	}
+}
+
+func TestOpenFailClosedIsPlainOpenWhenTheFileIsFine(t *testing.T) {
+	s, err := OpenFailClosed(filepath.Join(t.TempDir(), "pause.json"), false, fixedClock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, blocked := s.Blocked("/x"); blocked {
+		t.Fatal("a missing file is unpaused")
+	}
+}
