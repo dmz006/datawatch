@@ -3542,6 +3542,7 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 	m.store.WithLock(func() {
 		prd.LastDecomposeFailure = nil // success — clear the single-use hint
 		prd.DecomposeSessionFailures = 0
+		prd.AutoPlanStarts = 0
 		if rec != nil {
 			// Stored with the PRD save below, so the record lands atomically with the plan.
 			prd.PlanningRecord = rec
@@ -4420,6 +4421,7 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 		// A reset starts a fresh decompose streak: the no-output counter and
 		// its terminal hint must not carry into the next attempt.
 		prd.DecomposeSessionFailures = 0
+		prd.AutoPlanStarts = 0
 		if prd.LastDecomposeFailure != nil && prd.LastDecomposeFailure.Source == "decompose-session" {
 			prd.LastDecomposeFailure = nil
 		}

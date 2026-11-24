@@ -131,13 +131,10 @@ func (a *API) productionPlanningResumeHooks() planningResumeHooks {
 		startDecompose: func(prdID string) {
 			// Called from the boot-resume scan, which itself holds an execWG
 			// count, so this Add cannot race a Wait that has already returned.
+			// The restart waits for an operator pause to end and is counted by the
+			// planning gate (planning_gate.go).
 			a.execWG.Add(1)
-			go func() {
-				defer a.execWG.Done()
-				if _, err := a.M.Decompose(prdID); err != nil {
-					fmt.Printf("[autonomous] boot-resume: prd=%s planning restart failed: %v\n", prdID, err)
-				}
-			}()
+			a.startPlanningAfterPause(prdID)
 		},
 		recordDecision: a.M.recordBootResume,
 	}
