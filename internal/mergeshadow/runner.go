@@ -290,6 +290,14 @@ func classifyConflicts(cls Classifier, paths []string) []Conflict {
 	return out
 }
 
+// GateStatusCountsAsPass reports whether a gate status is a pass: a plain pass
+// or an intermittent gate, which passed when rerun. The intermittent failure is
+// still recorded as a defect, but it does not make the gate disagree with a
+// supervisor's plain pass.
+func GateStatusCountsAsPass(status string) bool {
+	return status == string(GatePass) || status == string(GateIntermittent)
+}
+
 // toGates converts gate results into the plan's gate records.
 func toGates(results []GateResult) []Gate {
 	out := make([]Gate, 0, len(results))
@@ -407,6 +415,11 @@ func gateDetail(r GateResult) string {
 	detail := r.Detail
 	if r.Name == "test" && r.Status == GateFail {
 		detail = joinDetail(detail, failingTestsDetail(r.Output))
+	}
+	if r.Status == GateIntermittent {
+		if names, _ := ParseGoTestFailures(r.Output); len(names) > 0 {
+			detail = joinDetail(detail, "flaky tests: "+strings.Join(names, ", "))
+		}
 	}
 	if r.Status != GateIntermittent || r.Finding == "" {
 		return detail

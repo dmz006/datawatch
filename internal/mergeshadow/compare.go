@@ -193,7 +193,7 @@ func Compare(plan *MergePlan, landed Landed, parityIssuePresent bool, manualGate
 			case !ok:
 				gateDiffers = true
 				differ(Difference{Field: "gates", Planned: gate.Name + "=" + gate.Status, Landed: gate.Name + "=" + missingMarker, Severity: SeverityMajor})
-			case landedStatus != gate.Status:
+			case landedStatus != gate.Status && (!GateStatusCountsAsPass(landedStatus) || !GateStatusCountsAsPass(gate.Status)):
 				gateDiffers = true
 				differ(Difference{Field: "gates", Planned: gate.Name + "=" + gate.Status, Landed: gate.Name + "=" + landedStatus, Severity: SeverityMajor})
 			}
