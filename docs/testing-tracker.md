@@ -6209,6 +6209,12 @@ An Automation's limit on members running at once, its stage gate and its decisio
 | No auto-skip when another member that has not started builds on the delivered member's branch: the Automation blocks with a message naming both members and the branch, and nothing is marked delivered | **Yes** (`TestAutomationDoesNotSkipDeliveredMemberWhenAnotherMemberBuildsOnIt`, `TestAutomationSkipsDeliveredMemberWhenNobodyPendingBuildsOnIt`, `TestAutomationReconcileBlocksOnDeliveredPendingCursorThatAnotherMemberBuildsOn`) | **No** | The dependency is the Automaton's base branch naming the delivered member's branch |
 | The setting is respected: shadow and off start the member as before, and an operator force that covers the record starts it; a budget gate never holds a skipped member | **Yes** (`TestAutomationStartsShippedMemberWhenRuleIsNotOn`, `TestAutomationSkipsDeliveredMemberBeforeTheBudgetGate`) | **No** | |
 
+## Lane fill eligibility reason lists
+
+| Interface | Tested | Validated | Test conditions and notes |
+|---|---|---|---|
+| Lane fill eligibility reason lists (eleven codes, `work_closed` never a chip) match the code in both openapi files, definitions, operations, the API and command docs, the MCP description and the how-to | **Yes** (`TestLaneFillEligibilityReasonListsMatchTheCode`, `TestLaneFillEligibilityReasonCountIsEleven`) | **No** | The test reads the constants from `lane_fill_eligibility.go`, so a new reason fails it until the docs list it |
+
 ## Operator pause
 
 | Interface | Tested | Validated | Test conditions and notes |

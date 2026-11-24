@@ -23,3 +23,10 @@ Date: 2026-11-24. One draft for the four daemon changes that touch the mobile cl
   and list the decision. An Automation that blocks because a later member builds on the delivered member's branch
   carries the explanation in its last `blocked` decision and in the "Automation blocked" alert.
 - Audit entry `automation_member_delivered` (automation_id, prd_id, release, commit).
+
+## 3. Lane fill eligibility reasons (docs only)
+
+- `operator_pause` joins `already_shipped` in the `eligibility_reason` list of `GET /api/autonomous/lane-fill`
+  decisions; the daemon now documents eleven reasons. `work_closed` is never a lane fill chip. If the app maps
+  reason codes to labels, add `operator_pause` ("Paused by the operator"); the PWA has no label for it yet
+  (`lane_fill_eligibility_operator_pause` is missing from the locale bundles, noted in the report).
