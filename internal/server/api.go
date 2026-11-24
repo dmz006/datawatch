@@ -661,6 +661,9 @@ type Server struct {
 	peerEvents PeerEventControl
 	// supervisorWake is the record behind GET /api/supervisor-loop/wake.
 	supervisorWake *supervisorloop.WakeRecord
+	// supervisorWakeTarget resolves the session a wake types into, for the
+	// same route.
+	supervisorWakeTarget func() supervisorloop.WakeTarget
 	// BL427 phase 5 — receiving side of peer forwarding for
 	// /api/autonomous/events/forward; nil → 503.
 	autonomousFwd ForwardedEventsAPI

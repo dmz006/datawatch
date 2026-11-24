@@ -5,7 +5,7 @@
 //	datawatch supervisor-loop stats [--json]
 //	datawatch supervisor-loop runs [--job NAME] [--outcome RESULT] [--limit N] [--format json]
 //	datawatch supervisor-loop run NAME [--input TEXT] [--candidates A,B] [--json]
-//	datawatch supervisor-loop wake [--enabled=BOOL] [--kinds A,B] [--coalesce-seconds N] [--fallback-interval-minutes N] [--json]
+//	datawatch supervisor-loop wake [--enabled=BOOL] [--kinds A,B] [--coalesce-seconds N] [--fallback-interval-minutes N] [--session ID] [--json]
 //
 // Thin REST proxies: the jobs and runs reads render the daemon's bodies,
 // and run triggers one job run now (404 for an unknown job name).
@@ -246,24 +246,30 @@ type supervisorWakeBody struct {
 	EventCount              int      `json:"event_count"`
 	ScheduledCount          int      `json:"scheduled_count"`
 	EventsSilentFor         string   `json:"events_silent_for"`
+	Session                 string   `json:"session"`
+	Target                  string   `json:"target"`
+	TargetReason            string   `json:"target_reason"`
 }
 
 func newSupervisorLoopWakeCmd() *cobra.Command {
 	var asJSON, enabled bool
-	var kinds string
+	var kinds, designated string
 	var coalesce, fallback int
 	c := &cobra.Command{
 		Use:   "wake",
 		Short: "Show or set the supervisor's event wake settings",
 		Long: "With no flags, show the wake settings in effect (on or off, the event " +
-			"kinds, the quiet window, the fallback interval) and when the supervisor " +
-			"last woke for an event and last ran a scheduled check. A read.\n\n" +
-			"With one or more of --enabled, --kinds, --coalesce-seconds and " +
-			"--fallback-interval-minutes, set those supervisor_loop.wake.* values " +
+			"kinds, the quiet window, the fallback interval), the designated " +
+			"supervisor session, the session a wake would type into now and why, " +
+			"and when the supervisor last woke for an event and last ran a scheduled check. A read.\n\n" +
+			"With one or more of --enabled, --kinds, --coalesce-seconds, " +
+			"--fallback-interval-minutes and --session, set those supervisor_loop.wake.* values " +
 			"through the config endpoint in one request, then show the result. " +
 			"--kinds is a comma list of event kinds (an unknown kind is refused by " +
 			"the daemon); --coalesce-seconds is 0..3600 (0 wakes on every event); " +
-			"--fallback-interval-minutes is 1..1440. The wake is off by default.\n\n" +
+			"--fallback-interval-minutes is 1..1440. --session designates the one " +
+			"session a wake may type into (full or short id; --session '' " +
+			"designates none, so nothing is typed). The wake is off by default.\n\n" +
 			"--json prints the raw response untouched.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -280,6 +286,9 @@ func newSupervisorLoopWakeCmd() *cobra.Command {
 					}
 				}
 				patch[supervisorloop.KeyWakeKinds] = list
+			}
+			if f.Changed("session") {
+				patch[supervisorloop.KeyWakeSession] = strings.TrimSpace(designated)
 			}
 			if f.Changed("coalesce-seconds") {
 				patch[supervisorloop.KeyWakeCoalesceSeconds] = coalesce
@@ -311,6 +320,11 @@ func newSupervisorLoopWakeCmd() *cobra.Command {
 			}
 			_, _ = fmt.Fprintf(out, "wake: %s\nkinds: %s\ncoalesce: %ds\nfallback interval: %d min\n",
 				state, strings.Join(w.Kinds, ", "), w.CoalesceSeconds, w.FallbackIntervalMinutes)
+			_, _ = fmt.Fprintf(out, "designated session: %s\ntarget: %s\n",
+				orNone(w.Session), orNone(w.Target))
+			if w.TargetReason != "" {
+				_, _ = fmt.Fprintf(out, "why: %s\n", w.TargetReason)
+			}
 			_, _ = fmt.Fprintf(out, "last event: %s (%d events)\nlast scheduled check: %s (%d checks)\n",
 				wakeTime(w.LastEvent), w.EventCount, wakeTime(w.LastScheduledCheck), w.ScheduledCount)
 			if w.EventsSilentFor != "" {
@@ -322,9 +336,18 @@ func newSupervisorLoopWakeCmd() *cobra.Command {
 	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
 	c.Flags().BoolVar(&enabled, "enabled", false, "turn the event wake on or off (--enabled=true|false)")
 	c.Flags().StringVar(&kinds, "kinds", "", "comma list of event kinds that wake the supervisor")
+	c.Flags().StringVar(&designated, "session", "", "designated supervisor session id, the only one a wake types into ('' = none)")
 	c.Flags().IntVar(&coalesce, "coalesce-seconds", 0, "quiet window in seconds, 0..3600 (0 wakes on every event)")
 	c.Flags().IntVar(&fallback, "fallback-interval-minutes", 0, "scheduled check interval in minutes, 1..1440")
 	return c
+}
+
+// orNone shows "none" for an empty session id.
+func orNone(s string) string {
+	if s == "" {
+		return "none"
+	}
+	return s
 }
 
 // wakeTime shows an RFC 3339 instant, or "never" for empty or the zero time.

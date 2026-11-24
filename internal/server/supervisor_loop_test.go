@@ -154,7 +154,8 @@ func TestSupervisorLoopPutThenGetRoundTrip(t *testing.T) {
 	// A non-default value for every key.
 	want := map[string]any{"enabled": false, "validator_retries": 4, "escalate_after_failures": 3,
 		"run_retention": 100, "archive_cancelled_after_minutes": 15, "lane_count.min": 1, "lane_count.max": 6,
-		"wake.enabled": true, "wake.kinds": []any{"task.failed", "prd.blocked"}, "wake.coalesce_seconds": 5, "wake.fallback_interval_minutes": 7}
+		"wake.enabled": true, "wake.kinds": []any{"task.failed", "prd.blocked"}, "wake.coalesce_seconds": 5, "wake.fallback_interval_minutes": 7,
+		"wake.session": "host-sup1"}
 	for _, n := range supervisorloop.StepNames {
 		want[n+".enabled"] = false
 	}

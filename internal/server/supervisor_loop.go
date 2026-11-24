@@ -468,6 +468,12 @@ func (s *Server) handleSupervisorLoopStats(w http.ResponseWriter, r *http.Reques
 // leaves the times empty.
 func (s *Server) SetSupervisorWake(r *supervisorloop.WakeRecord) { s.supervisorWake = r }
 
+// SetSupervisorWakeTarget wires the resolver of the session a wake types
+// into. Nil leaves the target fields empty.
+func (s *Server) SetSupervisorWakeTarget(fn func() supervisorloop.WakeTarget) {
+	s.supervisorWakeTarget = fn
+}
+
 // supervisorWakeView is the GET /api/supervisor-loop/wake body.
 type supervisorWakeView struct {
 	Enabled                 bool     `json:"enabled"`
@@ -475,11 +481,12 @@ type supervisorWakeView struct {
 	CoalesceSeconds         int      `json:"coalesce_seconds"`
 	FallbackIntervalMinutes int      `json:"fallback_interval_minutes"`
 	supervisorloop.WakeStatus
+	supervisorloop.WakeTarget
 }
 
 // handleSupervisorLoopWake implements GET /api/supervisor-loop/wake: the wake
-// settings in effect plus when the supervisor last woke for an event and last
-// ran a scheduled check. It is read-only and holds no secrets.
+// settings in effect, the session a wake types into now and why, plus when the
+// supervisor last woke for an event and last ran a scheduled check. It is read-only and holds no secrets.
 func (s *Server) handleSupervisorLoopWake(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -496,6 +503,10 @@ func (s *Server) handleSupervisorLoopWake(w http.ResponseWriter, r *http.Request
 	}
 	if s.supervisorWake != nil {
 		v.WakeStatus = s.supervisorWake.Status()
+	}
+	v.Session = wk.Session
+	if s.supervisorWakeTarget != nil {
+		v.WakeTarget = s.supervisorWakeTarget()
 	}
 	writeJSONOK(w, v)
 }

@@ -8,8 +8,8 @@
 // daemon calls Reconcile once at start-up and then on a short timer (Start).
 //
 // What a wake does: each coalesced batch of subscribed events runs one
-// supervisor loop pass at once (Run) and, when a supervisor session is running,
-// types a one-line summary into it. The scheduled check in the coordinator's
+// supervisor loop pass at once (Run) and, when the designated supervisor session
+// is a valid target, types a one-line summary of what is new into it. The scheduled check in the coordinator's
 // idle tick stays as the fallback at supervisor_loop.wake.fallback_interval_minutes.
 
 package server
@@ -36,8 +36,12 @@ type SupervisorWakeControllerConfig struct {
 	Settings func() supervisorloop.Settings
 	// Run runs one supervisor loop pass for a delivered batch.
 	Run func(supervisorloop.WakeBatch)
-	// Session returns the running supervisor session id, or "".
+	// Session returns the id of the designated supervisor session a wake may
+	// type into, or "".
 	Session func() string
+	// Stalls returns the current priority stall list (see
+	// autonomous.SupervisorWakeConfig.Stalls); may be nil.
+	Stalls func() []string
 	// SendInput types text into a session.
 	SendInput func(sessionID, text string) error
 	Clock     supervisorloop.WakeClock
@@ -53,11 +57,14 @@ type SupervisorWakeController struct {
 	set     *autonomous.SupervisorWakeSet
 	applied supervisorloop.WakeSettings
 	closed  bool
+	// memory outlives a replaced set, so a settings change does not make the
+	// same batch new again.
+	memory *supervisorloop.WakeSendMemory
 }
 
 // NewSupervisorWakeController builds the controller and runs one Reconcile.
 func NewSupervisorWakeController(cfg SupervisorWakeControllerConfig) *SupervisorWakeController {
-	c := &SupervisorWakeController{cfg: cfg}
+	c := &SupervisorWakeController{cfg: cfg, memory: supervisorloop.NewWakeSendMemory()}
 	c.Reconcile()
 	return c
 }
@@ -106,8 +113,17 @@ func (c *SupervisorWakeController) Reconcile() bool {
 	c.set = autonomous.RegisterSupervisorWake(autonomous.SupervisorWakeConfig{
 		Subscriber: c.cfg.Subscriber, Settings: want, Session: c.cfg.Session,
 		SendInput: c.cfg.SendInput, Clock: c.cfg.Clock, Record: c.cfg.Record, Run: c.cfg.Run,
+		Memory: c.memory, Stalls: c.cfg.Stalls, FallbackInterval: c.fallbackInterval,
 	})
 	return c.set != nil
+}
+
+// fallbackInterval reads the live fallback interval.
+func (c *SupervisorWakeController) fallbackInterval() time.Duration {
+	if c.cfg.Settings == nil {
+		return 0
+	}
+	return time.Duration(c.cfg.Settings().Wake.FallbackIntervalMinutes) * time.Minute
 }
 
 // Active reports whether the wake set is registered.

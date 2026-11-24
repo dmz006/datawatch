@@ -1466,6 +1466,12 @@ func (s *HTTPServer) SetPeerEvents(c PeerEventControl) { s.api.SetPeerEvents(c) 
 // SetSupervisorWake wires the record behind GET /api/supervisor-loop/wake.
 func (s *HTTPServer) SetSupervisorWake(r *supervisorloop.WakeRecord) { s.api.SetSupervisorWake(r) }
 
+// SetSupervisorWakeTarget wires the wake target GET /api/supervisor-loop/wake
+// reports.
+func (s *HTTPServer) SetSupervisorWakeTarget(fn func() supervisorloop.WakeTarget) {
+	s.api.SetSupervisorWakeTarget(fn)
+}
+
 // SetAutonomousEvents wires the pending-events queue behind the mcp_queue
 // subscription sink for /api/autonomous/events. Nil disables the endpoint
 // (the handler returns 503).

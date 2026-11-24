@@ -216,6 +216,7 @@ var supervisorWakeKeys = map[string]string{
 	"kinds":                     supervisorloop.KeyWakeKinds,
 	"coalesce_seconds":          supervisorloop.KeyWakeCoalesceSeconds,
 	"fallback_interval_minutes": supervisorloop.KeyWakeFallbackIntervalMinutes,
+	"session":                   supervisorloop.KeyWakeSession,
 }
 
 // replySupervisorLoopWake answers "supervisor wake [status]" (a read) and
@@ -263,6 +264,11 @@ func (r *Router) replySupervisorLoopWake(args []string) {
 					}
 				}
 				patch[full] = list
+			case supervisorloop.KeyWakeSession:
+				if value == "none" {
+					value = ""
+				}
+				patch[full] = value
 			default:
 				n, err := strconv.Atoi(value)
 				if err != nil {
@@ -292,6 +298,9 @@ func (r *Router) replySupervisorLoopWake(args []string) {
 		LastScheduledCheck      string   `json:"last_scheduled_check"`
 		EventCount              int      `json:"event_count"`
 		ScheduledCount          int      `json:"scheduled_count"`
+		Session                 string   `json:"session"`
+		Target                  string   `json:"target"`
+		TargetReason            string   `json:"target_reason"`
 	}
 	if err := json.Unmarshal([]byte(out), &w); err != nil {
 		r.reply("autonomous supervisor-loop failed", "unparseable wake body: "+err.Error())
@@ -307,7 +316,18 @@ func (r *Router) replySupervisorLoopWake(args []string) {
 	if w.Enabled {
 		state = "on"
 	}
-	r.reply(label, fmt.Sprintf("wake: %s\nkinds: %s\ncoalesce: %ds\nfallback interval: %d min\nlast event: %s (%d events)\nlast scheduled check: %s (%d checks)",
+	orNone := func(s string) string {
+		if s == "" {
+			return "none"
+		}
+		return s
+	}
+	text := fmt.Sprintf("wake: %s\nkinds: %s\ncoalesce: %ds\nfallback interval: %d min\nlast event: %s (%d events)\nlast scheduled check: %s (%d checks)",
 		state, strings.Join(w.Kinds, ", "), w.CoalesceSeconds, w.FallbackIntervalMinutes,
-		never(w.LastEvent), w.EventCount, never(w.LastScheduledCheck), w.ScheduledCount))
+		never(w.LastEvent), w.EventCount, never(w.LastScheduledCheck), w.ScheduledCount)
+	text += fmt.Sprintf("\ndesignated session: %s\ntarget: %s", orNone(w.Session), orNone(w.Target))
+	if w.TargetReason != "" {
+		text += "\nwhy: " + w.TargetReason
+	}
+	r.reply(label, text)
 }

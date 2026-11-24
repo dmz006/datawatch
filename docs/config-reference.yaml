@@ -5167,6 +5167,11 @@ autonomous:
     # this many minutes have passed since its last one. With the wake off the
     # scheduled check runs on every idle tick, as before. Read live.
     "supervisor_loop.wake.fallback_interval_minutes": 20
+    # The designated supervisor session: the full or short id of the only
+    # session a wake types into. Empty designates none, so nothing is typed
+    # (the pass still runs). A launch role or tag never makes a session the
+    # target. Read live.
+    "supervisor_loop.wake.session": ""
   # ── Supervisor fresh sessions ──
   # A supervisor session is replaced by a fresh one on a schedule, started from
   # a handover (build context, rules, direction) plus the pinned state record.
