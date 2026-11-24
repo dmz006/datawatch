@@ -39745,6 +39745,7 @@ function _burnGuardLastCheckText(st) {
 // compatibility but is not drawn. Every value is escaped; nothing is written here.
 const BURN_GUARD_PACE_RULE_KEYS = { window_pause_line: 'burn_guard_pace_rule_window_pause_line', weekly_pace_line: 'burn_guard_pace_rule_weekly_pace_line' };
 const BURN_GUARD_PACE_ACTION_KEYS = { hold: 'burn_guard_pace_action_hold', release: 'burn_guard_pace_action_release', would_hold: 'burn_guard_pace_action_would_hold', would_release: 'burn_guard_pace_action_would_release', none: 'burn_guard_pace_action_none' };
+const BURN_GUARD_PACE_MODE_KEYS = { off: 'burn_guard_pace_mode_off', shadow: 'burn_guard_pace_mode_shadow', on: 'burn_guard_pace_mode_on' };
 const BURN_GUARD_PACE_LOG_SHOWN = 5;
 
 // The pace policy block of the burn guard card: the mode, the hold it keeps (or, in
@@ -39756,7 +39757,7 @@ function _burnGuardPaceHtml(pace) {
   const mode = pace.mode === 'off' || pace.mode === 'on' ? pace.mode : 'shadow';
   const rule = (r) => (has(BURN_GUARD_PACE_RULE_KEYS, r) ? t(BURN_GUARD_PACE_RULE_KEYS[r]) : String(r || ''));
   const when = (v) => { const d = v ? new Date(v) : null; return d && !isNaN(d.getTime()) ? d.toLocaleString() : ''; };
-  const rows = [`<div data-burn-guard="pace-mode" style="font-size:12px;font-weight:600;">${escHtml(t('burn_guard_pace_line', [t('burn_guard_pace_mode_' + mode)]))}</div>`];
+  const rows = [`<div data-burn-guard="pace-mode" style="font-size:12px;font-weight:600;">${escHtml(t('burn_guard_pace_line', [t(BURN_GUARD_PACE_MODE_KEYS[mode])]))}</div>`];
   let any = false;
   (Array.isArray(pace.entries) ? pace.entries : []).forEach((e) => {
     const reason = (e.last && e.last.reason) || '';
