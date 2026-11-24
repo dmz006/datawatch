@@ -5,12 +5,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
 // finishedWorkLimit bounds the findings kept in memory and on disk.
-const finishedWorkLimit = 200
+const finishedWorkLimit = 1000
 
 // finishedWorkSweepFile sits beside the other autonomous stores.
 const finishedWorkSweepFile = "finished_work_findings.json"
@@ -48,6 +49,10 @@ type FinishedWorkSweep struct {
 	path     string
 	findings []FinishedWorkFinding
 	dirty    bool
+	// cursor is the Automaton id the last bounded pass ended on; the next
+	// pass starts after it, so every Automaton is reached across passes.
+	cursor string
+	state  FinishedWorkState
 }
 
 // NewFinishedWorkSweep opens the sweep under dir. A missing file is an empty
@@ -56,6 +61,7 @@ type FinishedWorkSweep struct {
 func NewFinishedWorkSweep(dir string) *FinishedWorkSweep {
 	s := &FinishedWorkSweep{path: filepath.Join(dir, finishedWorkSweepFile)}
 	s.load()
+	s.loadState()
 	return s
 }
 
@@ -160,3 +166,139 @@ func (a *API) SweepFindings() []FinishedWorkFinding { return a.M.SweepFindings()
 // RecordFinishedWorkFinding stores one finished-work finding (a no-op when
 // no sweep is wired).
 func (a *API) RecordFinishedWorkFinding(f FinishedWorkFinding) { a.M.RecordFinishedWorkFinding(f) }
+
+// Upsert stores one finding for its Automaton: an existing finding of the
+// same Automaton is replaced in place (keeping its first-seen time and open
+// question when the new one has none), a new one goes first. A repeated pass
+// therefore updates a finding and never repeats it.
+func (s *FinishedWorkSweep) Upsert(f FinishedWorkFinding) {
+	if f.At == "" {
+		f.At = time.Now().UTC().Format(time.RFC3339)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.upsertLocked(f)
+	s.dirty = true
+	s.save()
+}
+
+func (s *FinishedWorkSweep) upsertLocked(f FinishedWorkFinding) {
+	for i := range s.findings {
+		if s.findings[i].Automaton != f.Automaton {
+			continue
+		}
+		old := s.findings[i]
+		if f.Since == "" {
+			f.Since = old.Since
+		}
+		if f.QuestionID == "" && old.Cause == f.Cause {
+			f.QuestionID = old.QuestionID
+		}
+		s.findings[i] = f
+		return
+	}
+	s.findings = append([]FinishedWorkFinding{f}, s.findings...)
+	if len(s.findings) > finishedWorkLimit {
+		s.findings = s.findings[:finishedWorkLimit]
+	}
+}
+
+// Remove drops the finding of an Automaton, reporting the one it dropped.
+func (s *FinishedWorkSweep) Remove(automaton string) (FinishedWorkFinding, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.findings {
+		if s.findings[i].Automaton == automaton {
+			f := s.findings[i]
+			s.findings = append(s.findings[:i:i], s.findings[i+1:]...)
+			s.dirty = true
+			s.save()
+			return f, true
+		}
+	}
+	return FinishedWorkFinding{}, false
+}
+
+// Get returns the finding of an Automaton.
+func (s *FinishedWorkSweep) Get(automaton string) (FinishedWorkFinding, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, f := range s.findings {
+		if f.Automaton == automaton {
+			return f, true
+		}
+	}
+	return FinishedWorkFinding{}, false
+}
+
+// Replace swaps the whole set for the findings of a full audit, keeping the
+// first-seen time and open question of an Automaton that is still found.
+func (s *FinishedWorkSweep) Replace(found []FinishedWorkFinding) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.findings
+	s.findings = nil
+	for i := len(found) - 1; i >= 0; i-- {
+		f := found[i]
+		for _, o := range old {
+			if o.Automaton == f.Automaton {
+				if f.Since == "" {
+					f.Since = o.Since
+				}
+				if f.QuestionID == "" && o.Cause == f.Cause {
+					f.QuestionID = o.QuestionID
+				}
+			}
+		}
+		s.upsertLocked(f)
+	}
+	s.dirty = true
+	s.save()
+}
+
+// FinishedWorkState is what the sweep remembers between passes and restarts:
+// when it last ran, last sent the daily digest and last ran the weekly audit.
+type FinishedWorkState struct {
+	LastSweep        string `json:"last_sweep,omitempty"`
+	LastDigest       string `json:"last_digest,omitempty"`
+	LastAudit        string `json:"last_audit,omitempty"`
+	AuditWeek        string `json:"audit_week,omitempty"`
+	AuditRecordID    string `json:"audit_record_id,omitempty"`
+	LastAuditSummary string `json:"last_audit_summary,omitempty"`
+}
+
+func (s *FinishedWorkSweep) statePath() string {
+	return strings.TrimSuffix(s.path, ".json") + "_state.json"
+}
+
+func (s *FinishedWorkSweep) loadState() {
+	data, err := os.ReadFile(s.statePath())
+	if err != nil {
+		return
+	}
+	if err := json.Unmarshal(data, &s.state); err != nil {
+		log.Printf("[autonomous] finished work sweep: %s is corrupt, starting empty: %v", s.statePath(), err)
+		s.state = FinishedWorkState{}
+	}
+}
+
+// State returns the remembered state.
+func (s *FinishedWorkSweep) State() FinishedWorkState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state
+}
+
+// UpdateState changes the remembered state and writes it.
+func (s *FinishedWorkSweep) UpdateState(f func(*FinishedWorkState)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f(&s.state)
+	data, err := json.Marshal(s.state)
+	if err == nil {
+		err = atomicWriteFile(s.statePath(), data)
+	}
+	if err != nil {
+		log.Printf("[autonomous] finished work sweep: write %s: %v", s.statePath(), err)
+	}
+}

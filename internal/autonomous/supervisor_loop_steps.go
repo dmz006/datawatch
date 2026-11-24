@@ -321,6 +321,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		p         *PRD
 		status    PRDStatus
 		cancelled time.Time
+		updated   time.Time
 	}
 	var fins []fin
 	st := s.c.m.Store()
@@ -329,7 +330,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		for _, p := range prds {
 			switch p.Status {
 			case PRDCompleted, PRDRejected, PRDCancelled:
-				f := fin{p: p, status: p.Status}
+				f := fin{p: p, status: p.Status, updated: p.UpdatedAt}
 				if p.Status == PRDCancelled {
 					f.cancelled = s.cancelTime(p, now)
 				}
@@ -355,13 +356,29 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		// reached their state, unless autonomous.archive_keep_unmerged is off.
 		// Cancelled keeps its guard whatever that setting says.
 		if s.archiveBranchCheck != nil && (f.status == PRDCancelled || keepUnmerged) {
+			// A step refused for this record, with the record unchanged since,
+			// is not tried again every pass: the refusal ledger holds it for
+			// refusalRetryHold, and the reason it recorded still shows.
+			ledger := s.c.m.RefusalLedger()
+			if ledger.Blocked(p.ID, "archive", f.updated, now, RefusalRetryHold) {
+				kept++
+				keptBy[f.status]++
+				reasons[p.ID] = ledger.ReasonFor(p.ID, "archive")
+				continue
+			}
 			if keep, ahead := s.archiveBranchCheck(p); keep {
 				kept++
 				keptBy[f.status]++
-				reasons[p.ID] = fmt.Sprintf("branch %s has unmerged work (%d ahead)", p.Git.Branch, ahead)
-				log.Printf("[autonomous] supervisor-loop: kept %s (%s): branch %s, %d commits ahead of base", p.ID, f.status, p.Git.Branch, ahead)
+				reason := fmt.Sprintf("branch %s has unmerged work (%d ahead)", p.Git.Branch, ahead)
+				reasons[p.ID] = reason
+				// Reported once: the first refusal is logged, a repeat after the
+				// hold only advances the ledger entry.
+				if ledger == nil || ledger.RecordFirst(p.ID, "archive", reason, now) {
+					log.Printf("[autonomous] supervisor-loop: kept %s (%s): branch %s, %d commits ahead of base", p.ID, f.status, p.Git.Branch, ahead)
+				}
 				continue
 			}
+			ledger.Clear(p.ID, "archive")
 		}
 		if _, err := s.c.m.Archive(p.ID, supervisorLoopActor); err != nil {
 			errs = append(errs, fmt.Errorf("archive %s: %w", p.ID, err))

@@ -3648,6 +3648,14 @@ type AutonomousConfig struct {
 	// delivered. "on" (the default; empty reads as on) enforces it, "shadow"
 	// only logs what it would refuse, "off" disables it.
 	ShippedRefusal string `yaml:"shipped_refusal,omitempty" json:"shipped_refusal,omitempty"`
+	// FinishedWork sets the finished-work guard: finished work must never sit
+	// unmerged. "on" (the default; empty reads as on) refuses to archive or
+	// cancel an Automaton whose branch holds commits not on the default
+	// branch unless the operator records a keep or drop decision, runs the
+	// bounded sweep that asks about finished work older than a day, and runs
+	// the weekly audit. "shadow" records the same findings and refusals but
+	// changes nothing and asks nothing, "off" disables it.
+	FinishedWork string `yaml:"finished_work,omitempty" json:"finished_work,omitempty"`
 	// UsageBackoff controls automatic per-backend back-off after a rate or
 	// usage limit is detected: "pause_backend" (default) holds new work for
 	// the affected backend until its reset time; "off" disables it. An

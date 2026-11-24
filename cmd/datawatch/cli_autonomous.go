@@ -77,6 +77,8 @@ Subcommands:
   gate-repair run [--automaton ID --task ID] [--json]
                                   Run one gate repair pass (or repair one failed task gate); prints the
                                   run's outcomes and the fresh status
+  finished-work [--json]          Finished work waiting to land: cause, branch, owner, open question
+  finished-work run sweep|audit   Run one bounded sweep pass or the weekly audit now
   dormant-features [--json]       Automata settings that are off or in shadow mode: key, state, default,
                                   purpose and whether the feature was ever exercised (read only)
   supervisor-watch [--json]       Supervisor watch read: the mode, the last poll, one line per finding
@@ -186,7 +188,7 @@ Subcommands:
   prd-plan <id>                   Run the LLM planning phase for a PRD (alias: prd-decompose)
   prd-decompose <id>              Run the LLM planning phase for a PRD (alias: prd-plan)
   prd-run <id>                    Kick the executor for a PRD (--force --reason "..." runs shipped work anyway; audited)
-  prd-cancel <id>                 Cancel + archive a PRD
+  prd-cancel <id> [--decision keep|drop --reason TEXT]  Cancel + archive a PRD (a branch with commits not on the default branch needs a decision)
   failure-escalation show|set|clear|global  Show, set or clear the failure escalation policy (per Automaton, per task, or the daemon default)
   resolve-review <id> --task T --action retry|cancel|accept  Retry, cancel or accept a task held for operator review (status lists held tasks under review_needed)
   prd-delete <id>                 Hard-delete a PRD + descendants
@@ -399,6 +401,7 @@ Subcommands:
 		newAutonomousGateRepairsCmd(),
 		newAutonomousGateRepairCmd(),
 		newAutonomousDormantFeaturesCmd(),
+		newAutonomousFinishedWorkCmd(),
 		newAutonomousDecisionsCmd(),
 		// Decision records: the structured operator decisions on the Automaton.
 		newDecisionRecordsCmd(),
@@ -853,6 +856,11 @@ earlier behaviour):
 Archive grace, by JSON key:
 
   archive_grace_minutes           whole minutes a cancelled Automaton is kept before it is archived (default 60; 0 archives at once; negative or fractional values are rejected)
+
+Finished work, by JSON key (also settable with
+datawatch config set autonomous.finished_work on|shadow|off):
+
+  finished_work                   on|shadow|off: finished work must never sit unmerged. on (default) refuses to archive or cancel an Automaton whose branch holds commits not on the default branch unless a keep or drop decision is recorded, asks about finished work older than a day, and runs the weekly audit; shadow records the same findings and refusals but changes nothing and asks nothing; off disables it
 
 Archive keep, by JSON key (also settable with
 datawatch config set autonomous.archive_keep_unmerged true|false):
@@ -1361,14 +1369,31 @@ func newAutonomousPRDRunCmd() *cobra.Command {
 }
 
 func newAutonomousPRDCancelCmd() *cobra.Command {
-	return &cobra.Command{
+	var decision, reason string
+	c := &cobra.Command{
 		Use:   "prd-cancel <id>",
 		Short: "Cancel + archive a PRD",
-		Args:  cobra.ExactArgs(1),
+		Long: "Cancel + archive a PRD. Finished work must never sit unmerged: when " +
+			"autonomous.finished_work is on (the default) an Automaton whose branch holds commits " +
+			"that are not on the default branch is refused unless --decision is given. " +
+			"--decision keep records that the branch is kept unmerged on purpose (the daemon asks " +
+			"again on a date); --decision drop records that the work will not be merged. " +
+			"A decision needs --reason.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return daemonJSON(http.MethodDelete, "/api/autonomous/prds/"+args[0], nil)
+			path := "/api/autonomous/prds/" + args[0]
+			if strings.TrimSpace(decision) != "" {
+				q := url.Values{}
+				q.Set("decision", decision)
+				q.Set("reason", reason)
+				path += "?" + q.Encode()
+			}
+			return daemonJSON(http.MethodDelete, path, nil)
 		},
 	}
+	c.Flags().StringVar(&decision, "decision", "", "keep or drop: the landing decision for a branch with commits not on the default branch")
+	c.Flags().StringVar(&reason, "reason", "", "why (required with --decision)")
+	return c
 }
 
 func newAutonomousLearningsCmd() *cobra.Command {

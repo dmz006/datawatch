@@ -1112,7 +1112,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				writeJSONOK(w, withKillDetail(map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions, "memory_strategy": memStrat}))
 				return
 			}
-			if err := s.autonomousMgr.Cancel(id); err != nil {
+			if err := s.cancelAutomaton(id, r.URL.Query().Get("decision"), r.URL.Query().Get("reason")); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
@@ -1214,7 +1214,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapAutonomousRun) {
 			return
 		}
-		if err := s.autonomousMgr.Cancel(id); err != nil {
+		var cancelReq struct {
+			Decision string `json:"decision"`
+			Reason   string `json:"reason"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&cancelReq) // an empty body is a plain cancel
+		if err := s.cancelAutomaton(id, cancelReq.Decision, cancelReq.Reason); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -1441,7 +1446,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		updated, err := s.autonomousMgr.Archive(id)
+		var archiveReq struct {
+			Decision string `json:"decision"`
+			Reason   string `json:"reason"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&archiveReq) // an empty body is a plain archive
+		updated, err := s.archiveAutomaton(id, archiveReq.Decision, archiveReq.Reason)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

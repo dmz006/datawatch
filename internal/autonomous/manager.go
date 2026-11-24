@@ -685,6 +685,9 @@ type Config struct {
 	// ShippedRefusal mirrors autonomous.shipped_refusal: on (default, empty
 	// reads as on), shadow (log only) or off. See closed_work.go.
 	ShippedRefusal string `json:"shipped_refusal,omitempty"`
+	// FinishedWork mirrors autonomous.finished_work: on (default, empty reads
+	// as on), shadow (record only) or off. See finished_work.go.
+	FinishedWork string `json:"finished_work,omitempty"`
 
 	// Parallel carries autonomous.parallel.*; read it through
 	// EffectiveReadOnlyTasks, never directly.

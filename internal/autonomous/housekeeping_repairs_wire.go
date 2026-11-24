@@ -5,6 +5,7 @@ package autonomous
 
 import (
 	"context"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
 )
@@ -36,6 +37,9 @@ type HousekeepingWiring struct {
 	Unarchive UnarchiveRepairOps
 	// Manager backs the default production ops of the unarchive group.
 	Manager *Manager
+	// Ledger holds refused repairs so each is reported once (the Manager's
+	// refusal ledger when nil and a Manager is given).
+	Ledger *RefusalLedger
 }
 
 // NewHousekeepingRepairer builds the Repairer with the repairs of all six
@@ -82,7 +86,11 @@ func NewHousekeepingRepairer(w HousekeepingWiring) *Repairer {
 			}
 		}
 	}
-	return NewRepairer(RepairerHooks{Settings: w.Settings, Log: w.Log, Alert: w.Alert, StorePath: w.StorePath}, repairs...)
+	ledger := w.Ledger
+	if ledger == nil && w.Manager != nil {
+		ledger = w.Manager.RefusalLedger()
+	}
+	return NewRepairer(RepairerHooks{Settings: w.Settings, Log: w.Log, Alert: w.Alert, StorePath: w.StorePath, Ledger: ledger}, repairs...)
 }
 
 // SetHousekeepingRepairer registers the Repairer the idle tick runs. Nil turns
@@ -105,5 +113,9 @@ func (c *Coordinator) HousekeepingPass(ctx context.Context) []RepairRecord {
 	c.mu.Lock()
 	r := c.hkRepairer
 	c.mu.Unlock()
-	return r.Run(ctx)
+	added := r.Run(ctx)
+	// The finished-work sweep and weekly audit ride the same idle tick; both
+	// are bounded and rate limited inside FinishedWorkTick.
+	c.m.FinishedWorkTick(ctx, time.Now())
+	return added
 }

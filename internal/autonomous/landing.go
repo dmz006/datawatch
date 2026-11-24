@@ -118,8 +118,15 @@ func (m *Manager) decideLanding(id, actor, reason string, state LandingState, ki
 			refuse = fmt.Errorf("automaton %q branch %s already landed (commit %s)", id, branch, p.Landing.Commit)
 			return
 		}
-		now := time.Now()
-		p.Landing = &Landing{State: state, Actor: actor, At: now, Reason: reason}
+		now := m.holdNow()
+		l := &Landing{State: state, Actor: actor, At: now, Reason: reason}
+		if state == LandingKept {
+			// A kept branch is asked about again on a date, so leaving it
+			// alone never means nobody owns it.
+			r := now.AddDate(0, 0, FinishedWorkReaskDays)
+			l.ReaskAt = &r
+		}
+		p.Landing = l
 		p.UpdatedAt = now
 		p.Decisions = append(p.Decisions, Decision{At: now, Kind: kind, Actor: actor,
 			Note: fmt.Sprintf("landing: branch %s recorded %s: %s", branch, state, reason)})

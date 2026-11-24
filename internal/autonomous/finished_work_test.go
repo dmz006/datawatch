@@ -90,7 +90,7 @@ func TestArchiveRefusesFinishedWorkNotOnMain(t *testing.T) {
 	r := newFWRig(t, git, 1)
 	id := r.finish(t, 0, PRDCompleted, "work/a", r.at.Add(-time.Hour))
 
-	_, err := r.h.m.Archive(id, "operator")
+	_, err := r.h.m.ArchiveGuarded(id, "operator")
 	if err == nil {
 		t.Fatal("Archive of finished work with 3 commits not on main must be refused without a decision")
 	}
@@ -159,7 +159,7 @@ func TestArchiveAllowedWhenNothingIsUnmerged(t *testing.T) {
 	gone := r.finish(t, 1, PRDCompleted, "work/g", r.at)
 	none := r.finish(t, 2, PRDCompleted, "", r.at)
 	for _, id := range []string{merged, gone, none} {
-		if _, err := r.h.m.Archive(id, "operator"); err != nil {
+		if _, err := r.h.m.ArchiveGuarded(id, "operator"); err != nil {
 			t.Errorf("archive %s: %v", id, err)
 		}
 	}
@@ -174,7 +174,7 @@ func TestArchiveAllowedWhenShippedRecordNamesTheWork(t *testing.T) {
 	if err := r.h.m.Store().SavePRD(p); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.h.m.Archive(id, "operator"); err != nil {
+	if _, err := r.h.m.ArchiveGuarded(id, "operator"); err != nil {
 		t.Errorf("a record with a shipped record is delivered, archive must pass: %v", err)
 	}
 }
@@ -183,7 +183,7 @@ func TestArchiveKeepsRecordWhenGitCannotTell(t *testing.T) {
 	git := &aumGit{failOn: map[string]bool{"work/e": true}}
 	r := newFWRig(t, git, 1)
 	id := r.finish(t, 0, PRDCompleted, "work/e", r.at)
-	if _, err := r.h.m.Archive(id, "operator"); err == nil {
+	if _, err := r.h.m.ArchiveGuarded(id, "operator"); err == nil {
 		t.Error("an unknown branch state must refuse the archive, never guess")
 	}
 }
@@ -199,7 +199,7 @@ func TestGuardModes(t *testing.T) {
 		cfg.FinishedWork = tc.mode
 		r.h.m.SetConfig(cfg)
 		id := r.finish(t, 0, PRDCompleted, "work/a", r.at)
-		_, err := r.h.m.Archive(id, "operator")
+		_, err := r.h.m.ArchiveGuarded(id, "operator")
 		if (err == nil) != tc.wantAllow {
 			t.Errorf("mode %q: archive err = %v, want allowed=%v", tc.mode, err, tc.wantAllow)
 		}
@@ -213,7 +213,7 @@ func TestShadowModeStillRecordsTheRefusalInTheLedger(t *testing.T) {
 	cfg.FinishedWork = "shadow"
 	r.h.m.SetConfig(cfg)
 	id := r.finish(t, 0, PRDCompleted, "work/a", r.at)
-	if _, err := r.h.m.Archive(id, "operator"); err != nil {
+	if _, err := r.h.m.ArchiveGuarded(id, "operator"); err != nil {
 		t.Fatalf("shadow must allow: %v", err)
 	}
 	var found bool
@@ -488,7 +488,7 @@ func TestDropAndLandByHandAnswers(t *testing.T) {
 		t.Errorf("land by hand re-ask = %v", pb.Landing.ReaskAt)
 	}
 	// A pending landing still cannot be archived.
-	if _, err := r.h.m.Archive(b, "operator"); err == nil {
+	if _, err := r.h.m.ArchiveGuarded(b, "operator"); err == nil {
 		t.Error("the archive guard must still hold for work someone said they will land")
 	}
 }

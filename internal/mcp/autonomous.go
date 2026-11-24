@@ -297,6 +297,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
 		mcpsdk.WithString("shipped_refusal", mcpsdk.Description("Shipped-work rule: on (default) refuses to start, approve or decompose an Automaton whose own record says its work already shipped (release and merge commit both set) or that is archived, cancelled, completed or rejected, and marks shipped queued work delivered; shadow only logs what it would refuse; off disables it")),
+		mcpsdk.WithString("finished_work", mcpsdk.Description("Finished-work guard: on (default) refuses to archive or cancel an Automaton whose branch holds commits not on the default branch unless a keep or drop decision is recorded, asks about finished work older than a day, and runs the weekly audit; shadow records the same findings and refusals but changes nothing and asks nothing; off disables it")),
 		mcpsdk.WithNumber("archive_grace_minutes", mcpsdk.Description("Whole minutes a cancelled Automaton is kept before the supervisor loop archives it (default 60; 0 archives at once; negative or fractional values are rejected)")),
 		mcpsdk.WithBoolean("archive_keep_unmerged", mcpsdk.Description("Keep a finished (completed, rejected or cancelled) Automaton whose work branch still holds commits not on the base branch from being archived (default true; false lets it archive; the branch itself is never deleted)")),
 		mcpsdk.WithBoolean("capacity_fallthrough", mcpsdk.Description("Pool fall-through: when a task's requested LLM pool is full, admit it on another idle allowed pool (default false)")),
@@ -938,6 +939,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if v := req.GetString("shipped_refusal", ""); v != "" {
 		body["shipped_refusal"] = v
 	}
+	if v := req.GetString("finished_work", ""); v != "" {
+		body["finished_work"] = v
+	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {
 		body["capacity_wait_timeout_seconds"] = int(v)
 	}
@@ -1558,13 +1562,22 @@ func (s *Server) handleAutonomousPRDRun(_ context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolAutonomousPRDCancel() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_cancel",
-		mcpsdk.WithDescription("Cancel and archive an Automaton. Kills the PRD's worker sessions; the response JSON includes id, status, killed_sessions (count of sessions a kill was attempted on), killed_live_sessions (how many of those were still live when the cancel began) and killed_session_ids (array of the session IDs a kill was attempted on)."),
+		mcpsdk.WithDescription("Cancel and archive an Automaton. Kills the PRD's worker sessions; the response JSON includes id, status, killed_sessions (count of sessions a kill was attempted on), killed_live_sessions (how many of those were still live when the cancel began) and killed_session_ids (array of the session IDs a kill was attempted on). Finished work must never sit unmerged: when autonomous.finished_work is on (the default) an Automaton whose branch holds commits that are not on the default branch is refused unless decision is passed. decision=keep records that the branch is kept unmerged on purpose and the daemon asks again about it on a date; decision=drop records that the work will not be merged. A decision needs a reason."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("decision", mcpsdk.Description("keep or drop: the landing decision for a branch with commits not on the default branch (optional)")),
+		mcpsdk.WithString("reason", mcpsdk.Description("Why, required with a decision")),
 	)
 }
 func (s *Server) handleAutonomousPRDCancel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	out, err := s.proxyJSON(http.MethodDelete, "/api/autonomous/prds/"+id, nil)
+	path := "/api/autonomous/prds/" + id
+	if d := strings.TrimSpace(req.GetString("decision", "")); d != "" {
+		q := url.Values{}
+		q.Set("decision", d)
+		q.Set("reason", req.GetString("reason", ""))
+		path += "?" + q.Encode()
+	}
+	out, err := s.proxyJSON(http.MethodDelete, path, nil)
 	if err != nil {
 		return nil, err
 	}
