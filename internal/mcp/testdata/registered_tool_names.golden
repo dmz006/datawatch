@@ -468,6 +468,9 @@ packs_list
 packs_remove
 packs_setting_get
 packs_setting_set
+pause_resume
+pause_set
+pause_status
 per_automaton_guardrails_set
 per_automaton_retry_policy_set
 pipeline_cancel

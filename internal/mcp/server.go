@@ -618,6 +618,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCooldownStatus(), tracked(s.handleCooldownStatus))                 // BL30
 	mcpSrv.AddTool(s.toolCooldownSet(), tracked(s.handleCooldownSet))                       // BL30
 	mcpSrv.AddTool(s.toolCooldownClear(), tracked(s.handleCooldownClear))                   // BL30
+	mcpSrv.AddTool(s.toolPauseStatus(), tracked(s.handlePauseStatus))                       // operator pause
+	mcpSrv.AddTool(s.toolPauseSet(), tracked(s.handlePauseSet))                             // operator pause
+	mcpSrv.AddTool(s.toolPauseResume(), tracked(s.handlePauseResume))                       // operator pause
 	mcpSrv.AddTool(s.toolUsageBackoffStatus(), tracked(s.handleUsageBackoffStatus))         // BL428 Phase 4
 	mcpSrv.AddTool(s.toolUsageBackoffSet(), tracked(s.handleUsageBackoffSet))               // BL428 Phase 4
 	mcpSrv.AddTool(s.toolUsageBackoffClear(), tracked(s.handleUsageBackoffClear))           // BL428 Phase 4
