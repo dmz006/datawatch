@@ -8226,6 +8226,10 @@ paths:
         still has commits that never landed on the base branch. The daemon
         derives it at view time; the field and the value are read-only and
         no record, alert or write happens for it.
+        A record whose run reached a final outcome can also carry `leftover_warnings`:
+        an array of plain sentences (for example `leftover file: scratch.txt`), one
+        per file the end-of-run cleanup could not remove from the project folder. Absent when there are none. The
+        web Automaton detail lists them.
         Each task may carry `undeclared_edits`: an array of
         `{path: string, lines_changed: integer}` for files the task's worker
         committed that are in neither the task's planned nor generated files

@@ -2213,6 +2213,8 @@
   "prd_settings_dirs_hint": "Workers may not read or write outside these directories.",
   "prd_scope_warnings_title": "Scope warnings",
   "prd_scope_warnings_body": "プランがこのオートマトンの許可されたディレクトリ外のパスを参照しています。該当するタスクは修正されるまで開始されません。",
+  "prd_leftover_warnings_title": "残されたファイル",
+  "prd_leftover_warnings_body": "この実行はプロジェクトフォルダにこれらのファイルを残しました。内容を確認し、削除するかコミットしてください。",
   "automata_detail_writable_dirs": "Writable dirs",
   "automata_detail_readonly_dirs": "Read-only dirs",
   "settings_detection_alert_settle": "Alert settle (sec):",

@@ -2213,6 +2213,8 @@
   "prd_settings_dirs_hint": "Workers may not read or write outside these directories.",
   "prd_scope_warnings_title": "Scope warnings",
   "prd_scope_warnings_body": "Der Plan verweist auf Pfade außerhalb der erlaubten Verzeichnisse dieses Automaten; Aufgaben, die das tun, starten erst nach einer Korrektur.",
+  "prd_leftover_warnings_title": "Zurückgelassene Dateien",
+  "prd_leftover_warnings_body": "Der Lauf hat diese Dateien im Projektordner zurückgelassen. Prüfen Sie sie und entfernen oder committen Sie sie.",
   "automata_detail_writable_dirs": "Writable dirs",
   "automata_detail_readonly_dirs": "Read-only dirs",
   "settings_detection_alert_settle": "Alert settle (sec):",

@@ -2213,6 +2213,8 @@
   "prd_settings_dirs_hint": "Workers may not read or write outside these directories.",
   "prd_scope_warnings_title": "Scope warnings",
   "prd_scope_warnings_body": "El plan hace referencia a rutas fuera de los directorios permitidos de este autómata; las tareas que lo hagan no se iniciarán hasta corregirlo.",
+  "prd_leftover_warnings_title": "Archivos que quedaron",
+  "prd_leftover_warnings_body": "La ejecución dejó estos archivos en la carpeta del proyecto. Revíselos y elimínelos o haga commit de ellos.",
   "automata_detail_writable_dirs": "Writable dirs",
   "automata_detail_readonly_dirs": "Read-only dirs",
   "settings_detection_alert_settle": "Alert settle (sec):",
