@@ -22,6 +22,7 @@
 package autonomous
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -435,12 +436,71 @@ func guardDecomposeOutput(raw string, fn func() error) (err error) {
 	return fn()
 }
 
+// plainStory and plainTask are alias copies of Story and Task whose
+// unmarshaling is not customized: storyWire and taskWire mask one field
+// each with a raw capture — the exact widening pattern of
+// verificationResultWire in tolerant_issues.go — so the masked field can
+// be re-decoded with its own rules.
+type plainStory Story
+type plainTask Task
+
+// taskWire decodes a plan task with its "verification" value kept as a
+// raw JSON message so ParsePlanning can decide what it means; the outer
+// field masks plainTask's typed copy, which stays zero until converted.
+type taskWire struct {
+	plainTask
+	Verification *json.RawMessage `json:"verification"`
+}
+
+// storyWire decodes a plan story; its Tasks field masks the alias's task
+// slice so every task arrives as a taskWire.
+type storyWire struct {
+	plainStory
+	Tasks []taskWire `json:"tasks"`
+}
+
+// taskVerificationFromWire converts the raw "verification" value a plan
+// puts on one task into the typed result. An absent value or JSON null
+// leaves it nil; an object decodes strictly into a VerificationResult
+// exactly as a direct decode does (a malformed object stays a hard
+// error). A JSON string is accepted as an unverified result's summary:
+// OK stays false and the string becomes the Summary — the same shape as
+// verificationSummaryOnly in no_retry_hold.go. Any other value (number,
+// bool, array) is a parse error that names both the field and the task.
+func taskVerificationFromWire(raw *json.RawMessage, taskTitle string) (*VerificationResult, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	trimmed := bytes.TrimSpace(*raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil
+	}
+	if trimmed[0] == '{' {
+		v := &VerificationResult{}
+		if err := json.Unmarshal(trimmed, v); err != nil {
+			return nil, fmt.Errorf("plan field \"verification\" of task %q: %v", taskTitle, err)
+		}
+		return v, nil
+	}
+	if trimmed[0] == '"' {
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return nil, fmt.Errorf("plan field \"verification\" of task %q: %v", taskTitle, err)
+		}
+		return &VerificationResult{OK: false, Summary: s}, nil
+	}
+	return nil, fmt.Errorf("plan field \"verification\" of task %q must be an object or a string", taskTitle)
+}
+
 // ParsePlanning cleans common LLM JSON pathologies (fences,
 // smart quotes, // comments) and unmarshals into a Story slice. Task
 // objects may optionally carry a "kind" string ("smoke" / "final_gate" /
 // anything else); it lands on Task.Kind, and an absent or unknown value
 // is simply the empty/unknown string — never a parse error, so the
-// parser stays tolerant of plans that omit the field.
+// parser stays tolerant of plans that omit the field. A task's
+// "verification" may be the usual object (decoded strictly, unchanged) or
+// a plain string summary of an unverified result; see
+// taskVerificationFromWire for the full rule.
 func ParsePlanning(raw string) (title string, stories []Story, err error) {
 	// A written plan is a verdict: whatever is wrong with it, the parser
 	// fails that one Automaton with the named error and never takes the
@@ -460,11 +520,20 @@ func ParsePlanning(raw string) (title string, stories []Story, err error) {
 		return "", nil, newDecomposeOutputError("output is empty after cleaning", raw)
 	}
 	var doc struct {
-		Title   string  `json:"title"`
-		Stories []Story `json:"stories"`
+		Title   string      `json:"title"`
+		Stories []storyWire `json:"stories"`
 	}
 	if err := json.Unmarshal([]byte(cleaned), &doc); err != nil {
 		return "", nil, newDecomposeOutputError(fmt.Sprintf("parse: %v", err), cleaned)
+	}
+	stories = make([]Story, len(doc.Stories))
+	for si := range doc.Stories {
+		sw := &doc.Stories[si]
+		stories[si] = Story(sw.plainStory)
+		stories[si].Tasks = make([]Task, len(sw.Tasks))
+		for ti := range sw.Tasks {
+			stories[si].Tasks[ti] = Task(sw.Tasks[ti].plainTask)
+		}
 	}
 	// Tolerate models that emit task keys "name"/"description" instead of
 	// "title"/"spec": backfill empty Title/Spec from the same cleaned input,
@@ -481,7 +550,7 @@ func ParsePlanning(raw string) (title string, stories []Story, err error) {
 	// primary shape (above) but not the alt-key shape, keep the already
 	// parsed fields and carry on rather than hard-failing.
 	if err := json.Unmarshal([]byte(cleaned), &alt); err == nil {
-		for si, story := range doc.Stories {
+		for si, story := range stories {
 			for ti := range story.Tasks {
 				if story.Tasks[ti].Title == "" && si < len(alt.Stories) && ti < len(alt.Stories[si].Tasks) {
 					story.Tasks[ti].Title = alt.Stories[si].Tasks[ti].Name
@@ -490,25 +559,34 @@ func ParsePlanning(raw string) (title string, stories []Story, err error) {
 					story.Tasks[ti].Spec = alt.Stories[si].Tasks[ti].Description
 				}
 			}
-			doc.Stories[si] = story
+			stories[si] = story
 		}
 	}
-	for _, story := range doc.Stories {
+	for _, story := range stories {
 		for ti, task := range story.Tasks {
 			if task.Title == "" || task.Spec == "" {
 				return "", nil, fmt.Errorf("task in story %q (index %d) has empty title or spec", story.ID, ti)
 			}
 		}
 	}
-	for si := range doc.Stories {
-		for ti := range doc.Stories[si].Tasks {
-			t := &doc.Stories[si].Tasks[ti]
+	for si := range stories {
+		for ti := range stories[si].Tasks {
+			v, verr := taskVerificationFromWire(doc.Stories[si].Tasks[ti].Verification, stories[si].Tasks[ti].Title)
+			if verr != nil {
+				return "", nil, verr
+			}
+			stories[si].Tasks[ti].Verification = v
+		}
+	}
+	for si := range stories {
+		for ti := range stories[si].Tasks {
+			t := &stories[si].Tasks[ti]
 			t.RulesApplied = normalizeRulesApplied(t.RulesApplied)
 		}
 	}
-	applyWorkerProfileLines(doc.Stories)
-	applyBackendLines(doc.Stories)
-	return doc.Title, doc.Stories, nil
+	applyWorkerProfileLines(stories)
+	applyBackendLines(stories)
+	return doc.Title, stories, nil
 }
 
 // backendLinePrefix is the key a task spec uses to name the worker backend it

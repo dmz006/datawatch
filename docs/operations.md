@@ -8037,6 +8037,21 @@ of that category.
   not be planned: <title>", once per recorded failure, and survives a
   restart without repeating. A retryable failure raises nothing until its
   retry budget is spent.
+- **A plan with a fixable field is a content failure, not a terminal
+  one.** When the planner wrote valid JSON the parser cannot accept — a
+  task's `verification` value that is a number, boolean or array, or a
+  malformed `verification` object — the daemon records it as a `content`
+  category failure (rule `decompose-parse`) and retries planning within the
+  content budget (the auto-fix retries, one at the default configuration),
+  carrying the parse error — it names the offending field and task — back to
+  the planner as the next attempt's guidance. It never consumes infra retry
+  budget; output that is not valid JSON, is empty, is over the size bound or
+  makes the parser panic stays the terminal invalid-response failure and takes
+  no retry. A spent budget leaves a non-retryable `content` record on the
+  usual alert and question path.
+  A `verification` value that is a plain string is accepted as an
+  unverified result (`ok` false, the string as its summary) rather than
+  rejected; a missing value or `null` means "no verification result".
 - **A reword question is asked when the daemon can fix every finding.**
   Answer **Fix the wording and plan again** to rewrite the spec with the
   spec lint's suggestions and plan again, or **Leave it** (the default) to

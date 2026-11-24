@@ -40,6 +40,16 @@ func (m *Manager) IngestPlannerOutput(prdID, raw string) error {
 	title, raw, stories, err := m.parseAndLintDecompose(prd, raw,
 		func(string) (string, string, []Story, error) { return "", "", nil, errReattachNoRetry })
 	if err != nil {
+		// Classify the written-but-unparseable plan exactly as the
+		// decompose loops do: a content attempt — its budget consumed and
+		// the parse error (naming the failing field and task) recorded on
+		// LastDecomposeFailure as guidance for the next decompose run —
+		// not an invalid-response terminal. A reader can never spawn a
+		// fresh planner, so the attempt still fails and the Automaton
+		// leaves planning instead of sitting in it silently.
+		if !errors.Is(err, ErrDecomposeOutputUnparseable) {
+			m.retryDecomposeFailure(prd, "content", "decompose-parse", err.Error())
+		}
 		m.failDecomposeAttempt(prd, "decompose-parse", err)
 		return err
 	}

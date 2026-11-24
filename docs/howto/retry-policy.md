@@ -37,7 +37,7 @@ classified and handled differently.
 
 | Category | Meaning |
 |---|---|
-| `infra` | The judging/executing mechanism itself never completed its job (session timeout/crash, an LLM call that failed before producing output, a stalled worker). Retrying the identical call against a healthy session would likely produce a different outcome. |
+| `infra` | The judging/executing mechanism itself never completed its job (session timeout/crash, an LLM call that failed before producing output, a stalled worker). Retrying the identical call against a healthy session would likely produce a different outcome. A response that was written but cannot be parsed as JSON is the terminal `invalid-response` class, not `infra`; the one exception is a plan that parses but has a field the planner can fix, which takes the `decompose-parse` content retry described below. |
 | `content` | The mechanism ran to completion and produced a real judgment — the work itself was found deficient. |
 | `scope` | The spec itself violates a structural constraint before any worker/judge acts on content. Retrying the identical spec unchanged reproduces the identical violation. |
 | `policy` | An operator-configured gate (e.g. a quality-gate regression) deliberately intervened by design. |
@@ -109,9 +109,18 @@ Same shape as guardrail resolution ([guardrail-library.md](guardrail-library.md)
   revise. `scope`'s default budget of 0 means a verification-script
   violation still fails on the first attempt by default — an
   unchanged spec reproduces the identical violation, so retrying it
-  automatically wouldn't help — but `content`-category reasoning
-  never applies to decompose at all: there is no judgment verdict at
-  this stage, only a mechanism succeeding or failing.
+  automatically wouldn't help. A plan that is valid JSON but has a field
+  the planner can fix (for example a `verification` value that is a
+  number, a boolean, an array or a malformed object) is the content side
+  of decompose: it is a `content`-category retry (rule `decompose-parse`)
+  that spends the content budget — one retry at the default
+  configuration — and the parse error naming the offending field and
+  task is the hint carried back to the planner on the next attempt. It
+  is never an infra retry. Output that is not valid JSON, is empty, is
+  over the size bound or makes the parser panic stays the terminal
+  `invalid-response` class and takes no retry. There is no
+  judgment-verdict auto-fix at this stage (no judgment verdict exists
+  there); the content behavior in decompose is the parse retry alone.
 
 ## Memory ceiling failures
 
