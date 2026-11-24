@@ -66,6 +66,16 @@ is read" below.
   the comparison. Filing the recorded candidates into the defect queue is a
   separate job (see "What you still review" below).
 
+A trial removes its own worktree however it ends. If the daemon stops while a
+trial is running, the next start removes what was left under
+`merge-shadow-scratch` in the data directory, before any new trial can begin: it
+unregisters each trial worktree from its repository and deletes the trial
+folder. It deletes nothing else in that folder and no other worktree of the
+repository; as at the end of every trial, `git worktree prune` also forgets
+registrations whose folder is already gone. The removed folders are logged and
+written to the audit log as `autonomous_merge_trial_sweep`. There is no setting
+for this.
+
 ## The plan's checks and gates
 
 The plan does more than the trial merge. These checks run before it and inside
