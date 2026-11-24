@@ -16135,6 +16135,46 @@ components:
         created_at:
           type: string
           format: date-time
+        last_fire_at:
+          type: string
+          format: date-time
+          description: When the schedule last fired or was last refused (spawn and new-session schedules)
+        last_fire_result:
+          type: string
+          description: "Result of the last attempt: `spawned`, `skipped` (previous run still active), `failed` or `deferred` (refused for capacity; it will retry)"
+          enum: [spawned, skipped, failed, deferred]
+        fire_count:
+          type: integer
+          description: Number of fires, counting failed starts but not deferred ones
+        consecutive_failures:
+          type: integer
+          description: Starts in a row that failed for a real reason; a wait for capacity does not count. Reset by a successful start.
+        consecutive_waits:
+          type: integer
+          description: Starts in a row that were refused for capacity (full session cap, cooldown, draining). Reset by a successful start.
+        rearm_state:
+          type: string
+          description: "Re-arm state: empty, `retrying` (after a failed start), `waiting_capacity` (refused for capacity; retries with backoff, never later than the next scheduled time) or `gave_up` (the re-arm policy gave up; the schedule stays failed and an alert was raised)"
+          enum: ["", retrying, waiting_capacity, gave_up]
+        last_error:
+          type: string
+          description: Reason of the last refused or failed start
+        fire_history:
+          type: array
+          description: The newest 20 fires and attempts, oldest first
+          items:
+            type: object
+            properties:
+              at:
+                type: string
+                format: date-time
+              result:
+                type: string
+                enum: [spawned, skipped, failed, deferred]
+              session_id:
+                type: string
+              error:
+                type: string
 
     ResultPayload:
       type: object

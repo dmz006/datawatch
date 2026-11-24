@@ -5685,6 +5685,28 @@ results:
   # always at least 1. Changing it applies from the next posted result.
   schedule_history_limit: 20
 
+# ── Scheduled spawns ──
+# What a scheduled spawn does after a start that failed. A start refused for
+# capacity (full session cap, global cooldown, draining daemon, capacity wait
+# timeout) is a wait in every mode: the schedule stays pending and retries with
+# backoff, never later than its next scheduled time, and is never marked failed.
+# All four keys are read at every failed start; no restart needed. See
+# docs/howto/schedule-rearm.md.
+schedule:
+  # next_fire (default): a recurring schedule tries again at its next time and
+  #   never gives up; a one-time schedule is marked failed.
+  # backoff: retry sooner with a doubling pause, up to rearm_max_retries
+  #   failures in a row, then give up (stays failed, error alert).
+  # stay_failed: the first real failure marks the schedule failed (error alert).
+  rearm_mode: next_fire
+  # Failures in a row after which backoff mode gives up. 0 = never give up.
+  rearm_max_retries: 0
+  # First pause before a retry, doubled each time. Also the pause for waits.
+  # Default 30; values below 1 are rejected.
+  rearm_backoff_seconds: 30
+  # Longest pause. Default 900; never below rearm_backoff_seconds.
+  rearm_backoff_max_seconds: 900
+
 # ── Cost report ──
 # Knobs for the cost report (internal/costreport): one view over the
 # spend the daemon already records (tokens per session, plus a USD

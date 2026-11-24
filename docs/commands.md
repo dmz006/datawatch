@@ -512,6 +512,10 @@ alerts 10
 
 ---
 
+### `schedule list`
+
+Every pending and failed schedule, one block each: id, target, next time and command, then a second line with the next fire, the last result with its reason, and the re-arm state (`retrying`, `waiting_capacity` or `gave_up`, with a count). A schedule refused for a full session cap shows `last deferred (max sessions (20) reached) · waiting_capacity x3`. See [howto/schedule-rearm](howto/schedule-rearm.md).
+
 ### `schedule-results`
 
 Read the **scheduled-job result panel** — the same data the PWA panel and the `datawatch schedule-results` CLI show (this channel command is read-only; posting is done by the job itself with `datawatch schedule-results post`).

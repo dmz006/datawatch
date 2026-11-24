@@ -536,6 +536,30 @@ reflected in the session's status-board result slot, scheduled or not.
 
 ---
 
+### Scheduled spawn re-arm
+
+What a scheduled spawn does when its session does not start. A start refused for
+capacity (a full session cap, the global cooldown, a draining daemon, a capacity
+wait timeout) is a **wait**: the schedule stays pending and retries after a pause
+that doubles up to a ceiling, never later than its next scheduled time, and is
+never marked failed. Any other failure follows the **re-arm policy**:
+`next_fire` (default: try again at the next scheduled time), `backoff` (retry
+sooner, up to a retry count, then give up) or `stay_failed` (fail at once). When
+the policy gives up, the schedule stays failed and an alert is raised. Each
+schedule list shows the next fire, the last result with its reason and the
+re-arm state (`retrying`, `waiting_capacity`, `gave_up`).
+
+- **Config:** `schedule.rearm_mode`, `schedule.rearm_max_retries`, `schedule.rearm_backoff_seconds`, `schedule.rearm_backoff_max_seconds`; read at every failed start
+- **CLI:** `datawatch schedule list` (REARM column); `datawatch config set schedule.rearm_mode backoff`
+- **MCP:** `schedule_list`; `config_set key=schedule.rearm_mode value=backoff`
+- **REST:** `GET /api/schedules` (`last_fire_result`, `last_error`, `rearm_state`, `consecutive_failures`, `consecutive_waits`, `fire_history`); `PUT /api/config`
+- **Chat:** `schedule list`; `configure schedule.rearm_mode=backoff`
+- **Web:** Settings → General → Scheduled Spawns; a line under each schedule in the Monitor tab's Scheduled Events list
+
+See [howto/schedule-rearm](howto/schedule-rearm.md).
+
+---
+
 ### Structured session filters
 
 Filter `list_sessions` by name, state, backend, or alive status.
