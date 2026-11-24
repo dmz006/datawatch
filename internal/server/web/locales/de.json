@@ -2474,6 +2474,8 @@
   "settings_judge_delivery_wait_help": "Zusätzliche Zeit, die ein Judge-Lauf auf die Zustellung eines langen Prompts wartet, für je 1000 Zeilen des Prompts. 0 fügt keine Wartezeit hinzu. Ganze Zahl von 0 bis 3600.",
   "settings_judge_prompt_file_threshold_error": "Geben Sie eine ganze Zeilenzahl von 0 bis 100000 ein.",
   "settings_judge_delivery_wait_error": "Geben Sie eine ganze Zahl von Sekunden von 0 bis 3600 ein.",
+  "settings_judge_timeout_per_thousand": "Zusätzliches Judge-Zeitlimit pro 1000 geänderte Zeilen (Sek., 0=keines)",
+  "settings_judge_timeout_per_thousand_help": "Zusätzliche Zeit, die dem Judge-Zeitlimit für je 1000 geänderte Zeilen hinzugefügt wird, wenn die Änderung über der Judge-Größenschwelle liegt. Das Limit überschreitet nie das Vierfache des Basislimits. 0 fügt nichts hinzu. Ganze Zahl von 0 bis 3600.",
   "settings_judge_help_link_label": "Abschnitt zu den Judge-Einstellungen in der Anleitung zum Automation-Tab öffnen",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",

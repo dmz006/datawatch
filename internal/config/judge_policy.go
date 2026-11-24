@@ -22,6 +22,42 @@ func NormalizeJudgeTimeoutSeconds(v int) int {
 	return v
 }
 
+// JudgeTimeoutPerThousandLinesDefaultSeconds is the default for
+// autonomous.judge_timeout_per_thousand_lines_seconds.
+const JudgeTimeoutPerThousandLinesDefaultSeconds = 600
+
+// JudgeTimeoutCapMultiple caps a scaled judge limit at this many times the
+// base limit.
+const JudgeTimeoutCapMultiple = 4
+
+// NormalizeJudgeTimeoutPerThousandLines returns the effective extra seconds per
+// thousand changed lines. 0 stays 0 (nothing is added); a negative value is
+// treated as 0.
+func NormalizeJudgeTimeoutPerThousandLines(v int) int {
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+// JudgeScaledTimeoutSeconds returns the judge time limit in seconds for a diff
+// of lines changed lines: base, plus perThousand*lines/1000 when lines exceed
+// threshold (threshold 0 = size rule off, so nothing is added). The result is
+// never below base and never above JudgeTimeoutCapMultiple times base.
+func JudgeScaledTimeoutSeconds(base, perThousand, lines, threshold int) int {
+	if base <= 0 || perThousand <= 0 || threshold <= 0 || lines <= threshold {
+		return base
+	}
+	limit := base + perThousand*lines/1000
+	if ceiling := base * JudgeTimeoutCapMultiple; limit > ceiling {
+		limit = ceiling
+	}
+	if limit < base {
+		limit = base
+	}
+	return limit
+}
+
 // JudgeSizeThresholdDefaultLines is the default for
 // autonomous.judge_size_threshold_lines: a change of more than this many
 // changed lines routes the judges size-aware. It is applied by DefaultConfig

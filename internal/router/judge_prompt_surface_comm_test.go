@@ -13,6 +13,7 @@ import (
 var judgePromptCommKeys = []string{
 	"judge_prompt_file_threshold_lines",
 	"judge_delivery_wait_per_thousand_lines_seconds",
+	"judge_timeout_per_thousand_lines_seconds",
 }
 
 func TestJudgePromptSurfaceCommSetsBothValues(t *testing.T) {
@@ -75,5 +76,29 @@ func TestJudgePromptSurfaceConfigureHelpListsKeys(t *testing.T) {
 				t.Errorf("%q: help misses %s", msg, key)
 			}
 		}
+	}
+}
+
+// TestJudgeSplitSurface: the comm verb sets and shows the judge time limit
+// growth setting.
+func TestJudgeSplitSurface(t *testing.T) {
+	const key = "judge_timeout_per_thousand_lines_seconds"
+	for _, v := range []string{"600", "0"} {
+		got, _ := commVerifierPolicyCall(t, "autonomous judge-policy-set "+key+"="+v, `{}`)
+		n := float64(600)
+		if v == "0" {
+			n = 0
+		}
+		if got.method != http.MethodPut || !reflect.DeepEqual(got.body, map[string]any{key: n}) {
+			t.Fatalf("set %s: %s body = %v", v, got.method, got.body)
+		}
+	}
+	_, out := commVerifierPolicyCall(t, "autonomous judge-policy", `{"`+key+`":450}`)
+	if !strings.Contains(out, key) || !strings.Contains(out, "450") {
+		t.Errorf("show reply lacks the setting: %q", out)
+	}
+	_, out = commVerifierPolicyCall(t, "autonomous judge-policy-set "+key+"=-1", `{}`)
+	if !strings.Contains(out, key) {
+		t.Errorf("negative value reply should name the key: %q", out)
 	}
 }

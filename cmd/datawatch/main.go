@@ -4802,66 +4802,67 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			tierInflightBridge[k] = v
 		}
 		amgrCfg := autonomouspkg.Config{
-			Enabled:                          acfgIn.Enabled,
-			PollIntervalSeconds:              acfgIn.PollIntervalSeconds,
-			BranchRefreshEnabled:             acfgIn.BranchRefreshEnabled,
-			BranchRefreshBehindLimit:         acfgIn.BranchRefreshBehindLimit,
-			UnlandedAlertEnabled:             acfgIn.UnlandedAlertEnabled,
-			UnlandedAlertThreshold:           acfgIn.UnlandedAlertThreshold,
-			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
-			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
-			GateDisagreement:                 acfgIn.GateDisagreement,
-			FailureEscalation:                failureEscalationFromConfig(acfgIn.FailureEscalation),
-			InfraRetry:                       acfgIn.InfraRetry.Clone(),
-			AttemptCap:                       acfgIn.AttemptCap.Clone(),
-			RequestWatch:                     acfgIn.RequestWatch.Clone(),
-			PlanningBackend:                  acfgIn.PlanningBackend,
-			PlanningRouting:                  acfgIn.PlanningRouting,
-			TaskRouting:                      acfgIn.TaskRouting.Clone(),
-			VerificationBackend:              acfgIn.VerificationBackend,
-			ExecutionBackend:                 acfgIn.ExecutionBackend,
-			FirstAttempt:                     autonomouspkg.CloneFirstAttempt(acfgIn.FirstAttempt),
-			PlanningModel:                    acfgIn.PlanningModel,
-			VerificationModel:                acfgIn.VerificationModel,
-			GuardrailModel:                   acfgIn.GuardrailModel,
-			VerificationBackends:             append([]string(nil), acfgIn.VerificationBackends...),
-			SnapshotNeverStage:               append([]string(nil), acfgIn.SnapshotNeverStage...),
-			VerifierPolicy:                   copyVerifierPolicy(acfgIn.VerifierPolicy),
-			HostLoadAlert:                    acfgIn.HostLoadAlert,
-			TaskOverrideStatuses:             append([]string(nil), acfgIn.TaskOverrideStatuses...),
-			OverrideQueuedTasks:              acfgIn.OverrideQueuedTasks,
-			PlanningEffort:                   acfgIn.PlanningEffort,
-			VerificationEffort:               acfgIn.VerificationEffort,
-			PlanningTimeoutSeconds:           acfgIn.PlanningTimeoutSeconds,
-			VerificationTimeoutSeconds:       acfgIn.VerificationTimeoutSeconds,
-			JudgePolicy:                      config.NormalizeJudgePolicy(acfgIn.JudgePolicy),
-			JudgeTimeoutSeconds:              config.NormalizeJudgeTimeoutSeconds(acfgIn.JudgeTimeoutSeconds),
-			JudgeSizeThresholdLines:          acfgIn.JudgeSizeThresholdLines,
-			JudgeStrongBackend:               acfgIn.JudgeStrongBackend,
-			JudgeVerdictCacheEnabled:         acfgIn.JudgeVerdictCacheEnabled,
-			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
-			PlanningRestartPolicy:            acfgIn.PlanningRestartPolicy,
-			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
-			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
-			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
-			VerificationRecordScores:         acfgIn.VerificationRecordScores,
-			ScopeBreadthEnabled:              acfgIn.ScopeBreadthEnabled,
-			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
-			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
-			OrphanGraceSeconds:               acfgIn.OrphanGraceSeconds,
-			DuplicateSessionKeep:             acfgIn.DuplicateSessionKeep,
-			RestartPolicy:                    acfgIn.RestartPolicy,
-			RestartQuietTimeoutSeconds:       acfgIn.RestartQuietTimeoutSeconds,
-			RestartOnTimeout:                 acfgIn.RestartOnTimeout,
-			GateDrainMinutes:                 acfgIn.GateDrainMinutes,
-			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
-			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
-			CapacityEnabled:                  acfgIn.CapacityEnabled,
-			ShippedRefusal:                   acfgIn.ShippedRefusal,
-			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
-			ArchiveGraceMinutes:              acfgIn.ArchiveGraceMinutes,
-			ArchiveKeepUnmerged:              acfgIn.ArchiveKeepUnmerged,
-			CapacityFallthrough:              acfgIn.CapacityFallthrough,
+			Enabled:                             acfgIn.Enabled,
+			PollIntervalSeconds:                 acfgIn.PollIntervalSeconds,
+			BranchRefreshEnabled:                acfgIn.BranchRefreshEnabled,
+			BranchRefreshBehindLimit:            acfgIn.BranchRefreshBehindLimit,
+			UnlandedAlertEnabled:                acfgIn.UnlandedAlertEnabled,
+			UnlandedAlertThreshold:              acfgIn.UnlandedAlertThreshold,
+			MaxParallelTasks:                    acfgIn.MaxParallelTasks,
+			MaxConcurrentTasks:                  acfgIn.MaxConcurrentTasks,
+			GateDisagreement:                    acfgIn.GateDisagreement,
+			FailureEscalation:                   failureEscalationFromConfig(acfgIn.FailureEscalation),
+			InfraRetry:                          acfgIn.InfraRetry.Clone(),
+			AttemptCap:                          acfgIn.AttemptCap.Clone(),
+			RequestWatch:                        acfgIn.RequestWatch.Clone(),
+			PlanningBackend:                     acfgIn.PlanningBackend,
+			PlanningRouting:                     acfgIn.PlanningRouting,
+			TaskRouting:                         acfgIn.TaskRouting.Clone(),
+			VerificationBackend:                 acfgIn.VerificationBackend,
+			ExecutionBackend:                    acfgIn.ExecutionBackend,
+			FirstAttempt:                        autonomouspkg.CloneFirstAttempt(acfgIn.FirstAttempt),
+			PlanningModel:                       acfgIn.PlanningModel,
+			VerificationModel:                   acfgIn.VerificationModel,
+			GuardrailModel:                      acfgIn.GuardrailModel,
+			VerificationBackends:                append([]string(nil), acfgIn.VerificationBackends...),
+			SnapshotNeverStage:                  append([]string(nil), acfgIn.SnapshotNeverStage...),
+			VerifierPolicy:                      copyVerifierPolicy(acfgIn.VerifierPolicy),
+			HostLoadAlert:                       acfgIn.HostLoadAlert,
+			TaskOverrideStatuses:                append([]string(nil), acfgIn.TaskOverrideStatuses...),
+			OverrideQueuedTasks:                 acfgIn.OverrideQueuedTasks,
+			PlanningEffort:                      acfgIn.PlanningEffort,
+			VerificationEffort:                  acfgIn.VerificationEffort,
+			PlanningTimeoutSeconds:              acfgIn.PlanningTimeoutSeconds,
+			VerificationTimeoutSeconds:          acfgIn.VerificationTimeoutSeconds,
+			JudgePolicy:                         config.NormalizeJudgePolicy(acfgIn.JudgePolicy),
+			JudgeTimeoutSeconds:                 config.NormalizeJudgeTimeoutSeconds(acfgIn.JudgeTimeoutSeconds),
+			JudgeSizeThresholdLines:             acfgIn.JudgeSizeThresholdLines,
+			JudgeTimeoutPerThousandLinesSeconds: config.NormalizeJudgeTimeoutPerThousandLines(acfgIn.JudgeTimeoutPerThousandLinesSeconds),
+			JudgeStrongBackend:                  acfgIn.JudgeStrongBackend,
+			JudgeVerdictCacheEnabled:            acfgIn.JudgeVerdictCacheEnabled,
+			SessionIdleTimeoutSeconds:           acfgIn.SessionIdleTimeoutSeconds,
+			PlanningRestartPolicy:               acfgIn.PlanningRestartPolicy,
+			DescendantStallSeconds:              acfgIn.DescendantStallSeconds,
+			VerifierNoProgressTimeoutSeconds:    acfgIn.VerifierNoProgressTimeoutSeconds,
+			VerifierInfraEscalationThreshold:    acfgIn.VerifierInfraEscalationThreshold,
+			VerificationRecordScores:            acfgIn.VerificationRecordScores,
+			ScopeBreadthEnabled:                 acfgIn.ScopeBreadthEnabled,
+			FallbackVerificationBackend:         acfgIn.FallbackVerificationBackend,
+			SessionStartConfirmSeconds:          acfgIn.SessionStartConfirmSeconds,
+			OrphanGraceSeconds:                  acfgIn.OrphanGraceSeconds,
+			DuplicateSessionKeep:                acfgIn.DuplicateSessionKeep,
+			RestartPolicy:                       acfgIn.RestartPolicy,
+			RestartQuietTimeoutSeconds:          acfgIn.RestartQuietTimeoutSeconds,
+			RestartOnTimeout:                    acfgIn.RestartOnTimeout,
+			GateDrainMinutes:                    acfgIn.GateDrainMinutes,
+			WorkerIdleNudgeSeconds:              acfgIn.WorkerIdleNudgeSeconds,
+			WorkerIdleNudgeStallSeconds:         acfgIn.WorkerIdleNudgeStallSeconds,
+			CapacityEnabled:                     acfgIn.CapacityEnabled,
+			ShippedRefusal:                      acfgIn.ShippedRefusal,
+			CapacityWaitTimeoutSeconds:          acfgIn.CapacityWaitTimeoutSeconds,
+			ArchiveGraceMinutes:                 acfgIn.ArchiveGraceMinutes,
+			ArchiveKeepUnmerged:                 acfgIn.ArchiveKeepUnmerged,
+			CapacityFallthrough:                 acfgIn.CapacityFallthrough,
 			// priority_by_kind (autonomous.priority_by_kind): the
 			// kind→capacity-priority table ResolvePriority resolves against.
 			// Wired as the EFFECTIVE table (shipped defaults bug=80,
@@ -6988,10 +6989,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							}
 							content, judgeID, serr := runOneShotJudgeSessionCaptureIDAttr(guardrailAttr(req), cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode,
+								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeRunLimit(att, gcfg), judgeNode,
 								withSessionProfile(autonomousMgrRef, launchTagsForJudge(req.PRDID, req.Rejudge), "judge", judgePRD, judgeTask))
 							if serr != nil {
 								att.TimedOut = isOneShotTimeout(serr)
+								if att.TimedOut {
+									att.SessionID = judgeID
+									att.LastOutput = autonomouspkg.TailJudgeOutput(sessionOutputTail(cfg, judgeID))
+								}
 								// BL410 Phase 0 — the SESSION itself failed (timeout,
 								// crash); no judgment ever ran. "infra", not a real
 								// content finding. See FailureReason's doc comment —
@@ -7114,11 +7119,30 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			})
 			route := judgeRouteForSize(ctx, autonomousMgrRef, req, gcfg, unitBackend, size)
 			alert := func(level, title, body string) { emitJudgeAlert(autonomousMgrRef, level, title, body) }
-			return runJudgeAttempts(req, route.Choose, judgeSessionTimeout(gcfg), alert, judgeTryLogFor(autonomousMgrRef, req),
-				route.Retarget, route.Pick,
-				func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
-					return autonomousGuardrailAttempt(ctx, req, gcfg, backend, att)
+			lines := 0
+			if size.Err == nil {
+				lines = size.Lines
+			}
+			runOne := func(r autonomouspkg.GuardrailInvocation, tries judgeTryLog, limit time.Duration) (autonomouspkg.GuardrailVerdict, error) {
+				return runJudgeAttempts(r, route.Choose, limit, alert, tries,
+					route.Retarget, route.Pick,
+					func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
+						return autonomousGuardrailAttempt(ctx, r, gcfg, backend, att)
+					})
+			}
+			// A rules review of a change above the size threshold is judged in
+			// groups of files, one judge run per group.
+			if groups := judgeSplitGroupsFor(ctx, size, req, func(id string) (*autonomouspkg.PRD, bool) {
+				if autonomousMgrRef == nil {
+					return nil, false
+				}
+				return autonomousMgrRef.Store().GetPRD(id)
+			}); len(groups) > 1 {
+				return runJudgeSplit(req, groups, gcfg, func(gr autonomouspkg.GuardrailInvocation, g autonomouspkg.JudgeGroup, limit time.Duration) (autonomouspkg.GuardrailVerdict, error) {
+					return runOne(gr, judgeGroupTryLog(judgeTryLogFor(autonomousMgrRef, req), autonomousMgrRef, req, g.Name), limit)
 				})
+			}
+			return runOne(req, judgeTryLogFor(autonomousMgrRef, req), judgeAttemptLimit(gcfg, lines))
 		}
 		var questionAPI atomic.Pointer[autonomouspkg.API]
 		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {

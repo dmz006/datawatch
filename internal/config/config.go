@@ -3526,6 +3526,15 @@ type AutonomousConfig struct {
 	// never mapped to the default. No omitempty, so an explicit 0 reaches
 	// the saved config.
 	JudgeDeliveryWaitPerThousandLinesSeconds int `yaml:"judge_delivery_wait_per_thousand_lines_seconds" json:"judge_delivery_wait_per_thousand_lines_seconds"`
+	// JudgeTimeoutPerThousandLinesSeconds is the extra judge time limit, in
+	// seconds, for every 1000 changed lines when the diff is above
+	// JudgeSizeThresholdLines. The base limit (JudgeTimeoutSeconds) grows by
+	// this value times changed_lines/1000, up to four times the base limit
+	// (see JudgeScaledTimeoutSeconds). Default 600; 0 adds nothing, so the
+	// limit stays the base limit however large the diff is, and is kept as 0,
+	// never mapped to the default; negative values are rejected at load. No
+	// omitempty, so an explicit 0 reaches the saved config.
+	JudgeTimeoutPerThousandLinesSeconds int `yaml:"judge_timeout_per_thousand_lines_seconds" json:"judge_timeout_per_thousand_lines_seconds"`
 	// JudgeStrongBackend names the strong judge backend a large diff is
 	// routed to first when the changed-line count exceeds
 	// JudgeSizeThresholdLines (see config.JudgeSizeStrongFirst). Empty (the
@@ -8606,6 +8615,7 @@ func DefaultConfig() *Config {
 			JudgeSizeThresholdLines:                  JudgeSizeThresholdDefaultLines,
 			JudgePromptFileThresholdLines:            JudgePromptFileThresholdDefaultLines,
 			JudgeDeliveryWaitPerThousandLinesSeconds: 60,
+			JudgeTimeoutPerThousandLinesSeconds:      JudgeTimeoutPerThousandLinesDefaultSeconds,
 			VerifierMaxRunSeconds:                    VerifierRunCapDefaultSeconds,
 			GateDisagreement:                         autonomousGateDisagreementWarn,
 			FailureEscalation:                        DefaultFailureEscalationConfig(),
@@ -9235,6 +9245,9 @@ func validateLoaded(cfg *Config) error {
 	}
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)
+	}
+	if cfg.Autonomous.JudgeTimeoutPerThousandLinesSeconds < 0 {
+		return fmt.Errorf("autonomous.judge_timeout_per_thousand_lines_seconds: %d must be >= 0", cfg.Autonomous.JudgeTimeoutPerThousandLinesSeconds)
 	}
 	for _, n := range cfg.ComputeNodes {
 		if n.SessionSlots < 0 {

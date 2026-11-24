@@ -2478,6 +2478,8 @@
   "settings_judge_delivery_wait_help": "長いプロンプトの受け渡しをジャッジ実行が待つ追加時間で、プロンプト1000行ごとに加算されます。0 の場合は追加の待機はありません。0〜3600 の整数。",
   "settings_judge_prompt_file_threshold_error": "0〜100000 の整数の行数を入力してください。",
   "settings_judge_delivery_wait_error": "0〜3600 の整数の秒数を入力してください。",
+  "settings_judge_timeout_per_thousand": "ジャッジの追加時間制限（変更1000行ごと、秒、0=なし）",
+  "settings_judge_timeout_per_thousand_help": "変更がジャッジのサイズしきい値を超える場合に、変更1000行ごとにジャッジの時間制限へ加算する時間です。制限は基本制限の4倍を超えません。0 の場合は何も加算しません。0〜3600 の整数。",
   "settings_judge_help_link_label": "Automation タブのハウツーにあるジャッジ設定のセクションを開く",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",

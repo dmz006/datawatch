@@ -20,6 +20,7 @@ var judgePromptKeys = []struct {
 }{
 	{"judge_prompt_file_threshold_lines", 100000},
 	{"judge_delivery_wait_per_thousand_lines_seconds", 3600},
+	{"judge_timeout_per_thousand_lines_seconds", 3600},
 }
 
 func TestJudgePromptSurface_RESTRoundTrip(t *testing.T) {
@@ -64,5 +65,26 @@ func TestJudgePromptSurface_RESTPutRejectsInvalid(t *testing.T) {
 				t.Errorf("PUT %s: rejected value changed %s from %s to %s", b, k.key, before, got)
 			}
 		}
+	}
+}
+
+// TestJudgeSplitSurface: PUT then GET of the judge time limit growth setting
+// returns the stored value, 0 included; a negative value is refused.
+func TestJudgeSplitSurface(t *testing.T) {
+	const key = "judge_timeout_per_thousand_lines_seconds"
+	for _, val := range []int{0, 600} {
+		s, _, _ := newMaxConcurrentTasksServer(t)
+		putJSON(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous." + key: val})
+		want, _ := json.Marshal(val)
+		if got := string(getAutonomousConfigMap(t, s)[key]); got != string(want) {
+			t.Errorf("GET after PUT %d = %q", val, got)
+		}
+	}
+	s, _, _ := newMaxConcurrentTasksServer(t)
+	b, _ := json.Marshal(map[string]any{"autonomous." + key: -1})
+	rr := httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(b)))
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("negative value: want 400, got %d", rr.Code)
 	}
 }

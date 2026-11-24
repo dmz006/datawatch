@@ -2442,6 +2442,8 @@
   "settings_judge_delivery_wait_help": "Extra time a judge run waits for a long prompt to be delivered, added for every 1000 lines of the prompt. 0 adds no extra wait. Whole number, 0 to 3600.",
   "settings_judge_prompt_file_threshold_error": "Enter a whole number of lines from 0 to 100000.",
   "settings_judge_delivery_wait_error": "Enter a whole number of seconds from 0 to 3600.",
+  "settings_judge_timeout_per_thousand": "Judge extra time limit per 1000 changed lines (sec, 0=none)",
+  "settings_judge_timeout_per_thousand_help": "Extra time added to the judge time limit for every 1000 changed lines when the change is above the judge size threshold. The limit never exceeds four times the base limit. 0 adds nothing. Whole number, 0 to 3600.",
   "settings_judge_help_link_label": "Open the judge settings section of the Automation tab how-to",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",

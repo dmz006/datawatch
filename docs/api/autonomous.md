@@ -712,14 +712,16 @@ are a distinct role in the verifier routing policy. Their backend list is
 `autonomous.judge_policy`, one attempt per backend; an empty list means the
 judges follow the verifier policy above. `autonomous.judge_timeout_seconds` is
 the time limit for one judge run, 1800 seconds by default, and the wait for a
-capacity slot does not count against it. When every backend in the judge policy
-has timed out, the Automaton is held in `needs_review` and an error alert lists
-every attempt. `autonomous.judge_size_threshold_lines` (default 400, `0` = off) is the
+capacity slot does not count against it. Above `autonomous.judge_size_threshold_lines`
+the limit grows by `autonomous.judge_timeout_per_thousand_lines_seconds` (default 600) for
+every 1,000 changed lines, capped at four times the base limit; `0` adds nothing. When every
+backend in the judge policy has timed out, the Automaton is held in `needs_review` and an
+error alert lists every attempt. `autonomous.judge_size_threshold_lines` (default 400, `0` = off) is the
 changed-line count (added plus deleted, on the Automaton branch against its merge
 base, lock files left out) above which the judges try `claude-code` first and the
 rest follow in their usual order, still one attempt per backend; the decision log
 names the rule and the line count. The settings are read and written with `GET/PUT /api/autonomous/config`
-(`judge_policy`, `judge_timeout_seconds`, `judge_size_threshold_lines`), MCP `autonomous_config_set`, the CLI
+(`judge_policy`, `judge_timeout_seconds`, `judge_size_threshold_lines`, `judge_timeout_per_thousand_lines_seconds`), MCP `autonomous_config_set`, the CLI
 `autonomous config-set --judge-policy --judge-timeout-seconds --judge-size-threshold-lines`, and the comm verbs
 `autonomous judge-policy` and `autonomous judge-policy-set`. The guide, with the
 modes, the alerts and how to resolve a hold, is [howto/judge-policy.md](../howto/judge-policy.md).

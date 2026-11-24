@@ -104,7 +104,7 @@ func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolR
 	return textOK(string(out)), nil
 }
 
-// judgePromptKeys are the two judge prompt delivery settings, each a whole
+// judgePromptKeys are the judge prompt delivery and time limit settings, each a whole
 // number from 0 to the given maximum.
 var judgePromptKeys = []struct {
 	key string
@@ -112,6 +112,7 @@ var judgePromptKeys = []struct {
 }{
 	{"judge_prompt_file_threshold_lines", 100000},
 	{"judge_delivery_wait_per_thousand_lines_seconds", 3600},
+	{"judge_timeout_per_thousand_lines_seconds", 3600},
 }
 
 func (s *Server) judgePromptSettings() (map[string]json.RawMessage, error) {
@@ -277,6 +278,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("judge_size_threshold_lines", mcpsdk.Description("Changed-line count above which the judges route by change size (default 400). 0 turns size-aware routing off. Must be a whole number of 0 or more.")),
 		mcpsdk.WithNumber("judge_prompt_file_threshold_lines", mcpsdk.Description("Judge prompt length in lines above which the prompt is handed to the judge as a file instead of sent in full (default 300). 0 always sends the full prompt. Must be a whole number from 0 to 100000 (autonomous.judge_prompt_file_threshold_lines).")),
 		mcpsdk.WithNumber("judge_delivery_wait_per_thousand_lines_seconds", mcpsdk.Description("Extra seconds the daemon waits for the main prompt to be delivered for every 1000 lines it contains (default 60). 0 adds no extra wait. Must be a whole number from 0 to 3600 (autonomous.judge_delivery_wait_per_thousand_lines_seconds).")),
+		mcpsdk.WithNumber("judge_timeout_per_thousand_lines_seconds", mcpsdk.Description("Extra seconds added to the judge time limit for every 1000 changed lines when the diff is above the size threshold (default 600). The limit never exceeds four times the base limit. 0 adds nothing, so the limit stays the base limit. Must be a whole number from 0 to 3600 (autonomous.judge_timeout_per_thousand_lines_seconds).")),
 		mcpsdk.WithString("judge_strong_backend", mcpsdk.Description("The strong judge backend a large diff is routed to first when the size-aware rule fires. Empty (the default) = the last entry of the judge policy (autonomous.judge_strong_backend).")),
 		mcpsdk.WithBoolean("judge_verdict_cache_enabled", mcpsdk.Description("Per-commit judge verdict cache: pass/block verdicts replay by (commit, judge policy, rules), and a verified commit is held on a judge timeout instead of re-run (default true). Give false to re-judge every verified commit fresh (autonomous.judge_verdict_cache_enabled).")),
 		mcpsdk.WithNumber("verifier_no_progress_timeout_seconds", mcpsdk.Description("Bound in seconds for a verifier session that shows no output file, no pane activity, no live runner process and no held capacity slot before it is ended as an infra failure (default 900 = 15m; 0 or negative means use the default)")),
@@ -1935,7 +1937,7 @@ func (s *Server) handleAutonomousPRDResetTask(ctx context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousPRDRejudge() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_rejudge",
-		mcpsdk.WithDescription("Re-judge the completion guardrail of an automaton (PRD) record whose tasks are all completed, without resetting any task. Applies to blocked records, records held for rules review, and completed or archived records whose work is not yet merged into the base branch and whose completion review is pending or blocked. Use it when the guardrail verdict on the record deserves a fresh evaluation (new evidence, fix work landed on the branch, revised gate settings) — a passing re-judgment clears the stale block. Refused otherwise: on records whose completion review already passed, on records already merged into the base branch, or on records that still have incomplete tasks — in the last case use autonomous_prd_reset_task instead."),
+		mcpsdk.WithDescription("Re-judge the completion guardrail of an automaton (PRD) record whose tasks are all completed, without resetting any task. Applies to blocked records, records held for rules review, records held in needs_review by a judge timeout hold (judged again on the same head, with no new commits needed), and completed or archived records whose work is not yet merged into the base branch and whose completion review is pending or blocked. Use it when the guardrail verdict on the record deserves a fresh evaluation (new evidence, fix work landed on the branch, revised gate settings) — a passing re-judgment clears the stale block. Refused otherwise: on records whose completion review already passed, on records already merged into the base branch, or on records that still have incomplete tasks — in the last case use autonomous_prd_reset_task instead."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }

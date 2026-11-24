@@ -278,6 +278,10 @@ type Config struct {
 	// config. No omitempty and no normalization: 0 means the size rule is off
 	// and must round-trip as 0.
 	JudgeSizeThresholdLines int `json:"judge_size_threshold_lines"`
+	// JudgeTimeoutPerThousandLinesSeconds mirrors
+	// autonomous.judge_timeout_per_thousand_lines_seconds. No omitempty: an
+	// explicit 0 (add nothing) must round-trip as 0.
+	JudgeTimeoutPerThousandLinesSeconds int `json:"judge_timeout_per_thousand_lines_seconds"`
 	// ScriptGateTimeoutSeconds and ProjectGateCommand mirror
 	// autonomous.script_gate_timeout_seconds and autonomous.project_gate_command
 	// in config. No omitempty on the timeout: an explicit 0 (no cap) must

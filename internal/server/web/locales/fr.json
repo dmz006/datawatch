@@ -2478,6 +2478,8 @@
   "settings_judge_delivery_wait_help": "Temps supplémentaire pendant lequel une exécution du juge attend la remise d'un long prompt, ajouté pour chaque tranche de 1000 lignes du prompt. 0 n'ajoute aucune attente. Nombre entier de 0 à 3600.",
   "settings_judge_prompt_file_threshold_error": "Saisissez un nombre entier de lignes de 0 à 100000.",
   "settings_judge_delivery_wait_error": "Saisissez un nombre entier de secondes de 0 à 3600.",
+  "settings_judge_timeout_per_thousand": "Limite de temps supplémentaire du juge par tranche de 1000 lignes modifiées (s, 0=aucune)",
+  "settings_judge_timeout_per_thousand_help": "Temps ajouté à la limite de temps du juge pour chaque tranche de 1000 lignes modifiées lorsque le changement dépasse le seuil de taille du juge. La limite ne dépasse jamais quatre fois la limite de base. 0 n'ajoute rien. Nombre entier de 0 à 3600.",
   "settings_judge_help_link_label": "Ouvrir la section des réglages du juge du guide de l'onglet Automation",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",

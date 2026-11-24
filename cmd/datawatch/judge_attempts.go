@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -20,7 +21,9 @@ import (
 type judgeAlertFn func(level, title, body string)
 
 // judgeAttemptFn runs one judge attempt on backend. It sets att.TimedOut when
-// the attempt hit its time limit.
+// the attempt hit its time limit, and records the attempt's time separately:
+// att.Waiting is the wait for a capacity slot and att.Elapsed is the run,
+// which never includes the wait. The limit bounds the run only.
 type judgeAttemptFn func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error)
 
 // judgeBackendChooser picks the backend of the next judge attempt. tried lists
@@ -44,9 +47,14 @@ type judgeAttempt struct {
 	Backend  string
 	Started  time.Time
 	Limit    time.Duration
+	Waiting  time.Duration
 	Elapsed  time.Duration
 	TimedOut bool
 	NoSlot   bool
+	// SessionID and LastOutput name the judge session the attempt launched and
+	// the tail of its output, set when the attempt timed out.
+	SessionID  string
+	LastOutput string
 
 	Retarget   judgeRetargetFn
 	MoveTo     string
@@ -175,6 +183,20 @@ func judgeSessionTimeout(gcfg autonomouspkg.Config) time.Duration {
 	return time.Duration(config.NormalizeJudgeTimeoutSeconds(gcfg.JudgeTimeoutSeconds)) * time.Second
 }
 
+// judgeAttemptLimit is the time limit for one judge run on a change of a
+// given number of changed lines. It is the base limit (judgeSessionTimeout) grown by
+// autonomous.judge_timeout_per_thousand_lines_seconds per thousand lines when
+// the change is above autonomous.judge_size_threshold_lines, capped at four
+// times the base limit and never below it. At or below the threshold, with the
+// threshold off, or with the per-thousand setting 0, it is the base limit.
+func judgeAttemptLimit(gcfg autonomouspkg.Config, lines int) time.Duration {
+	base := config.NormalizeJudgeTimeoutSeconds(gcfg.JudgeTimeoutSeconds)
+	secs := config.JudgeScaledTimeoutSeconds(base,
+		config.NormalizeJudgeTimeoutPerThousandLines(gcfg.JudgeTimeoutPerThousandLinesSeconds),
+		lines, gcfg.JudgeSizeThresholdLines)
+	return time.Duration(secs) * time.Second
+}
+
 // judgeChooserFromList returns a chooser that tries the backends of an
 // explicit judge policy list in order, skipping any that already timed out.
 func judgeChooserFromList(backends []string) judgeBackendChooser {
@@ -236,7 +258,9 @@ func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, choose judgeBackend
 			}
 		}
 		verdict, err := run(backend, &att)
-		att.Elapsed = time.Since(att.Started)
+		// The attempt's own run records its time: att.Waiting is the wait for
+		// the slot and att.Elapsed the run (which the limit bounds), never the
+		// two mixed together.
 		if att.MoveTo != "" && !att.TimedOut && !att.NoSlot {
 			// The wait gave up its place in the queue for another backend. This is
 			// not a timeout or a slot shortage: the old backend is not tried, the
@@ -307,7 +331,9 @@ func judgeRestoredAttempts(tries judgeTryLog, limit time.Duration) ([]judgeAttem
 	var tried []string
 	for _, rec := range tries.Tried() {
 		attempts = append(attempts, judgeAttempt{
-			Backend: rec.Backend, Started: rec.Started, Limit: limit, Elapsed: rec.Duration, TimedOut: true,
+			Backend: rec.Backend, Started: rec.Started, Limit: limit, Elapsed: rec.Duration,
+			Waiting: rec.Waiting, TimedOut: true,
+			SessionID: rec.SessionID, LastOutput: rec.LastOutput,
 		})
 		tried = append(tried, rec.Backend)
 	}
@@ -322,7 +348,9 @@ func judgeRecordTry(tries judgeTryLog, att judgeAttempt) {
 		return
 	}
 	rec := autonomouspkg.JudgeAttemptRecord{
-		Backend: att.Backend, Started: att.Started, Duration: att.Elapsed, Outcome: autonomouspkg.JudgeOutcomeTimedOut,
+		Backend: att.Backend, Started: att.Started, Duration: att.Elapsed,
+		Waiting: att.Waiting, Outcome: autonomouspkg.JudgeOutcomeTimedOut,
+		SessionID: att.SessionID, LastOutput: autonomouspkg.TailJudgeOutput(att.LastOutput),
 	}
 	if err := tries.Record(rec); err != nil {
 		log.Printf("judge: record timed-out attempt on backend %s: %v", att.Backend, err)
@@ -349,8 +377,12 @@ func judgeTimeoutBody(prdID string, att judgeAttempt, attempts []judgeAttempt, n
 	if more {
 		after = "retrying on backend " + next + ", the next one in the judge policy"
 	}
-	return fmt.Sprintf("judge for Automaton %s timed out on backend %s after %s (limit %s); backends tried so far: %s, %s in total; %s",
-		prdID, att.Backend, att.Elapsed.Round(time.Second), att.Limit, judgeBackendList(attempts), judgeTotalElapsed(attempts), after)
+	waited := ""
+	if att.Waiting > 0 {
+		waited = fmt.Sprintf(", waited %s for a capacity slot", att.Waiting.Round(time.Second))
+	}
+	return fmt.Sprintf("judge for Automaton %s timed out on backend %s after %s of running (limit %s%s); backends tried so far: %s, %s in total; %s",
+		prdID, att.Backend, att.Elapsed.Round(time.Second), att.Limit, waited, judgeBackendList(attempts), judgeTotalElapsed(attempts), after)
 }
 
 // judgeHoldReason says why the judge is held, in words that suit the attempts
@@ -376,11 +408,21 @@ func judgeHoldBody(prdID string, attempts []judgeAttempt) string {
 // carries one line per attempt, so the review shows every backend that was
 // tried and the time spent on each.
 func judgeHoldVerdict(req autonomouspkg.GuardrailInvocation, attempts []judgeAttempt) autonomouspkg.GuardrailVerdict {
+	var sessionID, lastOutput string
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if !attempts[i].NoSlot && (attempts[i].SessionID != "" || attempts[i].LastOutput != "") {
+			sessionID = attempts[i].SessionID
+			lastOutput = autonomouspkg.TailJudgeOutput(attempts[i].LastOutput)
+			break
+		}
+	}
 	return autonomouspkg.GuardrailVerdict{
-		Guardrail: req.Guardrail,
-		Outcome:   "block",
-		Severity:  "high",
-		Category:  autonomouspkg.JudgeTimeoutCategory,
+		JudgeSessionID: sessionID,
+		RawJudge:       lastOutput,
+		Guardrail:      req.Guardrail,
+		Outcome:        "block",
+		Severity:       "high",
+		Category:       autonomouspkg.JudgeTimeoutCategory,
 		Summary: fmt.Sprintf("judge for Automaton %s %s (%s), %s in total; the Automaton needs review",
 			req.PRDID, judgeHoldReason(attempts), judgeBackendList(attempts), judgeTotalElapsed(attempts)),
 		Issues:        judgeAttemptLines(attempts),
@@ -395,10 +437,14 @@ func judgeAttemptRecords(attempts []judgeAttempt) []autonomouspkg.JudgeAttemptRe
 	out := make([]autonomouspkg.JudgeAttemptRecord, 0, len(attempts))
 	for _, a := range attempts {
 		rec := autonomouspkg.JudgeAttemptRecord{
-			Backend: a.Backend, Started: a.Started, Duration: a.Elapsed.Round(time.Second), Outcome: autonomouspkg.JudgeOutcomeTimedOut,
+			Backend: a.Backend, Started: a.Started, Duration: a.Elapsed.Round(time.Second),
+			Waiting: a.Waiting.Round(time.Second), Outcome: autonomouspkg.JudgeOutcomeTimedOut,
 		}
 		if a.NoSlot {
 			rec.Outcome = autonomouspkg.JudgeOutcomeNoSlot
+		} else {
+			rec.SessionID = a.SessionID
+			rec.LastOutput = autonomouspkg.TailJudgeOutput(a.LastOutput)
 		}
 		out = append(out, rec)
 	}
@@ -406,16 +452,25 @@ func judgeAttemptRecords(attempts []judgeAttempt) []autonomouspkg.JudgeAttemptRe
 }
 
 // judgeAttemptLines words each attempt for the hold verdict: the backend, when
-// it started, and what happened.
+// it started, and what happened — with the wait for a slot and the run kept
+// separate on each line.
 func judgeAttemptLines(attempts []judgeAttempt) []string {
 	lines := make([]string, 0, len(attempts))
 	for _, a := range attempts {
 		start := a.Started.Format(time.RFC3339)
 		if a.NoSlot {
-			lines = append(lines, fmt.Sprintf("backend %s, started %s: no capacity slot within the wait, the judge did not run", a.Backend, start))
+			waited := ""
+			if a.Waiting > 0 {
+				waited = fmt.Sprintf(" (%s waited)", a.Waiting.Round(time.Second))
+			}
+			lines = append(lines, fmt.Sprintf("backend %s, started %s: no capacity slot within the wait%s, the judge did not run", a.Backend, start, waited))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("backend %s, started %s: timed out after %s (limit %s)", a.Backend, start, a.Elapsed.Round(time.Second), a.Limit))
+		waited := ""
+		if a.Waiting > 0 {
+			waited = fmt.Sprintf(", waited %s for a capacity slot", a.Waiting.Round(time.Second))
+		}
+		lines = append(lines, fmt.Sprintf("backend %s, started %s: timed out after %s of running (limit %s%s)", a.Backend, start, a.Elapsed.Round(time.Second), a.Limit, waited))
 	}
 	return lines
 }
@@ -428,10 +483,13 @@ func judgeBackendList(attempts []judgeAttempt) string {
 	return strings.Join(names, ", ")
 }
 
+// judgeTotalElapsed is the whole span of the attempts, waits for slots and
+// runs together, so the hold wording shows the operator how long the judge
+// took end to end.
 func judgeTotalElapsed(attempts []judgeAttempt) time.Duration {
 	var total time.Duration
 	for _, a := range attempts {
-		total += a.Elapsed
+		total += a.Elapsed + a.Waiting
 	}
 	return total.Round(time.Second)
 }
@@ -446,4 +504,31 @@ func emitJudgeAlert(mgr *autonomouspkg.Manager, level, title, body string) {
 		}
 	}
 	fmt.Printf("[%s] %s: %s\n", level, title, body)
+}
+
+// sessionOutputTail returns the tail of a session's captured output, or "" when
+// there is no session or the output cannot be read.
+func sessionOutputTail(cfg *config.Config, id string) string {
+	if id == "" || cfg == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, loopbackBaseURL(cfg)+"/api/output?n=50&id="+url.QueryEscape(id), nil)
+	if err != nil {
+		return ""
+	}
+	if cfg.Server.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return string(b)
 }

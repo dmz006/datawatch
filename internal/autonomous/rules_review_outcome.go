@@ -12,6 +12,7 @@ const (
 	RulesReviewActionFixTaskFailed   = "fix_task_failed"
 	RulesReviewActionRetriesSpent    = "retries_spent"
 	RulesReviewActionAutoFixDisabled = "auto_fix_disabled"
+	RulesReviewActionJudgeTimedOut   = "judge_timed_out"
 )
 
 // newRulesReviewOutcome builds the record from a verdict. Findings are the

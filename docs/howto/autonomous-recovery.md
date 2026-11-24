@@ -226,8 +226,10 @@ head. The **rejudge** action asks for that same completion
 guardrail to run again — as a fresh judgment — without resetting or retrying
 any task:
 
-- The Automaton must be `blocked`, or held for review with its head moved,
-  or `completed`/`archived` with its work branch not yet on the base branch
+- The Automaton must be `blocked`, or `needs_review` held by a judge timeout
+  (`judge_timeout_hold`) — that one replays on the same head with no new
+  commit, and `prd-run` does the same — or held for review by a rules-review
+  hold with its head moved, or `completed`/`archived` with its work branch not yet on the base branch
   (merge state `finished_not_merged`) and a review still open to re-running
   — no verdict on record, a verdict that is a block, or a pass judged on
   an older head before the work moved on (a stale pass); re-judging anything
