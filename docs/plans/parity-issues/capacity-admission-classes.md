@@ -53,6 +53,12 @@ Capability parity with the PWA; each app uses its own idiomatic controls.
   `capacity_pool_over` and `capacity_pool_reserve` strings (`{0}` is the count).
 - A backend listed under `unmapped` is shown as a warning line.
 
+## Restarted workers (no app change)
+
+A restarted worker session (rate-limit fallback, exit hook) keeps the worker class and queues at the head, ahead
+of other waiting workers, still respecting the cap. This is daemon behaviour only: it adds no field and no
+setting. The apps need nothing beyond showing the wait reason of a waiting task as they already do.
+
 ## Acceptance
 
 - [ ] Settings has the five rows, labels from the locale keys in every shipped language.

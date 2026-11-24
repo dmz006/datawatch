@@ -2065,6 +2065,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				AutomatonID: sess.AutomatonID,
 				SpendRole:   sess.SpendRole,
 			}
+			// A worker keeps the worker class and re-enters the queue at the head.
+			opts.AdmitClass, opts.AdmitRestart = session.RestartAdmission(sess)
 			newSess, err := mgr.Start(context.Background(), sess.Task, "", sess.ProjectDir, opts)
 			if err != nil {
 				fmt.Printf("[fallback] failed to start fallback session: %v\n", err)
@@ -20044,6 +20046,8 @@ func runExitHookRestart(mgr *session.Manager, sess *session.Session, hook *sessi
 		AutomatonID: sess.AutomatonID,
 		SpendRole:   sess.SpendRole,
 	}
+	// A worker keeps the worker class and re-enters the queue at the head.
+	opts.AdmitClass, opts.AdmitRestart = session.RestartAdmission(sess)
 	newSess, err := mgr.Start(ctx, sess.Task, sess.GroupID, sess.ProjectDir, opts)
 	if err != nil {
 		fmt.Printf("[exit-hook] restart failed for session %q: %v\n", sess.Name, err)

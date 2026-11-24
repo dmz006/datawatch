@@ -131,3 +131,29 @@ func TestAdmitClassForLaunchRole(t *testing.T) {
 		t.Fatal("only the supervisor role maps to the supervisor class")
 	}
 }
+
+// A restart of a worker session keeps the worker class and re-enters the queue
+// at the head; an operator session's restart stays an operator start.
+func TestRestartAdmissionKeepsWorkerClass(t *testing.T) {
+	class, resume := RestartAdmission(&Session{SpendRole: "worker", TaskID: "t1", PRDID: "p1"})
+	if class != "worker" || !resume {
+		t.Fatalf("worker restart = %q, %v, want worker, true", class, resume)
+	}
+	class, resume = RestartAdmission(&Session{})
+	if class != "" || resume {
+		t.Fatalf("operator session restart = %q, %v, want empty class, false", class, resume)
+	}
+}
+
+// The manager tells the admitter a start is a restart.
+func TestManagerStart_PassesRestartFlagToAdmitter(t *testing.T) {
+	mgr := admissionManager(t)
+	rec := &admitRecorder{}
+	mgr.SetStartAdmitter(rec.fn())
+	if _, err := mgr.Start(context.Background(), "echo hi", "", t.TempDir(), &StartOptions{AdmitClass: "worker", AdmitRestart: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.got) != 1 || rec.got[0].Class != "worker" || !rec.got[0].Restart {
+		t.Fatalf("admission = %+v, want worker class with Restart", rec.got)
+	}
+}

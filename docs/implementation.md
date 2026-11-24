@@ -212,6 +212,11 @@ except the adoption wait, which is read once as the ledger starts):
   before every role; an operator request is granted over the limit of every pool except a
   `node:` or `node-verify:` pool, and the lease records `Lease.Overage`. Pools carry
   `PoolStatus.Over` and `PoolStatus.Reserve`.
+- Restarted workers: `StartOptions.AdmitRestart` (set from `session.RestartAdmission` by the
+  rate-limit fallback and the exit-hook restart for a session whose spend role is worker) keeps
+  `AdmitClass` worker and sets `capacity.Request.Resume`, which the ledger orders before every other
+  request of the same role regardless of priority. The admitter waits for such a restart as long as
+  `autonomous.capacity_wait_timeout_seconds` (default 4 h) instead of the short start wait.
 - `autonomous.capacity_account_claude_limit` (int, unset = 2, 0 = unlimited): the limit of
   the `account:claude` pool every claude-code entry also draws on (`capacityResolver`,
   `syncAdmissionPools`). A subscription backend with no LLM entry and no compute node gets

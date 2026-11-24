@@ -167,9 +167,18 @@ func managerStartAdmitter(cfg *config.Config, led *capacity.Ledger, resolve func
 		if cfg.Session.CapacityWaitSeconds > 0 {
 			wait = cfg.Session.CapacityWaitSeconds
 		}
+		// A restarted worker queues for as long as any worker waits
+		// (autonomous.capacity_wait_timeout_seconds, default 4 h): dropping it
+		// after a few seconds would lose the work it is resuming.
+		if a.Restart && class == capacity.ClassWorker {
+			wait = 4 * 3600
+			if s := cfg.Autonomous.CapacityWaitTimeoutSeconds; s > 0 {
+				wait = s
+			}
+		}
 		wctx, cancel := context.WithTimeout(ctx, time.Duration(wait)*time.Second)
 		defer cancel()
-		req := capacity.Request{Holder: holder, Pools: pools, Model: a.Model, Class: class, Interactive: class == capacity.ClassOperator}
+		req := capacity.Request{Holder: holder, Pools: pools, Model: a.Model, Class: class, Resume: a.Restart && class == capacity.ClassWorker, Interactive: class == capacity.ClassOperator}
 		if err := led.Acquire(wctx, req, 0, func() bool { return false }, func(string) {}); err != nil {
 			return nil, nil, fmt.Errorf("capacity: no %s slot free after %ds: %w", class, wait, err)
 		}

@@ -217,3 +217,42 @@ func TestLocalEngineBackendIsNotReportedUnmapped(t *testing.T) {
 		t.Fatalf("pi with no entry: pools %v unmapped %v, want neither", pools, unmappedBackends.list())
 	}
 }
+
+// A restarted worker with a full pool waits at the head of the queue and starts
+// before older waiting fresh work when a slot frees.
+func TestManagerStartAdmitterRestartedWorkerStartsBeforeFreshWork(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Autonomous.CapacityWaitTimeoutSeconds = 5
+	reg := admissionRegistry(t)
+	led := capacity.New(capacity.Options{PollInterval: 10 * time.Millisecond})
+	syncLLMLimits(cfg, reg, led)
+	syncAdmissionPools(cfg, reg, led)
+	resolve := capacityResolver(func() *inference.Registry { return reg }, func() *compute.Registry { return nil })
+	pools := []string{"host", "llm:claude-code", "account:claude"}
+	if err := led.Acquire(context.Background(), capacity.Request{Holder: "running", Pools: pools}, time.Second, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	granted := make(chan string, 2)
+	go func() {
+		if err := led.Acquire(context.Background(), capacity.Request{Holder: "fresh", Pools: pools, Priority: 90}, 5*time.Second, nil, nil); err == nil {
+			granted <- "fresh"
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	admit := managerStartAdmitter(cfg, led, resolve, func() string { return "claude-code" })
+	go func() {
+		if _, _, err := admit(context.Background(), session.StartAdmission{Class: "worker", Restart: true, Backend: "claude-code"}); err == nil {
+			granted <- "restart"
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	led.Release("running")
+	select {
+	case first := <-granted:
+		if first != "restart" {
+			t.Fatalf("first grant = %s, want the restarted worker", first)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no grant after the slot freed")
+	}
+}

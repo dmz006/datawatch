@@ -2150,6 +2150,9 @@ type StartOptions struct {
 	// capacity ledger (the REST start handler, an autonomous manager launch),
 	// so Manager.Start does not admit it a second time.
 	PreAdmitted bool
+	// AdmitRestart marks a restart of a worker session. It keeps the worker
+	// class and re-enters the admission queue at the head (capacity.Request.Resume).
+	AdmitRestart bool
 
 	Name          string            // optional human-readable name
 	Backend       string            // override LLM backend name (empty = use manager default)
@@ -2423,14 +2426,15 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	class := ""
 	backend, model, role := "", "", ""
+	restart := false
 	if opt != nil {
-		class, backend, model = opt.AdmitClass, opt.Backend, opt.Model
+		class, backend, model, restart = opt.AdmitClass, opt.Backend, opt.Model, opt.AdmitRestart
 		if opt.LLMRef != "" {
 			backend = opt.LLMRef
 		}
 		role = opt.SpendRole
 	}
-	release, bind, err := admit(ctx, StartAdmission{Class: class, Backend: backend, Model: model, Role: role})
+	release, bind, err := admit(ctx, StartAdmission{Class: class, Backend: backend, Model: model, Role: role, Restart: restart})
 	if err != nil {
 		return nil, err
 	}
@@ -2459,6 +2463,19 @@ func AdmitClassForLaunchRole(role string) string {
 // empty means the manager default.
 type StartAdmission struct {
 	Class, Backend, Model, Role string
+	// Restart is set for a restarted worker: it queues at the head.
+	Restart bool
+}
+
+// RestartAdmission is the admission class and queue position of a restart of
+// sess: a worker session keeps the worker class and re-enters the queue at the
+// head (it respects the cap, resumes before fresh work); any other session
+// restarts as an operator start.
+func RestartAdmission(sess *Session) (class string, restart bool) {
+	if sess != nil && sess.SpendRole == "worker" {
+		return "worker", true
+	}
+	return "", false
 }
 
 // StartAdmitFn takes the lease for a start. It returns how to give the lease

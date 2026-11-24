@@ -103,8 +103,8 @@ func scanSessionStarts(t *testing.T) (starts []startCall, preAdmitted []string) 
 // with class "worker" restarts work whose lease its original session holds.
 var auditedSessionStarts = map[string]string{
 	"cmd/datawatch/main.go runWorkerBootstrapTask mgr":        "operator: a worker daemon's own bootstrap task, accounted on that daemon's ledger",
-	"cmd/datawatch/main.go runStart mgr":                      "operator: rate-limit profile fallback restart of a session",
-	"cmd/datawatch/main.go runExitHookRestart mgr":            "operator: exit-hook restart of a failed session",
+	"cmd/datawatch/main.go runStart mgr":                      "worker class at the head of the queue for a worker session (session.RestartAdmission), operator for any other session: rate-limit profile fallback restart",
+	"cmd/datawatch/main.go runExitHookRestart mgr":            "worker class at the head of the queue for a worker session (session.RestartAdmission), operator for any other session: exit-hook restart",
 	"cmd/datawatch/main.go runScheduler mgr":                  "operator, or supervisor for a schedule whose launch role is supervisor",
 	"internal/mcp/server.go handleStartSession s.manager":     "operator: MCP start without an LLM entry",
 	"internal/pipeline/session_adapter.go StartSession a.mgr": "operator: pipeline adapter start",

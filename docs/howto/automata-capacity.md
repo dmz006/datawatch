@@ -1436,11 +1436,15 @@ Every session start takes a lease on the capacity pools before it launches, and 
 
 | Class | Which starts | At a full pool |
 |---|---|---|
-| Worker | An Automaton's own launches: task sessions, decompose, verifier and judge sessions | Waits in the queue |
+| Worker | An Automaton's own launches: task sessions, decompose, verifier and judge sessions; and the restart of a worker session (rate-limit fallback, exit hook) | Waits in the queue |
 | Supervisor | Supervisor loop jobs and schedules whose launch role is supervisor | Uses the buffer above the limit; never queued behind workers |
 | Operator | Every other start: the app, the CLI, chat, MCP, the API, restarts, and any outside client | Admitted over the limit; the overage is recorded |
 
 Workers carry a marker only the daemon holds (a per-process secret), so no client can claim the worker class. Every start path is admitted at the session manager, and the test `TestSessionStartPathsAreAudited` lists them: a new start path fails the test until it is on the audited list.
+
+### Restarted workers
+
+When a worker session is restarted (a rate-limit fallback to another profile, or an exit hook), the new session keeps the worker class and re-enters the queue at the head: it is granted before every other waiting worker, whatever their priority, so interrupted work resumes first. It still respects the cap: with a full pool it waits for a slot, for as long as any worker waits (`autonomous.capacity_wait_timeout_seconds`, default 4 hours). It does not take the operator class and gets no supervisor buffer. A verifier still ranks ahead of it, and a supervisor request is granted before it. The restart of a session that is not a worker's stays an operator start.
 
 ### Operator overage
 

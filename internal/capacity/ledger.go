@@ -121,6 +121,11 @@ type Request struct {
 	NodeUnknown bool
 	// Class is the admission class; the zero value means ClassWorker.
 	Class Class
+	// Resume marks a worker restarted after its session ended (rate-limit
+	// fallback, exit-hook restart). Among requests of the same role it is
+	// dispatched before every other waiter, whatever their priority, so the
+	// interrupted work resumes first; it still obeys every pool limit.
+	Resume bool
 	// Interactive marks an operator-started session. Such a request is never
 	// held back by Options.AutonomousBackpressure.
 	Interactive bool
@@ -1183,6 +1188,9 @@ func (l *Ledger) orderListLocked(list []*waiter, now time.Time) []*waiter {
 		a, b := ws[i], ws[j]
 		if ra, rb := l.effectiveRank(a, now), l.effectiveRank(b, now); ra != rb {
 			return ra < rb
+		}
+		if a.req.Resume != b.req.Resume {
+			return a.req.Resume
 		}
 		if a.req.Priority != b.req.Priority {
 			return a.req.Priority > b.req.Priority
