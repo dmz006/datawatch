@@ -11,7 +11,7 @@ require (
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/mark3labs/mcp-go v1.5.0
 	github.com/mdp/qrterminal/v3 v3.2.1
