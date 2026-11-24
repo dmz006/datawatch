@@ -58,7 +58,7 @@ POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {
 POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_lane_preference  lane an Automaton may take; body: {lane_preference: gpu|claude|any} ("" means any); 400 on an unknown value, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_notify_events  set the lifecycle event kinds the Automaton notifies on; body: {notify_events[]} — absent/null/[] clears (inherit); the reply carries the computed notify_events_effective
-POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
+POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD; refused (400, naming already_shipped or work_closed) for shipped or closed work; body {force: true, reason} runs shipped work anyway, audited
 GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
 
 GET    /api/autonomous/tags[?include_sub=&counts=]  tag tree (parent_id) with Automata counts; counts=true adds subtree, direct and session counts and an untagged object
@@ -2005,7 +2005,7 @@ Lane fill runs a planner on every coordinator poll. It records, for each idle la
 - `evidence.degraded` lists pool hosts that could not be read but do not block the lanes (`host`, `error`, `since`, the time the host first failed); it is `[]` when none is degraded. A host is degraded only when it holds no work, no lane is placed on it, and it has been unreachable for at least `autonomous.lane_fill.host_down_after_minutes` (default 10; `0` never). The lanes are then judged from the readable hosts. A failed session list always blocks.
 - `decisions[].action` is `start_prd`, `decompose`, `decompose_ahead`, `report_merge`, `blocked` or `idle`. `executed: false` is a would-start in shadow mode and must not be shown as a start.
 - `decisions[].mode` is `off`, `shadow` or `on`, the mode in effect when the decision was made.
-- `decisions[].eligibility_reason` is the stable code for why an Automaton was refused: `operator_hold`, `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work`, `worktree_invalid` or `plan_coverage_blocked` (a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment). It is absent when the decision is not a refusal.
+- `decisions[].eligibility_reason` is the stable code for why an Automaton was refused: `operator_hold`, `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work`, `worktree_invalid`, `plan_coverage_blocked` (a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment) or `already_shipped` (the Automaton's own record carries a release and a merge commit, so its work is delivered and it never starts). It is absent when the decision is not a refusal.
 - `modes` is the mode in effect for each lane kind (`gpu` and `claude`); a kind with no mode of its own takes the base `mode`.
 - `lane_counts` gives, for `gpu` and `claude`, the `configured` count, the `effective` count the last poll used and the `source` of the effective count: `config`, or `llm_caps` when it is the sum of the LLM in-flight caps.
 

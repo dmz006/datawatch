@@ -7677,11 +7677,34 @@ paths:
           description: "Method not allowed (plan review is POST-only)"
   /api/autonomous/prds/{id}/run:
     post:
-      summary: Kick the executor for a PRD
+      summary: Kick the executor for an Automaton
+      description: |
+        The daemon refuses to start an Automaton whose own record says its
+        work already shipped (a release and a merge commit both set) and any
+        archived, cancelled, completed or rejected one. The 400 body names the
+        reason (already_shipped or work_closed). Shipped queued work is marked
+        delivered (completed, never cancelled) with the reason on the
+        Automaton. A shipped record on another Automaton never blocks this
+        one. The rule is `autonomous.shipped_refusal` (on by default, shadow
+        or off). An optional body `{force: true, reason}` runs shipped work
+        anyway: the reason is required, the force is audited with who, why and
+        the merge commit it covers, and it covers only that commit. Closed work
+        cannot be forced.
       operationId: autonomousPRDRun
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
-      responses: {"200": {description: OK}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: {type: boolean, description: "Run an Automaton whose shipped record would refuse it. Needs reason."}
+                reason: {type: string, description: "Why the shipped work should run again; required with force"}
+      responses:
+        "200": {description: OK}
+        "400": {description: "Refused: the reason names already_shipped or work_closed, or force was given without a reason"}
   /api/autonomous/prds/{id}/set_llm:
     post:
       summary: Set a PRD's worker-LLM override fields
@@ -13196,8 +13219,8 @@ components:
         blocker: {type: string}
         eligibility_reason:
           type: string
-          enum: [operator_hold, stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid, plan_coverage_blocked]
-          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: operator_hold (an operator put the Automaton on hold; it is checked first and applies to every status lane fill would otherwise consider), stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work), worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository) or plan_coverage_blocked (it is awaiting review and its stored plan-coverage record fails the approve gate in block mode without a covering acknowledgment). Remedy for plan_coverage_blocked: re-decompose with a plan that covers the spec, or explicitly acknowledge exactly that failing surface (AcknowledgePlanCoverage)"
+          enum: [operator_hold, stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid, plan_coverage_blocked, already_shipped]
+          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: operator_hold (an operator put the Automaton on hold; it is checked first and applies to every status lane fill would otherwise consider), stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work), worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository) or plan_coverage_blocked (it is awaiting review and its stored plan-coverage record fails the approve gate in block mode without a covering acknowledgment). Remedy for plan_coverage_blocked: re-decompose with a plan that covers the spec, or explicitly acknowledge exactly that failing surface (AcknowledgePlanCoverage). Also already_shipped (the Automaton's own record carries a release and a merge commit, so its work is delivered; it never starts and the daemon marks it delivered; a shipped record on a different Automaton never causes it)"
         wait_reason: {type: string, description: "The waiting occupant's reason, present when the decision rests on a lane the verifier-wait rule counted available"}
         executed: {type: boolean, description: "False in shadow mode, where the decision is recorded and nothing starts"}
         error: {type: string}

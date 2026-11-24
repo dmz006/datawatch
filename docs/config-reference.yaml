@@ -3395,6 +3395,16 @@ autonomous:
   # project tree has uncommitted changes (git status --porcelain
   # non-empty). Default false.
   refuse_dirty_tree_start: false
+  # autonomous.shipped_refusal — the shipped-work rule. on (the default; empty
+  # reads as on) makes the daemon refuse to start, approve or decompose an
+  # Automaton whose own record says its work already shipped (a release and a
+  # merge commit both set) or that is archived, cancelled, completed or
+  # rejected, and mark shipped queued work delivered (completed, never
+  # cancelled) on every lane fill poll. shadow only logs what it would
+  # refuse and changes nothing; off disables the rule. Applies live. An
+  # operator runs shipped work anyway with `datawatch autonomous prd-run <id>
+  # --force --reason "..."` (audited).
+  shipped_refusal: on
   # Parallel tasks inside one Automaton (autonomous.parallel.*). Every default
   # below is the operator's choice for this installation; other users may
   # change any of them. Operator guide: docs/howto/automaton-parallel-tasks.md;
