@@ -29,7 +29,7 @@ datawatch plans migrate --apply    # write
 | Shipped, done or closed, names none | Never a plan. It is listed under *history without an Automaton*, with its title, in a preview and after an apply alike. |
 | Open, names an Automaton or Automation | One plan linked to it. |
 | Open, names none | One backlog plan, ordered by the old row number. |
-| Open, no name can be derived | Listed under *needs review*; no plan is created. |
+| Open, and no name can be derived from the row or the item it names | Listed under *needs review*; no plan is created. |
 
 If the Automaton a closed row names is not yet on a release plan item, the
 row is skipped with the reason `history: the Automaton is not on a release plan
@@ -48,8 +48,16 @@ shipped`), is never used as a title.
 
 ## The six summary kinds
 
-Every preview and apply prints one line with these six counts. A preview says
-what would be done; an apply says what was done.
+Every preview and apply starts with the server summary line, printed verbatim:
+created (would create in a preview), linked, already present, history without
+an Automaton, needs review and conflicts. A preview says what would be done; an
+apply says what was done.
+
+`datawatch plans migrate` then lists each kind, one line per item. The two
+kinds that never become plans get their own sections: the existing
+`History without an Automaton (N, not made into plans):` section and the
+`Needs review (N, not made into plans):` section, each naming its rows with
+their source. `--json` is unchanged and carries `needs_review`.
 
 1. **created** (would create in a preview): plans made.
 2. **linked** (would link): Automata, Automations or closed rows linked to a plan.

@@ -36,14 +36,16 @@ import (
 
 // cliPlansMigrate is the part of the migrate answer the CLI prints.
 type cliPlansMigrate struct {
-	Note   string `json:"note"`
-	Result struct {
+	Note    string `json:"note"`
+	Summary string `json:"summary"`
+	Result  struct {
 		Applied          bool                `json:"applied"`
 		WouldCreate      []cliPlansMigrateIt `json:"would_create"`
 		WouldLink        []cliPlansMigrateIt `json:"would_link"`
 		SkippedExisting  []cliPlansMigrateIt `json:"skipped_existing"`
 		Conflicts        []cliPlansMigrateIt `json:"conflicts"`
 		HistoryNoAuto    []cliPlansMigrateIt `json:"history_without_automaton"`
+		NeedsReview      []cliPlansMigrateIt `json:"needs_review"`
 		TitlesDerived    int                 `json:"titles_derived"`
 		TitlesFromLinked int                 `json:"titles_from_linked"`
 		TitlesFellBack   int                 `json:"titles_fell_back"`
@@ -71,8 +73,14 @@ func renderPlansMigrate(w io.Writer, body []byte) error {
 	if r.Applied {
 		head, verbCreate, verbLink = "Migration", "created", "linked"
 	}
-	_, _ = fmt.Fprintf(w, "%s: %s %d, %s %d, already there %d, conflicts %d, titles derived %d, from linked Automaton %d, fell back %d\n", head,
-		verbCreate, len(r.WouldCreate), verbLink, len(r.WouldLink), len(r.SkippedExisting), len(r.Conflicts),
+	summary := strings.TrimSpace(res.Summary)
+	if summary == "" {
+		summary = fmt.Sprintf("%s %d, %s %d, already present %d, history without an Automaton %d, needs review %d, conflicts %d",
+			verbCreate, len(r.WouldCreate), verbLink, len(r.WouldLink), len(r.SkippedExisting),
+			len(r.HistoryNoAuto), len(r.NeedsReview), len(r.Conflicts))
+	}
+	_, _ = fmt.Fprintf(w, "%s: %s\n", head, summary)
+	_, _ = fmt.Fprintf(w, "titles derived %d, from linked Automaton %d, fell back %d\n",
 		r.TitlesDerived, r.TitlesFromLinked, r.TitlesFellBack)
 	line := func(prefix string, it cliPlansMigrateIt) {
 		s := fmt.Sprintf("  %s: %s (%s", prefix, oneLineText(it.Title), it.Source)
@@ -107,6 +115,16 @@ func renderPlansMigrate(w io.Writer, body []byte) error {
 		_, _ = fmt.Fprintf(w, "History without an Automaton (%d, not made into plans):\n", len(r.HistoryNoAuto))
 		for _, it := range r.HistoryNoAuto {
 			_, _ = fmt.Fprintf(w, "  %s (%s)\n", oneLineText(it.Title), it.SourceRef)
+		}
+	}
+	if len(r.NeedsReview) > 0 {
+		_, _ = fmt.Fprintf(w, "Needs review (%d, not made into plans):\n", len(r.NeedsReview))
+		for _, it := range r.NeedsReview {
+			if it.Reason != "" {
+				_, _ = fmt.Fprintf(w, "  %s (%s) — %s\n", oneLineText(it.Title), it.SourceRef, it.Reason)
+			} else {
+				_, _ = fmt.Fprintf(w, "  %s (%s)\n", oneLineText(it.Title), it.SourceRef)
+			}
 		}
 	}
 	if res.Note != "" {
