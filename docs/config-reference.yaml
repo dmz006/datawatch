@@ -5399,6 +5399,15 @@ tailscale:
 #   CLI           `datawatch config set usage.calculator.<key> <value>`
 #   Web UI        the Settings field arrives with the calculator screen; until
 #                 then use one of the methods above.
+# Operator pause (global and per project). The pause itself is runtime state the
+# operator sets (datawatch pause / resume, REST /api/pause, MCP pause_set,
+# chat `pause`, the PWA header button); this is only its default.
+pause:
+  # false (default): the daemon starts unpaused. true: a daemon with no saved
+  # pause state starts globally paused until the operator resumes. A saved
+  # state (a pause or a resume) always wins. Read at daemon start.
+  start_paused: false
+
 usage:
   calculator:
     # Layout shown: pace-gauge | lane-planner | burn-ledger | all. Default all

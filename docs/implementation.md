@@ -3642,3 +3642,11 @@ The `projects_defaults` block (`internal/config/projects_defaults.go`) holds thr
 - **Validation:** `PacksConfig.Validate(installed []string)` accepts `builtin` or a name in `installed`. It rejects blank names, repeated names and unknown names, and names the `packs.active` key in its error. Names match exactly (case-sensitive). The method is not yet called from `Load` because no installed-pack registry exists yet; the caller that supplies that list is a later change.
 - **Enable check and list order:** `packs.CheckEnable(connected []skills.Registry)` (`internal/packs/enable_gate.go`) errors when no registry source is enabled. `packs.ActivePacks(automaton, project, global, packsEnabled)` (`internal/packs/order.go`) returns `["builtin"]` when packs are off, else the first non-empty of Automaton, project, global (never merged), else `["builtin"]`. `Automation.Packs` (JSON `packs`) is assigned with `SetPacks` (`internal/autonomous/automation_packs.go`: trim, drop blanks and repeats, keep order). Neither function is called by the daemon yet, and `ProjectConfigEntry` has no `packs` key.
 - **Tests:** `internal/config/packs_config_test.go` covers defaults, default independence, validation cases, the YAML keys and round trip, and loading with an absent or explicit section.
+
+## Operator pause
+
+Package `internal/pause` holds the state (global plus per-project entries, saved to `<data_dir>/pause.json`), the audit hook and the refusal rule for a resume by a non-operator actor. The autonomous manager holds only the read side (`pause.Gate`, `Manager.SetPauseGate`): `Manager.Run` and `API.runLocked` refuse the start of an Automaton that is not already running, lane fill refuses a paused candidate (`operator_pause`), and `admitPreferring` waits before a worker admission (`waitOperatorPause`, poll 5 s). REST `GET|POST /api/pause` and `POST /api/pause/resume` (`internal/server/pause.go`) derive the actor from the credential: a session-scoped credential is always a session and cannot resume. Capabilities `pause:read` and `pause:write`. Audit actions `pause_set`, `pause_resumed`, `pause_resume_refused`.
+
+| Config key | Type | Default | Meaning |
+|---|---|---|---|
+| `pause.start_paused` | bool | `false` | A daemon with no saved pause state starts globally paused. A saved state always wins. Read at daemon start. |

@@ -6251,5 +6251,22 @@
   "llm_model_rate_out_per_k": "Sortie $/1K",
   "llm_model_rate_cache_read_per_k": "Lecture cache $/1K",
   "llm_model_rate_cache_write_per_k": "Écriture cache $/1K",
-  "llm_model_rate_hint": "Tarifs USD optionnels par modèle pour 1K jetons ; vide utilise les tarifs du backend"
+  "llm_model_rate_hint": "Tarifs USD optionnels par modèle pour 1K jetons ; vide utilise les tarifs du backend",
+  "pause_modal_title": "Suspendre le nouveau travail",
+  "pause_badge_paused": "Suspendu",
+  "pause_badge_title_paused": "Le nouveau travail est suspendu",
+  "pause_badge_title_idle": "Suspendre le nouveau travail",
+  "pause_hint": "Une suspension arrête le nouveau travail. Les tâches en cours se terminent. Seul l'opérateur peut reprendre.",
+  "pause_none": "Rien n'est suspendu",
+  "pause_scope_global": "Tout le travail",
+  "pause_scope_project": "Projet",
+  "pause_by": "par",
+  "pause_project_label": "Projet (facultatif, vide = tout le travail)",
+  "pause_reason_label": "Motif (obligatoire)",
+  "pause_reason_required": "Un motif est obligatoire",
+  "pause_action_pause": "Suspendre",
+  "pause_action_resume": "Reprendre",
+  "pause_action_resume_all": "Tout reprendre",
+  "pause_saved": "Suspendu",
+  "pause_resumed": "Repris"
 }

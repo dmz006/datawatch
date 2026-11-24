@@ -6251,5 +6251,22 @@
   "llm_model_rate_out_per_k": "Out $/1K",
   "llm_model_rate_cache_read_per_k": "Cache read $/1K",
   "llm_model_rate_cache_write_per_k": "Cache write $/1K",
-  "llm_model_rate_hint": "Optional per-model USD rates per 1K tokens; blank uses the per-backend cost rates"
+  "llm_model_rate_hint": "Optional per-model USD rates per 1K tokens; blank uses the per-backend cost rates",
+  "pause_modal_title": "Pause new work",
+  "pause_badge_paused": "Paused",
+  "pause_badge_title_paused": "New work is paused",
+  "pause_badge_title_idle": "Pause new work",
+  "pause_hint": "A pause stops new work. Running tasks finish. Only the operator can resume.",
+  "pause_none": "Nothing is paused",
+  "pause_scope_global": "All work",
+  "pause_scope_project": "Project",
+  "pause_by": "by",
+  "pause_project_label": "Project (optional, empty = all work)",
+  "pause_reason_label": "Reason (required)",
+  "pause_reason_required": "A reason is required",
+  "pause_action_pause": "Pause",
+  "pause_action_resume": "Resume",
+  "pause_action_resume_all": "Resume all",
+  "pause_saved": "Paused",
+  "pause_resumed": "Resumed"
 }

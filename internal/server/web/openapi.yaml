@@ -11513,6 +11513,65 @@ paths:
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
+  /api/pause:
+    get:
+      summary: The operator pause state (global pause and every project pause, with who paused, why and when); peers=1 also reads each federation peer's own state. Needs pause:read
+      operationId: pauseGet
+      tags: [Singletons]
+      parameters:
+        - {name: peers, in: query, required: false, schema: {type: string, enum: ["1", "true"]}, description: Also read every federation peer's own pause state}
+      responses:
+        "200": {description: OK}
+        "503": {description: The pause service is not available}
+    post:
+      summary: Pause new work, globally or for one project. Running tasks finish; nothing new is admitted or restarted until the operator resumes. A reason is required. Needs pause:write; the pause can be sent to federation peers, each of which reports its own state
+      operationId: pauseSet
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, reason]
+              properties:
+                scope: {type: string, enum: [global, project]}
+                project: {type: string, description: A registered project name or a directory (required for scope project)}
+                reason: {type: string}
+                actor: {type: string, description: Optional surface label for the audit log (cli, web); ignored for a session or federation caller}
+                all_peers: {type: boolean, description: Also send the pause to every federation peer}
+                peers:
+                  type: array
+                  items: {type: string}
+                  description: Also send the pause to these federation peers
+      responses:
+        "200": {description: OK. Carries the new state and, when peers were named, a peers map with each peer's own result}
+        "400": {description: Missing reason or project, or an unknown scope}
+        "403": {description: The caller lacks pause:write}
+  /api/pause/resume:
+    post:
+      summary: Resume paused work, one scope or everything. Only the operator can resume; the daemon refuses it from a session-scoped credential and from any actor naming a worker, watcher, supervisor or model. Needs pause:write
+      operationId: pauseResume
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scope: {type: string, enum: [global, project]}
+                project: {type: string}
+                all: {type: boolean, description: Clear the global pause and every project pause in one action}
+                note: {type: string}
+                actor: {type: string}
+                all_peers: {type: boolean}
+                peers:
+                  type: array
+                  items: {type: string}
+      responses:
+        "200": {description: OK. cleared counts the pauses removed}
+        "403": {description: Refused because the caller is not the operator, with the reason}
   /api/usage-backoff:
     get:
       summary: Active per-backend usage back-off flags, effective config (mode, max_wait_minutes, reserve_for_review, reserve_tokens_per_hour), the reserve array (current-window per-hour reserve usage per backed-off backend; omitted when the review-reserve gate is not wired or no flag is live), pattern staleness (patterns_version, patterns_stale) and claude_cli_version

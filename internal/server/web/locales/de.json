@@ -6251,5 +6251,22 @@
   "llm_model_rate_out_per_k": "Aus $/1K",
   "llm_model_rate_cache_read_per_k": "Cache lesen $/1K",
   "llm_model_rate_cache_write_per_k": "Cache schreiben $/1K",
-  "llm_model_rate_hint": "Optionale USD-Preise pro Modell je 1K Tokens; leer nutzt die Backend-Kostensätze"
+  "llm_model_rate_hint": "Optionale USD-Preise pro Modell je 1K Tokens; leer nutzt die Backend-Kostensätze",
+  "pause_modal_title": "Neue Arbeit pausieren",
+  "pause_badge_paused": "Pausiert",
+  "pause_badge_title_paused": "Neue Arbeit ist pausiert",
+  "pause_badge_title_idle": "Neue Arbeit pausieren",
+  "pause_hint": "Eine Pause stoppt neue Arbeit. Laufende Aufgaben werden beendet. Nur der Operator kann fortsetzen.",
+  "pause_none": "Nichts ist pausiert",
+  "pause_scope_global": "Gesamte Arbeit",
+  "pause_scope_project": "Projekt",
+  "pause_by": "von",
+  "pause_project_label": "Projekt (optional, leer = gesamte Arbeit)",
+  "pause_reason_label": "Grund (erforderlich)",
+  "pause_reason_required": "Ein Grund ist erforderlich",
+  "pause_action_pause": "Pausieren",
+  "pause_action_resume": "Fortsetzen",
+  "pause_action_resume_all": "Alles fortsetzen",
+  "pause_saved": "Pausiert",
+  "pause_resumed": "Fortgesetzt"
 }

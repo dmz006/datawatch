@@ -6251,5 +6251,22 @@
   "llm_model_rate_out_per_k": "出力 $/1K",
   "llm_model_rate_cache_read_per_k": "キャッシュ読取 $/1K",
   "llm_model_rate_cache_write_per_k": "キャッシュ書込 $/1K",
-  "llm_model_rate_hint": "モデルごとの任意の1Kトークン当たりUSD料金。空欄はバックエンドの料金を使用"
+  "llm_model_rate_hint": "モデルごとの任意の1Kトークン当たりUSD料金。空欄はバックエンドの料金を使用",
+  "pause_modal_title": "新規作業を一時停止",
+  "pause_badge_paused": "一時停止中",
+  "pause_badge_title_paused": "新規作業は一時停止中です",
+  "pause_badge_title_idle": "新規作業を一時停止",
+  "pause_hint": "一時停止すると新規作業は開始されません。実行中のタスクは完了します。再開できるのはオペレーターのみです。",
+  "pause_none": "一時停止中のものはありません",
+  "pause_scope_global": "すべての作業",
+  "pause_scope_project": "プロジェクト",
+  "pause_by": "実行者",
+  "pause_project_label": "プロジェクト（任意、空欄＝すべての作業）",
+  "pause_reason_label": "理由（必須）",
+  "pause_reason_required": "理由が必要です",
+  "pause_action_pause": "一時停止",
+  "pause_action_resume": "再開",
+  "pause_action_resume_all": "すべて再開",
+  "pause_saved": "一時停止しました",
+  "pause_resumed": "再開しました"
 }
