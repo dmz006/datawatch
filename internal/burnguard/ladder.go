@@ -371,7 +371,8 @@ func (l *Ladder) Tick(in TickInput) (Decision, error) {
 		}
 		released := append([]string(nil), l.state.Applied...)
 		for len(l.state.Applied) > 0 {
-			d.Actions = append(d.Actions, l.release()...)
+			acts, _ := l.release(in.InflightCap)
+			d.Actions = append(d.Actions, acts...)
 		}
 		d.Changed, d.Rung = true, released[len(released)-1]
 		d.Reason = "ladder disabled"
@@ -431,9 +432,9 @@ func (l *Ladder) Tick(in TickInput) (Decision, error) {
 		}
 	case overBy < -margin && in.Settings.StepBack && prev > 0:
 		rung := l.state.Applied[prev-1]
-		acts := l.release()
+		acts, kept := l.release(in.InflightCap)
 		d.Direction, d.Rung, d.Actions, d.Changed = DirectionStepBack, rung, acts, true
-		what := describe(acts, 0)
+		what := strings.TrimSpace(describe(acts, 0) + " " + kept)
 		d.AlertText = fmt.Sprintf("Burn guard stepped back from %s: %s %s", rung, what, numbers(p, lower))
 		if in.Settings.AskOnChange && changesSetting(acts, 0) {
 			d.QuestionText = fmt.Sprintf("The weekly burn now projects at the reset (%s; target %.1f%%). I did this: %s",
@@ -495,8 +496,13 @@ func (l *Ladder) apply(rung string, inflight int) []Action {
 	return nil
 }
 
-// release lifts the newest rung and returns the actions that undo it.
-func (l *Ladder) release() []Action {
+// release lifts the newest rung and returns the actions that undo it. now is the
+// entry's inflight cap in force at the release (zero when unknown). A
+// lower_inflight release restores only what the guard itself lowered: the cap is
+// put back to the original when it is still where the guard left it (one below the
+// original) or already back at the original. Any other value is the operator's,
+// set after the lowering, and is kept; kept then says so.
+func (l *Ladder) release(now int) (acts []Action, kept string) {
 	n := len(l.state.Applied)
 	rung := l.state.Applied[n-1]
 	l.state.Applied = l.state.Applied[:n-1]
@@ -505,21 +511,24 @@ func (l *Ladder) release() []Action {
 	case RungLowerInflight:
 		orig := l.state.OriginalInflight
 		l.state.OriginalInflight = 0
-		return []Action{{Kind: ActionSetInflight, Rung: rung, Release: true, Backend: t.Backend, Value: orig}}
+		if now > 0 && now != orig && now != lowered(orig) {
+			return nil, fmt.Sprintf("kept the %s inflight cap at %d: it was changed after the guard lowered it, so the guard leaves it as set.", t.Backend, now)
+		}
+		return []Action{{Kind: ActionSetInflight, Rung: rung, Release: true, Backend: t.Backend, Value: orig}}, ""
 	case RungRouteEntry, RungRoutePiPrompt: // the legacy name: the same route rung
 		if t.RouteTo == "" {
-			return nil
+			return nil, ""
 		}
-		return []Action{{Kind: ActionRouteBackend, Rung: rung, Release: true, Backend: t.Backend, To: t.RouteTo}}
+		return []Action{{Kind: ActionRouteBackend, Rung: rung, Release: true, Backend: t.Backend, To: t.RouteTo}}, ""
 	case RungRouteCheaperModel: // no legacy name; releases the cheaper-model route
 		if t.CheaperModel == "" {
-			return nil
+			return nil, ""
 		}
-		return []Action{{Kind: ActionRouteModel, Rung: rung, Release: true, Backend: t.Backend, Model: t.CheaperModel}}
+		return []Action{{Kind: ActionRouteModel, Rung: rung, Release: true, Backend: t.Backend, Model: t.CheaperModel}}, ""
 	case RungHoldEntry, RungHoldClaude: // the legacy name: the same hold rung
-		return []Action{{Kind: ActionHoldNewWork, Rung: rung, Release: true, Backend: t.Backend, Models: append([]string(nil), t.HeldModels...)}}
+		return []Action{{Kind: ActionHoldNewWork, Rung: rung, Release: true, Backend: t.Backend, Models: append([]string(nil), t.HeldModels...)}}, ""
 	}
-	return nil
+	return nil, ""
 }
 
 // lowered is the inflight cap one below cap, never below one.

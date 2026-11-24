@@ -476,7 +476,7 @@ func syncLLMLimits(cfg *config.Config, reg *inference.Registry, led *capacity.Le
 	for _, l := range reg.List() {
 		limit := inference.EffectiveMaxInflight(*l, cfg.Autonomous.PlanTierMaxInflight)
 		// The burn guard's lowered cap wins while its rung is in force.
-		if v, ok := burnGuardInflight.get(l.Name); ok {
+		if v, ok := burnGuardInflight.get(l.Name, limit); ok {
 			limit = v
 		}
 		led.SetLimit("llm:"+l.Name, limit)

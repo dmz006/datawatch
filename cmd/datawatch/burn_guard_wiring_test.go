@@ -218,3 +218,43 @@ func TestFillBurnGuardStats(t *testing.T) {
 	updateBurnGuardMetrics(s)
 	_ = time.Now
 }
+
+// The pool limit follows the entry's effective cap. The guard's lowered cap is
+// kept only while the entry still says what it said when the guard lowered it:
+// an operator who changes the entry afterwards gets that value in the pool, and
+// changing it again keeps following (item 27).
+func TestBurnGuardInflightOverride_PoolFollowsTheEntryAfterTheOperatorChangesIt(t *testing.T) {
+	cfg := config.DefaultConfig()
+	reg := inference.NewRegistry()
+	entry := &inference.LLM{Name: "claude-code", Kind: inference.KindClaudeCode, MaxInflight: 2}
+	if err := reg.Add(entry); err != nil {
+		t.Fatal(err)
+	}
+	led := capacity.New(capacity.Options{})
+	adm := burnGuardAdmission{cfg: cfg, ledger: led, bo: autonomouspkg.NewBackoff(), reg: func() *inference.Registry { return reg }}
+	t.Cleanup(func() { burnGuardInflight.clear("claude-code") })
+
+	// The guard lowers the cap from 2 to 1 and the pool follows.
+	if err := adm.SetInflight("claude-code", 1); err != nil {
+		t.Fatal(err)
+	}
+	syncLLMLimits(cfg, reg, led)
+	if got := led.Limit("llm:claude-code"); got != 1 {
+		t.Fatalf("pool while the guard holds the lowered cap = %d, want 1", got)
+	}
+	// The operator raises the entry to 3, then sets it back to 2: each value
+	// reaches the pool on the next sync, whatever the guard lowered earlier.
+	for _, want := range []int{3, 2} {
+		entry.MaxInflight = want
+		if err := reg.Update(entry); err != nil {
+			t.Fatal(err)
+		}
+		syncLLMLimits(cfg, reg, led)
+		if got := led.Limit("llm:claude-code"); got != want {
+			t.Fatalf("after the operator set the entry to %d the pool is %d", want, got)
+		}
+		if got := adm.InflightCap("claude-code"); got != want {
+			t.Fatalf("after the operator set the entry to %d the guard reads %d", want, got)
+		}
+	}
+}
