@@ -169,7 +169,22 @@ requested pools cannot be granted now (`Ledger.WouldGrant`) while another allowe
 for the same task can, `acquireLease` admits it there (`internal/autonomous/capacity.go`,
 alternates from `Manager.SetCapacityAlternates`), the executor spawns on that pair, and the
 `autonomous_capacity_admitted` audit entry carries `fall_through`, `from_pools`, `to_pools` and a
-readable note. When off, a task always waits for its own pool, explicit backend or not.
+readable note. A planner uses the same alternates through `Manager.pickPlannerFallthrough`
+(`decomposeAdmitted`): its pools leave out the host pool, an alternate must name its model, and the
+Automaton records a `planner_fallthrough` decision. `pickFallthrough` stays worker-only. When off, a
+task or planner always waits for its own pool, explicit backend or not.
+
+Quiet engine while paused: `Manager.gateAutomaticPlanning` / `DecomposeAutomatic`
+(`internal/autonomous/planning_gate.go`) front every planner start the engine makes by itself (lane
+fill, the boot restart, the re-plan after a reworded spec) with the operator pause, an
+already-planned check and a bound of `autoPlanStartLimit` (3) starts per Automaton without an accepted
+plan (`PRD.AutoPlanStarts`), after which the Automaton is held with one alert. The boot restart waits
+for the pause to end (`API.startPlanningAfterPause`). `runMergeHoldPass` (`merge_hold.go`) and
+`MergeRetryPass` skip a paused project; a hold pass that fails or stays blocked backs off from 5 s to 5 min.
+
+Burn guard cap restore: `Ladder.release` restores `OriginalInflight` only while the entry's cap is the
+lowered value or the original; the daemon's lowered-cap override (`burnGuardInflight`) records the
+entry's cap it lowered from and is dropped when the entry changes, so the pool follows the entry.
 
 Node placement rules (`internal/capacity/ledger.go`, wired in `cmd/datawatch/capacity_wiring.go`;
 each switch is read at call time, so a change applies to the next admission with no restart,

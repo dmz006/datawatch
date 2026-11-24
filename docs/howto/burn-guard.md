@@ -329,7 +329,7 @@ with several entries applies the same ladder under each entry's own admission.
 
 | Rung | What it does |
 |---|---|
-| `lower_inflight` | Lowers how many sessions the entry may have running at once. The original cap is remembered and restored when the rung is released |
+| `lower_inflight` | Lowers how many sessions the entry may have running at once. The original cap is remembered and restored when the rung is released, but only if the cap is still where the guard left it: a value you set after the lowering (a higher cap, or any other) is kept, and the step-back alert says so. The pool limit always follows the entry: once you change the entry's cap, the guard's lowered value is dropped and the new cap applies |
 | `route_entry` | Sends the entry's new work to the entry's `route_to` backend instead, when one is set (the legacy first-version name for this rung is `route_pi_prompt`) |
 | `route_cheaper_model` | Keeps the backend and sends the entry's new work to its own **cheaper model** (the entry's `route_cheaper_model` field, or its cheapest other priced model by its per-model cost rates when the field is empty). While the entry resolves to no cheaper model the rung changes nothing. Work already running continues; releasing the rung restores the entry's original model routing |
 | `hold_entry` | Holds the entry's new work, optionally limited to its `held_models`. Work already running continues; held work starts again when the rung is released (the legacy first-version name is `hold_claude`) |

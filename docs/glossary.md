@@ -45,9 +45,9 @@ full definition, the counts and the once-a-day pending-branch alert are in
 ## Pool fall-through
 
 The setting `autonomous.capacity_fallthrough` (default off). When on, a worker
-task whose requested capacity pool cannot be granted is admitted on an
-alternate backend that has room instead of waiting. Verifiers never fall
-through. See [howto/automata-capacity.md](howto/automata-capacity.md#pool-fall-through).
+task or a planner whose requested capacity pool cannot be granted is admitted
+on an alternate backend that has room instead of waiting. Verifiers and judges
+never fall through. See [howto/automata-capacity.md](howto/automata-capacity.md#pool-fall-through).
 
 ## Orphan slot reconcile
 
