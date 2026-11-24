@@ -3781,3 +3781,7 @@ Package `internal/pause` holds the state (global plus per-project entries, saved
 
 - `internal/git/host_op_counters.go`: in-memory outcomes of host operations (push, pull request, merge, tag, CI read) over the last hour, plus the time of the last success. No store; reset on restart. Recorded in `PushToBranch`, `PushToDefaultBranch`, `OpenChangeRequest`, `CreateTagForHost` and `LatestRuns`. The merge kind is reserved and stays zero until a host merge call exists.
 - `internal/stats/collector.go`: `SystemStats.GitHosts` (`configured`, `window_seconds`, `operations`, `failed`, `last_success_at`), filled through `SetGitHostStatsFunc`; omitted when no `git.hosts` entry is configured.
+
+## Remote branch reap settings (autonomous.remote_reap_enabled, autonomous.remote_reap_retention_days)
+
+`autonomous.remote_reap_enabled` (bool, default `false`) turns the remote branch reap on; while it is off the pass only reports, and it never runs on a timer. `autonomous.remote_reap_retention_days` (whole days) is how old the tip of a fully merged remote branch must be before it may be reaped; unset or 0 reads the default of 30, and a negative value is a config error when the config loads. Code: `internal/config/config.go` (`RemoteReapEnabled`, `RemoteReapRetentionDays`, `EffectiveRemoteReapRetentionDays`) and `internal/autonomous/remote_reap.go`. The operator-facing description is in [howto/automation-cleanup-passes.md](howto/automation-cleanup-passes.md).
