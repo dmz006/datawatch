@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.0 — Priority stall wake, ancestor landing and merge-base change records
+
+### Added
+
+- Priority stall wake: when a high-priority waiting Automaton passes the stall threshold, the daemon raises one `priority_stall` wake event per Automaton per blocker. The event and the watch finding name the blocker from the lane-fill decision and the one action that clears it. New read: `GET /api/autonomous/priority-stalls`, MCP tool `priority_stalls`, and `datawatch autonomous priority-stalls [--json]`. New setting `autonomous.automation.supervisor_watch.stall_wake` (default on); the wake only takes effect once `supervisor_loop.wake.enabled` is on.
+- Merge shadow status shows an agreement streak (new setting `merge_shadow.agreement_streak`), the shadow gates are documented, and an intermittent test gate counts as a pass and names the flaky test.
+- The change record of an Automaton (changelog, parity and tracker drafts) now names its base: `Base: merge base with main (<sha>)`, with `base_ref` and `base_how` on the change record.
+
+### Changed
+
+- `datawatch plans migrate` text output shows what the server found: a Needs review section, the server summary line verbatim, and "already present" in place of "already there". `--json` is unchanged.
+- The generated change record is diffed against the merge base with main, not the task-start ref, so a branch refreshed with main no longer counts main's files as its own. A branch that was never refreshed behaves as before.
+
+### Fixed
+
+- A task `verification` written as a plain string no longer strands a planned Automaton as a draft: it is read as an unverified summary, and a plan with a fixable field takes a content retry that carries the parse error back to the planner. Output that is not JSON, empty, too large or that panics the parser stays a terminal invalid-response.
+- Archive treats an Automaton branch already merged into the default branch as landed, so the record flips to landed with the merge commit and the loop close step can archive it. A branch with commits ahead stays refused.
+
 ## v9.186.0 — Scanner path hardening and the configuration audit tool
 
 ### Fixed
