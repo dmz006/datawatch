@@ -43,6 +43,9 @@ func (s *Server) handleCostSummary(w http.ResponseWriter, r *http.Request) {
 			"tokens_in":    sess.TokensIn,
 			"tokens_out":   sess.TokensOut,
 			"est_cost_usd": sess.EstCostUSD,
+			// The subagent share of the totals above.
+			"subagent_tokens_in":  sess.SubagentTokensIn,
+			"subagent_tokens_out": sess.SubagentTokensOut,
 		})
 		return
 	}

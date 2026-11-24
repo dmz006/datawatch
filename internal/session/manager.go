@@ -7952,6 +7952,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 		go trackClaudeCodeUsageDelta(ctx, sess.FullID, sess.ProjectDir, sess.UsageLinesRead, 10*time.Second, func(sessID string, d ClaudeUsageDelta) {
 			_ = m.AddClaudeUsage(sessID, d)
 		})
+		// Subagents write their own transcripts and have no session of their
+		// own: record their usage under this session.
+		go m.trackClaudeSubagentUsage(ctx, sess.FullID, 10*time.Second)
 	}
 
 	// B98 — same rationale as claude-code above, applied to opencode and

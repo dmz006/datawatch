@@ -45,7 +45,10 @@ type Entry struct {
 	CacheRead     int64     `json:"cache_read"`
 	CacheCreation int64     `json:"cache_creation"`
 	ToolCalls     int64     `json:"tool_calls"`
-	ActiveSeconds float64   `json:"active_seconds"`
+	// ToolSeconds is the total time spent inside tool calls (summed per call;
+	// parallel calls overlap). Zero for entries written before it existed.
+	ToolSeconds   float64 `json:"tool_seconds,omitempty"`
+	ActiveSeconds float64 `json:"active_seconds"`
 
 	// Local-model usage (pi, ollama). Kept apart from the Claude token
 	// fields above so local tokens are never mixed with or priced as Claude's.

@@ -13,8 +13,8 @@ import (
 // ToolNamesNote is carried on every tool usage payload. The spend ledger
 // keeps one tool-call count per session and never the name of the tool, so
 // the payload has totals only and no per-tool-name breakdown.
-const ToolNamesNote = "The spend ledger records how many tool calls each session made, not which tool was called. " +
-	"These figures are tool-call counts per Automaton, project and model over time; there is no per-tool-name breakdown."
+const ToolNamesNote = "The spend ledger records how many tool calls each session made and the total time spent inside tools, not which tool was called. " +
+	"These figures are tool-call counts and tool time per Automaton, project and model over time; there is no per-tool-name breakdown."
 
 // ToolUsagePoint is one bucket of one tool usage line.
 type ToolUsagePoint struct {
@@ -22,6 +22,8 @@ type ToolUsagePoint struct {
 	Start     time.Time `json:"start"`
 	Sessions  int       `json:"sessions"`
 	ToolCalls int       `json:"tool_calls"`
+	// ToolSeconds is the time spent inside tool calls in this bucket.
+	ToolSeconds float64 `json:"tool_seconds,omitempty"`
 	// ToolCallsNotReportedSessions counts local sessions whose tool calls
 	// were not reported; they add nothing to ToolCalls (unknown, not zero).
 	ToolCallsNotReportedSessions int `json:"tool_calls_not_reported_sessions,omitempty"`
@@ -34,6 +36,8 @@ type ToolUsageGroup struct {
 	Key       string `json:"key"`
 	Sessions  int    `json:"sessions"`
 	ToolCalls int    `json:"tool_calls"`
+	// ToolSeconds is the time spent inside tool calls over the window.
+	ToolSeconds float64 `json:"tool_seconds,omitempty"`
 	// ToolCallsNotReportedSessions is flagged, never shown as zero calls.
 	ToolCallsNotReportedSessions int              `json:"tool_calls_not_reported_sessions,omitempty"`
 	Points                       []ToolUsagePoint `json:"points"`
@@ -55,7 +59,9 @@ type ToolUsage struct {
 	Groups []ToolUsageGroup `json:"groups"`
 	// TotalToolCalls and TotalSessions cover all groups.
 	TotalToolCalls int `json:"total_tool_calls"`
-	TotalSessions  int `json:"total_sessions"`
+	// TotalToolSeconds is the time spent inside tool calls over all groups.
+	TotalToolSeconds float64 `json:"total_tool_seconds,omitempty"`
+	TotalSessions    int     `json:"total_sessions"`
 	// TotalToolCallsNotReportedSessions counts local sessions whose tool
 	// calls were not reported.
 	TotalToolCallsNotReportedSessions int `json:"total_tool_calls_not_reported_sessions,omitempty"`
@@ -134,6 +140,7 @@ func BuildToolUsage(req SeriesRequest, entries []spendledger.Entry, opts SeriesO
 
 	groups := map[string]*ToolUsageGroup{}
 	total, totalSessions, totalNR := 0, 0, 0
+	var totalSecs float64
 	for _, e := range entries {
 		at := e.StartedAt
 		if at.IsZero() || at.Before(since) || at.After(until) {
@@ -163,6 +170,11 @@ func BuildToolUsage(req SeriesRequest, entries []spendledger.Entry, opts SeriesO
 		g.ToolCalls += calls
 		g.Points[idx].Sessions++
 		g.Points[idx].ToolCalls += calls
+		if secs := e.ToolSeconds; secs > 0 && (!e.Local || e.TokensReported) {
+			g.ToolSeconds += secs
+			g.Points[idx].ToolSeconds += secs
+			totalSecs += secs
+		}
 		total += calls
 		totalSessions++
 	}
@@ -182,6 +194,7 @@ func BuildToolUsage(req SeriesRequest, entries []spendledger.Entry, opts SeriesO
 		Buckets:                           starts,
 		Groups:                            out,
 		TotalToolCalls:                    total,
+		TotalToolSeconds:                  totalSecs,
 		TotalSessions:                     totalSessions,
 		TotalToolCallsNotReportedSessions: totalNR,
 		ToolNamesNote:                     ToolNamesNote,

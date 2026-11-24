@@ -10751,6 +10751,12 @@ paths:
       summary: Token + USD cost rollup across all sessions
       operationId: costSummary
       tags: [Cost]
+      description: |
+        Token and dollar totals across sessions, or one session with
+        `?session=<full_id>`. The totals of a Claude Code session include the
+        tokens its subagents used, recorded under the session because a
+        subagent has no session of its own; `subagent_tokens_in` and
+        `subagent_tokens_out` give that share, in the rollup and per session.
       parameters:
         - {name: since, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: backend, in: query, required: false, schema: {type: string}}
@@ -10828,7 +10834,9 @@ paths:
       description: |
         Tool calls from the spend ledger, one line per Automaton, project or
         model, with one zero-filled point per bucket in `buckets`. The ledger
-        records a tool-call count per session and never a tool name, so there
+        records a tool-call count and the total time spent inside tools per
+        session (`tool_seconds`, `total_tool_seconds`; parallel calls overlap)
+        and never a tool name, so there
         is no per-tool-name breakdown; `tool_names_note` says so on every
         response. A line with no sessions in the window is omitted, so an
         empty window returns an empty `groups` list. `unknown_spend_note` and

@@ -91,6 +91,7 @@ absent (not zero) when the daemon does not have a figure to show:
 | `share_of_monthly_price` | bundled-plan rows, priced only | The fraction of the plan's monthly price (0.05 is 5%). An estimate. |
 | `cache_read` / `cache_creation` | yes | Cache tokens the group used, beside the in/out tokens. |
 | `tool_calls` | yes | Tool calls the group's sessions made, counted from the Claude transcript. Zero for backends that do not report them. |
+| `tool_seconds` | when recorded | Time the group's sessions spent inside tool calls, from each call to its result in the Claude transcript, subagents included. Calls made in parallel overlap, so it can exceed the active time. Never a per-tool breakdown. Omitted when zero, and for entries recorded before it existed. |
 | `first_activity` / `last_activity` / `span_seconds` / `active_seconds` | when the group has activity | When the group worked, the span between, and the active time. An Automaton's row carries all of these, so its tokens, time, sessions and tool calls read together. |
 | `window_partial` / `window_note` | when the window cuts the group off | Set when the window is older than the ledger or the group started mid-window. |
 | `units` | `release` rows only | The shipped units the release carries, from the daemon's shipped-unit state; blank when the record has none |

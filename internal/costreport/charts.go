@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // The REST routes the combined report reads.
@@ -241,12 +242,20 @@ func (c *Charts) Text() string {
 		line("")
 		line("tool usage (by %s, window %s, %d %s buckets)", t.GroupBy, t.Window, len(t.Buckets), t.Bucket)
 		for _, g := range t.Groups {
-			line("  %s: %d tool calls over %d sessions", g.Key, g.ToolCalls, g.Sessions)
+			if g.ToolSeconds > 0 {
+				line("  %s: %d tool calls over %d sessions, %s in tools", g.Key, g.ToolCalls, g.Sessions, toolTimeText(g.ToolSeconds))
+			} else {
+				line("  %s: %d tool calls over %d sessions", g.Key, g.ToolCalls, g.Sessions)
+			}
 		}
 		if len(t.Groups) == 0 {
 			line("  no tool calls in the window")
 		}
-		line("  total: %d tool calls over %d sessions", t.TotalToolCalls, t.TotalSessions)
+		if t.TotalToolSeconds > 0 {
+			line("  total: %d tool calls over %d sessions, %s in tools", t.TotalToolCalls, t.TotalSessions, toolTimeText(t.TotalToolSeconds))
+		} else {
+			line("  total: %d tool calls over %d sessions", t.TotalToolCalls, t.TotalSessions)
+		}
 		if t.ToolNamesNote != "" {
 			line("  note: %s", t.ToolNamesNote)
 		}
@@ -290,4 +299,13 @@ func (c *Charts) Text() string {
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// toolTimeText renders tool seconds as a short duration ("42s", "7m30s", "2h5m").
+func toolTimeText(secs float64) string {
+	d := time.Duration(secs * float64(time.Second)).Round(time.Second)
+	if d >= time.Hour {
+		d = d.Round(time.Minute)
+	}
+	return d.String()
 }

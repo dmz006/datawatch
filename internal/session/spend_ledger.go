@@ -63,6 +63,7 @@ func (m *Manager) upsertLedger(sess *Session) {
 		CacheRead:     int64(snap.CacheReadTokens),
 		CacheCreation: int64(snap.CacheCreationTokens),
 		ToolCalls:     int64(snap.ToolCalls),
+		ToolSeconds:   snap.ToolSeconds,
 		ActiveSeconds: snap.ActiveSeconds(activeClock()),
 	}
 	if IsLocalBackend(snap.BackendFamily) {
