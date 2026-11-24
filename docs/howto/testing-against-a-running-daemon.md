@@ -115,7 +115,7 @@ On top of the static layout pass, the runner performs the view's **interaction c
 
 ### How to run it
 
-The suite lives in `scripts/test-stories/pwa/` and follows the PWA story conventions: `npm ci` in that directory, and `TEST_HTTP` / `TEST_TLS` / `TEST_TOKEN` telling it which daemon under test to drive.
+The suite lives in `scripts/test-stories/pwa/` and follows the PWA story conventions: `TEST_HTTP` / `TEST_TLS` / `TEST_TOKEN` tell it which daemon under test to drive. Its dependencies live in `scripts/test-stories/pwa/node_modules`, a machine-local, git-ignored install artifact (ignored as a file, a symlink and a directory). The runners (`run_pwa_story()` in `scripts/test-stories/lib.sh`, `scripts/e2e-pwa.sh` and the priority-source section of `scripts/release-smoke.sh`) install it with `npm ci` when it is missing (`run_pwa_story()` falls back to `npm install` when `package-lock.json` is absent), or skip the PWA story with a hint to run `npm ci` there. Never commit or track the folder, and never create a symlink at that path with an absolute host target: `make check-absolute-symlinks` (part of `make lint`) fails for any tracked symlink whose target is absolute.
 
 **Guard stories via Make** — `e2e-pwa.sh` boots an isolated daemon on fresh 127.0.0.1 ports (or runs against an external daemon when `TEST_HTTP`/`TEST_TLS`/`TEST_TOKEN` are set) and executes the story:
 
