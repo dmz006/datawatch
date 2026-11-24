@@ -46,6 +46,7 @@ LLM_ONLY=(
     build-host-toolchain  # shell-script workflow for build hosts (make check-toolchain, daily run, Go update); no MCP-callable steps
     worker-session-profiles  # worker session profiles: spec-complete; the settings surfaces (exact key, tool and settings-card names) are still pending, so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when the profile config lands
     automaton-hold  # operator hold: PWA-only for now (no REST/CLI/MCP/comm surface yet), so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when a hold surface lands
+    ebpf-process-telemetry  # host command line only (setcap and sudoers change the host): deliberately no REST or MCP surface, so no MCP-callable steps
 ) # curated, tools-backed howtos (with exec_steps front-matter) are exempt from this list; e.g. automaton-gate-repair passes on exec_steps and needs no entry here
 
 ERRORS=0

@@ -1031,7 +1031,7 @@ Per-process aggregation by attribution kind: `session:`, `backend:`, `container:
 
 ### eBPF per-process net
 
-Kernel-traced TCP socket activity per process (when eBPF is available — kernel ≥ 5.8 + cap_bpf + cap_sys_resource). Off → see Settings → About → eBPF status row. Each row is a (process, remote endpoint, byte counts, age) tuple.
+Kernel-traced TCP socket activity per process (when eBPF is available — kernel ≥ 5.8 + cap_bpf + cap_sys_resource). Off → see Settings → About → eBPF status row. Each row is a (process, remote endpoint, byte counts, age) tuple. The capabilities live on the binary file, so every release removes them until `datawatch setup ebpf` is run again; a passwordless sudoers rule (`datawatch setup ebpf --sudoers`) lets updates restore them. See [eBPF per-process telemetry](howto/ebpf-process-telemetry.md).
 
 ### Installed plugins
 
