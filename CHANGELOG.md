@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.8 — Finished work can no longer sit unmerged unnoticed
+
+### Added
+- Finished work can no longer sit unmerged unnoticed. Archiving or cancelling an Automaton whose branch has commits that are not on the default branch is refused until a decision is recorded; a "leave alone" answer creates a dated decision with a re-ask date; a bounded sweep moves finished but stuck Automata forward; the refusal ledger records a refused step once and is read on every surface; a daily digest names each finished but unmerged Automaton with its owner and raises a question after a day; and a weekly audit finds the rest. REST, MCP, command line, chat and web surfaces with locale strings.
+
+### Documentation
+- How-tos, definitions and configuration reference entries for the guard, the sweep, the digest and the audit.
+
 ## v9.187.7 — Quiet engine while paused, private launch files, explicit launch effort and a Claude version check
 
 ### Fixed

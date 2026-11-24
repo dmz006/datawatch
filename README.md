@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.7 (2026-11-24).** The engine stays quiet while paused, launch files are private per session, every Claude launch sets its effort, and a version change replays the recorded prompt screens. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.8 (2026-11-24).** Archive and cancel are refused without a decision while commits are not on main, and a sweep, a daily digest and a weekly audit surface finished work that never merged. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
