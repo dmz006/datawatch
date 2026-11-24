@@ -252,6 +252,20 @@ func (m *Manager) TaskDeliveryFailure(fullID string) string {
 	return m.deliveryFailure[fullID]
 }
 
+// markDaemonDeliversTask records on the stored session that the daemon, not the
+// command line, delivers its task, so AgentStarted waits for the delivery.
+func (m *Manager) markDaemonDeliversTask(sess *Session) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sess.DaemonDeliversTask = true
+	if cur, ok := m.store.Get(sess.FullID); ok && cur != sess {
+		cur.DaemonDeliversTask = true
+		_ = m.store.Save(cur)
+		return
+	}
+	_ = m.store.Save(sess)
+}
+
 // armTaskDeliveryAfterStart is the daemon's own trigger for a freshly started
 // claude-code session whose launch leaves the task off the command line (the
 // channel-enabled launch): after taskDeliveryReadyGrace, if the bridge's ready
@@ -265,6 +279,7 @@ func (m *Manager) armTaskDeliveryAfterStart(ctx context.Context, sess *Session, 
 	if ce, ok := backendObj.(interface{ ChannelEnabled() bool }); !ok || !ce.ChannelEnabled() {
 		return
 	}
+	m.markDaemonDeliversTask(sess)
 	attempts, window := 3, defaultTaskDeliveryWindow
 	if m.cfg != nil {
 		attempts = m.cfg.Session.EffectiveTaskDeliveryAttempts()
