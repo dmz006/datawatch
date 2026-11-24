@@ -494,6 +494,11 @@ type Manager struct {
 	// scheduledSpawnTask, when set, rebuilds the task of a launch-role spawn
 	// schedule each time it fires (guarded by mu).
 	scheduledSpawnTask func(ds DeferredSession) string
+	// startAdmit admits every start nobody admitted upstream; see Start.
+	startAdmit StartAdmitFn
+	// supervisorSlots is how many sessions above maxSessions the supervisor
+	// admission class may start (the host buffer); see SetSupervisorSlots.
+	supervisorSlots int
 
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
@@ -2137,6 +2142,15 @@ func (m *Manager) startPaneWatchdog(sess *Session) {
 
 // StartOptions holds optional parameters for starting a session.
 type StartOptions struct {
+	// AdmitClass is the capacity admission class the daemon decided for this
+	// start ("worker", "supervisor" or "operator"; empty means operator). It
+	// is set only by daemon code, never copied from a request field.
+	AdmitClass string
+	// PreAdmitted is set by a caller that already admitted this start on the
+	// capacity ledger (the REST start handler, an autonomous manager launch),
+	// so Manager.Start does not admit it a second time.
+	PreAdmitted bool
+
 	Name          string            // optional human-readable name
 	Backend       string            // override LLM backend name (empty = use manager default)
 	LaunchFn      LaunchFunc        // override launch function (nil = use manager default)
@@ -2397,6 +2411,91 @@ func containedUnderAny(roots []string, path string) (string, error) {
 // opts may be nil for defaults.
 func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, opts ...*StartOptions) (*Session, error) {
 	var opt *StartOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	// Every start path ends here, so admission lives here: a start nobody
+	// admitted upstream takes its lease before any work and gives it back if
+	// the launch fails.
+	admit := m.startAdmitter()
+	if admit == nil || (opt != nil && opt.PreAdmitted) {
+		return m.startSession(ctx, task, groupID, projectDir, opts...)
+	}
+	class := ""
+	backend, model, role := "", "", ""
+	if opt != nil {
+		class, backend, model = opt.AdmitClass, opt.Backend, opt.Model
+		if opt.LLMRef != "" {
+			backend = opt.LLMRef
+		}
+		role = opt.SpendRole
+	}
+	release, bind, err := admit(ctx, StartAdmission{Class: class, Backend: backend, Model: model, Role: role})
+	if err != nil {
+		return nil, err
+	}
+	sess, err := m.startSession(ctx, task, groupID, projectDir, opts...)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	bind(sess.FullID)
+	return sess, nil
+}
+
+// AdmitClassForLaunchRole is the admission class of a scheduled spawn: the
+// supervisor class for a schedule whose launch role is supervisor, otherwise
+// empty (an operator start). The role is stored on the schedule record the
+// daemon itself fires; it is not read from any start request.
+func AdmitClassForLaunchRole(role string) string {
+	if role == "supervisor" {
+		return "supervisor"
+	}
+	return ""
+}
+
+// StartAdmission is what Manager.Start tells the admitter about a start no
+// caller admitted upstream. Backend is the LLM entry name or backend kind;
+// empty means the manager default.
+type StartAdmission struct {
+	Class, Backend, Model, Role string
+}
+
+// StartAdmitFn takes the lease for a start. It returns how to give the lease
+// back and how to bind it to the session once started; an error refuses the
+// start.
+type StartAdmitFn func(ctx context.Context, a StartAdmission) (release func(), bind func(sessionID string), err error)
+
+// SetStartAdmitter wires the admission every Manager.Start applies. Nil (the
+// default) admits nothing, which keeps tests and a daemon without capacity as
+// they were.
+func (m *Manager) SetStartAdmitter(fn StartAdmitFn) {
+	m.mu.Lock()
+	m.startAdmit = fn
+	m.mu.Unlock()
+}
+
+// SetSupervisorSlots sets how many sessions above max_sessions a supervisor-
+// class start may take, so the detector and the other supervisors can always
+// start when workers have filled the session cap. 0 gives them no extra room.
+func (m *Manager) SetSupervisorSlots(n int) {
+	if n < 0 {
+		n = 0
+	}
+	m.mu.Lock()
+	m.supervisorSlots = n
+	m.mu.Unlock()
+}
+
+func (m *Manager) startAdmitter() StartAdmitFn {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.startAdmit
+}
+
+// startSession is the launch itself, after admission.
+func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir string, opts ...*StartOptions) (*Session, error) {
+	var opt *StartOptions
 	if len(opts) > 0 && opts[0] != nil {
 		opt = opts[0]
 	}
@@ -2430,7 +2529,13 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 				active++
 			}
 		}
-		if active >= m.maxSessions {
+		limit := m.maxSessions
+		if opt != nil && opt.AdmitClass == "supervisor" {
+			m.mu.Lock()
+			limit += m.supervisorSlots
+			m.mu.Unlock()
+		}
+		if active >= limit {
 			return nil, fmt.Errorf("max sessions (%d) reached", m.maxSessions)
 		}
 	}
@@ -7253,6 +7358,7 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			OneShot:            ds.OneShot,
 			EphemeralWorkspace: ds.Ephemeral,
 			Subprocess:         ds.Subprocess,
+			AdmitClass:         AdmitClassForLaunchRole(ds.LaunchRole),
 		}
 		task := ds.Task
 		if ds.LaunchRole != "" {

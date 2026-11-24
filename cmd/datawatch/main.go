@@ -48,6 +48,7 @@ import (
 	authpkg "github.com/dmz006/datawatch/internal/auth"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
@@ -5446,6 +5447,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return autonomouspkg.SpawnResult{}, err
 			}
 			httpReq.Header.Set("Content-Type", "application/json")
+			// The manager admitted this task before spawning: the daemon's own
+			// marker tells the handler, which ignores the body's one_shot.
+			httpReq.Header.Set(server.InternalLaunchHeader, server.InternalLaunchValue(capacity.ClassWorker))
 			if cfg.Server.Token != "" {
 				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
 			}
@@ -15233,6 +15237,9 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 					EphemeralWorkspace: ds.Ephemeral,
 					Subprocess:         ds.Subprocess,
 					Git:                ds.Git,
+					// A schedule of the supervisor role launches in the
+					// supervisor class; any other schedule is an operator start.
+					AdmitClass: session.AdmitClassForLaunchRole(ds.LaunchRole),
 				}
 				sess, err := mgr.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
 				if err != nil {

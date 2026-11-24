@@ -3,6 +3,7 @@ package capacity
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -143,5 +144,14 @@ func TestOverageNotifierFires(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("overage notifier did not fire")
+	}
+}
+
+func TestFormatPoolsShowsOverageAndReserve(t *testing.T) {
+	out := FormatPools([]PoolStatus{{Name: "llm:claude-code", Limit: 1, Held: 2, Over: 1, Reserve: 1}})
+	for _, want := range []string{"2/1", "1 over the limit: operator", "+1 reserved for supervisors"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("FormatPools = %q, want %q in it", out, want)
+		}
 	}
 }

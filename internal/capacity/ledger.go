@@ -1948,6 +1948,12 @@ func FormatPools(pools []PoolStatus) string {
 		if p.Overflow > 0 {
 			fmt.Fprintf(&b, " (+%d adopted over the limit)", p.Overflow)
 		}
+		if p.Over > 0 {
+			fmt.Fprintf(&b, " (%d over the limit: operator)", p.Over)
+		}
+		if p.Reserve > 0 {
+			fmt.Fprintf(&b, " (+%d reserved for supervisors)", p.Reserve)
+		}
 		if len(p.Holders) > 0 {
 			holders := p.Holders
 			if len(p.HoldNames) == len(p.Holders) {

@@ -17,9 +17,11 @@ import (
 
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/workerprofile"
 )
@@ -206,6 +208,17 @@ func runOneShotJSONSessionCaptureID(cfg *config.Config, prdID, projectDir, backe
 // once the verdict is recorded.
 func runOneShotJudgeSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string, launchTags launchTags) (content string, sessionID string, err error) {
 	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, peekJudgeOutput, node, launchTags)
+}
+
+// oneShotLaunchClass is the admission class of a one-shot session the daemon
+// starts for itself: the supervisor class for a supervisor-loop job, the
+// worker class for every Automaton session (decompose, verify, judge), which
+// the manager admitted on the ledger before it launched.
+func oneShotLaunchClass(t launchTags) capacity.Class {
+	if t.Role == "supervisor" {
+		return capacity.ClassSupervisor
+	}
+	return capacity.ClassWorker
 }
 
 // launchTags is the optional launch placement tagging a caller wants the
@@ -526,6 +539,7 @@ func runOneShotJSONSessionWithSpawnHookAttr(attr sessionAttr, cfg *config.Config
 				return "", "", err
 			}
 			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set(server.InternalLaunchHeader, server.InternalLaunchValue(oneShotLaunchClass(launchTags)))
 			if cfg.Server.Token != "" {
 				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
 			}

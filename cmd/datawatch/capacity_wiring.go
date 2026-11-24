@@ -333,14 +333,31 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 		if registry != nil {
 			reg = registry()
 		}
+		var named *inference.LLM
 		if reg != nil {
 			if l, err := reg.Get(backend); err == nil && l != nil {
-				pools = append(pools, "llm:"+l.Name)
+				named = l
+			}
+		}
+		if named != nil {
+			pools = append(pools, "llm:"+named.Name)
+			if named.Kind == inference.KindClaudeCode {
+				pools = append(pools, accountClaudePool)
 			}
 		}
 		// Only a local-engine session takes a compute node's pool.
 		entry, node, gated := hostingEntry(reg, backend, model)
 		if !gated {
+			if named == nil && inference.IsSubscriptionKind(backend) {
+				// A subscription backend with no entry and no compute node to
+				// govern it is reported and held to the subscription default,
+				// never treated as unlimited.
+				unmappedBackends.note(backend, model)
+				pools = append(pools, "llm:"+backend)
+				if backend == string(inference.KindClaudeCode) {
+					pools = append(pools, accountClaudePool)
+				}
+			}
 			return pools, node, nil
 		}
 		if len(entry.ComputeNodes) > 1 {
@@ -1097,6 +1114,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		AutonomousModelBackpressure: backoffBackpressure(autonomousBackoff),
 		HeldBackpressure:            sharedNodeBackpressure(),
 		VerifierHeadroom:            verifierHeadroom.blocked,
+		OnOverage:                   operatorOverageNotice(cfg, alertFn),
 	}
 	applyNodeLimitOptions(&opts, cfg)
 	led := capacity.New(opts)
@@ -1244,7 +1262,10 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		if len(pools) == 0 {
 			return "", nil
 		}
+		unmappedBackends.apply(led)
 		req := withNodeChoices(interactiveAdmitRequest(holder, pools, node, model, priority), nodeChoices)
+		req.Class = capacity.ClassFrom(ctx)
+		req.Interactive = req.Class == capacity.ClassOperator
 		req.Refresh = resolveRefresh(resolve, req, backend, model)
 		if err := led.Acquire(ctx, req, 0, func() bool { return false }, func(string) {}); err != nil {
 			return "", err
@@ -1256,6 +1277,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 		return "", nil
 	})
+	// Every other start path (chat, MCP, schedules, WebSocket, restarts, the
+	// pipeline adapter) admits at the manager, so no start is unaccounted.
+	mgr.SetStartAdmitter(managerStartAdmitter(cfg, led, resolve, func() string { return cfg.Session.LLMBackend }))
 	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
 
@@ -1519,6 +1543,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 		if reg := httpServer.InferenceRegistry(); reg != nil {
 			syncLLMLimits(cfg, reg, led)
+			syncAdmissionPoolsFor(cfg, reg, led, mgr)
 			syncLLMRates(cfg, reg, led)
 		}
 		// The reaper runs live once per lease, in order, on this goroutine, so the

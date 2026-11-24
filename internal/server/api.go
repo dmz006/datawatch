@@ -5655,14 +5655,21 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	// node:/llm: capacity pools an autonomous task would use for this same
 	// backend+model, so a manual session against a shared compute node
 	// actually contends with autonomous tasks for its real capacity instead
-	// of being invisible to the ledger. Autonomous task spawns (OneShot)
-	// skip this — they already admit via the executor's own m.admit()
-	// before ever reaching this handler; gating them here too would
+	// of being invisible to the ledger. Only a launch the daemon marked as its
+	// own worker skips this — it already admitted via the executor's own
+	// m.admit() before reaching this handler; gating it here too would
 	// double-acquire the same pool and could deadlock a node capped at 1.
 	// Short timeout (a few seconds, not the autonomous path's hours-long
 	// default) because this blocks a synchronous HTTP request.
 	capacityHolder := ""
-	if !req.OneShot && s.capacityAdmit != nil {
+	// Admission class is decided by how the daemon launched this start (the
+	// internal marker), never by a request field: one_shot is accepted and
+	// ignored here. A worker launch is admitted upstream by the manager that
+	// started it; supervisor and operator starts admit on the pools below.
+	admitClass := startAdmissionClass(r)
+	opts.AdmitClass = string(admitClass)
+	opts.PreAdmitted = true // this handler owns admission for the start
+	if admitClass != capacity.ClassWorker && s.capacityAdmit != nil {
 		holder, herr := generateStreamID()
 		if herr != nil {
 			http.Error(w, "capacity: could not generate holder id: "+herr.Error(), http.StatusInternalServerError)
@@ -5673,7 +5680,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			waitSecs = s.cfg.Session.CapacityWaitSeconds
 		}
 		admitCtx, cancel := context.WithTimeout(r.Context(), time.Duration(waitSecs)*time.Second)
-		grantedNode, aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, startPriority)
+		grantedNode, aerr := s.capacityAdmit(capacity.WithClass(admitCtx, admitClass), resolvedLLMRef, req.Model, holder, startPriority)
 		cancel()
 		if aerr != nil {
 			jsonError(w, http.StatusServiceUnavailable, capacityRefusalMessage(aerr, resolvedLLMRef, req.Model, resolvedComputeNodeRef, waitSecs))

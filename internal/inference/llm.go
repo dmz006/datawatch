@@ -334,6 +334,17 @@ const (
 	subscriptionKinds
 )
 
+// IsSubscriptionKind reports whether name is a subscription-plan session kind
+// (claude-code, pi and the like): the kinds that get the conservative cap of
+// one in-flight session when nothing else sets a limit. A name that is not a
+// known kind is not one.
+func IsSubscriptionKind(name string) bool {
+	if !validKind(Kind(name)) {
+		return false
+	}
+	return LLM{Kind: Kind(name)}.kindInflight() == subscriptionKinds
+}
+
 func (l LLM) kindInflight() kindInflightClass {
 	switch l.Kind {
 	case KindOllama, KindOpenWebUI, KindOpenCode:

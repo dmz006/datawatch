@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/capacity"
 )
 
 // TestHandleStartSession_CapacityAdmit_Gated verifies a genuine interactive
@@ -68,11 +70,13 @@ func TestHandleStartSession_CapacityAdmit_Gated(t *testing.T) {
 	}
 }
 
-// TestHandleStartSession_CapacityAdmit_SkippedForOneShot verifies an
-// autonomous task spawn (OneShot=true) never calls capacityAdmit — it's
-// already admitted upstream by the executor's own m.admit(), and gating it
-// again here would double-acquire the same node:/llm: pool.
-func TestHandleStartSession_CapacityAdmit_SkippedForOneShot(t *testing.T) {
+// TestHandleStartSession_CapacityAdmit_SkippedForDaemonWorkerLaunch verifies a
+// start the daemon itself marked as a worker launch never calls capacityAdmit —
+// it is already admitted upstream by the executor's own m.admit(), and gating
+// it again here would double-acquire the same node:/llm: pool. The marker is
+// the daemon's per-process header, not the one_shot body field (that field
+// skips nothing; see TestHandleStartSession_OneShotFlagDoesNotSkipAdmission).
+func TestHandleStartSession_CapacityAdmit_SkippedForDaemonWorkerLaunch(t *testing.T) {
 	srv := newLLMServer(t)
 	// In-memory tmux fake: handleStartSession then never touches a real
 	// multiplexer, so nothing real can leak on this host.
@@ -86,6 +90,7 @@ func TestHandleStartSession_CapacityAdmit_SkippedForOneShot(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]any{"task": "hello", "project_dir": t.TempDir(), "one_shot": true})
 	req := httptest.NewRequest(http.MethodPost, "/api/sessions/start", bytes.NewReader(body))
+	req.Header.Set(InternalLaunchHeader, InternalLaunchValue(capacity.ClassWorker))
 	w := httptest.NewRecorder()
 	srv.handleStartSession(w, req)
 	if w.Code != http.StatusOK {
@@ -93,7 +98,7 @@ func TestHandleStartSession_CapacityAdmit_SkippedForOneShot(t *testing.T) {
 	}
 	cleanupStartedSession(t, srv, w)
 	if admitCalls != 0 {
-		t.Fatalf("capacityAdmit calls = %d, want 0 for a OneShot (autonomous) session start", admitCalls)
+		t.Fatalf("capacityAdmit calls = %d, want 0 for a daemon-marked worker launch", admitCalls)
 	}
 }
 
