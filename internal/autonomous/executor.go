@@ -2594,6 +2594,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// No more attempts are coming, so sweep any leftover CHECKPOINT.md,
 		// as the legacy exhaustion path does.
 		m.relocateCheckpoint(prd, t)
+		if docsSetEmptyDiffFinishable(prd, t, hint) {
+			return m.completeDocsSetNothingToDocument(prd, t, hint)
+		}
 		return m.holdTaskForReview(prd, t, lastFailureCategory, hint)
 	}
 	exhaustedOld := t.Status
