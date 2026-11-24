@@ -62,3 +62,21 @@ func TestCommHeldForReviewShowsAttemptCount(t *testing.T) {
 		t.Errorf("only the cap-held task names the cap:\n%s", out)
 	}
 }
+
+// TestCommResetTaskReason: everything after the reason token is the reason a
+// force reset carries to the audit log and the operator alert.
+func TestCommResetTaskReason(t *testing.T) {
+	cap := runAutonomousTaskCommand(t, "autonomous reset-task p1 t1 force reason node was flaky, retrying by hand")
+	var m map[string]any
+	if err := json.Unmarshal([]byte(cap.body), &m); err != nil {
+		t.Fatalf("body: %v (%q)", err, cap.body)
+	}
+	if m["reason"] != "node was flaky, retrying by hand" || m["force"] != true {
+		t.Errorf("body = %v, want force and the reason", m)
+	}
+	cap = runAutonomousTaskCommand(t, "autonomous reset-task p1 t1 force")
+	_ = json.Unmarshal([]byte(cap.body), &m)
+	if m["reason"] != "" {
+		t.Errorf("no reason given must send an empty reason, got %v", m["reason"])
+	}
+}

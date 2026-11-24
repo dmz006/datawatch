@@ -1874,9 +1874,10 @@ func (s *Server) handleAutonomousPRDRemoveTask(_ context.Context, req mcpsdk.Cal
 
 func (s *Server) toolAutonomousPRDResetTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_reset_task",
-		mcpsdk.WithDescription("v8.23.0 — reset a failed/blocked/waiting-for-capacity task to pending so the autonomous loop retries it. A waiting-for-capacity task needs no force: the daemon re-admits it (same queue position, retargeted pool if the worker resolution changed, fresh wait budget). BL382: pass force=true to requeue a completed or cancelled task. BL451: force=true on an already-pending task in a terminal PRD reopens the PRD to running. The daemon keeps a total attempt count per task that no reset clears; only a force reset made by the operator clears it (and the attempt-cap hold with it), and the clear is recorded on the Automaton. A force reset made by a session carrying a scoped credential requeues the task but keeps the count, and a task held at the attempt cap is refused for it."),
+		mcpsdk.WithDescription("v8.23.0 — reset a failed/blocked/waiting-for-capacity task to pending so the autonomous loop retries it. A waiting-for-capacity task needs no force: the daemon re-admits it (same queue position, retargeted pool if the worker resolution changed, fresh wait budget). BL382: pass force=true to requeue a completed or cancelled task. BL451: force=true on an already-pending task in a terminal PRD reopens the PRD to running. The daemon keeps a total attempt count per task that no reset clears; only a force reset made by the operator clears it (and the attempt-cap hold with it), and the clear is recorded on the Automaton. A force reset made by a session carrying a scoped credential requeues the task but keeps the count, and a task held at the attempt cap is refused for it. A force reset that clears the attempt count and comes from a script, a CLI call or this tool (not the web app) raises an alert to the operator and is audited, with the reason you give; pass reason."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to reset")),
+		mcpsdk.WithString("reason", mcpsdk.Description("Why the task is reset. Recorded in the audit log and shown in the operator alert a force reset raises; optional")),
 		mcpsdk.WithBoolean("force", mcpsdk.Description("Set true to requeue completed or cancelled tasks (failed, blocked and waiting-for-capacity tasks never need force)")),
 		mcpsdk.WithBoolean("clean_restart", mcpsdk.Description("Set true to start the next attempt from the pre-task tree: the preserved work of earlier attempts is not restored for that one attempt. Default false (restore stays on)")),
 	)
@@ -1895,6 +1896,7 @@ func (s *Server) handleAutonomousPRDResetTask(ctx context.Context, req mcpsdk.Ca
 		"actor":         actor,
 		"force":         req.GetBool("force", false),
 		"clean_restart": req.GetBool("clean_restart", false),
+		"reason":        req.GetString("reason", ""),
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/reset_task", body)
 	if err != nil {

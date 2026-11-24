@@ -1340,6 +1340,11 @@ function apiFetch(path, opts = {}) {
   try { token = localStorage.getItem('cs_token') || ''; } catch (_) { /* a blocked store means no stored token */ }
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (token) headers['Authorization'] = 'Bearer ' + token;
+  // Client marker: lets the daemon tell the web app from a script when a
+  // safeguard is lowered (a pause resume, an attempt-count force reset). It is
+  // not a secret and anyone can send it; the daemon records every marked call
+  // in the audit log, and a marker only ever suppresses an operator alert.
+  headers['X-Datawatch-Client'] = 'pwa';
   // Route through proxy when a specific remote server is selected
   // ('all' mode uses local API — aggregated endpoint handles fan-out).
   // Same rule as _apiPath — one place, so the two can never drift.
@@ -27111,6 +27116,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'audit.access_log_enabled', label: 'Log HTTP/WS access + auth failures', labelKey: 'settings_audit_access_log_enabled', type: 'toggle' },
     { key: 'audit.retention_days', label: 'Audit log retention (days, -1 = never prune)', labelKey: 'settings_audit_retention_days', type: 'number', placeholder: '30' },
     { key: 'audit.cef_mirror_enabled', label: 'Mirror audit logs in CEF format (for SIEM)', labelKey: 'settings_audit_cef_mirror_enabled', type: 'toggle' },
+    { key: 'audit.safeguard_alert', label: 'Alert when a safeguard is lowered by a script or CLI call', labelKey: 'settings_audit_safeguard_alert', type: 'toggle' },
   ]},
   // Vault health monitor: seconds the Vault backend may stay unreachable
   // before an alert is raised (0 disables the alert).

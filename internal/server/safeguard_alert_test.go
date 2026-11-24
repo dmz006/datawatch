@@ -9,6 +9,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -399,5 +400,44 @@ func TestSafeguardAlert_AuditNeverCarriesTheCredential(t *testing.T) {
 		if strings.Contains(fmt.Sprint(e), "super-secret-admin-token") {
 			t.Fatalf("audit entry leaks the credential: %+v", e)
 		}
+	}
+}
+
+func safeguardAlertSetting(t *testing.T, s *Server) bool {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	s.handleGetConfig(rr, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+	var got struct {
+		Audit map[string]any `json:"audit"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	v, ok := got.Audit["safeguard_alert"].(bool)
+	if !ok {
+		t.Fatalf("GET /api/config audit lacks safeguard_alert: %v", got.Audit)
+	}
+	return v
+}
+
+// TestSafeguardAlert_ConfigKeyRoundTripAndDefaultOn: the setting is on until
+// someone turns it off, round-trips through PUT and GET /api/config, and is
+// what the alert path reads, live.
+func TestSafeguardAlert_ConfigKeyRoundTripAndDefaultOn(t *testing.T) {
+	s, _, _ := newMaxConcurrentTasksServer(t)
+	if !safeguardAlertSetting(t, s) {
+		t.Fatal("audit.safeguard_alert must default to on")
+	}
+	if rec := putInfraRetryRaw(s, map[string]any{"audit.safeguard_alert": false}); rec.Code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", rec.Code, rec.Body.String())
+	}
+	if safeguardAlertSetting(t, s) || s.cfg.Audit.SafeguardAlertOrDefault() {
+		t.Fatal("the key must read false after PUT false")
+	}
+	if rec := putInfraRetryRaw(s, map[string]any{"audit.safeguard_alert": true}); rec.Code != http.StatusOK {
+		t.Fatalf("PUT = %d", rec.Code)
+	}
+	if !safeguardAlertSetting(t, s) {
+		t.Fatal("the key must read true after PUT true")
 	}
 }
