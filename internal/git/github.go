@@ -16,11 +16,9 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +35,11 @@ import (
 type GitHub struct {
 	// Bin is the gh binary; defaults to "gh".
 	Bin string
+	// Host is the configured git host this provider acts for. Its credential
+	// source decides the environment of each gh call (see runHostCommand). The
+	// zero value means no configured host: gh runs with the environment
+	// untouched.
+	Host GitHostConfig
 }
 
 // NewGitHub returns a GitHub provider with default binary path.
@@ -238,6 +241,35 @@ func (g *GitHub) MergePullRequest(ctx context.Context, dir, id string) error {
 	return nil
 }
 
+// CreateRelease shells out to `gh release create <tag>` and returns
+// the release URL gh prints on stdout. It is not part of the Provider
+// interface; callers hold a *GitHub directly.
+func (g *GitHub) CreateRelease(ctx context.Context, opts ReleaseOptions) (string, error) {
+	if opts.Repo == "" {
+		return "", fmt.Errorf("CreateRelease: Repo required")
+	}
+	if opts.Tag == "" {
+		return "", fmt.Errorf("CreateRelease: Tag required")
+	}
+	args := []string{
+		"release", "create", opts.Tag,
+		"--repo", opts.Repo,
+		"--title", opts.Title,
+		"--notes", opts.Notes,
+	}
+	out, err := g.run(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf("gh release create: %w\n%s", err, strings.TrimSpace(out))
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "https://") {
+			return line, nil
+		}
+	}
+	return "", fmt.Errorf("gh release create: no release URL in output:\n%s", strings.TrimSpace(out))
+}
+
 // run is gh exec with a 30s cap; combined stdout+stderr returned.
 func (g *GitHub) run(ctx context.Context, args ...string) (string, error) {
 	return g.runIn(ctx, "", args...)
@@ -249,15 +281,8 @@ func (g *GitHub) runIn(ctx context.Context, dir string, args ...string) (string,
 	if bin == "" {
 		bin = "gh"
 	}
-	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(callCtx, bin, args...)
-	cmd.Dir = dir
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	err := cmd.Run()
-	return buf.String(), err
+	so, se, err := runHostCommand(ctx, g.Host, HostCmd{Name: bin, Args: args, Dir: dir, Timeout: 30 * time.Second}, false)
+	return so + se, err
 }
 
 // _ silences vet's "unused json" diagnostic in the v1 implementation
