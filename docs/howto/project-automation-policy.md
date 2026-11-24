@@ -74,6 +74,10 @@ Each field is optional. If a field is absent, the daemon falls back to its own v
 - **`infra_retry_escalate_after`** — after how many infrastructure retries a task is allowed to
   *escalate* — move to a stronger backend — instead of retrying the same class. Zero reads as *never,
   keep retrying*; a negative value is refused.
+- **`attempt_cap`** — how many attempts one task of the project may be started for in all, across
+  cancels, resets and restarts. It replaces `autonomous.attempt_cap.max_total` for the project; zero or
+  a negative value is refused. At the cap the task is held and only the operator's force reset starts
+  it again; see [Attempt cap](attempt-cap.md).
 - **`failure_escalation`** — the escalation level the daemon reaches when a task's retries are spent:
   the tier, its backend/model/effort, and how many attempts each step gets.
 

@@ -662,6 +662,10 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   | `infra_retry_exhausted_action` | `autonomous.infra_retry.exhausted_action` | `hold` or `count` |
   | `infra_retry_retry_dependents` | `autonomous.infra_retry.retry_dependents` | boolean |
   | `infra_retry_raise_question` | `autonomous.infra_retry.raise_question` | boolean |
+  | `attempt_cap_enabled` | `autonomous.attempt_cap.enabled` | boolean |
+  | `attempt_cap_max_total` | `autonomous.attempt_cap.max_total` | whole number from 1 to 1000 (default 6) |
+  | `attempt_cap_free_attempts` | `autonomous.attempt_cap.free_attempts` | whole number from 1 to 1000 (default 3) |
+  | `attempt_cap_backoff_minutes` | `autonomous.attempt_cap.backoff_minutes` | array of whole minutes; `[]` means no wait |
 
   Each one is sent only when given, so an explicit `false`, `0` or `[]` is applied and an argument left out changes nothing. They travel as dotted keys in a `PUT /api/config` body, where the daemon checks every value and a refused value comes back as a tool error naming the key and the valid values. The two lists replace the whole list.
 

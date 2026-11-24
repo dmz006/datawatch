@@ -2361,6 +2361,29 @@ autonomous:
   #   retry_dependents: true
   #   raise_question: true
 
+  # Attempt cap (autonomous.attempt_cap): the daemon counts every attempt a task
+  # is started for, across cancels, resets, review retries and daemon restarts,
+  # and keeps the count in the task. The first free_attempts attempts start at
+  # once; each later one waits the next delay of backoff_minutes after the
+  # previous attempt ended. At max_total the task is held for the operator (one
+  # alert, and one question when autonomous.questions.enabled is on) and nothing
+  # starts it again until the operator force-resets it, which clears the count.
+  # Settable at runtime through PUT /api/config, `datawatch config set`, MCP
+  # autonomous_config_set (attempt_cap_<key> arguments) or config_set, the comm
+  # `configure` verb and Settings -> Automata -> Attempt cap. A project may set
+  # its own max_total as `attempt_cap` in its policy block.
+  # enabled: true | false. Default true. false restores the earlier behaviour:
+  #   only the failure ladder limits a task.
+  # max_total: whole number from 1 to 1000. Default 6.
+  # free_attempts: whole number from 1 to 1000. Default 3.
+  # backoff_minutes: list of whole minutes (0 to 10080). Default [5, 15, 45]; the
+  #   last entry repeats; an explicit [] means no wait.
+  # attempt_cap:
+  #   enabled: true
+  #   max_total: 6
+  #   free_attempts: 3
+  #   backoff_minutes: [5, 15, 45]
+
   # Merge pipeline (autonomous.merge_pipeline): where a project's merge pipeline
   # comes from and how a merge conflict is handled. Every key can be overridden
   # for one project under autonomous.merge_pipeline.projects.<project>.<key>;
@@ -5816,6 +5839,8 @@ projects:
       # auto_fix_retries: retries an auto-fix run may get; 0 turns auto-fix off.
       # infra_retry_escalate_after: after how many infra retries a task may escalate
       # instead of retrying; 0 reads as never, keep retrying.
+      # attempt_cap: attempts one task of this project may be started for in all
+      # (replaces autonomous.attempt_cap.max_total); >= 1.
       # failure_escalation: the escalation level reached when a task's retries are
       # spent (tier, backend/model/effort, attempts per step).
       # ── Git defaults ──
