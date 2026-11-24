@@ -23612,20 +23612,22 @@ window.shippedChipHtml = shippedChipHtml;
 // the deploy chip shows the version and host and hovers the time and the
 // health check result. A record with neither shows nothing.
 const CLOSED_OUTCOMES = ['delivered', 'superseded', 'dropped', 'held'];
+const CLOSED_OUTCOME_LABELS = { delivered: 'closed_outcome_delivered', superseded: 'closed_outcome_superseded', dropped: 'closed_outcome_dropped', held: 'closed_outcome_held' };
+const RELEASE_DEPLOY_HEALTH_LABELS = { passed: 'release_deploy_health_passed', failed: 'release_deploy_health_failed', unchecked: 'release_deploy_health_unchecked' };
 function closedOutcomeBadgesHtml(rec) {
   if (!rec || typeof rec !== 'object') return '';
   let out = '';
   const oc = String(rec.closed_outcome || '').toLowerCase();
   if (CLOSED_OUTCOMES.includes(oc)) {
-    const tip = [t('closed_outcome_' + oc)];
+    const tip = [t(CLOSED_OUTCOME_LABELS[oc])];
     if (rec.delivered_via) tip.push(t('closed_outcome_via', [String(rec.delivered_via)]));
     if (rec.closed_outcome_note) tip.push(String(rec.closed_outcome_note));
-    out += `<span class="closed-outcome-chip state" data-outcome="${escHtml(oc)}" title="${escHtml(tip.join(' — '))}">${escHtml(t('closed_outcome_' + oc))}</span>`;
+    out += `<span class="closed-outcome-chip state" data-outcome="${escHtml(oc)}" title="${escHtml(tip.join(' — '))}">${escHtml(t(CLOSED_OUTCOME_LABELS[oc]))}</span>`;
   }
   const d = rec.deploy;
   if (d && typeof d === 'object' && d.version) {
     const health = ['passed', 'failed', 'unchecked'].includes(d.health) ? d.health : 'unchecked';
-    const tip = [t('release_deploy_chip_tip', [String(d.version), String(d.host || ''), String(d.at || '')]), t('release_deploy_health_' + health)];
+    const tip = [t('release_deploy_chip_tip', [String(d.version), String(d.host || ''), String(d.at || '')]), t(RELEASE_DEPLOY_HEALTH_LABELS[health])];
     if (d.detail) tip.push(String(d.detail));
     out += `<span class="deploy-chip state" data-health="${escHtml(health)}" title="${escHtml(tip.join(' — '))}">${escHtml(t('release_deploy_chip', [String(d.version), String(d.host || '')]))}</span>`;
   }
@@ -43166,6 +43168,8 @@ function _housekeepingIntermittentHtml(list) {
 // { mode, scanned, counts, findings: [{automaton, kind, detail}], proof }.
 // The Run now button runs the check through POST on the same route.
 const OUTCOME_CHECK_KINDS = ['closed_no_outcome', 'completed_no_shipped', 'shipped_no_deploy', 'deployed_older_than_shipped', 'daemon_older_than_shipped', 'intent_unproven'];
+const OUTCOME_CHECK_KIND_LABELS = { closed_no_outcome: 'outcome_check_kind_closed_no_outcome', completed_no_shipped: 'outcome_check_kind_completed_no_shipped', shipped_no_deploy: 'outcome_check_kind_shipped_no_deploy', deployed_older_than_shipped: 'outcome_check_kind_deployed_older_than_shipped', daemon_older_than_shipped: 'outcome_check_kind_daemon_older_than_shipped', intent_unproven: 'outcome_check_kind_intent_unproven' };
+const OUTCOME_CHECK_MODE_LABELS = { off: 'outcome_check_mode_off', shadow: 'outcome_check_mode_shadow', on: 'outcome_check_mode_on' };
 window.outcomeCheckCardHtml = function(data) {
   const d = (data && typeof data === 'object') ? data : {};
   const mode = ['off', 'shadow', 'on'].includes(d.mode) ? d.mode : 'shadow';
@@ -43175,14 +43179,14 @@ window.outcomeCheckCardHtml = function(data) {
     if (!list.length) return '';
     const lines = list.slice(0, 8).map(f => `<div class="outcome-check-finding" data-automaton="${escHtml(String(f.automaton || ''))}" style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('outcome_check_finding_line', [String(f.automaton || t('outcome_check_daemon')), String(f.detail || '')]))}</div>`).join('');
     const more = list.length > 8 ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('outcome_check_more', [list.length - 8]))}</div>` : '';
-    return `<div class="outcome-check-kind" data-kind="${escHtml(kind)}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;"><div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t('outcome_check_kind_' + kind))} — ${list.length}</div>${lines}${more}</div>`;
+    return `<div class="outcome-check-kind" data-kind="${escHtml(kind)}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;"><div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t(OUTCOME_CHECK_KIND_LABELS[kind]))} — ${list.length}</div>${lines}${more}</div>`;
   }).join('');
   const none = findings.length ? '' : `<div style="font-size:11px;color:var(--text2);">${escHtml(t('outcome_check_none'))}</div>`;
   const p = (d.proof && typeof d.proof === 'object') ? d.proof : {};
   const proof = Number(p.checked) > 0 ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('outcome_check_proof', [Number(p.checked) || 0, Number(p.proven) || 0, Number(p.partial) || 0, Number(p.unproven) || 0]))}</div>` : '';
   const run = `<button type="button" class="btn-secondary" style="font-size:11px;padding:3px 10px;margin-top:6px;" onclick="window.runOutcomeCheckNow(this)">${escHtml(t('outcome_check_run_now'))}</button>`;
   return `<div class="prd-capacity-card outcome-check-card" data-mode="${escHtml(mode)}" style="min-width:0;"><div class="cap-title">${escHtml(t('outcome_check_card_title'))}${_housekeepingHelpLink('closed_work_check', 'outcome_check_help_link')}</div>` +
-    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('outcome_check_purpose'))} ${escHtml(t('outcome_check_mode_' + mode))} ${escHtml(t('outcome_check_scanned', [Number(d.scanned) || 0]))}</div>${rows}${none}${proof}${run}</div>`;
+    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('outcome_check_purpose'))} ${escHtml(t(OUTCOME_CHECK_MODE_LABELS[mode]))} ${escHtml(t('outcome_check_scanned', [Number(d.scanned) || 0]))}</div>${rows}${none}${proof}${run}</div>`;
 };
 window.runOutcomeCheckNow = function(btn) {
   if (btn && btn.disabled) return;

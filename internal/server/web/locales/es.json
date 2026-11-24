@@ -6373,7 +6373,7 @@
   "outcome_check_mode_off": "La comprobación está desactivada.",
   "outcome_check_mode_shadow": "Modo shadow: se registran los hallazgos, sin alertas.",
   "outcome_check_mode_on": "Activada: cada hallazgo lanza además una alerta.",
-  "outcome_check_scanned": "{0} Automata analizados.",
+  "outcome_check_scanned": "{0} Autómatas analizados.",
   "outcome_check_none": "Sin hallazgos.",
   "outcome_check_more": "y {0} más",
   "outcome_check_daemon": "daemon",

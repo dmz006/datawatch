@@ -6373,7 +6373,7 @@
   "outcome_check_mode_off": "チェックは無効です。",
   "outcome_check_mode_shadow": "shadow モード: 検出結果を記録し、アラートは出しません。",
   "outcome_check_mode_on": "on: 検出ごとにアラートも1件発行します。",
-  "outcome_check_scanned": "{0} 件の Automata を確認しました。",
+  "outcome_check_scanned": "{0} 件のオートマタを確認しました。",
   "outcome_check_none": "検出なし。",
   "outcome_check_more": "ほか {0} 件",
   "outcome_check_daemon": "デーモン",

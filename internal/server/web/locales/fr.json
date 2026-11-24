@@ -6373,7 +6373,7 @@
   "outcome_check_mode_off": "Le contrôle est désactivé.",
   "outcome_check_mode_shadow": "Mode shadow : les constats sont enregistrés, aucune alerte.",
   "outcome_check_mode_on": "Activé : chaque constat lève aussi une alerte.",
-  "outcome_check_scanned": "{0} Automata analysés.",
+  "outcome_check_scanned": "{0} automates analysés.",
   "outcome_check_none": "Aucun constat.",
   "outcome_check_more": "et {0} de plus",
   "outcome_check_daemon": "daemon",
