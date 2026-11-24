@@ -296,6 +296,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("task_no_progress_seconds", mcpsdk.Description("Seconds one task attempt may go without progress (0 = off, the default; recommended 1800)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithString("shipped_refusal", mcpsdk.Description("Shipped-work rule: on (default) refuses to start, approve or decompose an Automaton whose own record says its work already shipped (release and merge commit both set) or that is archived, cancelled, completed or rejected, and marks shipped queued work delivered; shadow only logs what it would refuse; off disables it")),
 		mcpsdk.WithNumber("archive_grace_minutes", mcpsdk.Description("Whole minutes a cancelled Automaton is kept before the supervisor loop archives it (default 60; 0 archives at once; negative or fractional values are rejected)")),
 		mcpsdk.WithBoolean("archive_keep_unmerged", mcpsdk.Description("Keep a finished (completed, rejected or cancelled) Automaton whose work branch still holds commits not on the base branch from being archived (default true; false lets it archive; the branch itself is never deleted)")),
 		mcpsdk.WithBoolean("capacity_fallthrough", mcpsdk.Description("Pool fall-through: when a task's requested LLM pool is full, admit it on another idle allowed pool (default false)")),
@@ -906,6 +907,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			body["archive_keep_unmerged"] = req.GetBool("archive_keep_unmerged", true)
 		}
 	}
+	if v := req.GetString("shipped_refusal", ""); v != "" {
+		body["shipped_refusal"] = v
+	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {
 		body["capacity_wait_timeout_seconds"] = int(v)
 	}
@@ -1505,13 +1509,19 @@ func (s *Server) handleAutonomousPRDDecompose(_ context.Context, req mcpsdk.Call
 
 func (s *Server) toolAutonomousPRDRun() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_run",
-		mcpsdk.WithDescription("BL24 — kick the executor for a PRD (or restart on crash)."),
+		mcpsdk.WithDescription("BL24 — kick the executor for a PRD (or restart on crash). The daemon refuses to start an Automaton whose own record says its work already shipped (a release and a merge commit both set) and any archived, cancelled, completed or rejected one; the error names the reason (codes already_shipped and work_closed), and shipped queued work is marked delivered. To run shipped work anyway pass force=true with a reason: it is audited with who and why and covers only that merge commit."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithBoolean("force", mcpsdk.Description("Set true to run an Automaton whose shipped record would refuse it. Needs reason. Audited.")),
+		mcpsdk.WithString("reason", mcpsdk.Description("Why the shipped work should run again; required with force")),
 	)
 }
 func (s *Server) handleAutonomousPRDRun(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/run", nil)
+	var body any
+	if req.GetBool("force", false) {
+		body, _ = json.Marshal(map[string]any{"force": true, "reason": req.GetString("reason", "")})
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/run", body)
 	if err != nil {
 		return nil, err
 	}
