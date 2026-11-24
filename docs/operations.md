@@ -8850,6 +8850,35 @@ Queue contents are **in memory only**: they are bounded per queue, cursors resta
  full checklist outcome recorded in the design doc's Phase 3 and Phase 4 bullets.
 
 
+### Built-in lifecycle sinks (what delivers an event, and where)
+
+Two groups of built-in sinks receive Automaton lifecycle events. Both sit behind the same gate: an event is delivered only when its kind is in the Automaton's resolved notify set (the Automaton's own `notify_events`, else its guardrail profile's, else `autonomous.notify.default_events`; the shipped global default is the five-kind baseline). A subscription's filter can only narrow that set. A test-fire event is never gated.
+
+**The daemon's own sinks (always installed, no subscription needed).** At start-up the daemon subscribes one handler to every notify kind (`InstallLifecycleSinks`, `internal/autonomous/lifecycle_sinks.go`, wired in `cmd/datawatch/main.go`). Per matched event:
+
+| Sink | What it does | Where it shows |
+|---|---|---|
+| Comm fan-out | Collects the event's one-line text per Automaton, and after a quiet window of 5 seconds with no further event for that Automaton sends **one** message holding every line (events with no Automaton share one `global` bucket). The send goes to every configured messaging router, ntfy and email, except the backends named in `notify_exclude` (re-read on each send, so a change applies without a restart). | The messaging channels |
+| Alert | Writes one alert per event: title is the event kind, body is the one-line text, level `error` for kinds ending `.failed`, `.blocked` or `.rejected`, otherwise `warn`. | Alerts |
+| Topic | Pushes the same text, tagged `lifecycle`, to the topic `alerts` and, for an event with an Automaton, to the topic `automaton-<id>`. | Mobile and browser push |
+
+**Read this before relying on the alert or topic sinks.** In the code, once the comm fan-out is wired (the daemon always wires it), a matched event is handed to the fan-out and the handler returns: the alert and topic writes run only in a daemon where no comm fan-out is installed. Read from the code, not observed on a live daemon: `lifecycle_sinks.go` (`if comm != nil { comm.Handle(ev); return }`) and `cmd/datawatch/main.go` (`CommSink` is always set). The unit tests for the alert and topic sinks install them without a comm sink, so they do not show the daemon's real wiring. Treat the alert and topic rows above as the design, and check Alerts after a real event before depending on them; this is recorded as an open question, not a settled behaviour.
+
+**Subscription sinks (one per stored subscription).** `datawatch autonomous subscribe --sink <type>` (also REST, MCP and chat) chooses where one subscription delivers:
+
+| Sink type | Target | Delivery |
+|---|---|---|
+| `comm` | the owner's channel | message through the comm routers, coalesced when `coalesce` is on |
+| `session` | a session name | channel bridge first, then typed text (see *Session-sink delivery order*); the only sink that accepts a `send_input` action |
+| `topic` | a push topic | one push per event |
+| `alert` | none | one alert per event |
+| `mcp_queue` | a queue name | appended to an in-memory queue that a client polls (see *Pending-events queue*) |
+| `webhook`, `peer` | a URL, a peer name | off by default; see the next section |
+
+Every subscription has its own bounded queue and goroutine, so a slow target never blocks the Automaton or another subscription. A one-shot subscription is removed only after a successful delivery. Test-fire (`POST /api/autonomous/subscriptions/{id}/test`, `autonomous_subscription_test`, `datawatch autonomous subscription-test`) sends one `[test] ` event to just that sink and reports `ok` or the error.
+
+**Checklist record (built-in sinks):** tests are listed in `docs/testing-tracker.md` (*Built-in lifecycle sinks*), all Validated: No; `docs/config-reference.yaml` carries `autonomous.notify.default_events`, `autonomous.notify.pending_events_max` and `notify_exclude`; no new setting; the datawatch-app parity for subscriptions is in `docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md`.
+
 ### Outbound webhook sink and peer forwarding (ships disabled)
 
 Two sinks send Automaton lifecycle events out of this daemon. **Both ship disabled.** `autonomous.notify.webhook.enabled` and `autonomous.notify.forwarding.enabled` default to `false`. While a switch is off, a subscription with that sink is refused at creation, and any such subscription already stored delivers nothing. Subscriptions with the other sinks are not affected. The operator-facing guide is [howto/automaton-lifecycle-webhooks.md](howto/automaton-lifecycle-webhooks.md). The design, and the values still pending confirmation, are in [plans/2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md](plans/2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md).
