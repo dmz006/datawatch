@@ -15,6 +15,8 @@ import (
 	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
+
+	"github.com/dmz006/datawatch/internal/ebpfkver"
 )
 
 //go:embed bpf/net_track.o
@@ -30,6 +32,23 @@ type EBPFCollector struct {
 	closed bool
 }
 
+// loadNetTrackSpec reads the embedded BPF object and sets the kernel version
+// on its kprobe programs so the library does not read /proc/self/mem.
+func loadNetTrackSpec() (*ebpf.CollectionSpec, error) {
+	data, err := bpfObject.ReadFile("bpf/net_track.o")
+	if err != nil {
+		return nil, fmt.Errorf("read BPF object: %w", err)
+	}
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("load BPF spec: %w", err)
+	}
+	if err := ebpfkver.PrepareKprobes(spec); err != nil {
+		return nil, fmt.Errorf("kernel version for kprobes: %w", err)
+	}
+	return spec, nil
+}
+
 // NewEBPFCollector loads BPF programs and attaches kprobes.
 func NewEBPFCollector() (*EBPFCollector, error) {
 	if err := rlimit.RemoveMemlock(); err != nil {
@@ -37,24 +56,16 @@ func NewEBPFCollector() (*EBPFCollector, error) {
 	}
 
 	// Read embedded BPF object
-	data, err := bpfObject.ReadFile("bpf/net_track.o")
+	spec, err := loadNetTrackSpec()
 	if err != nil {
-		return nil, fmt.Errorf("read BPF object: %w", err)
+		return nil, err
 	}
 
-	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("load BPF spec: %w", err)
-	}
-
-	// BL181: pre-load kernel BTF from /sys/kernel/btf/vmlinux so the
-	// cilium/ebpf default detection path (which reads /proc/self/mem,
-	// requires CAP_SYS_PTRACE) is bypassed. /sys/kernel/btf/vmlinux
-	// is world-readable on every modern kernel that ships BTF, which
-	// is the only place we attach kprobes anyway. If the kernel
-	// doesn't ship BTF we fall back to the default detection and let
-	// the original error path emit the same warning the operator
-	// already knows about.
+	// BL181: pre-load kernel BTF from /sys/kernel/btf/vmlinux (world-
+	// readable on every kernel that ships BTF). This supplies the kernel
+	// types only; the kernel VERSION of the kprobe programs is set in
+	// loadNetTrackSpec, because the library's own version detection reads
+	// /proc/self/mem, which a daemon with file capabilities is refused.
 	var collOpts ebpf.CollectionOptions
 	if kspec, kerr := btf.LoadKernelSpec(); kerr == nil && kspec != nil {
 		collOpts.Programs.KernelTypes = kspec
