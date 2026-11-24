@@ -610,8 +610,8 @@ func (s *SupervisorLoopSteps) retryFailedInfra(_ context.Context) (string, error
 	prds := st.ListPRDs()
 	st.WithLock(func() {
 		for _, prd := range prds {
-			if prd.Status == PRDHeld {
-				continue // the loop never retries a task of a held Automaton
+			if prd.Status == PRDHeld || closedRecordReason(prd) != "" {
+				continue // the loop never retries a task of a held or closed Automaton
 			}
 			for i := range prd.Story {
 				for j := range prd.Story[i].Tasks {

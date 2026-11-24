@@ -70,8 +70,9 @@ func (m *Manager) sweepStuckRunning() {
 		// Revision first: a write landing after this read makes the block
 		// commit stale instead of being overwritten.
 		rev, _ := m.store.PRDRev(id)
+		closed := m.closedToRecovery(prd)
 		m.mu.Lock()
-		running := prd.Status == PRDRunning
+		running := prd.Status == PRDRunning && !closed
 		m.mu.Unlock()
 		terminal := false
 		if running {

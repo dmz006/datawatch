@@ -124,7 +124,7 @@ func (m *Manager) SeedAttemptCounts() AttemptSeedReport {
 			}
 			var holdable bool
 			m.store.WithLock(func() { holdable = attemptSeedHoldable(t) })
-			if holdable && attemptSeedPRDActive(status) && m.attemptCapReached(prd, t) {
+			if holdable && attemptSeedPRDActive(status) && !m.closedToRecovery(prd) && m.attemptCapReached(prd, t) {
 				candidates = append(candidates, t)
 			}
 		}

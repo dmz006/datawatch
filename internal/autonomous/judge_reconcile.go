@@ -143,7 +143,7 @@ func (m *Manager) judgeUnitLookup() func(unitID string) (JudgeUnitInfo, bool) {
 		if p, ok := prdSNAP(unitID); ok {
 			return JudgeUnitInfo{
 				PRDID:          p.ID,
-				NeedsJudge:     p.Status == PRDRunning,
+				NeedsJudge:     p.Status == PRDRunning && closedRecordReason(p) == "",
 				JudgeSessionID: adopted,
 			}, true
 		}
@@ -151,7 +151,7 @@ func (m *Manager) judgeUnitLookup() func(unitID string) (JudgeUnitInfo, bool) {
 		if tk, ok := m.store.TaskSnapshot(unitID); ok {
 			needs := false
 			if p, ok := prdSNAP(tk.PRDID); ok {
-				needs = p.Status == PRDRunning && !isTaskTerminal(tk.Status)
+				needs = p.Status == PRDRunning && closedRecordReason(p) == "" && !isTaskTerminal(tk.Status)
 			}
 			return JudgeUnitInfo{
 				PRDID:          tk.PRDID,
@@ -171,7 +171,7 @@ func (m *Manager) judgeUnitLookup() func(unitID string) (JudgeUnitInfo, bool) {
 					if sp.Story[i].ID == unitID {
 						return JudgeUnitInfo{
 							PRDID:          sp.ID,
-							NeedsJudge:     sp.Status == PRDRunning && sp.Story[i].Status != StoryCompleted,
+							NeedsJudge:     sp.Status == PRDRunning && closedRecordReason(sp) == "" && sp.Story[i].Status != StoryCompleted,
 							JudgeSessionID: adopted,
 						}, true
 					}

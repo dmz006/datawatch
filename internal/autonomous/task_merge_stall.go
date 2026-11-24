@@ -147,7 +147,7 @@ func (c *Coordinator) taskMergeStallPass(ctx context.Context, kinds LaneFillKind
 		if !ok {
 			continue
 		}
-		if !laneFillRunning(snap.Status) {
+		if !laneFillRunning(snap.Status) || closedRecordReason(snap) != "" {
 			// The Automaton is not running (finished, blocked, cancelled): its
 			// merge episodes end here.
 			continue

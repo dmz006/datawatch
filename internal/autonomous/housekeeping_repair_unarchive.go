@@ -293,8 +293,8 @@ func (o ManagerUnarchiveOps) Candidates(ctx context.Context) []UnarchiveCandidat
 	var out []UnarchiveCandidate
 	for _, p := range m.store.ListPRDs() {
 		prd, ok := m.store.SnapshotPRD(p.ID)
-		if !ok || prd.Status != PRDArchived || prd.Git.Branch == "" {
-			continue
+		if !ok || prd.Status != PRDArchived || prd.Git.Branch == "" || prd.ClosedOutcome != "" {
+			continue // an archive with a recorded closed outcome stays archived
 		}
 		name := prd.Title
 		if name == "" {
@@ -358,6 +358,11 @@ func (o ManagerUnarchiveOps) Restore(ctx context.Context, c UnarchiveCandidate) 
 	}
 	if p.Status != PRDArchived {
 		return fmt.Errorf("automaton %s is at %s now, not archived; the repair changes nothing", c.ID, p.Status)
+	}
+	var outcome string
+	m.readLocked(func() { outcome = p.ClosedOutcome })
+	if outcome != "" {
+		return fmt.Errorf("automaton %s carries the closed outcome %s; the repair changes nothing", c.ID, outcome)
 	}
 	now := time.Now()
 	old := p.Status

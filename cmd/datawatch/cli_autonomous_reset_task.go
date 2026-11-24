@@ -35,6 +35,10 @@ is in once it has reached the attempt cap; the clear is recorded on the
 Automaton's decision log. A reset made from inside a session keeps the count.
 --clean-restart starts the next attempt from the pre-task tree.
 
+A closed Automaton (cancelled, rejected or archived, or with a recorded closed
+outcome) is reopened only by the operator's own reset, which clears the outcome.
+A reset made from inside a session is refused for it.
+
 A force reset that clears the attempt count, made from this command rather
 than the web app, raises an alert to the operator and is audited. --reason is
 recorded in both; without one the alert says no reason was given.`,

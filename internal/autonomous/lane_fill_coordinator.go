@@ -562,6 +562,7 @@ func (c *Coordinator) laneFillAudit(rec *laneFillRecords, e *laneFillEntry) {
 // laneFillRaw is what the snapshot copies out of one Automaton under the
 // store lock, so the rest of the work happens outside it.
 type laneFillRaw struct {
+	closed          bool // closed to recovery (closedRecordReason): never selected
 	id, title, spec string
 	status          PRDStatus
 	pref            string
@@ -632,6 +633,7 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 				defect:        EffectiveKind(p, nil) == PRDKindBug,
 				reviewOutcome: p.RulesReviewOutcome,
 				projectDir:    p.ProjectDir,
+				closed:        closedRecordReason(p) != "",
 			}
 			if hasShippedRecord(p) && !overrideCovers(p) {
 				r.shippedRelease, r.shippedCommit = strings.TrimSpace(p.MergedInRelease), strings.TrimSpace(p.MergeCommit)
@@ -734,7 +736,10 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 	worktrees := map[string]string{}
 	inFlight := map[string]LaneType{}
 	for _, r := range raws {
-		if r.template {
+		// A closed record is never selected: not as a candidate, a draft to plan
+		// or the occupant of a lane. It stays in raws so that a "sequenced
+		// after" reference to it still resolves.
+		if r.template || r.closed {
 			continue
 		}
 		backend := c.laneFillWorkerBackend(r, mcfg)

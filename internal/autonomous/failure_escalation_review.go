@@ -186,6 +186,11 @@ func (m *Manager) ResolveTaskReview(prdID, taskID string, req ReviewResolution, 
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
+	if !isOperatorActor(actor) {
+		if why := m.closedReason(prd); why != "" {
+			return nil, fmt.Errorf("prd %q is closed (%s): only the operator resolves a task of a closed Automaton", prdID, why)
+		}
+	}
 	task, story := findTaskInPRD(prd, taskID)
 	if task == nil {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)

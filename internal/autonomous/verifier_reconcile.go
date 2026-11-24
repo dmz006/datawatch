@@ -136,6 +136,9 @@ func (m *Manager) ReconcileVerifiers(host VerifierHost) []VerifierAction {
 		if held, ok := lookup(a.TaskID); ok && m.prdIsHeld(held.PRDID) {
 			continue // a held Automaton's tasks and record are left exactly as they are
 		}
+		if info, ok := lookup(a.TaskID); ok && a.Kind == verifierActionAdopt && m.closedToRecoveryID(info.PRDID) {
+			a.Kind, a.Reason = verifierActionEnd, "the Automaton is closed: its verifier is ended, not adopted"
+		}
 		switch a.Kind {
 		case verifierActionEnd:
 			if err := host.End(a.SessionID, a.Reason); err != nil {

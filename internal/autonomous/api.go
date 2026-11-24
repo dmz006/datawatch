@@ -294,6 +294,12 @@ func (a *API) resumeRunningPRDs() {
 	// when the pass does, on every exit path.
 	defer a.M.markCapacityAdoptionComplete()
 
+	// First: a record with a closed outcome that reads running gets its closed
+	// status back, before any pass below can take it for live work.
+	if n := len(a.M.RestoreClosedRecords()); n > 0 {
+		fmt.Printf("[autonomous] boot-resume: restored the closed status of %d Automaton(s)\n", n)
+	}
+
 	// Verifier sessions left from before the restart are reconciled once,
 	// before any task resumes verification, so a resumed flow waits for the
 	// surviving verifier instead of spawning a second one.
@@ -333,19 +339,24 @@ func (a *API) resumeRunningPRDs() {
 		// against a concurrent Run() mutating it. Read it under the Manager mutex.
 		status, _ := a.prdStatus(prd.ID)
 		fmt.Printf("[autonomous] boot-resume: scanning prd=%s status=%s\n", prd.ID, status)
+		if a.M.closedToRecovery(prd) {
+			// A closed record is never planned, resumed, recovered or parked, and
+			// stays as it is. A planning session still linked to a cancelled,
+			// planning or failed one is an orphan, so kill it.
+			switch status {
+			case PRDCancelled, PRDPlanning, PRDFailed:
+				if n := a.M.killOrphanDecomposeSessions(prd.ID); n > 0 {
+					fmt.Printf("[autonomous] boot-resume: prd=%s is closed, killed %d orphan decompose session(s)\n", prd.ID, n)
+				}
+			}
+			continue
+		}
 		switch status {
 		case PRDPlanning:
 			// A PRD stuck in planning means the daemon was restarted while its
 			// planner (decompose) session was running. What happens next is the
 			// planning_restart_policy decision (see bootResumePlanning).
 			a.bootResumePlanning(prd)
-		case PRDCancelled:
-			// An operator-cancelled PRD must never be re-decomposed. A live
-			// planning session still linked to it is an orphan, so kill it.
-			// No status mutation: the PRD stays cancelled.
-			if n := a.M.killOrphanDecomposeSessions(prd.ID); n > 0 {
-				fmt.Printf("[autonomous] boot-resume: prd=%s is cancelled, killed %d orphan decompose session(s)\n", prd.ID, n)
-			}
 		case PRDRunning:
 			// A PRD can be legitimately Running because something else (an
 			// operator's Run() call, or a Run() started earlier in this same
@@ -1106,7 +1117,9 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 					var old PRDStatus
 					var revert bool
 					a.M.Store().WithLock(func() {
-						if p.Status != PRDCancelled && !judgeTimeoutHoldReplayable(p) {
+						// A closed record keeps its status: reverting it to
+						// approved would reopen it.
+						if closedRecordReason(p) == "" && !judgeTimeoutHoldReplayable(p) {
 							revert = true
 							old = p.Status
 							p.Status = PRDApproved
@@ -1671,6 +1684,11 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	// The answer to a finished-work question lands, keeps or drops the work
 	// (finished_work.go).
 	if a.M.onFinishedWorkAnswer(c) {
+		return
+	}
+	// Every route below resumes, resets or replans work. None of them applies
+	// to a closed record.
+	if a.M.ignoreAnswerForClosedRecord(c) {
 		return
 	}
 	// The answer to a planning failure question rewords the spec and plans

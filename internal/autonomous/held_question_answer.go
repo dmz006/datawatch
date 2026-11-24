@@ -373,6 +373,11 @@ func (m *Manager) routeHeldAnswer(ctx context.Context, q Question, ans *Answer, 
 		// exactly like hold.
 		return heldResultRecorded, "the answer carries no option (free text); the held state is left as it stands"
 	}
+	// A pending insert belongs to an Automation; every other state belongs to
+	// the question's own Automaton, and nothing is applied to a closed one.
+	if HeldState(state) != HeldPendingInsert && m.closedToRecoveryID(q.PRDID) {
+		return heldResultStale, "the Automaton is closed; nothing is applied to it"
+	}
 	switch HeldState(state) {
 	case HeldBlocked:
 		return m.routeHeldBlocked(q, ans)

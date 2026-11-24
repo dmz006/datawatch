@@ -165,6 +165,11 @@ func (m *Manager) refuseClosedWork(prd *PRD) error {
 	if m == nil || prd == nil {
 		return nil
 	}
+	// A recorded closed outcome refuses the start whatever the shipped-work
+	// setting says (closed_record.go).
+	if err := m.refuseClosedOutcome(prd); err != nil {
+		return err
+	}
 	mode := m.Config().EffectiveShippedRefusal()
 	if mode == ShippedRefusalOff {
 		return nil
@@ -257,7 +262,7 @@ func (m *Manager) DeliverShippedQueued() []string {
 	prds := m.store.ListPRDs()
 	m.readLocked(func() {
 		for _, p := range prds {
-			if p == nil || p.IsTemplate || !shippedQueuedStatus(p.Status) {
+			if p == nil || p.IsTemplate || !shippedQueuedStatus(p.Status) || closedRecordReason(p) != "" {
 				continue
 			}
 			if code, _ := closedWorkRefusal(p); code == LaneFillReasonAlreadyShipped {
@@ -322,6 +327,7 @@ func (m *Manager) ForceClosedWork(id, actor, reason string) (*PRD, error) {
 			p.ShippedRefusal = nil
 		}
 		p.ClosedWorkOverride = &ClosedWorkOverride{Commit: commit, Actor: actor, Reason: reason, At: at}
+		clearClosedOutcomeLocked(p, actor, "the operator forced the shipped work to run again", at)
 		note := fmt.Sprintf("Forced past the shipped-work rule for commit %s (release %s): %s.", shortCommit(commit), strings.TrimSpace(p.MergedInRelease), reason)
 		if restored != "" {
 			note += fmt.Sprintf(" The daemon had marked it delivered; its status is back to %s.", restored)

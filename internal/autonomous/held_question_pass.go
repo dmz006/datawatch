@@ -228,6 +228,9 @@ func (c *Coordinator) collectHeldItems(qcfg config.AutonomousQuestionsConfig, st
 	}
 
 	for _, prd := range m.store.ListPRDs() {
+		if m.closedToRecovery(prd) {
+			continue // no question is raised about a closed Automaton
+		}
 		aCtx := aCtxOf(prd)
 
 		// PRD-level holds.
