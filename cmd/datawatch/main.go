@@ -4834,6 +4834,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
+			ShippedRefusal:                   acfgIn.ShippedRefusal,
 			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
 			ArchiveGraceMinutes:              acfgIn.ArchiveGraceMinutes,
 			ArchiveKeepUnmerged:              acfgIn.ArchiveKeepUnmerged,

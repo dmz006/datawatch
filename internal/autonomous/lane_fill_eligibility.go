@@ -49,6 +49,16 @@ const (
 	// AcknowledgePlanCoverage with a non-empty note, or a re-decompose with a
 	// covering plan.
 	LaneFillReasonPlanCoverageBlocked = "plan_coverage_blocked"
+	// LaneFillReasonAlreadyShipped: the Automaton's own record says its work
+	// already shipped (a release and a merge commit both set). It never
+	// starts; the daemon marks it delivered and drops it from the queue. A
+	// shipped record on another Automaton never causes this.
+	LaneFillReasonAlreadyShipped = "already_shipped"
+	// LaneFillReasonWorkClosed: the Automaton is archived, cancelled,
+	// completed or rejected. Lane fill never lists closed work, so the code
+	// appears in the refusal of a start and on the record, not as a lane
+	// fill chip.
+	LaneFillReasonWorkClosed = "work_closed"
 )
 
 // LaneFillRefusal is why lane fill will not take a queued Automaton: a stable
@@ -290,6 +300,9 @@ func laneFillExcludedText(id string, r LaneFillRefusal) string {
 // the now argument. An Automaton whose status is held is refused first, with
 // code operator_hold, whatever else is true of it. The rules, in order:
 //
+//  0. already_shipped: the candidate's own shipped record is set (release and
+//     merge commit), so its work is delivered; checked right after the
+//     operator hold, before everything else;
 //  1. held: the candidate carries a hold (HOLD line, do not run, sequenced
 //     last, a judge time-out, or sequenced after an unshipped Automaton);
 //  2. stale: a queued Automaton (draft, approved or needs_review) whose last
@@ -314,6 +327,10 @@ func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now ti
 	}
 	if !laneFillQueuedStatus(c.Status) {
 		return "", ""
+	}
+	if c.ShippedRelease != "" && c.ShippedCommit != "" {
+		return LaneFillReasonAlreadyShipped, fmt.Sprintf("its own shipped record is set (release %s, commit %s): the work is delivered and does not run",
+			c.ShippedRelease, shortCommit(c.ShippedCommit))
 	}
 	if c.HoldReason != "" {
 		code = c.HoldCode

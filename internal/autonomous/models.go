@@ -448,6 +448,13 @@ type PRD struct {
 	// the Automaton never had a branch.
 	Landing *Landing `json:"landing,omitempty"`
 
+	// ShippedRefusal is why the daemon dropped this Automaton as delivered:
+	// its own shipped record was already set when it was about to start. Nil
+	// when it never was. ClosedWorkOverride is the operator's audited force
+	// past that rule for one merge commit. See closed_work.go.
+	ShippedRefusal     *ShippedRefusalRecord `json:"shipped_refusal,omitempty"`
+	ClosedWorkOverride *ClosedWorkOverride   `json:"closed_work_override,omitempty"`
+
 	// BranchRefresh is the state of the last branch refresh against main.
 	BranchRefresh *BranchRefresh `json:"branch_refresh,omitempty"`
 	// BranchRefreshOverride overrides the global branch-refresh setting for

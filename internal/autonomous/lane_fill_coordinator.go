@@ -405,6 +405,9 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	if !c.Ready() {
 		return
 	}
+	// Shipped queued work is dropped from the queue first, whatever the lane
+	// fill modes are, so no queue ever keeps it.
+	c.m.DeliverShippedQueued()
 	c.laneFillAuditModeChange(kinds)
 	if kinds.allOff() {
 		c.laneFillResetAlerts()
@@ -581,6 +584,9 @@ type laneFillRaw struct {
 	branch, worktreeDir string
 	// reviewOutcome is the Automaton's last blocked rules review record, if any.
 	reviewOutcome *RulesReviewOutcome
+	// shippedRelease and shippedCommit are the Automaton's own shipped record,
+	// empty when none is set or an operator force covers it.
+	shippedRelease, shippedCommit string
 	// hold is a copy of the hold record of a held Automaton, nil otherwise.
 	hold *HoldState
 }
@@ -621,6 +627,9 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 				template: p.IsTemplate, typ: p.Type, branch: p.Git.Branch,
 				defect:        EffectiveKind(p, nil) == PRDKindBug,
 				reviewOutcome: p.RulesReviewOutcome,
+			}
+			if hasShippedRecord(p) && !overrideCovers(p) {
+				r.shippedRelease, r.shippedCommit = strings.TrimSpace(p.MergedInRelease), strings.TrimSpace(p.MergeCommit)
 			}
 			if p.Hold != nil {
 				h := *p.Hold
@@ -712,6 +721,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 	c.lf.mu.Unlock()
 	grace := 3 * time.Duration(cfg.EffectivePollSeconds()) * time.Second
 
+	shippedRule := mcfg.EffectiveShippedRefusal() == ShippedRefusalOn
 	var running []LaneOccupant
 	var waiting []LaneFillWaitingOcc
 	var cands []LaneFillCandidate
@@ -765,6 +775,9 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 			InAutomation:         r.automationID != "",
 			BackendChangeAllowed: prdLLMOverrideAllowed(r.status),
 			CoverageGateBlocked:  c.m.planCoverageGateBlocks(r.id),
+		}
+		if shippedRule {
+			cand.ShippedRelease, cand.ShippedCommit = r.shippedRelease, r.shippedCommit
 		}
 		cand.NeedsMergeFlag = c.laneFillNeedsMerge(ctx, probe, cand)
 		if cfg.EffectiveRequireConfirmedProposal() && laneFillQueuedStatus(cand.Status) {

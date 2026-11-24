@@ -676,6 +676,9 @@ type Config struct {
 	// tree lock), never a retry. Default false; per-PRD override
 	// PRD.RefuseDirtyTreeStart.
 	RefuseDirtyTreeStart bool `json:"refuse_dirty_tree_start"`
+	// ShippedRefusal mirrors autonomous.shipped_refusal: on (default, empty
+	// reads as on), shadow (log only) or off. See closed_work.go.
+	ShippedRefusal string `json:"shipped_refusal,omitempty"`
 
 	// Parallel carries autonomous.parallel.*; read it through
 	// EffectiveReadOnlyTasks, never directly.
@@ -3751,6 +3754,9 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 	if err := m.refuseHeld(prd); err != nil {
 		return nil, err
 	}
+	if err := m.refuseClosedWork(prd); err != nil {
+		return nil, err
+	}
 	// BL407 Phase 1 extension (found live 2026-10-11 creating BL404's
 	// own PRD): session-based decompose needs a real project_dir, same
 	// as Run() does, so a worktree-mode PRD gets one here too — not
@@ -3964,6 +3970,9 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 	if err := m.refuseHeld(prd); err != nil {
 		return nil, err
 	}
+	if err := m.refuseClosedWork(prd); err != nil {
+		return nil, err
+	}
 	// BL407 Phase 1 extension — see Decompose()'s identical call for
 	// the full explanation. decomposeStreamingCore is a drifted
 	// duplicate of Decompose() by design history (see this function's
@@ -4170,6 +4179,9 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
 	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
+	if err := m.refuseClosedWork(prd); err != nil {
 		return nil, err
 	}
 	if err := m.refuseMainCheckout(prd); err != nil {
