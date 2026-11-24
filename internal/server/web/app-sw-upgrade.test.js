@@ -126,24 +126,35 @@ test('registerServiceWorker: registers the versioned script URL when the version
   assert.equal(sandbox._swRegUrl, '/sw.js?v=9.119.0');
 });
 
-test('registerServiceWorker: bare URL before the version is known, versioned adopt after', async () => {
+test('registerServiceWorker before state._daemonVersion is set registers exactly one URL: the versioned one from window.__DW_VERSION__, never bare /sw.js', async () => {
   const sandbox = loadAppJS({ sessionStorage: makeSessionStorage() });
-  // Version not recorded yet -> bare /sw.js (the fallback).
+  // DOMContentLoaded runs registerServiceWorker() before _bootDaemonVersion()
+  // has recorded the daemon version; the page's own baked version is known.
+  sandbox.__DW_VERSION__ = '9.119.0';
   assert.equal(vm.runInContext('state._daemonVersion', sandbox), undefined);
   const sw = installServiceWorker(sandbox, { controller: null });
   vm.runInContext('registerServiceWorker();', sandbox);
   await flushAsync(6);
-  assert.deepEqual(sw.registerCalls, ['/sw.js']);
-  assert.equal(sandbox._swRegUrl, '/sw.js');
+  assert.deepEqual(sw.registerCalls, ['/sw.js?v=9.119.0'], 'one registration, versioned, no bare /sw.js');
+  assert.equal(sandbox._swRegUrl, '/sw.js?v=9.119.0');
 
-  // The daemon version is first learned after registration (boot health
-  // fetch / first sessions frame): adopt the versioned URL.
+  // The daemon version is then learned (boot health fetch / first sessions
+  // frame) and equals the page's version: adopting it must not register a
+  // second worker URL for the same scope.
+  vm.runInContext(`state._daemonVersion = '9.119.0'; _swAdoptDaemonVersion('9.119.0');`, sandbox);
+  await flushAsync(6);
+  assert.deepEqual(sw.registerCalls, ['/sw.js?v=9.119.0'], 'adopting the same release is a no-op');
+});
+
+test('registerServiceWorker: with no page version and no daemon version yet, the bare URL is the only fallback and a later adopt versions it', async () => {
+  const sandbox = loadAppJS({ sessionStorage: makeSessionStorage() });
+  const sw = installServiceWorker(sandbox, { controller: null });
+  vm.runInContext('registerServiceWorker();', sandbox);
+  await flushAsync(6);
+  assert.deepEqual(sw.registerCalls, ['/sw.js']);
   vm.runInContext(`state._daemonVersion = '9.119.0'; _swAdoptDaemonVersion('9.119.0');`, sandbox);
   await flushAsync(6);
   assert.deepEqual(sw.registerCalls, ['/sw.js', '/sw.js?v=9.119.0']);
-  assert.equal(sandbox._swRegUrl, '/sw.js?v=9.119.0');
-
-  // Re-adopting the SAME version is a no-op (idempotent per scope).
   vm.runInContext(`_swAdoptDaemonVersion('9.119.0');`, sandbox);
   await flushAsync(6);
   assert.deepEqual(sw.registerCalls, ['/sw.js', '/sw.js?v=9.119.0']);
@@ -240,4 +251,74 @@ test('controllerchange (user not idle): no reload, banner path instead', async (
   assert.equal(sandbox.sessionStorage.getItem(MARK_KEY), null, 'the once-only slot is not consumed');
   assert.equal(vm.runInContext('state._updateBannerShown', sandbox), true,
     'the update banner path (banner + recheck) is used instead');
+});
+
+
+// ── no update signal without a real release change ─────────────────────
+
+test('controllerchange with the page version equal to the daemon version: no banner, no reload, no recheck timer', async () => {
+  const sandbox = loadAppJS({ sessionStorage: makeSessionStorage() });
+  const timers = [];
+  sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  const created = [];
+  const realCreate = sandbox.document.createElement;
+  sandbox.document.createElement = (...a) => { const el = realCreate(...a); created.push(el); return el; };
+  sandbox.__DW_VERSION__ = '9.119.0';
+  vm.runInContext(`state._daemonVersion = '9.119.0';`, sandbox);
+  const sw = installServiceWorker(sandbox, { controller: { id: 'old-worker' } });
+  vm.runInContext('registerServiceWorker();', sandbox);
+  await flushAsync(6);
+  const before = timers.length;
+  // Both the idle and the active-user branches must stay quiet.
+  vm.runInContext(`state._lastUserActivityAt = Date.now() - 60000;`, sandbox);
+  sw.controllerchange[0]();
+  vm.runInContext(`state._lastUserActivityAt = Date.now();`, sandbox);
+  sw.controllerchange[0]();
+  assert.equal(sandbox.__reloads, 0, 'same release: never reload');
+  assert.notEqual(vm.runInContext('state._updateBannerShown', sandbox), true, 'same release: no banner state');
+  assert.equal(created.filter(e => e && e.id === 'updateAvailableBanner').length, 0, 'same release: no banner element');
+  assert.equal(timers.length, before, 'same release: no reload timer scheduled');
+  assert.ok(!vm.runInContext('state._updateAvailable', sandbox), 'same release: update flag stays unset');
+});
+
+test('controllerchange with the page version different from the daemon version still raises the banner', async () => {
+  const sandbox = loadAppJS({ sessionStorage: makeSessionStorage() });
+  sandbox.__DW_VERSION__ = '9.119.0';
+  vm.runInContext(`state._daemonVersion = '9.120.0';`, sandbox);
+  const sw = installServiceWorker(sandbox, { controller: { id: 'old-worker' } });
+  vm.runInContext('registerServiceWorker();', sandbox);
+  await flushAsync(6);
+  sw.controllerchange[0]();
+  assert.equal(vm.runInContext('state._updateBannerShown', sandbox), true, 'a real release change shows the banner');
+});
+
+test('_scheduleUpdateRecheck reloads at most once per tab session', () => {
+  const sandbox = loadAppJS({ sessionStorage: makeSessionStorage() });
+  const timers = [];
+  sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  sandbox.__DW_VERSION__ = '9.119.0';
+  vm.runInContext(`state._daemonVersion = '9.119.0'; state._daemonVersionByServer = { local: '9.120.0' };
+    state._updateAvailable = '9.120.0'; state._lastUserActivityAt = Date.now() - 60000;`, sandbox);
+  vm.runInContext('_scheduleUpdateRecheck();', sandbox);
+  timers.pop().fn();
+  assert.equal(sandbox.__reloads, 1, 'first idle recheck reloads');
+  assert.equal(sandbox.sessionStorage.getItem(MARK_KEY), '1', 'the once-only slot was consumed');
+  // The tab comes back (same sessionStorage), the flag is raised again, the
+  // user is idle again: the recheck must NOT reload a second time.
+  vm.runInContext(`state._updateAvailable = '9.120.0'; _scheduleUpdateRecheck();`, sandbox);
+  while (timers.length) timers.pop().fn();
+  assert.equal(sandbox.__reloads, 1, 'a second recheck in the same tab never reloads');
+});
+
+test('_scheduleUpdateRecheck does not reload when the page already runs the daemon release', () => {
+  const sandbox = loadAppJS({ sessionStorage: makeSessionStorage() });
+  const timers = [];
+  sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  sandbox.__DW_VERSION__ = '9.119.0';
+  vm.runInContext(`state._daemonVersion = '9.119.0'; state._updateAvailable = true;
+    state._lastUserActivityAt = Date.now() - 60000;`, sandbox);
+  vm.runInContext('_scheduleUpdateRecheck();', sandbox);
+  while (timers.length) timers.pop().fn();
+  assert.equal(sandbox.__reloads, 0, 'same release: the idle recheck must not reload');
+  assert.equal(sandbox.sessionStorage.getItem(MARK_KEY), null, 'same release: slot untouched');
 });

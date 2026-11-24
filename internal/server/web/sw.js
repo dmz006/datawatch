@@ -70,7 +70,13 @@ const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/automata-triage-model.js
 // window would only churn the user's open tabs for nothing.
 function shouldNavigateOnActivate(cacheKeys, cacheName) {
   if (!Array.isArray(cacheKeys)) return false;
-  return cacheKeys.some(key => key !== cacheName);
+  // The static fallback name belongs to a worker registered without a release
+  // query string. Before bare and versioned registrations were kept apart the
+  // two alternated on every load and each took the other's cache for a stale
+  // one, so the activate step re-navigated every window each time. That cache
+  // is the same release as the versioned one, never a different build: it is
+  // still purged, but it does not count as an upgrade.
+  return cacheKeys.some(key => key !== cacheName && key !== STATIC_CACHE_NAME);
 }
 
 self.addEventListener('install', event => {
@@ -115,8 +121,12 @@ self.addEventListener('activate', event => {
     // requires the SW to be the controller (just claimed above) and the
     // target URL to be same-origin (always true here).
     const windows = await self.clients.matchAll({ type: 'window' });
+    // Started, not awaited: the navigation is answered by this worker's fetch
+    // handler, and fetch events only run once activation has finished, so
+    // waiting for it here would deadlock the page until the browser kills
+    // the worker.
     for (const w of windows) {
-      try { await w.navigate(w.url); } catch (e) { /* ignore */ }
+      try { Promise.resolve(w.navigate(w.url)).catch(() => { /* ignore */ }); } catch (e) { /* ignore */ }
     }
   })());
 });

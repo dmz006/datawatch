@@ -62,6 +62,16 @@ test('shouldNavigateOnActivate: non-array input is treated as no keys', () => {
   assert.equal(shouldNavigateOnActivate(undefined, CURRENT), false);
 });
 
+// The bare worker (static cache name) and the versioned worker of the SAME
+// release alternated on every page load before the fix and each saw the other's
+// cache as "stale". The other worker's cache is the same release, not an upgrade.
+test('shouldNavigateOnActivate: the only other key is the same release cache (static fallback name) is not an upgrade', () => {
+  assert.equal(shouldNavigateOnActivate([STATIC_CACHE_NAME, CURRENT], CURRENT), false);
+  assert.equal(shouldNavigateOnActivate([STATIC_CACHE_NAME], CURRENT), false);
+  // A different release's key is still a genuine upgrade.
+  assert.equal(shouldNavigateOnActivate([STATIC_CACHE_NAME, 'datawatch-6.9.9', CURRENT], CURRENT), true);
+});
+
 // ---------------- activate handler end-to-end ----------------
 
 function makeWindow(url, opts = {}) {
@@ -203,4 +213,22 @@ test('activate: previous release cache is deleted, running release cache is kept
   assert.equal(result.ok, true, `activate handler rejected: ${result.err}`);
   assert.deepEqual(deleted, [previous], 'only the previous release cache deleted');
   assert.equal(claims.count, 1, 'clients.claim called once');
+});
+
+// A window navigation issued from activate is served by THIS worker's fetch
+// handler, and fetch events wait until activation has finished. If activate
+// awaits the navigation inside waitUntil, the page request waits on the
+// activation and the activation waits on the page request: the tab hangs on a
+// blank page until the browser kills the worker minutes later (found against a
+// real browser on a release change). Activation must finish without waiting for
+// the navigations it started.
+test('activate: finishes without waiting for a window navigation that has not settled', async () => {
+  const hung = { url: 'https://datawatch.local/', attempts: 0, navigate() { this.attempts += 1; return new Promise(() => {}); } };
+  const outcome = runActivate({ cacheKeys: ['datawatch-6.9.9', CURRENT], windows: [hung] });
+  const raced = await Promise.race([
+    outcome.then(() => 'activated'),
+    new Promise(resolve => setTimeout(() => resolve('deadlocked'), 300)),
+  ]);
+  assert.equal(raced, 'activated', 'activate must not await WindowClient.navigate (the navigation needs the activation to finish)');
+  assert.equal(hung.attempts, 1, 'the window was still told to navigate once');
 });

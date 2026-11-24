@@ -2652,17 +2652,20 @@ clearing:
 
 - The service worker is registered at **`/sw.js?v=<release>`** — a distinct
   worker URL per release — and its cache name is derived from the same
-  version, so each release owns its own cache. If the page registers before
-  it has learned the release number, it registers bare and adopts the
-  versioned URL as soon as the version is known.
+  version, so each release owns its own cache. The page registers the
+  versioned URL at once, from the release number stamped into its own HTML,
+  and never the bare URL while any release number is known; an unchanged
+  release therefore installs no new worker.
 - When a new release is installed, the new worker activates, purges the
   older caches and takes over the open tabs: the page reloads **at most once
   per upgrade**, and only when you are not mid-thing (typing in an input,
   the terminal focused, an unsent draft, or still active within the last 30
   seconds).
 - If you are mid-thing the reload is deferred: an "Update available — tap to
-  reload" banner appears at the bottom of the page and reloads as soon as
-  you go idle. Tap the banner's **Reload** button to apply it immediately.
+  reload" banner appears at the bottom of the page, only when the release
+  the page was loaded with differs from the release the daemon reports, and
+  reloads as soon as you go idle (once per browser tab session). Tap the
+  banner's **Reload** button to apply it immediately.
 - The manual escape hatch for a stuck cache is still `forcePWAUpdate()` in
   the browser console (unregisters the service worker, drops its caches and
   reloads with bypass).

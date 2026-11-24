@@ -280,6 +280,6 @@ Plain HTTP on Tailscale is equivalent to HTTPS on the public internet. TLS is on
 - Clear the site cache and reload
 
 **PWA still shows the old version after a datawatch upgrade**
-- Upgrades normally apply themselves: the service worker is registered per release (`/sw.js?v=<release>`) with its own cache, the new worker purges the old caches and the page reloads at most once per upgrade. In DevTools → Application → Service Workers the registration URL should read `/sw.js?v=<release>`.
-- If you were mid-thing (typing, terminal focused, an unsent draft) the reload is deferred — wait for the "Update available — tap to reload" banner and tap **Reload**.
+- Upgrades normally apply themselves: the service worker is registered per release (`/sw.js?v=<release>`) with its own cache, the new worker purges the old caches and the page reloads at most once per upgrade. The page registers the versioned worker URL as soon as it loads and never the bare `/sw.js` when it knows its release, so an unchanged release installs no new worker, shows no update bar and does not reload. In DevTools → Application → Service Workers the registration URL should read `/sw.js?v=<release>`.
+- If you were mid-thing (typing, terminal focused, an unsent draft) the reload is deferred — wait for the "Update available — tap to reload" banner and tap **Reload**. The bar appears only when the release the page was loaded with differs from the release the daemon reports; the idle reload that follows happens once per browser tab session, so a tab that already reloaded keeps the bar for a manual tap.
 - Last resort: run `forcePWAUpdate()` in the browser console (unregisters the worker, drops its caches, reloads with bypass), or clear the site data and reload.

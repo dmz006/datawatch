@@ -759,6 +759,21 @@ function _markUserActivity() { state._lastUserActivityAt = Date.now(); }
 });
 state._lastUserActivityAt = Date.now();
 
+// True only for a real release change: the release this page was loaded with
+// (window.__DW_VERSION__, stamped into the HTML) differs from the one the
+// local daemon now reports (the latest recorded local version, or the version
+// the pending update carries). When either half is unknown the answer is true,
+// so a build without a stamped page version keeps the earlier behaviour.
+function _updateIsRealReleaseChange() {
+  const page = _aboutLoadedPageVersion();
+  if (!page) return true;
+  const bySrv = state._daemonVersionByServer;
+  const pending = (typeof state._updateAvailable === 'string') ? state._updateAvailable : '';
+  const daemon = String(pending || (bySrv && bySrv.local) || state._daemonVersion || '').trim();
+  if (!daemon) return true;
+  return daemon !== page;
+}
+
 function _hideUpdateBanner() {
   if (state._updateBannerTimer) { clearTimeout(state._updateBannerTimer); state._updateBannerTimer = null; }
   const b = document.getElementById('updateAvailableBanner');
@@ -770,8 +785,16 @@ function _scheduleUpdateRecheck() {
   state._updateBannerTimer = setTimeout(() => {
     state._updateBannerTimer = null;
     if (!state._updateAvailable) return;
+    // The page already runs the release the daemon reports: nothing to reload for.
+    if (!_updateIsRealReleaseChange()) { _hideUpdateBanner(); state._updateAvailable = false; return; }
     // Real build change (the banner's own signal) and the user is now idle past the grace.
-    if (_canAutoReload(_autoReloadCtx())) { _hideUpdateBanner(); location.reload(); return; }
+    if (_canAutoReload(_autoReloadCtx())) {
+      // Once per tab session, the same slot the controllerchange reload uses: a
+      // reload that cannot be recorded or was already taken leaves the banner
+      // for a manual tap instead of repeating every 30 seconds.
+      if (!_swTakeAutoReloadSlot(typeof sessionStorage !== 'undefined' ? sessionStorage : null)) return;
+      _hideUpdateBanner(); location.reload(); return;
+    }
     _scheduleUpdateRecheck();
   }, AUTO_RELOAD_RECHECK_MS);
 }
@@ -35107,11 +35130,12 @@ function _swAdoptDaemonVersion(version) {
     const url = _swScriptUrl(version);
     if (window._swRegUrl === url) return;
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const prevUrl = window._swRegUrl;
+    window._swRegUrl = url; // recorded now: a second adopt of the same URL must not register again
     navigator.serviceWorker.register(url).then(reg => {
       if (!reg) return;
       window._swReg = reg;
-      window._swRegUrl = url;
-    }).catch(() => {});
+    }).catch(() => { if (window._swRegUrl === url) window._swRegUrl = prevUrl; });
   } catch (_) { /* SW is best-effort; never break the page */ }
 }
 
@@ -35122,7 +35146,13 @@ function registerServiceWorker() {
     // changed" check honest across releases (see _swScriptUrl above); bare
     // /sw.js only when the release has not been recorded yet —
     // _swAdoptDaemonVersion re-registers once it has.
-    const scriptUrl = _swScriptUrl(state._daemonVersion);
+    // At DOMContentLoaded state._daemonVersion is not recorded yet, so the
+    // page's own baked release (window.__DW_VERSION__) is used first: the
+    // versioned URL is registered at once and the bare URL never, whenever any
+    // version is known. Two different script URLs on one scope would install a
+    // new worker on every load (each claims the page and reloads it).
+    const scriptUrl = _swScriptUrl(_aboutLoadedPageVersion() || state._daemonVersion);
+    window._swRegUrl = scriptUrl; // recorded now so a concurrent adopt of the same URL is a no-op
     navigator.serviceWorker.register(scriptUrl).then(reg => {
       console.log('SW registered:', reg.scope);
       window._swReg = reg;
@@ -35183,6 +35213,10 @@ function registerServiceWorker() {
         navigator.serviceWorker.addEventListener('controllerchange', () => {
           if (_reloadGuard) return;
           if (!_hadController) { _hadController = true; return; }
+          // A worker swap for the release this page already runs (claim of the
+          // same release, a cache-name migration) is not an update: no banner,
+          // no reload. Only a page version that differs from the daemon's is.
+          if (!_updateIsRealReleaseChange()) return;
           console.log('SW controller changed — fresh assets available');
           if (_canAutoReload(_autoReloadCtx())) {
             // Real build change: a fresh SW took control of this page and
