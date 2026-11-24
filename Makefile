@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
+.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-no-config-copies config-audit check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs help check-toolchain \
@@ -328,6 +328,19 @@ check-gofmt:
 
 check-no-config-copies:
 	bash scripts/check-no-config-copies.sh origin/main
+
+# Configuration audit (build tooling, not run by CI): lists every config key and
+# checks it against config-reference.yaml, the Settings rows, GET and PUT
+# /api/config, and the forwarders behind configure, config set and MCP config_set.
+# Exits non-zero for a gap with no entry in scripts/config-audit-exemptions.txt.
+# The program is built into bin/ (bounded by its own timeout), then run with a
+# 2 GB address-space cap and a 60 s timeout; it reads only the files it names
+# and normally uses about 40 MB. Pass flags with CONFIG_AUDIT_ARGS, for example
+#   make config-audit CONFIG_AUDIT_ARGS="-no-exemptions -gap-table /tmp/gaps.md"
+config-audit:
+	@mkdir -p bin
+	@timeout 120 go build -o bin/config-audit ./scripts/config-audit
+	@ulimit -v 2097152; timeout 60 bin/config-audit -root . -stats $(CONFIG_AUDIT_ARGS)
 
 # Seed .leak-patterns.local: created from the template when absent (an
 # existing file is never overwritten), then names of every federation peer,

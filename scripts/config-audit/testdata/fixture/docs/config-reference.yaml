@@ -1,0 +1,25 @@
+# ── Identity ──
+# hostname — the machine name.
+hostname: peer-d
+# no_web — present in the reference.
+no_web: false
+no_get: 0
+no_put: 0
+# The no_ref setting is left out of this file on purpose (prose, not a key line).
+untagged: x
+server:
+  port: 8080
+  tls: false
+  # server.limits.max — documented only in a comment that starts with the dotted key.
+ptr:
+  flag: false
+shared_one: a
+embedded:
+  embedded_one: b
+labels:
+  team: core
+list:
+  - one
+  - two
+# A commented sample line documents a key too:
+# wait: 5s
