@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.7 — Quiet engine while paused, private launch files, explicit launch effort and a Claude version check
+
+### Fixed
+- While paused or with the Automata loop off, the merge hold pass stays quiet and backs off instead of retrying every few seconds; planner starts for drafts and merge passes are now held by the operator pause, and a pause no longer lets an accepted plan be re-planned.
+- Every Claude launch and restart sets or clears the effort level explicitly, so a launch that names no effort no longer inherits the previous session's level.
+- A channel-enabled Claude session counts as started only when its task is delivered or it has produced a reply; a ready channel with an empty prompt no longer counts.
+- The prompt detector accepts the no-break space that Claude Code draws before its input row.
+
+### Added
+- Per-session private launch files: the worker MCP config and starting context are written to a private per-session folder that only the owner can read and that is removed when the session ends; no token is written into the project folder.
+- A Claude Code version check: when the installed version changes, the daemon replays the recorded prompt screens through its delivery checks and raises one alert if any no longer reads as ready.
+
+### Documentation
+- Pause, launch and effort how-tos and definitions.
+
 ## v9.187.6 — Web app update loop fixed: one service worker address and one reload per release change
 
 ### Fixed
