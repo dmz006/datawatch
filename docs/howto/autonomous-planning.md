@@ -498,6 +498,12 @@ To give a whole chain of Automata one set of defaults, see
   directory under Read-only or Writable directories (REST:
   `POST /api/autonomous/prds/{id}/set_dirs`). Put a research
   Automaton's output folder in the project directory, not elsewhere.
+  The Scope warnings also carry a `plan path:` line when a task names a
+  file whose folder does not exist in the project (often a typo in a
+  folder name). It is a warning only: the plan is still stored and the
+  Automaton still reaches review; fix the path in the task text. A file
+  the task itself creates in a folder that exists is not flagged. Setting
+  `scope_lint` to `off` hides these lines too.
 - **Tasks show "waiting for capacity".** The host, a compute node or an LLM is full; the task starts when a slot frees and is not failed. See [`automata-capacity.md`](automata-capacity.md).
 - **A story shows failed although its files exist.** A story is marked
   completed only when none of its tasks failed. Reset the failed task
