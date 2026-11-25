@@ -147,7 +147,14 @@ func reflogSince(gitDir, ref string) time.Time {
 	if gitDir == "" || !filepath.IsLocal(ref) {
 		return time.Time{}
 	}
-	data, err := os.ReadFile(filepath.Join(gitDir, "logs", ref)) // #nosec G304 -- a ref name git listed, checked local
+	// Read through a root on the git directory: neither the ref name nor a
+	// link inside the directory can lead the read out of it.
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		return time.Time{}
+	}
+	defer func() { _ = root.Close() }()
+	data, err := root.ReadFile(filepath.Join("logs", ref))
 	if err != nil {
 		return time.Time{}
 	}

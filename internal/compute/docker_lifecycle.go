@@ -24,6 +24,10 @@ func (d *DockerLifecycle) EnsureRunning(ctx context.Context, n *Node) (ip string
 		return "", 0, fmt.Errorf("docker lifecycle: node %q has no routing_docker_network config", n.Name)
 	}
 	cfg := n.RoutingDockerNetwork.effective()
+	// Every docker call below passes this endpoint, so it is checked once here.
+	if _, err := dockerHostArgs(cfg.DockerEndpoint); err != nil {
+		return "", 0, fmt.Errorf("docker lifecycle: %w", err)
+	}
 
 	if err := d.EnsureNetwork(ctx, cfg.NetworkName, cfg.DockerEndpoint); err != nil {
 		return "", 0, fmt.Errorf("docker lifecycle: ensure network: %w", err)
@@ -123,6 +127,10 @@ func (d *DockerLifecycle) Teardown(ctx context.Context, n *Node) error {
 		endpoint = n.RoutingDockerNetwork.DockerEndpoint
 	}
 
+	if _, err := dockerHostArgs(endpoint); err != nil {
+		return fmt.Errorf("docker lifecycle: %w", err)
+	}
+
 	stopArgs := d.hostArgs(endpoint)
 	stopArgs = append(stopArgs, "stop", cname)
 	_ = exec.CommandContext(ctx, "docker", stopArgs...).Run()
@@ -142,7 +150,10 @@ func (d *DockerLifecycle) Status(ctx context.Context, n *Node) (running bool, co
 		endpoint = n.RoutingDockerNetwork.DockerEndpoint
 	}
 
-	args := d.hostArgs(endpoint)
+	args, err := dockerHostArgs(endpoint)
+	if err != nil {
+		return false, "", fmt.Errorf("docker lifecycle: %w", err)
+	}
 	args = append(args, "inspect", "--format", `{{.State.Running}} {{.Id}}`, cname)
 	out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
 	if err != nil {

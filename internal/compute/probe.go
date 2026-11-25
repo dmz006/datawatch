@@ -110,9 +110,13 @@ func probeSSH(ctx context.Context, n *Node) error {
 }
 
 func probeDocker(ctx context.Context, n *Node) error {
-	args := []string{}
-	if n.Docker != nil && n.Docker.Endpoint != "" {
-		args = append(args, "--host", n.Docker.Endpoint)
+	endpoint := ""
+	if n.Docker != nil {
+		endpoint = n.Docker.Endpoint
+	}
+	args, err := dockerHostArgs(endpoint)
+	if err != nil {
+		return fmt.Errorf("docker probe: %w", err)
 	}
 	args = append(args, "info", "--format", "{{.ServerVersion}}")
 	out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
@@ -158,9 +162,13 @@ func probeK8s(ctx context.Context, n *Node, clusters ClusterLookup) error {
 // probeDockerNetwork verifies the Docker daemon is reachable and, when
 // auto_start is true, ensures the network and container exist.
 func probeDockerNetwork(ctx context.Context, n *Node) error {
-	args := []string{}
-	if n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.DockerEndpoint != "" {
-		args = append(args, "--host", n.RoutingDockerNetwork.DockerEndpoint)
+	endpoint := ""
+	if n.RoutingDockerNetwork != nil {
+		endpoint = n.RoutingDockerNetwork.DockerEndpoint
+	}
+	args, err := dockerHostArgs(endpoint)
+	if err != nil {
+		return fmt.Errorf("docker-network probe: %w", err)
 	}
 	args = append(args, "info", "--format", "{{.ServerVersion}}")
 	out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()

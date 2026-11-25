@@ -66,11 +66,13 @@ func (m *Manager) KeepUnlanded(ctx context.Context, branch, note string) error {
 
 // ArchiveUnlanded moves a listed branch under the archive ref namespace.
 func (m *Manager) ArchiveUnlanded(ctx context.Context, branch string) (string, error) {
-	if _, err := m.listedUnlanded(ctx, branch); err != nil {
+	entry, err := m.listedUnlanded(ctx, branch)
+	if err != nil {
 		return "", err
 	}
 	repo, _, _ := m.housekeepingPaths()
-	return ArchiveBranch(ctx, NewMergeGitRunner(), repo, branch)
+	// The name git listed, not the request's string, goes to git.
+	return ArchiveBranch(ctx, NewMergeGitRunner(), repo, entry.Branch)
 }
 
 // DeleteUnlandedWorktree backs up and deletes a listed branch and worktree.

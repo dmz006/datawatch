@@ -38,6 +38,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -147,14 +148,13 @@ func (s *Store) RecordStats() (active bool, bytesWritten, fileWrites, truncated 
 
 func (s *Store) recordsDir() string { return filepath.Join(s.dir, prdRecordsDirName) }
 
+// plainRecordIDRe is an id that can be used as a file name as it is: one path
+// segment with no dot and no separator.
+var plainRecordIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
 // recordName maps a PRD id to the base name of its record files.
 func recordName(id string) string {
-	ok := id != "" && len(id) <= 64
-	for i := 0; ok && i < len(id); i++ {
-		c := id[i]
-		ok = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_'
-	}
-	if ok {
+	if plainRecordIDRe.MatchString(id) {
 		return id
 	}
 	sum := sha256.Sum256([]byte(id))

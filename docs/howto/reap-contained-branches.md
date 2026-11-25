@@ -76,7 +76,9 @@ still stands.
 
 To bring a branch back, restore it by name: the branch is recreated at the
 **newest** backup ref for that name. A name that was never reaped is refused
-(404 over REST) — nothing is created. You can also list backups by hand with
+(404 over REST) — nothing is created. A value that is not a valid git branch
+name (for example one that starts with `-`) is refused (400 over REST) before
+git runs; the same rule applies to the remote reap restore. You can also list backups by hand with
 `git for-each-ref refs/datawatch/reap-backup/`.
 
 ## Retention: `autonomous.reaped_branch_backup_days`

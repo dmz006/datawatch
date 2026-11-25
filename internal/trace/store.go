@@ -151,8 +151,11 @@ func NewStore(dataDir string, s Settings, now func() time.Time, roots ...string)
 func (st *Store) Dir() string { return st.dir }
 
 func (st *Store) sessionPath(session string) string {
-	return filepath.Join(st.dir, url.PathEscape(session)+sessionExt)
+	return filepath.Join(st.dir, sessionFileName(session))
 }
+
+// sessionFileName is the name of a session's trace file in the trace folder.
+func sessionFileName(session string) string { return url.PathEscape(session) + sessionExt }
 
 func (st *Store) indexPath() string { return filepath.Join(st.dir, IndexFileName) }
 
@@ -499,20 +502,19 @@ func (st *Store) DeleteSession(sessionID string) error {
 		strings.ContainsAny(sessionID, `/\\`) {
 		return fmt.Errorf("trace store: invalid session id %q", sessionID)
 	}
-	path := st.sessionPath(sessionID)
-	// Defense in depth behind the id check: the escaped path must still
-	// resolve inside the trace directory.
-	rel, err := filepath.Rel(st.dir, path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("trace store: session id %q escapes the trace directory", sessionID)
-	}
-
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if _, ok := st.index[sessionID]; !ok {
 		return nil // unknown session: nothing to delete
 	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	// Remove through a root on the trace directory: behind the id check, the
+	// removal still cannot reach a file outside it.
+	root, err := os.OpenRoot(st.dir)
+	if err != nil {
+		return fmt.Errorf("trace store: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.Remove(sessionFileName(sessionID)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	delete(st.index, sessionID)

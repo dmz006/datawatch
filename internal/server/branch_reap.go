@@ -187,6 +187,8 @@ func (s *Server) handleAutonomousBranchReapRestore(w http.ResponseWriter, r *htt
 	ref, sha, err := m.ReapRestore(r.Context(), branch)
 	if err != nil {
 		switch {
+		case errors.Is(err, autonomous.ErrBadRestoreBranch):
+			http.Error(w, err.Error(), http.StatusBadRequest)
 		case errors.Is(err, autonomous.ErrNoReapBackup):
 			http.Error(w, "no backup ref for that branch: "+err.Error(), http.StatusNotFound)
 		case errors.Is(err, autonomous.ErrMergeNoBaseRepo):

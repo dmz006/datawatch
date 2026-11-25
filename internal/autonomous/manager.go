@@ -4520,6 +4520,10 @@ func (m *Manager) DeletePRD(id string) error {
 	if err := removeSavedVerifyScripts(wtDir, id); err != nil {
 		log.Printf("[autonomous] removing saved verification scripts for %s: %v", id, err)
 	}
+	// Only an id that is one plain path segment names a saved folder.
+	if !plainRecordIDRe.MatchString(id) {
+		return nil
+	}
 	// What was not a saved script is still there: say what and where, since
 	// the Automaton record that pointed at it is gone.
 	folder := savedVerifyScriptsDir(wtDir, id)
