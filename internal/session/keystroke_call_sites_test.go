@@ -40,8 +40,8 @@ var keystrokeCallSites = map[string]struct {
 	"internal/llm/backends/shell/backend.go":               {1, "backend launch in its own shell pane"},
 	"internal/llm/claudecode/backend.go":                   {2, "launch command typed into the shell before claude runs"},
 	"internal/llm/tmuxsend.go":                             {1, "helper for the launch commands"},
-	"internal/mcp/bl358_discussion_subscribe.go":           {1, "automated: discussion-sub"},
-	"internal/mcp/server.go":                               {3, "caller's exact input: send_input, send_saved_command; automated: mcp-reply"},
+	"internal/mcp/bl358_discussion_subscribe.go":           {1, "tool input, refused on a prompt (SendToolInput): discussion-sub"},
+	"internal/mcp/server.go":                               {3, "tool input, refused on a prompt (SendToolInput): send_input, send_saved_command, reply_to_parent"},
 	"internal/router/router.go":                            {2, "person: chat send and reply"},
 	"internal/server/api.go":                               {6, "person: web input, raw terminal keys, scroll keys, /api/sessions/send"},
 	"internal/server/rollback.go":                          {1, "person: session input API"},
@@ -55,7 +55,7 @@ var keystrokeCallSites = map[string]struct {
 	"internal/session/ui_prompt_dismiss.go":                {1, "one Esc only: declines, never approves"},
 }
 
-var keystrokeCall = regexp.MustCompile(`(\.(SendInput|SendRawKeys|SendKeys|SendKeysWithSettle|SendKeysGuarded|SendKeysLiteral|SendEnter|SendTrustPromptAccept|SendTrustDialogAccept)\()|"send-keys"`)
+var keystrokeCall = regexp.MustCompile(`(\.(SendInput|SendToolInput|SendRawKeys|SendKeys|SendKeysWithSettle|SendKeysGuarded|SendKeysLiteral|SendEnter|SendTrustPromptAccept|SendTrustDialogAccept)\()|"send-keys"`)
 
 func TestEveryKeystrokeCallSiteIsReviewed(t *testing.T) {
 	root := filepath.Join("..", "..")

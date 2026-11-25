@@ -300,7 +300,7 @@ func (s *Server) profileCall(method, kind, pathSuffix string, body io.Reader) (*
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.loopbackDo(http.DefaultClient, req)
 	if err != nil {
 		return nil, "", err
 	}

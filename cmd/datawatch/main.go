@@ -15984,6 +15984,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mgr.SetFlushInterval(cfg.Session.EffectiveStoreFlushInterval())
 	mgr.SetArchiveAfter(time.Duration(cfg.Session.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
 	mgr.SetFieldCap(cfg.Session.EffectiveStoreFieldCapKB() << 10)
+	defer wireStandaloneInputAudit(mgr, cfg)()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

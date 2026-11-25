@@ -525,6 +525,16 @@ When invoked from inside an existing session (e.g. claude-code
 spawning a sub-session), the parent session ID is recorded so the
 two are linked in the cross-session memory subsystem.
 
+**A waiting prompt is for the operator.** While the target session shows
+an approval, permission, safety or other confirmation prompt, or its screen
+cannot be read, `send_input`, `send_saved_command` and `reply_to_parent` are
+refused and the refusal is written to the audit log. Answer the prompt
+yourself from the web app, a chat channel, the CLI or REST, or allow the
+action in the session's permissions before the prompt appears. This stops
+answers sent through these tools; it does not prove who answered, and an
+agent with a shell can still reach a session another way.
+Details: [MCP tools and waiting prompts](../datawatch-definitions.md#mcp-tools-and-waiting-prompts).
+
 ### 5d. Comm channel
 
 | Verb | Example |

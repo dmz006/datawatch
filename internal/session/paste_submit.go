@@ -255,6 +255,12 @@ func inputHoldsText(pane, tail string) bool {
 // Enter after the bounded poll, no verification wait. Empty input is a bare
 // Enter with no polling. Uses the injectable pasteSleep/pasteNow clock.
 func submitPastedInput(tm pasteDeliverer, session, keys string) error {
+	return submitPasted(tm, session, keys, false)
+}
+
+// submitPasted is submitPastedInput. With needLive, no retry Enter is pressed
+// while the live screen cannot be read.
+func submitPasted(tm pasteDeliverer, session, keys string, needLive bool) error {
 	tail := pastedTail(keys)
 	if tail == "" {
 		return tm.SendEnter(session)
@@ -297,7 +303,8 @@ func submitPastedInput(tm pasteDeliverer, session, keys string) error {
 		}
 		// A retry Enter would answer an approval menu that has appeared
 		// since the first one.
-		if live, lerr := livePane(tm, session); lerr == nil && paneShowsApprovalMenu(live) {
+		live, lerr := livePane(tm, session)
+		if (lerr != nil && needLive) || (lerr == nil && paneShowsApprovalMenu(live)) {
 			return nil
 		}
 		if err := tm.SendEnter(session); err != nil {
@@ -319,7 +326,7 @@ func submitUnlessVetoed(tm pasteDeliverer, session, keys string, veto func(pane 
 			return ErrPromptOnScreen
 		}
 	}
-	return submitPastedInput(tm, session, keys)
+	return submitPasted(tm, session, keys, veto != nil)
 }
 
 // livePane reads the live screen where the tmux layer can, so a scrolled-back

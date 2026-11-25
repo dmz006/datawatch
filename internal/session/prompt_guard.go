@@ -10,6 +10,7 @@ package session
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -235,6 +236,56 @@ func IsPromptLine(line string) bool {
 	return menuSelectorLine.MatchString(l) || menuYesLine.MatchString(l) || yesNoToken.MatchString(l)
 }
 
+// ── input from MCP tools ────────────────────────────────────────────────────
+
+// toolRefusal is why an MCP tool's input was refused, in words the calling AI
+// session can act on. It is an ErrPromptOnScreen.
+type toolRefusal string
+
+func (e toolRefusal) Error() string        { return string(e) }
+func (e toolRefusal) Is(target error) bool { return target == ErrPromptOnScreen }
+
+const (
+	errToolPromptWaiting    toolRefusal = "refused: a prompt in this session is waiting for the operator; nothing was typed"
+	errToolScreenUnreadable toolRefusal = "refused: the session screen could not be read, so a prompt may be waiting for the operator; nothing was typed"
+	// The two below follow the re-read before Enter: the text is already in
+	// the session, so they must not claim that nothing was typed.
+	errToolPromptAppeared toolRefusal = "refused: a prompt waiting for the operator appeared while the text was being typed; Enter was not pressed, and the text may be left in the session"
+	errToolRereadFailed   toolRefusal = "refused: the session screen could not be re-read after the text was typed, so a prompt may be waiting for the operator; Enter was not pressed, and the text may be left in the session"
+)
+
+// toolRefusalFor words a pane check's error. The bare sentinel means a prompt
+// was seen; a wrapped one means the pane could not be read.
+func toolRefusalFor(err error, waiting, unreadable toolRefusal) error {
+	if err == ErrPromptOnScreen {
+		return waiting
+	}
+	return unreadable
+}
+
+// SendToolInput types the input an MCP tool was called with. Whoever calls a
+// tool may be an AI session, so it follows the rules for the daemon's own
+// senders: nothing is typed while the session shows a prompt waiting for a
+// decision or while its screen cannot be read, and the screen is read again
+// before Enter. source is only the name recorded for the input; the rules come
+// from calling this method, so no source name sent over REST changes them.
+func (m *Manager) SendToolInput(fullID, input, source string) error {
+	return m.sendInput(fullID, input, source, true, true)
+}
+
+// toolRouteAuditSource names, in the audit log, a refused attempt by an MCP
+// tool to call a daemon route that types into a session.
+const toolRouteAuditSource = "mcp-route"
+
+// AuditRefusedToolRoute records such an attempt. sessionID is the target as
+// far as the request named one.
+func (m *Manager) AuditRefusedToolRoute(sessionID, reason string) {
+	if sess, ok := m.GetSession(sessionID); ok {
+		sessionID = sess.FullID
+	}
+	m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: sessionID, Source: toolRouteAuditSource, Reason: reason})
+}
+
 // ── enforcement in the session manager ──────────────────────────────────────
 
 // InputAuditEvent is one auditable fact about input the daemon typed, or
@@ -334,7 +385,8 @@ func (m *Manager) emitInputAudit(ev InputAuditEvent) {
 			return
 		}
 		m.inputRefusedAt[key] = time.Now()
-		fmt.Printf("[input-guard] %s: source %q not typed: %s\n", ev.SessionFullID, ev.Source, ev.Reason)
+		// stderr: under `datawatch mcp`, stdout carries the protocol.
+		fmt.Fprintf(os.Stderr, "[input-guard] %s: source %q refused: %s\n", ev.SessionFullID, ev.Source, ev.Reason)
 	}
 	m.mu.Unlock()
 	if fn != nil {
