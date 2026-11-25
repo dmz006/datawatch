@@ -7439,7 +7439,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				httpServer.BroadcastTagUpdate(ev)
 			})
 			// Built-in lifecycle-event sinks (alert store + topic push) plus the
-			// comm fan-out. They subscribe to every notify event kind; which
+			// comm fan-out; every allowed event goes to all three, and only the
+			// comm text is coalesced. They subscribe to every notify event kind; which
 			// of those actually deliver is decided per Automaton by the resolver
 			// (autonomouspkg.ResolveNotifyEvents): Automaton's own notify_events
 			// > guardrail profile > autonomous.notify.default_events (shipped
@@ -7450,28 +7451,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// within CommWindow — the same 5s quiet window as the remote-alert
 			// bundler above.
 			_ = autonomouspkg.InstallLifecycleSinks(amgr, autonomouspkg.SinkConfig{
-				RecordAlert: func(level, title, body string) {
-					lv := alertspkg.LevelInfo
-					switch level {
-					case "warn":
-						lv = alertspkg.LevelWarn
-					case "error":
-						lv = alertspkg.LevelError
-					}
-					_ = alertStore.Add(lv, title, body, "")
-				},
-				PublishTopics: func(topics []string, title, message string) {
-					for _, t := range topics {
-						// One push per topic; ID/Time defaults are filled in by
-						// publishToTopic (dw-<unixnano> / unix seconds, Event
-						// "message") — same as the other in-process producers.
-						server.PublishToTopic(t, server.PushEvent{
-							Title:   title,
-							Message: message,
-							Tags:    []string{"lifecycle"},
-						})
-					}
-				},
+				RecordAlert:   lifecycleAlertSink(alertStore),
+				PublishTopics: lifecycleTopicSink(server.PublishToTopics),
 				// Comm fan-out: deliver coalesced lifecycle text over the daemon
 				// notify pipeline (routers / ntfy / email), honouring notify_exclude
 				// exactly like the existing remote-alert bundler: fresh exclude set
@@ -10084,7 +10065,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// The body reaches each chat sink verbatim (no truncation):
 		// the triage alert body is the shared triage record text, and
 		// it must arrive intact. Session alerts keep flowing through
-		// bundleRemoteAlert's bundled messages.
+		// bundleRemoteAlert's bundled messages. Lifecycle alerts are
+		// skipped inside (Alert.SkipCommFanout): the coalescing lifecycle
+		// comm fan-out sends their text.
 		if a.SessionID == "" {
 			var sendNtfy, sendEmail func(text string) error
 			if ntfyBackend != nil {

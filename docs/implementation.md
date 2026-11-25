@@ -1755,6 +1755,12 @@ sinks
 - fan out to comm channels, coalesced per Automaton so a burst of events
   from one Automaton does not become a burst of messages.
 
+All three happen for every matched event. The alert write and the topic
+push are immediate; only the comm text is coalesced. The lifecycle alert
+belongs to no session, but the daemon's alert listener does not send it
+to the comm channels, because the comm fan-out already does. One event is
+one topic publish, so a registered mobile push endpoint is dialled once.
+
 The global `notify_exclude` list (see the `notify_exclude` entry above)
 still applies to the comm fan-out: a channel named there skips the
 lifecycle message broadcast even when the event kind is enabled, and

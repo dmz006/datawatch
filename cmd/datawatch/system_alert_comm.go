@@ -18,7 +18,9 @@ import (
 // comm channels. hostname stamps the ntfy/email text the same way the
 // routers stamp theirs. sendNtfy / sendEmail carry the topic / recipient
 // already bound; they may be nil (channel not configured) and are
-// skipped when notify_exclude names the channel.
+// skipped when notify_exclude names the channel. An alert marked
+// SkipCommFanout is not sent: another path owns its chat text (the
+// lifecycle alerts, whose text the coalescing comm fan-out sends).
 func sendSystemAlertToComm(
 	a *alerts.Alert,
 	hostname string,
@@ -27,7 +29,7 @@ func sendSystemAlertToComm(
 	sendNtfy func(text string) error,
 	sendEmail func(text string) error,
 ) {
-	if a == nil {
+	if a == nil || a.SkipCommFanout {
 		return
 	}
 	excludeSet := notifyExcludeSet(notifyExclude)
