@@ -259,6 +259,13 @@ server:
   tls_port: ${SMOKE_TLS_PORT}
   tls_auto_generate: true
   token: ""
+  # The throwaway Automata and sessions below use project_dir /tmp, and
+  # directories under \$TMPD (made by mktemp under \${TMPDIR:-/tmp}). A request
+  # project_dir outside the allowed project roots is refused with HTTP 400, so
+  # the scratch daemon allows those two roots.
+  allowed_project_roots:
+    - /tmp
+    - ${TMPDIR:-/tmp}
 memory:
   enabled: true
   backend: sqlite
@@ -4428,6 +4435,7 @@ sys.exit(0 if any(p.get("name") == os.environ["UC_POOL"] and p.get("limit") == 1
       # when it fails the section skips naming exactly that.
       UC_IDS=()
       UC_PLAN_FAIL=""
+      UC_CREATE_FAIL=""
       for UC_N in a b; do
         mkdir -p "$TMPD/uc-$UC_N"
         UC_PB=$(UC_N="$UC_N" UC_TAG="$UC_TAG" UC_LLM="$UC_LLM" UC_DIR="$TMPD/uc-$UC_N" python3 -c '
@@ -4438,10 +4446,12 @@ print(json.dumps({
   "project_dir": os.environ["UC_DIR"],
   "backend": os.environ["UC_LLM"],
   "effort": "low"}))')
-        UC_PID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$UC_PB" "$BASE/api/autonomous/prds" 2>/dev/null \
-          | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || true)
+        UC_CR=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST -H "Content-Type: application/json" -d "$UC_PB" "$BASE/api/autonomous/prds" 2>/dev/null || true)
+        UC_CR_CODE="${UC_CR##*$'\n'}"; UC_CR_BODY="${UC_CR%$'\n'*}"
+        UC_PID=$(echo "$UC_CR_BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || true)
         if [[ -z "$UC_PID" ]]; then
           UC_IDS+=("")
+          UC_CREATE_FAIL="HTTP $UC_CR_CODE: ${UC_CR_BODY:0:300}"
           continue
         fi
         add_cleanup prd "$UC_PID"
@@ -4457,7 +4467,13 @@ print(json.dumps({
       done
       UC_PA="${UC_IDS[0]:-}"; UC_PB_ID="${UC_IDS[1]:-}"
       if [[ -z "$UC_PA" || -z "$UC_PB_ID" ]]; then
-        skip "capacity admission wait/release: could not create the two throwaway Automata (autonomous subsystem may be off)"
+        # A refused create is a defect; only a disabled autonomous manager
+        # (HTTP 503) is a missing prerequisite.
+        if [[ "$UC_CREATE_FAIL" == "HTTP 503:"* ]]; then
+          skip "capacity admission wait/release: autonomous manager disabled (Automaton create answered HTTP 503)"
+        else
+          ko "capacity admission wait/release: could not create the two throwaway Automata ($UC_CREATE_FAIL)"
+        fi
       elif [[ -n "$UC_PLAN_FAIL" ]]; then
         skip "capacity admission wait/release: $UC_PLAN_FAIL (planner LLM unreachable?); wait and release not exercised"
       else
@@ -4699,8 +4715,9 @@ au_code() {
 }
 
 # au_audit_has <action> <subject>: succeed when GET /api/audit?action=<action>
-# lists an entry with that subject (retried, the audit line lands just after
-# the state change).
+# lists an entry about that id, as its subject or as details.resource_id (the
+# REST handlers' Automation entries carry the id there); retried, the audit
+# line lands just after the state change.
 au_audit_has() {
   local i
   for i in 1 2 3; do
@@ -4708,7 +4725,9 @@ au_audit_has() {
 import json, os, sys
 try:
   d = json.load(sys.stdin)
-  sys.exit(0 if any(e.get("subject") == os.environ["AU_SUBJ"] for e in (d.get("entries") or [])) else 1)
+  want = os.environ["AU_SUBJ"]
+  sys.exit(0 if any(e.get("subject") == want or (e.get("details") or {}).get("resource_id") == want
+                    for e in (d.get("entries") or [])) else 1)
 except Exception:
   sys.exit(1)' && return 0
     sleep 1
@@ -4716,11 +4735,19 @@ except Exception:
   return 1
 }
 
-# au_new_prd <label>: create a draft Automaton and print its id.
+# au_new_prd <label>: create a draft Automaton and print its id. A refused
+# create prints its HTTP code and body to stderr, so the log says why.
 au_new_prd() {
-  curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  local resp code body id
+  resp=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST -H "Content-Type: application/json" \
     -d "{\"spec\":\"smoke probe - automation chain $1 $AU_TAG\",\"project_dir\":\"/tmp\",\"effort\":\"low\"}" \
-    "$BASE/api/autonomous/prds" 2>/dev/null | au_json 'd.get("id","")'
+    "$BASE/api/autonomous/prds" 2>/dev/null || true)
+  code="${resp##*$'\n'}"; body="${resp%$'\n'*}"
+  id=$(echo "$body" | au_json 'd.get("id","")')
+  if [[ -z "$id" ]]; then
+    echo "  INFO  Automaton create ($1) answered HTTP $code: ${body:0:400}" >&2
+  fi
+  echo "$id"
 }
 
 AU_PROBE=$(au_code GET /api/automations)
@@ -4850,15 +4877,15 @@ sys.exit(0 if len(xs or []) >= 1 else 1)' 2>/dev/null; then
       ko "GET /api/audit?action=automation_* has no entry with subject $AU_ID"
     fi
     if au_audit_has automation_create "$AU_ID"; then
-      ok "audit automation_create has the Automation id as subject"
+      ok "audit automation_create names the Automation id"
     else
-      ko "audit automation_create missing for $AU_ID"
+      ko "audit automation_create missing for $AU_ID: $(curl "${curl_args[@]}" "$BASE/api/audit?action=automation_create&limit=5" 2>/dev/null | head -c 400)"
     fi
     for AU_PAIR in pause:automation_pause resume:automation_resume skip_member:automation_skip_member; do
       AU_OP="${AU_PAIR%%:*}"; AU_ACT="${AU_PAIR#*:}"
       if [[ " $AU_RAN " == *" $AU_OP "* ]]; then
         if au_audit_has "$AU_ACT" "$AU_ID"; then
-          ok "audit $AU_ACT has the Automation id as subject"
+          ok "audit $AU_ACT names the Automation id"
         else
           ko "audit $AU_ACT missing for $AU_ID"
         fi
@@ -7331,14 +7358,15 @@ assert "automaton_id" in d and isinstance(d["entries"], list), d' 2>/dev/null; t
       skip "task routing: external daemon (DW_BASE set); the throwaway profile save and delete is not run"
     else
       TR_NAME="smoke-routing-throwaway"
-      TR_SAVE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"name\":\"$TR_NAME\"}" "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null || echo "000")
+      TR_SAVE_RESP=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"name\":\"$TR_NAME\"}" "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null || echo "000")
+      TR_SAVE="${TR_SAVE_RESP##*$'\n'}"; TR_SAVE_BODY="${TR_SAVE_RESP%$'\n'*}"
       TR_HAS=$(curl "${curl_args[@]}" "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null | python3 -c '
 import json,sys
 print("yes" if "'"$TR_NAME"'" in json.load(sys.stdin)["profiles"] else "no")' 2>/dev/null || echo "?")
       if [[ "$TR_SAVE" == "200" && "$TR_HAS" == "yes" ]]; then
         ok "task routing: a throwaway profile saved and appears in the profile list"
       else
-        ko "task routing: throwaway save answered HTTP $TR_SAVE and the list shows has=$TR_HAS (expected 200 and yes)"
+        ko "task routing: throwaway save answered HTTP $TR_SAVE and the list shows has=$TR_HAS (expected 200 and yes): ${TR_SAVE_BODY:0:300}"
       fi
       TR_DEL=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/autonomous/task-routing/profiles/$TR_NAME" 2>/dev/null || echo "000")
       TR_NOW=$(curl "${curl_args[@]}" "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null | python3 -c '
