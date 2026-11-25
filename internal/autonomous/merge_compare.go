@@ -37,7 +37,17 @@ func NewMergeGitRunner() MergeGitRunner { return shellMergeGit{} }
 // Run implements MergeGitRunner. The git process is killed when ctx ends, so
 // a hung git cannot outlive the caller's deadline.
 func (shellMergeGit) Run(ctx context.Context, dir string, args ...string) (string, error) {
-	return runGitInCtx(ctx, dir, args...)
+	return runGitInCtx(ctx, dir, withUntrackedShown(args)...)
+}
+
+// withUntrackedShown puts the untracked-files override in front of the two
+// subcommands that decide whether a work tree is safe to remove, so that
+// status.showUntrackedFiles=no cannot hide untracked work from them.
+func withUntrackedShown(args []string) []string {
+	if len(args) > 0 && args[0] == "status" || len(args) > 1 && args[0] == "worktree" && args[1] == "remove" {
+		return append([]string{"-c", showUntrackedOverride}, args...)
+	}
+	return args
 }
 
 // MergeCompare is the result of comparing an Automaton branch with its base.

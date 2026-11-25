@@ -42,10 +42,10 @@ func repoFromGitURL(url string) string {
 // left exactly as Run() already leaves it today. Best-effort
 // throughout, same shape as PostSessionPRHook/fireUpstreamIssueActions:
 // a push/PR failure is logged and recorded on the PRD as a Decision,
-// never fails Run() itself. The worktree is only removed once the
-// branch is safely pushed AND the PR is open (Decision 5) — a failure
-// anywhere in between leaves it in place for operator inspection,
-// rather than risk deleting the only copy of unpushed work.
+// never fails Run() itself. The worktree is considered for removal only
+// once the branch is safely pushed AND the PR is open (Decision 5) — a
+// failure anywhere in between leaves it in place for operator
+// inspection, rather than risk deleting the only copy of unpushed work.
 func (m *Manager) handleWorktreeCompletion(prd *PRD) {
 	if prd.ClusterProfile != "" {
 		// Cluster-dispatched PRDs never created a local worktree
@@ -84,18 +84,13 @@ func (m *Manager) handleWorktreeCompletion(prd *PRD) {
 		return
 	}
 
-	// The worktree directory no longer exists on disk after this;
-	// ProjectDir is deliberately left as a historical record of where
-	// the PRD ran (same convention as other fields that survive their
-	// underlying resource being torn down, e.g. Task.SessionID).
-	// --force: the branch is already safely pushed above, so a stray
-	// untracked/uncommitted leftover (a .gitignore edit from
-	// EnsureIgnoredPatterns, a stray log file, ...) blocking cleanup
-	// would just orphan the worktree directory for no benefit — the
-	// PR already reflects everything that was actually committed.
-	if out, werr := runGitIn(prd.ProjectDir, "worktree", "remove", "--force", prd.ProjectDir); werr != nil {
-		log.Printf("[autonomous] prd=%s worktree remove failed (non-fatal, left for inspection): %v\n%s", prd.ID, werr, out)
-	}
+	// ProjectDir is deliberately left as a historical record of where the
+	// PRD ran, whether the worktree is removed or kept (same convention as
+	// other fields that survive their underlying resource being torn down,
+	// e.g. Task.SessionID). The push covers only what was committed, so the
+	// release keeps a worktree that holds anything else, and follows
+	// cleanup_mode (completion_worktree_release.go).
+	m.releaseCompletionWorktree(prd)
 }
 
 // handleClusterCompletion (BL407 Phase 3) is handleWorktreeCompletion's
@@ -188,8 +183,8 @@ func (m *Manager) openCompletionPR(prd *PRD, url, bodyNote string) (string, erro
 // and Archive() (manager.go) — found live 2026-10-11, same session
 // that added decompose-time worktree creation in the first place.
 //
-// Deliberately NOT forced (unlike handleWorktreeCompletion's
-// post-push removal): a plain `git worktree remove` refuses outright
+// Deliberately NOT forced: a plain `git worktree remove` (told to look
+// for untracked files whatever the git settings say) refuses outright
 // if the checkout has any uncommitted changes, which is exactly the
 // safety net wanted here — a worktree with nothing of value is
 // removed; one with real, never-committed work is left in place for
@@ -201,7 +196,7 @@ func (m *Manager) cleanupOrphanedWorktree(prd *PRD) {
 	if prd.ClusterProfile != "" || prd.Git.Branch == "" || prd.ProjectDir == "" {
 		return
 	}
-	if out, err := runGitIn(prd.ProjectDir, "worktree", "remove", prd.ProjectDir); err != nil {
+	if out, err := runGitIn(prd.ProjectDir, "-c", showUntrackedOverride, "worktree", "remove", prd.ProjectDir); err != nil {
 		log.Printf("[autonomous] prd=%s orphan worktree cleanup skipped (left for inspection, likely uncommitted content or already removed): %v\n%s", prd.ID, err, out)
 		return
 	}

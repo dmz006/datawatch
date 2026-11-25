@@ -533,7 +533,7 @@ func (p *taskCleanupPass) handleWorktree(t *Task, path, branch, tip string) bool
 	}
 	// Without --force git itself refuses a worktree that changed since the
 	// check. It is passed only when what is left is the daemon's own.
-	args := []string{"worktree", "remove"}
+	args := []string{"-c", showUntrackedOverride, "worktree", "remove"}
 	if !clean || missing {
 		args = append(args, "--force")
 	}
