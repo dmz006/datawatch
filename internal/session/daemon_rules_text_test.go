@@ -36,6 +36,7 @@ func TestRulesFileTextRecognisesWhatTheTrackerWrites(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() { _ = m.Close() })
 			m.SetConfig(cfg)
 			sess := &Session{ID: "ab12", FullID: "host-ab12", Task: "fix the parser\nwith two lines", ProjectDir: dir, BackendFamily: "claude-code"}
 			if err := m.store.Save(sess); err != nil {
@@ -72,6 +73,7 @@ func TestRulesFileTextHasNoHeaderWhenRulesFilesAreNotWritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = m.Close() })
 	m.SetConfig(&config.Config{})
 	dir := t.TempDir()
 	if err := m.store.Save(&Session{ID: "ab12", FullID: "host-ab12", Task: "t", ProjectDir: dir}); err != nil {
