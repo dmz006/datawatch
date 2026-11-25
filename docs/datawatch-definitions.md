@@ -105,6 +105,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [autonomous.deploy.health_check](#autonomous-deploy-health-check)
   - [autonomous.deploy.drain_timeout](#autonomous-deploy-drain-timeout)
   - [autonomous.deploy.health_timeout](#autonomous-deploy-health-timeout)
+  - [autonomous.merge_deploy_run_enabled](#autonomous-merge-deploy-run-enabled)
   - [Onboarding report](#onboarding-report)
   - [Onboarding report checks](#onboarding-report-checks)
   - [Onboarding report next steps](#onboarding-report-next-steps)
@@ -3303,6 +3304,10 @@ After a release ships, the daemon can build the new binary, install it, restart 
 ### autonomous.deploy.health_timeout
 
 **Deploy health timeout** (`autonomous.deploy.health_timeout`, 2 minutes when unset) — a duration such as `2m`: how long the deploy waits for the health check to pass. Unset reads 2 minutes; it never turns the deploy on by itself. Set it in YAML under `autonomous.deploy`, with `datawatch config set autonomous.deploy.health_timeout`, in Settings > Automation > Deploy, through the REST config API, or from a comm channel with `configure autonomous.deploy.health_timeout=<value>`.
+
+### autonomous.merge_deploy_run_enabled
+
+**Allow merge run and deploy run requests** (`autonomous.merge_deploy_run_enabled`, `false` by default) — whether a **merge run** request (`POST /api/autonomous/merge/run`) or a **deploy run** request (`POST /api/autonomous/deploy/run`) may act. While it is `false`, each request is answered with HTTP 403 and a message naming this setting, nothing is run, and a `merge_deploy_run_refused` audit entry is written. The deploy run action in MCP (`autonomous_deploy_run`), the CLI (`datawatch autonomous deploy run`), chat (`autonomous deploy run`) and the web **Run now** button send the same request and show the same refusal; a merge run has no MCP, CLI, chat or web action. Reading stays available: `GET /api/autonomous/deploy` reports the switch as `run_enabled`, and the merge state and pipeline reads are unchanged. When it is `true`, the [operator pause](#paused-by-operator), the [merge lock](#merge-lock) and the [release gate](#release-gate) still apply, and [`autonomous.push_and_tag`](#release-path) does not stop a merge run from pushing. **It holds requests only.** It does not stop the daemon's own supervisor loop steps that merge or deploy (switch those off with `autonomous.supervisor_loop.run_merge_until_conflict.enabled` and `autonomous.supervisor_loop.deploy_after_ship.enabled`), including a run of one of those jobs started by hand, nor the deploy the daemon finishes or retries when it starts. Set it in YAML under `autonomous`, with `datawatch config set autonomous.merge_deploy_run_enabled true`, in Settings > Automation > Deploy, with `PUT /api/config`, with MCP `config_set`, or from a comm channel with `configure autonomous.merge_deploy_run_enabled=true`. A value that is not `true` or `false` is refused. It takes effect at once.
 
 ### Onboarding report
 

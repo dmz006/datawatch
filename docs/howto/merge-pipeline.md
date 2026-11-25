@@ -414,6 +414,18 @@ decision to make deliberately and record with its evidence. In `auto` the daemon
 ships that size on its own once the checks pass, and a failed check still holds
 the release for a person in every mode.
 
+## Starting a merge run
+
+A merge run is started with `POST /api/autonomous/merge/run` (there is no CLI,
+MCP, chat or web action for it). It is **off by default**: turn it on with
+`datawatch config set autonomous.merge_deploy_run_enabled true`. While the
+setting is off the request is refused with a message naming it and is written to
+the audit log. When it is on, a run can push the release: `autonomous.push_and_tag`
+does not stop it, and the [release gate](#the-release-gate) decides from the
+release approval mode. The setting does not stop the supervisor loop's own merge
+step. See
+[the definition](../datawatch-definitions.md#autonomous-merge-deploy-run-enabled).
+
 ## The release gate
 
 When the daemon's merge run prepares a release, a release gate stands between the prepared work and anything that leaves the machine. It applies to every leaving step — the `tag_release`, `push_release` and `deploy_latest` actions and the tag, deploy and post-ship-hook steps — and decides at most once per run, before the first of them runs; the decision is cached and applies to every later leaving step, so the run cannot answer the push differently from the tag.

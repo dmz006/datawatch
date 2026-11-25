@@ -1483,6 +1483,8 @@ After a release ships the daemon can build, install, restart and health check it
 | **REST API** | `PUT /api/config` with `{"autonomous.deploy.<key>": "value"}`; `GET /api/autonomous/deploy`; `POST /api/autonomous/deploy/run` |
 | **Comm channel** | `configure autonomous.deploy.<key>=<value>`; `autonomous deploy [show]`; `autonomous deploy run` |
 
+**Merge run and deploy run requests are off by default** (`autonomous.merge_deploy_run_enabled`). While off, `POST /api/autonomous/merge/run` and `POST /api/autonomous/deploy/run` (and every deploy run action that sends the second) answer 403 naming the setting and write a `merge_deploy_run_refused` audit entry; reads stay available. A script or schedule that calls either route must have the setting turned on first. It does not hold the supervisor loop's merge and deploy steps or the deploy resume at daemon start; see [the definition](datawatch-definitions.md#autonomous-merge-deploy-run-enabled).
+
 ### Onboarding report
 
 `datawatch automation onboarding-report` (also the PWA card, the `onboarding_report` tool, the chat verb `onboarding-report` and `GET /api/automation/onboarding-report`) lists what is configured, what is missing and what to try next. It runs six checks (`backends`, `models`, `projects`, `channels`, `memory`, `merge_pipeline`) and reads only configuration; it changes nothing. `onboarding_report.enabled` (default on) turns it off, `onboarding_report.disabled_checks` leaves chosen checks out, and `onboarding_report.include_next_steps` (default on) adds the suggestions. The operator guide is [howto/onboarding-report.md](howto/onboarding-report.md).
