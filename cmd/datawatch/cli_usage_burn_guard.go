@@ -37,7 +37,10 @@ a running session.`,
 The pace block is the pace policy: its mode (off, shadow or on), whether new work
 is held now and on which rule (window_pause_line or weekly_pace_line), and the
 recent decisions that changed the verdict or the hold, each with the evidence it
-was made on. In shadow the policy records what it would hold and holds nothing.`,
+was made on. In shadow the policy records what it would hold and holds nothing.
+After a weekly reset with no new reading, the projection and the weekly line use an
+estimate from the tokens since the reset (estimated, week_from_tokens); enter a
+reading to correct it.`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			return daemonJSON(http.MethodGet, "/api/usage/burn-guard", nil)

@@ -3597,6 +3597,8 @@
   "usage_calc_empty_title": "No readings yet",
   "usage_calc_empty_body": "Save this week's weekly percentage below. Advice appears once one reading is saved.",
   "usage_calc_stale": "Last copy from %1$s at %2$s",
+  "usage_calc_estimated": "Estimado a partir de los tokens desde el reinicio; introduce una lectura para corregirlo.",
+  "usage_calc_estimated_tag": "(estimado)",
   "usage_calc_keeper_generic": "the keeper",
   "usage_calc_fallback_default": "No earlier reading at least 2 hours back; the week average is used.",
   "usage_calc_within": "Within budget",

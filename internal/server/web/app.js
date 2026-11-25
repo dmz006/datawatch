@@ -39356,6 +39356,18 @@ function _usageCalcSentence(a) {
   if (!verdict) return (a.advice && a.advice.headline) || t('usage_page_verdict_unknown');
   return t(verdict === 'over' ? 'usage_page_verdict_over' : 'usage_page_verdict_within', [_usageCalcNum(a.percent, 0), _usageCalcNum(end, 0)]);
 }
+// After a weekly reset with no new reading the percentage is an estimate from the
+// tokens since the reset: the card says so, and never calls it a stale copy.
+function _usageCalcEstimateHtml(a) {
+  return a && a.estimated
+    ? `<div class="usage-calc-estimated" role="note" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(t('usage_calc_estimated'))}</div>` : '';
+}
+function _usageCalcEstimatedState(a, state) {
+  return a.estimated ? `${state} ${t('usage_calc_estimated_tag')}` : state;
+}
+function _usageCalcShowsStaleCopy(res) {
+  return !!res.stale && !(res.advice && res.advice.estimated && !res.copied_at);
+}
 function _usageCalcCardHtml(id, titleKey, helpKey, state, why, next, chart) {
   return `<div class="usage-card usage-card-${id}" data-card="${id}">` +
     `<div class="usage-card-head"><span class="usage-card-title">${escHtml(t(titleKey))}</span>${_usageCalcHelpHtml(helpKey)}</div>` +
@@ -39371,7 +39383,7 @@ function _usageCalcAllowanceCard(a) {
   const extra = a.extra_credit_points || 0;
   const over = a.verdict === 'over';
   return _usageCalcCardHtml('allowance', 'usage_page_allowance_title', 'usage_page_allowance_help',
-    t('usage_page_allowance_state', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.ceiling, 0)]),
+    _usageCalcEstimatedState(a, t('usage_page_allowance_state', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.ceiling, 0)])),
     t('usage_page_allowance_why', [_usageCalcNum(a.ceiling, 0), _usageCalcNum(extra, 0)]),
     over ? t('usage_page_allowance_next_over') : t('usage_page_allowance_next_ok'), chart);
 }
@@ -39392,7 +39404,7 @@ function _usageCalcPaceCard(a) {
   }
   const state = a.ahead_of_pace ? t('usage_page_pace_state_ahead', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.pace_line)])
     : t('usage_page_pace_state_behind', [_usageCalcNum(a.percent, 0), _usageCalcNum(a.pace_line), _usageCalcNum(a.headroom)]);
-  return _usageCalcCardHtml('pace', 'usage_page_pace_title', 'usage_page_pace_help', state,
+  return _usageCalcCardHtml('pace', 'usage_page_pace_title', 'usage_page_pace_help', _usageCalcEstimatedState(a, state),
     t('usage_page_pace_why', [_usageCalcNum(a.days_since_reset, 1), _usageCalcNum(a.days_left, 1)]),
     a.ahead_of_pace ? t('usage_page_pace_next_ahead') : t('usage_page_pace_next_ok'), chart);
 }
@@ -39446,8 +39458,9 @@ window.usageCalcFrameHtml = function (body, opts) {
   } else if (res.advice) {
     const a = res.advice;
     parts.push(`<div class="usage-verdict-sentence" role="status">${escHtml(_usageCalcSentence(a))}</div>`);
+    parts.push(_usageCalcEstimateHtml(a));
     if (a.recent_fallback) parts.push(`<div class="usage-calc-notice" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(a.fallback_notice || t('usage_calc_fallback_default'))}</div>`);
-    if (res.stale) parts.push(`<div class="usage-calc-stale" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(t('usage_calc_stale', [res.keeper || t('usage_calc_keeper_generic'), _usageCalcClock(res.copied_at)]))}</div>`);
+    if (_usageCalcShowsStaleCopy(res)) parts.push(`<div class="usage-calc-stale" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(t('usage_calc_stale', [res.keeper || t('usage_calc_keeper_generic'), _usageCalcClock(res.copied_at)]))}</div>`);
     const row = _usageCalcCardsRowHtml(a);
     if (row) parts.push(row);
   }
@@ -39465,6 +39478,7 @@ function _usageCalcVerdictHtml(res, active) {
     `${_usageCalcChip(a.verdict)}<span style="color:var(--text2);">${escHtml(t('usage_calc_recent_burn'))}</span>` +
     `${_usageCalcChip(a.verdict_avg)}<span style="color:var(--text2);">${escHtml(t('usage_calc_week_average'))}</span></div>`);
   parts.push(`<div class="usage-calc-headline" style="font-weight:600;">${escHtml(p.headline || '')}</div>`);
+  parts.push(_usageCalcEstimateHtml(a));
   if (p.lanes_suggested >= 0) {
     parts.push(`<div><button type="button" class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="usageCalcUseSuggested()">` +
       `${escHtml(t('usage_calc_use_suggested', [String(p.lanes_suggested)]))}</button></div>`);
@@ -39476,7 +39490,7 @@ function _usageCalcVerdictHtml(res, active) {
   if (a.recent_fallback) {
     parts.push(`<div class="usage-calc-notice" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(a.fallback_notice || t('usage_calc_fallback_default'))}</div>`);
   }
-  if (res.stale) {
+  if (_usageCalcShowsStaleCopy(res)) {
     parts.push(`<div class="usage-calc-stale" style="font-size:12px;color:var(--warning,#f59e0b);">` +
       escHtml(t('usage_calc_stale', [res.keeper || t('usage_calc_keeper_generic'), _usageCalcClock(res.copied_at)])) + `</div>`);
   }
@@ -39509,7 +39523,7 @@ function _usageCalcVariantBody(res, active, opts) {
 
 function _usageCalcReadingForm(res, opts) {
   const a = res && res.advice && !res.advice.needs ? res.advice : null;
-  const percent = a ? _usageCalcNum(a.percent, 0) : '';
+  const percent = a && !a.estimated ? _usageCalcNum(a.percent, 0) : '';
   const now = opts.now === undefined ? Date.now() : opts.now;
   return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:8px;">` +
     `<div style="font-weight:600;">${escHtml(t('usage_calc_reading_title'))}</div>` +
@@ -40410,6 +40424,7 @@ window.burnGuardCardHtml = function (status, config, opts) {
     if (p && !p.needs) {
       parts.push(`<div data-burn-guard="projection" style="font-size:12px;">` +
         `${escHtml(t('burn_guard_projection_line', [_burnGuardN(p.projected), _burnGuardN(p.line), _burnGuardN(p.margin !== undefined ? p.margin : st.margin), _burnGuardN(p.over_by)]))}</div>`);
+      if (p.estimated) parts.push(`<div data-burn-guard="estimated" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(t('usage_calc_estimated'))}</div>`);
     } else if (st.line !== undefined && st.line !== null) {
       parts.push(`<div data-burn-guard="projection" style="font-size:12px;">` +
         `${escHtml(t('burn_guard_line_only', [_burnGuardN(st.line), _burnGuardN(st.margin)]))}</div>`);

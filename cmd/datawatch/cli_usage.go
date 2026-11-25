@@ -69,7 +69,9 @@ func newUsageAdviceCmd() *cobra.Command {
 			"CLI text form: one sentence per field, in the design doc's field order.\n" +
 			"--variant and --policy pick one call each and are validated against the\n" +
 			"calculator's own variant and policy lists; they are not stored.\n" +
-			"--lanes is the what-if lane count (0 included); it is not saved.",
+			"--lanes is the what-if lane count (0 included); it is not saved.\n" +
+			"After a weekly reset with no new reading the percentage is estimated from\n" +
+			"the tokens since the reset and says so; enter a reading to correct it.",
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			q := url.Values{}
