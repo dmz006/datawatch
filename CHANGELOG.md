@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.13 — MCP tools cannot answer a waiting prompt
+
+### Fixed
+- An AI session can no longer answer another session's waiting prompt through datawatch's MCP tools. While a session shows an approval, permission, safety or other confirmation prompt, or its screen cannot be read, `send_input`, `send_saved_command`, `reply_to_parent` and the discussion push type nothing and say a prompt is waiting for the operator. The refusal is written to the audit log.
+- MCP tools can no longer reach the daemon routes that type into a session through a crafted id. Those routes are closed to MCP at all times.
+
+### Limits
+- This stops answers sent through these tools. It does not prove who answered, and an agent with a shell can still reach a session another way. Ordinary numbered choice menus are refused too. It has not been checked against a live prompt.
+
+### Documentation
+- MCP tools and waiting prompts, in the definitions and the sessions how-to.
+
 ## v9.187.12 — reports and moved-aside files are not deleted
 
 ### Fixed
