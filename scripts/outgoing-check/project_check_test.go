@@ -161,6 +161,13 @@ func TestOutgoingCheck_EveryLeakClass(t *testing.T) {
 	}
 }
 
+// Many findings are cut to a short list, and the count still comes through.
+func TestOutgoingCheck_ManyFindingsKeepTheSummary(t *testing.T) {
+	s := newSandbox(t)
+	s.commit("notes.txt", strings.Repeat("host "+plantAddress+" \n", 3000), "work")
+	s.refused("3000 finding(s)", plantAddress)
+}
+
 func TestOutgoingCheck_TagMessage(t *testing.T) {
 	s := newSandbox(t)
 	s.git("tag", "-a", "v1.0.0", "-m", "built for "+privateWord)

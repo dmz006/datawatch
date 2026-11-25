@@ -202,15 +202,21 @@ for h in "${HITS[@]:-}"; do
     HIDE["${PATHS[$((n - 1))]}"]=1
 done
 
-report_added() { # map-file line class
+# The line descriptions, read once.
+mapfile -t ALL_ADDED <"$W/map/all-added"
+mapfile -t STRICT_ADDED <"$W/map/strict-added"
+mapfile -t META <"$W/map/meta"
+mapfile -t NAMES <"$W/map/names"
+
+report_added() { # description class
     local commit lineno path shown
-    IFS=$'\t' read -r commit lineno path < <(sed -n "$2p" "$1")
+    IFS=$'\t' read -r commit lineno path <<<"$1"
     if [[ -n "${HIDE[$path]:-}" ]]; then
         shown="changed file #${PATH_NO[$path]}"
     else
         shown="$path"
     fi
-    FINDINGS+=("commit $commit $shown:$lineno: $3")
+    FINDINGS+=("commit $commit $shown:$lineno: $2")
 }
 
 scan "$W/all" "address,home,email,local"
@@ -218,16 +224,16 @@ for h in "${HITS[@]:-}"; do
     [[ -n "$h" ]] || continue
     read -r file n cls <<<"$h"
     case "$file" in
-        added.txt) report_added "$W/map/all-added" "$n" "$cls" ;;
-        meta.txt) FINDINGS+=("$(sed -n "${n}p" "$W/map/meta"): $cls") ;;
-        names.txt) FINDINGS+=("$(sed -n "${n}p" "$W/map/names"): $cls") ;;
+        added.txt) report_added "${ALL_ADDED[$((n - 1))]}" "$cls" ;;
+        meta.txt) FINDINGS+=("${META[$((n - 1))]}: $cls") ;;
+        names.txt) FINDINGS+=("${NAMES[$((n - 1))]}: $cls") ;;
     esac
 done
 scan "$W/strict" "local"
 for h in "${HITS[@]:-}"; do
     [[ -n "$h" ]] || continue
     read -r _ n cls <<<"$h"
-    report_added "$W/map/strict-added" "$n" "$cls"
+    report_added "${STRICT_ADDED[$((n - 1))]}" "$cls"
 done
 
 # ------------------------------------------------------------- identities
@@ -265,7 +271,9 @@ done <"$M/identities.tsv"
 
 # ------------------------------------------------------------------ result
 if ((${#FINDINGS[@]} > 0)); then
-    printf '%s\n' "${FINDINGS[@]}" | sort -u | head -20
+    # awk reads everything: head would end the pipe early and pipefail would
+    # then end the script before its summary.
+    printf '%s\n' "${FINDINGS[@]}" | sort -u | awk 'NR <= 20'
     total="$(printf '%s\n' "${FINDINGS[@]}" | sort -u | wc -l)"
     echo "check-outgoing: ${total// /} finding(s); ${PATTERN_COUNT:-0} private pattern(s) loaded"
     exit 1
