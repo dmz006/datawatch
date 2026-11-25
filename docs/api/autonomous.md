@@ -352,6 +352,15 @@ actor label. The `reset_task` audit entry carries `reason` too. The alert is
 governed by `audit.safeguard_alert` (default on); a session credential never
 clears the count and raises nothing.
 
+### Closed Automata and `reset_task`
+
+A closed Automaton (cancelled, rejected or archived, or with a recorded closed
+outcome) is reopened only by the operator's own call, which clears the outcome
+and records `closed_outcome_cleared`. A call from any other actor (a repair, the
+supervisor loop, a session's scoped credential, a federation peer, or a body
+`actor` other than `operator` on the operator's token) is refused with `400`.
+See [closed records stay closed](../howto/closed-work-outcome.md#closed-records-stay-closed).
+
 ### Clean restart on `reset_task`
 
 `POST /api/autonomous/prds/{id}/reset_task` accepts a `clean_restart` boolean

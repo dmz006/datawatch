@@ -61,8 +61,8 @@ func (m *Manager) ReleaseFalseProtectedPathHolds(ctx context.Context) []string {
 			return released
 		}
 		prd, ok := m.store.SnapshotPRD(listed.ID)
-		if !ok || prd.Status == PRDHeld {
-			continue // a held Automaton's tasks are never released
+		if !ok || prd.Status == PRDHeld || closedRecordReason(prd) != "" {
+			continue // a held or closed Automaton's tasks are never released
 		}
 		for si := range prd.Story {
 			for ti := range prd.Story[si].Tasks {
@@ -114,6 +114,12 @@ func (m *Manager) releaseFalseProtectedPathHold(ctx context.Context, prd *PRD, t
 
 	// Every held path is a daemon-section-only diff: the task did not edit
 	// the operator's rules, so the hold is a false positive. Release it.
+
+	// The Automaton may have closed since the snapshot: check the live record
+	// before anything is withdrawn.
+	if m.closedToRecoveryID(prd.ID) {
+		return false
+	}
 
 	// 1. Withdraw the open hold question; no new question is raised.
 	if hold.QuestionID != "" {

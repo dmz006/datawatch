@@ -162,6 +162,9 @@ func (m *Manager) RunGateRepairPass(ctx context.Context) []GateRepairOutcome {
 			break
 		}
 		m.readLocked(func() {
+			if closedRecordReason(p) != "" {
+				return // no gate repair for a closed Automaton
+			}
 			for i := range p.Story {
 				for j := range p.Story[i].Tasks {
 					if p.Story[i].Tasks[j].Status == TaskFailed {
@@ -312,7 +315,7 @@ func (m *Manager) gateRepairResolveTask(automatonID, taskID string) (GateRepairI
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	prd, ok := m.store.GetPRD(automatonID)
-	if !ok {
+	if !ok || m.closedToRecovery(prd) {
 		return GateRepairInput{}, false
 	}
 	t, ok := m.store.GetTask(taskID)

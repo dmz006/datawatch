@@ -299,7 +299,7 @@ func (o ManagerAdvanceOps) Automata(_ context.Context) []AdvanceAutomaton {
 	var out []AdvanceAutomaton
 	for _, p := range st.ListPRDs() {
 		prd, ok := st.SnapshotPRD(p.ID)
-		if !ok {
+		if !ok || closedRecordReason(prd) != "" {
 			continue
 		}
 		switch prd.Status {

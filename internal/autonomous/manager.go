@@ -4462,6 +4462,7 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 			prd.LastDecomposeFailure = nil
 		}
 		prd.UpdatedAt = now
+		clearClosedOutcomeLocked(prd, actor, "the Automaton was reset to draft", now)
 		prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
 			At: now, Kind: "reset_to_draft", Actor: actor,
 			Note: fmt.Sprintf("reset from %s by %s", prd.Status, actor),
@@ -4804,6 +4805,7 @@ func (m *Manager) recoverPendingTask(prd *PRD, si int, taskID, actor string) (*P
 		now := time.Now()
 		prd.Status = PRDRunning
 		prd.UpdatedAt = now
+		clearClosedOutcomeLocked(prd, actor, "task "+taskID+" was reset, which reopens the Automaton", now)
 		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: actor,
 			Note: fmt.Sprintf("task=%s already pending; prd reopened from %s (force=true recovery)", taskID, old)})
 	})
@@ -4856,6 +4858,13 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	// state until the operator releases the hold.
 	if err := m.refuseHeld(prd); err != nil {
 		return nil, err
+	}
+	// So is a closed one, for every actor but the operator: no recovery pass
+	// and no session reset reopens closed work.
+	if !isOperatorActor(actor) {
+		if why := m.closedReason(prd); why != "" {
+			return nil, fmt.Errorf("prd %q is closed (%s): only the operator's own task reset reopens it", prdID, why)
+		}
 	}
 	// PRDBlocked included: a guardrail block or (default) story-failure halt
 	// both leave the PRD blocked with no other way to retry the offending
@@ -5074,6 +5083,7 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 		if prd.Status == PRDFailed || prd.Status == PRDBlocked || prd.Status == PRDCancelled || prd.Status == PRDCompleted {
 			prd.Status = PRDRunning
 		}
+		clearClosedOutcomeLocked(prd, actor, "task "+taskID+" was reset, which reopens the Automaton", now)
 		kind = "reset_task"
 		note := fmt.Sprintf("task=%s reset to pending for retry", taskID)
 		decActor := actor
@@ -6761,6 +6771,9 @@ func (m *Manager) Resume(prdID, actor string) (*PRD, error) {
 	if err := m.refuseHeld(prd); err != nil {
 		return nil, err
 	}
+	if err := m.refuseClosedOutcome(prd); err != nil {
+		return nil, err
+	}
 	if prd.Status != PRDPaused {
 		return nil, fmt.Errorf("prd %q status %q is not paused; nothing to resume", prdID, prd.Status)
 	}
@@ -6799,6 +6812,9 @@ func (m *Manager) ResumeParked(prdID, actor, note string) (*PRD, error) {
 	})
 	if !parked {
 		return nil, fmt.Errorf("prd %q status %q cannot be resumed this way; only a blocked PRD parked by the boot-resume gate can (status %q)", prdID, status, PRDBlocked)
+	}
+	if err := m.refuseClosedOutcome(prd); err != nil {
+		return nil, err
 	}
 	h := m.bootResumeHooks()
 	now := time.Now()
@@ -7663,6 +7679,9 @@ func (m *Manager) reconcileStuckTasks() {
 		if prd.Status != PRDRunning && prd.Status != PRDActive {
 			continue
 		}
+		if m.closedToRecovery(prd) {
+			continue
+		}
 		changed := false
 		adoptedAny := false
 		verdictCompleted, verdictRequeued := 0, 0
@@ -7832,6 +7851,7 @@ func (m *Manager) reconcileStuckTasks() {
 // clears it, and a loop that had not yet reached its select would then call
 // Done on a nil context.
 func (m *Manager) run(ctx context.Context) {
+	m.RestoreClosedRecords()
 	m.reconcileStuckTasks()
 
 	// Daemon start — clean as we go, not as a cleanup job: run both
@@ -7873,6 +7893,7 @@ func (m *Manager) run(ctx context.Context) {
 			m.mu.Lock()
 			m.status.LastTickAt = time.Now()
 			m.mu.Unlock()
+			m.RestoreClosedRecords()
 			m.sweepOrphanSessions()
 			m.sweepStuckRunning()
 			// One hold-expiry pass on the same tick: an expired hold-until time

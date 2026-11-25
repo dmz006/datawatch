@@ -188,7 +188,7 @@ func (m *Manager) holdMigrationScan() (int, []HoldMigrationCandidate) {
 		var created time.Time
 		m.readLocked(func() {
 			created = p.CreatedAt
-			if p.Status == PRDBlocked || p.Status == PRDFailed {
+			if (p.Status == PRDBlocked || p.Status == PRDFailed) && closedRecordReason(p) == "" {
 				snap = holdMigrationSnap(p, tagNames)
 			}
 		})

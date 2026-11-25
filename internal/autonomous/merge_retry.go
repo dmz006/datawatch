@@ -8,12 +8,11 @@ import (
 	"time"
 )
 
-// mergeRetryEligible reports whether prd is worth a retry: it is neither
-// cancelled, archived nor held and has a completed task with a branch whose merge
-// state is empty or pending.
+// mergeRetryEligible reports whether prd is worth a retry: it is neither held
+// nor closed (closedRecordReason) and has a completed task with a branch whose
+// merge state is empty or pending.
 func mergeRetryEligible(prd *PRD) bool {
-	if prd == nil || prd.ProjectDir == "" ||
-		prd.Status == PRDCancelled || prd.Status == PRDArchived || prd.Status == PRDHeld {
+	if prd == nil || prd.ProjectDir == "" || prd.Status == PRDHeld || closedRecordReason(prd) != "" {
 		return false
 	}
 	for si := range prd.Story {
@@ -30,7 +29,7 @@ func mergeRetryEligible(prd *PRD) bool {
 
 // MergeRetryPass walks every Automaton in the store that has a completed task
 // waiting to merge (running, blocked for merge, or any other state except
-// cancelled, archived and held) and runs MergeCompletedTasks for it, which takes the
+// held and closed ones, see closedRecordReason) and runs MergeCompletedTasks for it, which takes the
 // per-Automaton merge lock. A block that persists has its LastRetryAt recorded
 // through setMergeBlock. A failure on one Automaton is logged and never stops
 // the pass. Returns the number of tasks merged. It starts no timer.

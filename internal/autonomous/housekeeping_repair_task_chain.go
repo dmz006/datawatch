@@ -530,7 +530,7 @@ func (o ManagerChainOps) ChainTasks(_ context.Context) []ChainTask {
 	var out []ChainTask
 	for _, p := range st.ListPRDs() {
 		prd, ok := st.SnapshotPRD(p.ID)
-		if !ok {
+		if !ok || closedRecordReason(prd) != "" {
 			continue
 		}
 		switch prd.Status {
