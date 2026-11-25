@@ -251,6 +251,12 @@ func PushWorkBranch(ctx context.Context, dir, remote, branch string, scan ...Sec
 	return pushBranch(ctx, dir, remote, branch, pushRules{upstream: branch, workBranchOnly: true}, scan)
 }
 
+// PushFromWorker is PushWorkBranch for a push made inside a container worker:
+// the project's check, when there is one, gets no project working tree.
+func PushFromWorker(ctx context.Context, dir, remote, branch string, scan ...SecretScanPolicy) PushResult {
+	return pushBranch(ctx, dir, remote, branch, pushRules{upstream: branch, workBranchOnly: true, noProjectTree: true}, scan)
+}
+
 // CompletionDefaultBranchRefusal is the outcome of the default_branch push
 // policy at completion: nothing is pushed.
 func CompletionDefaultBranchRefusal(remote string) PushResult {

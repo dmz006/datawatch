@@ -1070,6 +1070,18 @@ func (g *ProjectGit) CurrentBranch() (string, error) {
 //
 // remoteName is typically "origin"; pass empty for "origin".
 func (g *ProjectGit) PushBranch(remoteName, branch, originURL, token string) error {
+	return g.pushBranch(dwgit.PushToBranch, remoteName, branch, originURL, token)
+}
+
+// PushWorkBranch is PushBranch for finished work (the worker pull request
+// hook): it refuses to move the remote's default branch, main or master.
+func (g *ProjectGit) PushWorkBranch(remoteName, branch, originURL, token string) error {
+	return g.pushBranch(dwgit.PushWorkBranch, remoteName, branch, originURL, token)
+}
+
+type branchPush func(ctx context.Context, dir, remote, branch string, scan ...dwgit.SecretScanPolicy) dwgit.PushResult
+
+func (g *ProjectGit) pushBranch(push branchPush, remoteName, branch, originURL, token string) error {
 	if remoteName == "" {
 		remoteName = "origin"
 	}
@@ -1090,7 +1102,7 @@ func (g *ProjectGit) PushBranch(remoteName, branch, originURL, token string) err
 	if originURL == "" {
 		// Fall back to the configured origin (no token injection — caller
 		// presumably has ambient creds).
-		return g.checkedPush(remoteName, branch)
+		return g.checkedPush(push, remoteName, branch)
 	}
 
 	// Snapshot the current origin so we can restore it on exit.
@@ -1111,13 +1123,13 @@ func (g *ProjectGit) PushBranch(remoteName, branch, originURL, token string) err
 		_ = runGitEnv(g.dir, nil, []string{"remote", "set-url", "--"}, remoteName, restore)
 	}()
 
-	return g.checkedPush(remoteName, branch)
+	return g.checkedPush(push, remoteName, branch)
 }
 
 // checkedPush pushes branch through the outgoing check with the daemon's
 // secret scan policy.
-func (g *ProjectGit) checkedPush(remoteName, branch string) error {
-	res := dwgit.PushToBranch(context.Background(), g.dir, remoteName, branch)
+func (g *ProjectGit) checkedPush(push branchPush, remoteName, branch string) error {
+	res := push(context.Background(), g.dir, remoteName, branch)
 	if res.Kind != "" {
 		return fmt.Errorf("push %s to %s: %s: %s", branch, remoteName, res.Kind, res.Reason)
 	}

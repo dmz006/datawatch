@@ -57,9 +57,14 @@ const (
 	OutgoingProjectEnv = "OUTGOING_PROJECT_DIR"
 )
 
-const (
+// The most one push may deliver and still be checked (variables so a test can
+// lower them).
+var (
 	outgoingMaxCommits   = 5000
 	outgoingMaxDiffBytes = 256 << 20
+)
+
+const (
 	outgoingCheckTimeout = 10 * time.Minute
 	outgoingOutputTail   = 2000
 	zeroObjectID         = "0000000000000000000000000000000000000000"
@@ -527,7 +532,7 @@ func writeManifest(dir string, m *outgoingManifest) error {
 // runProjectCheck runs the base commit's check target over the manifest. The
 // check's output is returned (bounded, secrets redacted) only on failure; a
 // check must not print what it matched.
-func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest) error {
+func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest, noProjectTree bool) error {
 	tmp, err := os.MkdirTemp("", "dw-outgoing-")
 	if err != nil {
 		return err
@@ -543,8 +548,12 @@ func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest)
 	if err := writeManifest(manifestDir, m); err != nil {
 		return fmt.Errorf("write the manifest: %w", err)
 	}
-	project, err := mainWorkTree(ctx, dir)
-	if err != nil {
+	project := filepath.Join(tmp, "no-project-tree")
+	if noProjectTree {
+		if err := os.Mkdir(project, 0o700); err != nil {
+			return err
+		}
+	} else if project, err = mainWorkTree(ctx, dir); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, outgoingCheckTimeout)
@@ -885,7 +894,14 @@ type pushRules struct {
 	upstream string
 	// checkOnly runs every check and sends nothing.
 	checkOnly bool
+	// noProjectTree gives the project's check an empty project directory:
+	// in a container worker there is no working tree of the project's owner,
+	// and a file the task wrote into its own clone must not stand in for one.
+	noProjectTree bool
 }
+
+// noProjectTreeNote explains a project check refusal from a container worker.
+const noProjectTreeNote = "(run in a container worker, which has no project working tree: files that are never committed are not available to the check)"
 
 func refused(remote, ref, id string, kind PushFailureKind, reason string) PushResult {
 	return PushResult{Remote: remote, Ref: ref, SHA: id, Kind: kind, Reason: reason}
@@ -953,7 +969,7 @@ func checkedPush(ctx context.Context, dir, remote, label string, refs []Outgoing
 		return PushResult{NothingToPush: true, Remote: remote, Ref: label, SHA: head}
 	}
 
-	findings, blocked := checkOutgoing(ctx, dir, remote, st, pinned, policy)
+	findings, blocked := checkOutgoing(ctx, dir, remote, st, pinned, policy, rules.noProjectTree)
 	if blocked.Kind != "" {
 		blocked.Remote, blocked.Ref, blocked.SHA = remote, label, head
 		log.Printf("git: push to %s/%s refused: %s", remote, label, blocked.Reason)
@@ -1002,7 +1018,7 @@ func setUpstream(ctx context.Context, dir, remote, branch string) {
 
 // checkOutgoing runs the project's check and the secret scan over what refs
 // would deliver. A non-empty Kind on the second result refuses the push.
-func checkOutgoing(ctx context.Context, dir, remote string, st remoteState, refs []checkedRef, policy SecretScanPolicy) ([]SecretFinding, PushResult) {
+func checkOutgoing(ctx context.Context, dir, remote string, st remoteState, refs []checkedRef, policy SecretScanPolicy, noProjectTree bool) ([]SecretFinding, PushResult) {
 	cannot := func(format string, args ...any) ([]SecretFinding, PushResult) {
 		return nil, PushResult{Kind: PushFailCheck, Reason: "outgoing check could not run, nothing was pushed: " + tailReason(fmt.Sprintf(format, args...))}
 	}
@@ -1066,8 +1082,12 @@ func checkOutgoing(ctx context.Context, dir, remote string, st remoteState, refs
 	// The project's check goes first: when it refuses, nothing else about the
 	// content (a file name it objects to, say) is printed.
 	if inBase {
-		if err := runProjectCheck(ctx, dir, base, m); err != nil {
-			return nil, PushResult{Kind: PushFailCheck, Reason: "outgoing check refused the push, nothing was pushed: " + err.Error()}
+		if err := runProjectCheck(ctx, dir, base, m, noProjectTree); err != nil {
+			reason := "outgoing check refused the push, nothing was pushed: " + err.Error()
+			if noProjectTree {
+				reason += "\n" + noProjectTreeNote
+			}
+			return nil, PushResult{Kind: PushFailCheck, Reason: reason}
 		}
 	}
 	if !scan {
