@@ -113,7 +113,10 @@ func TestHandleWorktreeCompletion_NoOpWhenAutoPRFalse(t *testing.T) {
 
 func TestHandleWorktreeCompletion_PushesOpensPRAndRemovesWorktree(t *testing.T) {
 	dir := t.TempDir()
-	m, err := NewManager(dir, DefaultConfig(), nil)
+	cfg := DefaultConfig()
+	// Removal needs cleanup_mode on; unset reads as report, which removes nothing.
+	cfg.Automation.CleanupMode = "on"
+	m, err := NewManager(dir, cfg, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

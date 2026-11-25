@@ -47,6 +47,8 @@ func TestRun_OpensPRAfterWorktreePRDCompletesWithAutoPR(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = baseRepo
 	cfg.WorktreeDir = t.TempDir()
+	// Removal needs cleanup_mode on; unset reads as report, which removes nothing.
+	cfg.Automation.CleanupMode = "on"
 	m, err := NewManager(t.TempDir(), cfg, nil)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)

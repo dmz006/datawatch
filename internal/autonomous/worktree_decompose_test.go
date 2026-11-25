@@ -157,6 +157,8 @@ func TestReject_CleansUpOrphanedWorktree(t *testing.T) {
 	cfg.WorktreeBaseRepo = baseRepo
 	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = worktreeDir
+	// Removal needs cleanup_mode on; unset reads as report, which removes nothing.
+	cfg.Automation.CleanupMode = "on"
 	m, err := NewManager(t.TempDir(), cfg, fakeFn)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -231,6 +233,8 @@ func TestArchive_CleansUpOrphanedWorktree(t *testing.T) {
 	cfg.WorktreeBaseRepo = baseRepo
 	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = worktreeDir
+	// Removal needs cleanup_mode on; unset reads as report, which removes nothing.
+	cfg.Automation.CleanupMode = "on"
 	m, err := NewManager(t.TempDir(), cfg, fakeFn)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)

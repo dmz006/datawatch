@@ -129,6 +129,8 @@ func newTaskWorktreeManager(t *testing.T, repo, wtDir string, perTask bool) *Man
 	m.mu.Lock()
 	m.cfg.WorktreeBaseRepo, m.cfg.WorktreeDir = repo, wtDir
 	m.cfg.Parallel.WorktreePerTask = &perTask
+	// Removal needs cleanup_mode on; unset reads as report, which removes nothing.
+	m.cfg.Automation.CleanupMode = "on"
 	m.mu.Unlock()
 	return m
 }
