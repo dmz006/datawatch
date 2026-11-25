@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.20 — Commit guard reaches workers; merge and deploy off; rules changes held
+
+### Fixed
+- The commit guard now reaches worker sessions. It refuses commits and ref updates in the worker's own repository and its worktrees; other repositories, such as test fixtures, work. A repository's own git hooks still run. The guard prevents ordinary mistakes and is not a security barrier.
+- A change to the rules file under a datawatch heading is no longer ignored by the protected-path check; only text datawatch itself writes is left out. A staged or committed change restored in the working copy is now seen.
+
+### Changed
+- Merge run and deploy run, and the supervisor loop jobs that merge or deploy, are off until `autonomous.merge_deploy_run_enabled` is turned on. The loop jobs also obey the operator pause.
+
+### Before you upgrade
+- The session variables and any profile environment now reach worker processes. Check profiles for old keys or endpoints.
+- A task that adds text under a datawatch heading in the rules file is now held and asked about.
+
+### Documentation
+- The commit guard, protected paths and the merge and deploy switch.
+
 ## v9.187.19 — A schedule types once; commit guards are only removed by their owner
 
 ### Fixed
