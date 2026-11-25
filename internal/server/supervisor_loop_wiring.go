@@ -28,6 +28,8 @@ func NewSupervisorLoopHooks(mgr *autonomous.Manager, cfg *config.Config, setting
 	if mgr == nil || cfg == nil {
 		return h
 	}
+	// The merge run and deploy run switch holds the merge and deploy steps.
+	h.MergeDeployRunEnabled = func() bool { return cfg.Autonomous.MergeDeployRunEnabled }
 	mergeCfg := func() config.MergePipelineConfig { return cfg.Autonomous.MergePipeline.Clone() }
 	// No Server is in scope here, so the data directory comes from the
 	// same single source (dataDirPath), with the configured data_dir first.

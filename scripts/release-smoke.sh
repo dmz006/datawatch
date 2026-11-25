@@ -7729,7 +7729,8 @@ H "93. Deploy routes: documented status fields and the no-command refusal"
 # GET /api/autonomous/deploy: status and the documented fields. POST
 # /api/autonomous/deploy/run is called ONLY when the status shows that no
 # build, install or restart command is set, so the answer is the refusal
-# ("skipped"); it never builds, installs or restarts anything.
+# ("skipped"), or HTTP 403 while autonomous.merge_deploy_run_enabled is off;
+# it never builds, installs or restarts anything.
 
 D93_GET=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/deploy" 2>/dev/null || echo "000")
 D93_CODE=$(echo "$D93_GET" | tail -n1)
@@ -7763,7 +7764,16 @@ import json,sys
 s=json.load(sys.stdin).get("settings",{})
 print(all(not s.get(k) for k in ("build_command","install_command","restart_command")))
 ' 2>/dev/null || echo "")
-  if [[ "$D93_EMPTY" == "True" ]]; then
+  D93_SWITCH=$(echo "$D93_BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("run_enabled"))' 2>/dev/null || echo "")
+  if [[ "$D93_EMPTY" == "True" && "$D93_SWITCH" == "False" ]]; then
+    D93_OFF=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST "$BASE/api/autonomous/deploy/run" 2>/dev/null || echo "000")
+    D93_OCODE=$(echo "$D93_OFF" | tail -n1)
+    if [[ "$D93_OCODE" == "403" ]] && echo "$D93_OFF" | grep -q "autonomous.merge_deploy_run_enabled"; then
+      ok "deploy routes: POST run with the run switch off answers 403 naming the setting"
+    else
+      ko "deploy routes: POST run with the run switch off answered HTTP $D93_OCODE, expected 403 naming the setting"
+    fi
+  elif [[ "$D93_EMPTY" == "True" ]]; then
     D93_POST=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST "$BASE/api/autonomous/deploy/run" 2>/dev/null || echo "000")
     D93_PCODE=$(echo "$D93_POST" | tail -n1)
     D93_PBODY=$(echo "$D93_POST" | sed '$d')

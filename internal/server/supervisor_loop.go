@@ -2,7 +2,7 @@
 //
 //	GET  /api/supervisor-loop/jobs            every job with style, backend, model, enabled, last outcome
 //	GET  /api/supervisor-loop/runs            run records, newest first (job, outcome, limit filters)
-//	POST /api/supervisor-loop/jobs/{name}/run run one job now (404 for an unknown job)
+//	POST /api/supervisor-loop/jobs/{name}/run run one job now (404 for an unknown job; 403 or 409 for a held merge or deploy job)
 //	POST /api/supervisor-loop/eval            run a model job's eval cases against listed models
 //	GET  /api/supervisor-loop/wake            wake settings in effect, last event, last scheduled check
 //
@@ -13,6 +13,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -374,6 +375,17 @@ func (s *Server) handleSupervisorLoopJobRun(w http.ResponseWriter, r *http.Reque
 	out, err := s.supervisorLoop.RunJob(r.Context(), name, in)
 	if err == ErrSupervisorLoopUnknownJob {
 		http.Error(w, fmt.Sprintf("unknown job %q", name), http.StatusNotFound)
+		return
+	}
+	// A held merge or deploy job answers as the run routes do: 403 for the
+	// switch, 409 for the operator pause.
+	var held *autonomous.SupervisorRunHeldError
+	if errors.As(err, &held) {
+		status := http.StatusForbidden
+		if held.Hold.Pause != nil {
+			status = http.StatusConflict
+		}
+		http.Error(w, held.Hold.Message, status)
 		return
 	}
 	resp := map[string]any{"job": name, "ok": err == nil, "result": out}

@@ -27,14 +27,14 @@ func DeployToolNames() []string {
 
 func (s *Server) toolAutonomousDeployGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_deploy_get",
-		mcpsdk.WithDescription("Read the deploy state: the effective deploy settings, whether a merge or deploy is running, the last deploy phase and outcome, any deferral and its reason, and the snapshot time and SHA-256. Read-only; the same object as GET /api/autonomous/deploy. Takes no arguments."),
+		mcpsdk.WithDescription("Read the deploy state: the effective deploy settings, whether a merge or deploy is running, whether merge run and deploy run requests are switched on (run_enabled), the last deploy phase and outcome, any deferral and its reason, and the snapshot time and SHA-256. Read-only; the same object as GET /api/autonomous/deploy. Takes no arguments."),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
 
 func (s *Server) toolAutonomousDeployRun() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_deploy_run",
-		mcpsdk.WithDescription("Start the deploy sequence for the current build now. Refused with a conflict while a merge or deploy is already running. Same as POST /api/autonomous/deploy/run. Takes no arguments."),
+		mcpsdk.WithDescription("Start the deploy sequence for the current build now. Refused unless the setting autonomous.merge_deploy_run_enabled is true (off by default), and with a conflict while a merge or deploy is already running. Same as POST /api/autonomous/deploy/run. Takes no arguments."),
 	)
 }
 

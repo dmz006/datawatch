@@ -8,6 +8,10 @@
 // registered here. A step that errors is recorded and is not retried in the
 // same tick: a pass runs every enabled step exactly once.
 //
+// deploy_after_ship and run_merge_until_conflict start a deploy and a merge,
+// so the merge run and deploy run switch and the operator pause hold them
+// (supervisor_loop_run_hold.go).
+//
 // Three steps need something this package cannot import, so they take a hook
 // the daemon wiring fills:
 //
@@ -103,6 +107,14 @@ type SupervisorLoopHooks struct {
 	// (mergepipeline.Runner.Run) over the branches waiting to merge, stopping
 	// at the first conflict. Nil records "not configured".
 	MergeUntilConflict func(ctx context.Context) (SupervisorMergeResult, error)
+	// MergeDeployRunEnabled reads autonomous.merge_deploy_run_enabled live.
+	// While it answers false, deploy_after_ship and run_merge_until_conflict
+	// are refused. Nil means no switch applies; NewSupervisorLoopHooks always
+	// sets it for the daemon. The operator pause holds both jobs either way.
+	MergeDeployRunEnabled func() bool
+	// RunRefused records a refusal of one of those jobs (the daemon writes
+	// the audit entry). Nil records nothing.
+	RunRefused supervisorRunRefusedFunc
 }
 
 // SupervisorLoopStepResult is one step's outcome in a pass.
@@ -147,6 +159,7 @@ type SupervisorLoopSteps struct {
 	deployNoConf  bool                 // the deploy hook last said it is not configured
 	lastConflict  string               // newest merge conflict recorded
 	heldReasons   map[string]string    // transient: record id -> why the last close pass kept it
+	recordedHolds map[string]string    // held job -> the hold already recorded for it
 }
 
 // NewSupervisorLoopSteps registers the steps over the coordinator. engine
@@ -514,6 +527,9 @@ func (s *SupervisorLoopSteps) deployAfterShip(ctx context.Context) (string, erro
 	if s.hooks.Deploy == nil {
 		return stepNotConfigured, nil
 	}
+	if detail, held := s.heldInPass(ctx, stepDeployAfterShip); held {
+		return detail, nil
+	}
 	release := s.newestShippedRelease()
 	s.mu.Lock()
 	seen := s.lastDeployed
@@ -550,14 +566,18 @@ func (s *SupervisorLoopSteps) deployAfterShip(ctx context.Context) (string, erro
 }
 
 // DeploysAfterShip says this host deploys after ship: the loop and its
-// deploy_after_ship step are on, a deploy hook is wired, and the hook has not
-// said it is not configured. The closed work check reads it.
+// deploy_after_ship step are on, a deploy hook is wired, the step is not held
+// (runHold) and the hook has not said it is not configured. The closed work
+// check reads it, so a held host reports no shipped work as never deployed.
 func (s *SupervisorLoopSteps) DeploysAfterShip() bool {
 	if s == nil || s.hooks.Deploy == nil {
 		return false
 	}
 	set := s.settings()
 	if !set.Enabled || !stepEnabled(set, stepDeployAfterShip) {
+		return false
+	}
+	if _, held := s.runHold(stepDeployAfterShip); held {
 		return false
 	}
 	s.mu.Lock()
@@ -772,6 +792,9 @@ func (s *SupervisorLoopSteps) runMergeUntilConflict(ctx context.Context) (string
 	if s.hooks.MergeUntilConflict == nil {
 		return stepNotConfigured, nil
 	}
+	if detail, held := s.heldInPass(ctx, stepRunMergeUntilConflict); held {
+		return detail, nil
+	}
 	res, err := s.hooks.MergeUntilConflict(ctx)
 	if errors.Is(err, ErrSupervisorStepNotConfigured) {
 		return stepNotConfigured, nil
@@ -855,10 +878,18 @@ func truncateUTF8(s string, max int) string {
 
 // RunStep runs the named mechanical step once now, through the engine so the
 // run is recorded. It runs whatever the step's enabled setting says: the
-// operator asked for this run. found is false for a name that is no step.
+// operator asked for this run. found is false for a name that is no step. A
+// held merge or deploy job does not run: the refusal is recorded and returned
+// as a *SupervisorRunHeldError.
 func (s *SupervisorLoopSteps) RunStep(ctx context.Context, name string) (detail string, found bool, err error) {
 	if s == nil {
 		return "", false, nil
+	}
+	if hold, held := s.runHold(name); held {
+		if s.hooks.RunRefused != nil {
+			s.hooks.RunRefused(ctx, hold, true)
+		}
+		return "", true, &SupervisorRunHeldError{Hold: hold}
 	}
 	eng := *s.engine
 	eng.Settings = s.settings()

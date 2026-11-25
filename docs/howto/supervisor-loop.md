@@ -40,6 +40,27 @@ and is not tried again in the same pass.
 | `start_next_chain_step` | Starts the next Automaton in a chain when the one before it is done. |
 | `run_merge_until_conflict` | Runs the merge pipeline until a merge conflicts, and keeps the newest conflict for you to see. |
 
+### The merge and deploy steps are held by default
+
+`run_merge_until_conflict` and `deploy_after_ship` start a merge and a deploy, so
+two things hold them, in the daemon's own passes and when you run one by hand,
+whatever the step's `enabled` setting says:
+
+- the [merge run and deploy run switch](../datawatch-definitions.md#autonomous-merge-deploy-run-enabled),
+  `autonomous.merge_deploy_run_enabled`, which is `false` by default;
+- the operator pause on the repository.
+
+A hand run of a held job runs nothing and answers with the reason (HTTP 403 for
+the switch, 409 for a pause). In a daemon pass the run record is `ok` and its
+result starts `held:`. A hold is not a failure: nothing is retried, escalated or
+alerted. Refusals are written to the audit log as `merge_deploy_run_refused`:
+every hand run, and for daemon passes once each time a hold starts or its reason
+changes.
+
+Before you turn the switch on, check what is waiting: the merge step takes every
+branch the merge status lists as pending, and the deploy step can deploy the
+newest shipped release on its next pass.
+
 ### The model jobs
 
 Each model job asks a model for one thing and checks the answer before using it.

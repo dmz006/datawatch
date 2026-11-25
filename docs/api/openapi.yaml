@@ -2066,6 +2066,10 @@ paths:
         enabled switch says. A model job takes an optional body: `input` (the operator
         answer, the CI log or the routing rule) and, for pick_backend, `candidates`.
         Needs the autonomous run capability when called by a federated peer.
+        run_merge_until_conflict and deploy_after_ship are refused, with nothing
+        run and no run record, unless autonomous.merge_deploy_run_enabled is true
+        (403) and while the operator pause covers the repository (409); each
+        refusal is audited as merge_deploy_run_refused.
       operationId: supervisorLoopRunJob
       tags: [Autonomous]
       parameters:
@@ -2093,9 +2097,10 @@ paths:
                   error: {type: string}
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403": {description: Federated peer lacks the autonomous run capability}
+        "403": {description: "Federated peer lacks the autonomous run capability, or autonomous.merge_deploy_run_enabled is off for a merge or deploy job"}
         "404": {description: Unknown job}
         "405": {description: Method not allowed}
+        "409": {description: The operator pause holds a merge or deploy job}
         "503": {description: The supervisor loop is not running}
 
   /api/supervisor-loop/eval:
@@ -4046,7 +4051,9 @@ paths:
         setting means that step does nothing; with no build, install or restart
         command set the answer is `skipped`. `restarting` means the restart command
         ran; the health check and any rollback finish after the daemon is back. A
-        federated peer needs the autonomous write capability.
+        federated peer needs the autonomous write capability. It is refused with 403
+        unless autonomous.merge_deploy_run_enabled is true (off by default); the
+        refusal names the setting and is audited as merge_deploy_run_refused.
       operationId: autonomousDeployRun
       tags: [Autonomous]
       responses:
@@ -4058,9 +4065,50 @@ paths:
                 $ref: "#/components/schemas/DeployRunResult"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403": {description: Federated peer lacks the autonomous write capability}
+        "403": {description: "autonomous.merge_deploy_run_enabled is off, or a federated peer lacks the autonomous write capability"}
         "405": {description: Method not allowed}
         "409": {description: A merge or deploy is already running}
+        "503": {description: Automata is disabled, or no worktree base repository is set}
+
+  /api/autonomous/merge/run:
+    post:
+      summary: Run a merge through the merge pipeline
+      description: |
+        Merges the named branches into the worktree base repository through the
+        merge pipeline in effect, and answers with the recorded run. A run can
+        change the local main branch, bump the version, tag, push and deploy,
+        as the pipeline and the release approval mode decide;
+        autonomous.push_and_tag does not stop its push. A step that fails
+        answers 200 with result failed. It is refused with 403 unless
+        autonomous.merge_deploy_run_enabled is true (off by default); the
+        refusal names the setting and is audited as merge_deploy_run_refused.
+        A federated peer needs the autonomous write capability.
+      operationId: autonomousMergeRun
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project: {type: string, description: "Project for per-project settings; empty uses the base repository's directory name"}
+                title: {type: string}
+                branches: {type: array, items: {type: string}}
+                automaton: {type: string, description: "The Automaton the run belongs to"}
+              required: [title, branches]
+      responses:
+        "200":
+          description: "The recorded run in run, and error when the run could not start or a step stopped it"
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        "400": {description: Invalid JSON body}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: "autonomous.merge_deploy_run_enabled is off, or a federated peer lacks the autonomous write capability"}
+        "405": {description: Method not allowed}
+        "409": {description: A merge is already running, or new work is paused by the operator}
         "503": {description: Automata is disabled, or no worktree base repository is set}
 
   /api/autonomous/merge-pipeline:
@@ -14139,6 +14187,7 @@ components:
           description: "The seven autonomous.deploy keys as text; the two timeouts have their defaults filled in"
           additionalProperties: true
         running: {type: boolean, description: "A merge or deploy is running now"}
+        run_enabled: {type: boolean, description: "autonomous.merge_deploy_run_enabled: whether a merge run or deploy run request may act"}
         phase: {type: string, enum: [deferred, restarting, install_failed, restart_failed, done, rolled_back, rollback_failed], description: "Phase of the last deploy; absent when none is recorded"}
         outcome: {type: string, enum: [ok, rolled_back, rollback_failed], description: "Last recorded outcome; absent when none"}
         deferred:
@@ -14153,7 +14202,7 @@ components:
           properties:
             time: {type: string, format: date-time}
             sha256: {type: string}
-      required: [settings, running]
+      required: [settings, running, run_enabled]
     DeployRunResult:
       type: object
       description: The answer of POST /api/autonomous/deploy/run.

@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/deploy"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -47,8 +49,37 @@ func (s *Server) restartSource() sessionRestartSource {
 	return sessionRestartSource{m: s.manager, ledger: s.capacityLedger}
 }
 
+// deferredDeployHold says why a deferred deploy may not be retried now: the
+// merge run and deploy run switch first, then the operator pause.
+func (s *Server) deferredDeployHold(dir string) (autonomous.SupervisorRunHold, bool) {
+	if !s.mergeDeployRunEnabled() {
+		return autonomous.SupervisorRunHold{Setting: config.MergeDeployRunKey, Message: config.MergeDeployRunRefusal}, true
+	}
+	if s.deferredDeployRetryHeld(dir) {
+		if b, blocked := s.operatorPauseBlock(dir); blocked {
+			return autonomous.SupervisorRunHold{Pause: &b, Message: b.Message()}, true
+		}
+	}
+	return autonomous.SupervisorRunHold{}, false
+}
+
+// heldDeferredRetry is retry behind the hold. A retry starts a new deploy, so
+// every attempt asks first. A held attempt is audited, ends the retry loop and
+// leaves the deferred state for the next daemon start.
+func (s *Server) heldDeferredRetry(dir string, retry func(context.Context) (deploy.Result, error)) func(context.Context) (deploy.Result, error) {
+	return func(ctx context.Context) (deploy.Result, error) {
+		hold, held := s.deferredDeployHold(dir)
+		if !held {
+			return retry(ctx)
+		}
+		log.Printf("[deploy] retry deferred: held: %s; a daemon start retries it once nothing holds it", hold.Message)
+		s.writeRunRefusal(daemonStartAuditActor, deployRunSubject, runHoldDetails(hold, refusedDaemonStart))
+		return deploy.Result{Status: deploy.StatusSkipped, Reason: hold.Message}, nil
+	}
+}
+
 // StartDeployResume finishes a deploy the restart interrupted and retries a
-// deferred one. It runs once at daemon start, in the background, and never
+// deferred one (heldDeferredRetry). It runs once at daemon start, in the background, and never
 // blocks serving. A second call starts another pass, which does nothing for a
 // state that is already finished.
 func (s *Server) StartDeployResume(ctx context.Context) {
@@ -82,12 +113,8 @@ func (s *Server) StartDeployResume(ctx context.Context) {
 		} else if res.Acted {
 			log.Printf("[deploy] resume finished: %s", res.Phase)
 		}
-		if s.deferredDeployRetryHeld(dir) {
-			log.Printf("[deploy] retry deferred: held, new work is paused; it is retried at the next daemon start after the operator resumes")
-			return
-		}
 		runner := newDeployRunner(dir, data, cfg, s.restartSource())
-		if res, err := deploy.RetryDeferred(ctx, store, deploy.SystemClock{}, runner.Retry); err != nil {
+		if res, err := deploy.RetryDeferred(ctx, store, deploy.SystemClock{}, s.heldDeferredRetry(dir, runner.Retry)); err != nil {
 			log.Printf("[deploy] retry deferred: %v", err)
 		} else if res.Status != deploy.StatusSkipped {
 			log.Printf("[deploy] deferred deploy retried: %s %s", res.Status, res.Reason)

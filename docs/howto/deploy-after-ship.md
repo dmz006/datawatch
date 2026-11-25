@@ -80,7 +80,7 @@ anything that looks like a credential from the text it records.
 
 | Method | How |
 |--------|-----|
-| **YAML** | Edit `~/.datawatch/config.yaml` > `autonomous:` > `deploy:` (the seven keys above) |
+| **YAML** | Edit `~/.datawatch/config.yaml` > `autonomous:` > `deploy:` (the seven keys above); `autonomous:` > `merge_deploy_run_enabled:` allows run requests |
 | **CLI** | `datawatch config set autonomous.deploy.<key> <value>` to change a setting; `datawatch autonomous deploy show` to read the state; `datawatch autonomous deploy run` to deploy now (both take `--json`) |
 | **Web UI** | Settings tab > Automation > **Deploy** card: the settings in effect, the last phase and outcome, any deferral reason, and a **Run now** button that stays disabled until a build, install or restart command is set |
 | **REST API** | `PUT /api/config` with `{"autonomous.deploy.health_timeout": "3m"}` to change a setting; `GET /api/autonomous/deploy` to read the state; `POST /api/autonomous/deploy/run` to deploy now |
@@ -152,6 +152,18 @@ is raised once for each failed deploy. Answer it where you answer any question:
 the PWA, the `question_answer` MCP tool or the chat channel.
 
 ## Deploy now, by hand
+
+Run requests are **off by default**. Turn them on first with
+`datawatch config set autonomous.merge_deploy_run_enabled true`
+(or **Allow merge run and deploy run requests** in Settings > Automation >
+Deploy, or `configure autonomous.merge_deploy_run_enabled=true`). While the
+setting is off, every deploy run and merge run request is refused with a message
+naming it and is written to the audit log as `merge_deploy_run_refused`.
+`datawatch autonomous deploy show` prints whether requests are on. The setting
+also holds the supervisor loop's `deploy_after_ship` and
+`run_merge_until_conflict` jobs and the retry of a deferred deploy at daemon
+start. It does not hold finishing a deploy a restart interrupted. See
+[the definition](../datawatch-definitions.md#autonomous-merge-deploy-run-enabled).
 
 Use `datawatch autonomous deploy run` (or the Web UI button, the REST route or
 the chat command above) to run the sequence for the current build without a

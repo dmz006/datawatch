@@ -7131,6 +7131,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"merge_pipeline": mergePipelineConfigSurface(s.cfg.Autonomous.MergePipeline),
 			// Effective, not raw: the deploy block with the timeout defaults filled in.
 			"deploy": deployConfigSurface(s.cfg.Autonomous.Deploy),
+			// Off by default; both run routes refuse while it is off.
+			"merge_deploy_run_enabled": s.cfg.Autonomous.MergeDeployRunEnabled,
 			// Effective, not raw: all eleven request watch values with the
 			// defaults filled in; remediation_options is the list in effect.
 			"request_watch": requestWatchConfigSurface(s.cfg.Autonomous.RequestWatch),
@@ -8329,6 +8331,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if terr := validateTracingPatch(s.cfg.Tracing, patch); terr != nil {
 		http.Error(w, terr.Error(), http.StatusBadRequest)
 		return
+	}
+	// autonomous.merge_deploy_run_enabled — a boolean or boolean text;
+	// anything else rejects the whole PUT, so a typo is never read as a value.
+	if v, ok := patch[config.MergeDeployRunKey]; ok {
+		if _, valid := mergeDeployRunValue(v); !valid {
+			http.Error(w, config.MergeDeployRunKey+" must be true or false", http.StatusBadRequest)
+			return
+		}
 	}
 	// autonomous.release_path and git.release_ci_window_minutes — refused
 	// with the config layer's own message so every surface shows the same text.
@@ -11374,6 +11384,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				if bs, err := strconv.ParseBool(strings.TrimSpace(str)); err == nil {
 					cfg.Autonomous.PushAndTag = bs
 				}
+			}
+		case config.MergeDeployRunKey:
+			// Pre-validated by the PUT handler.
+			if on, ok := mergeDeployRunValue(v); ok {
+				cfg.Autonomous.MergeDeployRunEnabled = on
 			}
 		case "autonomous.release_path":
 			// Pre-validated by the PUT handler.

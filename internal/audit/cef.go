@@ -304,6 +304,8 @@ func cefSignature(action string) (int, string, int) {
 		return 96, "PlanRecordArchived", 3
 	case ActionPlanRecordRestored:
 		return 97, "PlanRecordRestored", 3
+	case ActionMergeDeployRunRefused:
+		return 102, "MergeDeployRunRefused", 4
 	default:
 		return 0, "AuditEvent", 3
 	}

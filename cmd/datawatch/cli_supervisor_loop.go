@@ -187,6 +187,10 @@ func newSupervisorLoopRunCmd() *cobra.Command {
 			"like any other loop run). An unknown job name fails with the daemon's " +
 			`"unknown job" error.
 
+run_merge_until_conflict and deploy_after_ship are refused unless
+autonomous.merge_deploy_run_enabled is true (off by default), and while the
+operator pause covers the repository.
+
 --input hands TEXT to the job as its input; --candidates is a candidate
 list, for the model jobs that choose among candidates (repeatable).
 --json prints the raw response untouched.`,

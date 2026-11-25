@@ -4150,6 +4150,22 @@ autonomous:
   # than true/false is refused by the daemon. See
   # docs/howto/release-push-and-tag.md.
   push_and_tag: false
+  # Whether a merge run or deploy run REQUEST may act (POST
+  # /api/autonomous/merge/run and /api/autonomous/deploy/run, and the deploy
+  # run action in MCP, CLI, chat and the web app). Off (the default): each
+  # request is refused with HTTP 403 naming this key, nothing runs and an
+  # audit entry (merge_deploy_run_refused) is written. Reads and status stay
+  # available (GET /api/autonomous/deploy reports run_enabled). It also holds
+  # the supervisor loop's run_merge_until_conflict and deploy_after_ship jobs
+  # (daemon passes and hand runs, whatever the step's own switch says; the
+  # operator pause holds them too) and the retry of a deferred deploy at
+  # daemon start. It does not hold finishing a deploy a restart interrupted.
+  # push_and_tag does not stop a merge run from pushing. Set at runtime with
+  # PUT /api/config, `datawatch config set autonomous.merge_deploy_run_enabled
+  # true`, MCP config_set, comm configure, or Settings -> Automation -> Deploy.
+  # A value other than true/false is refused. See
+  # docs/howto/deploy-after-ship.md.
+  merge_deploy_run_enabled: false
   # How a finished release is published when push_and_tag is on.
   #   direct_push — (default) push the release commit to the default branch,
   #                 then push the release tag.

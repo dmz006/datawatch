@@ -153,6 +153,15 @@ func supervisorLoopSettingsFrom(cfg *config.Config) supervisorloop.Settings {
 	return s
 }
 
+// daemonSupervisorLoopHooks are the loop's hooks as the daemon runs them: the
+// merge and deploy steps are held by the merge run and deploy run switch, and
+// each refusal goes to the audit log.
+func daemonSupervisorLoopHooks(amgr *autonomouspkg.Manager, cfg *config.Config, settings func() supervisorloop.Settings, srv *server.HTTPServer) autonomouspkg.SupervisorLoopHooks {
+	hooks := server.NewSupervisorLoopHooks(amgr, cfg, settings, srv.PlanRecordStore)
+	srv.AuditSupervisorRunRefusals(&hooks)
+	return hooks
+}
+
 // wireSupervisorLoop registers the eight mechanical steps on the coordinator's
 // idle tick and connects the escalator to the operator question queue. Run
 // records go to supervisor_loop_runs.jsonl in the data directory.
@@ -180,7 +189,7 @@ func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Ma
 	engine.Client = autonomouspkg.NewSupervisorModelClient(amgr, supervisorLoopSessionFn(cfg))
 	jobs := &supervisorloop.ModelJobs{Engine: engine, SettingsFn: settings}
 	amgr.SetSupervisorModelJobs(jobs)
-	hooks := server.NewSupervisorLoopHooks(amgr, cfg, settings, srv.PlanRecordStore)
+	hooks := daemonSupervisorLoopHooks(amgr, cfg, settings, srv)
 	steps := autonomouspkg.NewSupervisorLoopSteps(coord, engine, hooks)
 	coord.SetSupervisorLoopSteps(steps)
 	// The standing check of closed work reads this host's deploy facts.

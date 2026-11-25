@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // StatusView is the GET /api/autonomous/deploy body.
@@ -24,6 +26,9 @@ type StatusView struct {
 		SHA256 string `json:"sha256"`
 	} `json:"snapshot,omitempty"`
 	Running bool `json:"running"`
+	// RunEnabled is whether merge run and deploy run requests may act; nil
+	// when the daemon does not report it.
+	RunEnabled *bool `json:"run_enabled,omitempty"`
 }
 
 // ParseStatusView decodes a GET body.
@@ -50,6 +55,13 @@ func RenderStatusText(v StatusView) string {
 			val = "(not set)"
 		}
 		fmt.Fprintf(&b, "  %s: %s\n", k, val)
+	}
+	if v.RunEnabled != nil {
+		state, val := "off", "false"
+		if *v.RunEnabled {
+			state, val = "on", "true"
+		}
+		fmt.Fprintf(&b, "Merge run and deploy run requests: %s (%s is %s).\n", state, config.MergeDeployRunKey, val)
 	}
 	if v.Running {
 		b.WriteString("A merge or deploy is running now.\n")
