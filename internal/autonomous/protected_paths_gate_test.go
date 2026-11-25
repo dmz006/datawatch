@@ -68,6 +68,14 @@ func (g *gateGit) run(_ context.Context, _ string, args ...string) (string, erro
 		if c, ok := g.show[args[1]]; ok {
 			return c, nil
 		}
+		// Unless a test says otherwise, the index and HEAD hold the base copy.
+		for _, recorded := range []string{"HEAD:", ":"} {
+			if rel, found := strings.CutPrefix(args[1], recorded); found {
+				if c, ok := g.show[gateBaseSHA+":"+rel]; ok {
+					return c, nil
+				}
+			}
+		}
 		if idx := strings.LastIndex(args[1], ":"); idx > 0 {
 			return "", fmt.Errorf("fatal: path '%s' does not exist in %s", args[1][idx+1:], args[1][:idx])
 		}
@@ -107,6 +115,7 @@ func newGateRig(t *testing.T) *gateRig {
 	t.Helper()
 	r := &gateRig{uncommittedHoldRig: newUncommittedHoldRig(t, true), git: &gateGit{}}
 	r.m.driftGit = r.git.run
+	r.m.SetDaemonRulesTextFn(standInDaemonText(gateStandIns))
 	r.m.SetConfig(withProtected(r.m.Config(), nil, config.ProtectedPathsActionHold))
 	r.task.PreTaskSHA = gateBaseSHA
 	return r

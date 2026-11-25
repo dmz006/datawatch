@@ -10,9 +10,12 @@
 // the task branch before the merge runs: a rules file the branch changed such
 // that its committed content differs from the base blob only by daemon
 // sections is restored to the base blob; one that also carries a real edit is
-// rewritten with the daemon's sections removed (and nothing else). A file the
-// branch did not change, or whose committed content has no daemon sections,
-// is left alone — and a branch with nothing of the sort gets no cleanup
+// rewritten with the daemon's sections removed (and nothing else). A daemon
+// section is only a block whose lines are exactly what the daemon writes
+// (platformcontext.SameBesidesDaemonText): anything else between its markers,
+// under its headings or after an unclosed marker is the branch's own text and
+// is merged as it stands. A file the branch did not change, or whose committed
+// content has no daemon sections, is left alone — and a branch with nothing of the sort gets no cleanup
 // commit at all, so a merge of it moves the base branch exactly once.
 //
 // The same cleanup removes the two root launcher files (worker-mcp.json,
@@ -64,6 +67,7 @@ func (m *Manager) cleanDaemonSectionsBeforeMerge(ctx context.Context, dir, base 
 		files = append(files, rel)
 	}
 
+	written := m.daemonRulesText(dir)
 	var changed []string
 	for _, rel := range files {
 		headOut, herr := run(ctx, dir, "show", "HEAD:"+rel)
@@ -75,18 +79,23 @@ func (m *Manager) cleanDaemonSectionsBeforeMerge(ctx context.Context, dir, base 
 		if !newFile && headOut == baseOut {
 			continue // the branch did not change this file
 		}
-		stripped := platformcontext.StripDaemonSections(headOut)
-		if stripped == headOut {
-			continue // no daemon sections in the committed content
-		}
 		var want string
-		if !newFile && stripped == platformcontext.StripDaemonSections(baseOut) {
-			want = baseOut // daemon sections are the whole diff: restore the base blob
+		if !newFile && platformcontext.SameBesidesDaemonText(headOut, baseOut, written) {
+			want = baseOut // the daemon's text is the whole diff: restore the base blob
 		} else {
-			want = stripped // real edit on top: keep the edit, drop the sections
-			if strings.HasSuffix(headOut, "\n") {
-				want += "\n" // StripDaemonSections trims trailing whitespace; keep the file's final newline
+			// Real edit on top: keep every line the daemon did not write, an
+			// unclosed marker and what follows it included.
+			rest, removed := platformcontext.RemoveDaemonText(headOut, written)
+			if !removed {
+				continue // no daemon text in the committed content
 			}
+			want = rest
+			if strings.HasSuffix(headOut, "\n") {
+				want += "\n" // the final newline is trimmed with the blank lines; keep it
+			}
+		}
+		if want == headOut {
+			continue
 		}
 
 		full, err := safeJoin(dir, rel)
@@ -95,7 +104,7 @@ func (m *Manager) cleanDaemonSectionsBeforeMerge(ctx context.Context, dir, base 
 		}
 		if work, werr := os.ReadFile(full); werr == nil {
 			if string(work) != headOut && // committed, so a real difference, not a daemon-only working diff
-				platformcontext.StripDaemonSections(string(work)) != stripped {
+				!platformcontext.SameBesidesDaemonText(string(work), headOut, written) {
 				return fmt.Errorf("clean daemon sections before merge: %s has uncommitted changes beyond the daemon's own sections; refusing to overwrite them", rel)
 			}
 		} // a missing working copy is safe: the write only replaces the committed content
