@@ -115,14 +115,14 @@ type mergeFacts struct {
 	tasks        []mergeTaskBranch
 }
 
-// completionReviewBlocked reports whether the newest pass-or-block judgment of
-// any completion-level guardrail is a real block. A judge-timeout hold is not
-// a judgment. A later pass of another guardrail, or of a task or story check,
-// never hides it.
-func completionReviewBlocked(vs []GuardrailVerdict) bool {
+// unitReviewBlocked reports whether, for any guardrail among one unit's
+// verdicts, the newest real judgment (a pass or a block) is a block. A
+// judge-timeout hold is not a judgment: it neither blocks here nor replaces an
+// earlier block.
+func unitReviewBlocked(vs []GuardrailVerdict) bool {
 	newest := map[string]GuardrailVerdict{}
 	for _, v := range vs {
-		if v.Outcome != "pass" && v.Outcome != "block" {
+		if (v.Outcome != "pass" && v.Outcome != "block") || IsJudgeTimeoutHold(v) {
 			continue
 		}
 		if cur, ok := newest[v.Guardrail]; !ok || !v.VerdictAt.Before(cur.VerdictAt) {
@@ -130,8 +130,27 @@ func completionReviewBlocked(vs []GuardrailVerdict) bool {
 		}
 	}
 	for _, v := range newest {
-		if v.Outcome == "block" && !IsJudgeTimeoutHold(v) {
+		if v.Outcome == "block" {
 			return true
+		}
+	}
+	return false
+}
+
+// anyReviewBlocked applies unitReviewBlocked to the Automaton, each story and
+// each task on its own, so a pass on one unit never hides a block on another.
+func anyReviewBlocked(p *PRD) bool {
+	if unitReviewBlocked(p.Verdicts) {
+		return true
+	}
+	for i := range p.Story {
+		if unitReviewBlocked(p.Story[i].Verdicts) {
+			return true
+		}
+		for j := range p.Story[i].Tasks {
+			if unitReviewBlocked(p.Story[i].Tasks[j].Verdicts) {
+				return true
+			}
 		}
 	}
 	return false
@@ -160,7 +179,7 @@ func mergeBarred(p *PRD) []string {
 	if p.Archive != nil && status != PRDArchived {
 		add("archived work is never merged")
 	}
-	if ReviewStateOf(p).State == ReviewStateBlocked || completionReviewBlocked(p.Verdicts) {
+	if ReviewStateOf(p).State == ReviewStateBlocked || anyReviewBlocked(p) {
 		add("its review is blocked: review-blocked work is never merged")
 	}
 	if p.Hold != nil && status != PRDHeld {
@@ -190,11 +209,16 @@ func mergeBarred(p *PRD) []string {
 	for i := range p.Story {
 		for j := range p.Story[i].Tasks {
 			t := &p.Story[i].Tasks[j]
-			if !codeTask(t) || t.Status == TaskCancelled {
+			if t.Status == TaskCompleted {
+				// Finished work counts whatever its title says; a gate
+				// task on its own is not work.
+				if t.Kind != TaskKindSmoke && t.Kind != TaskKindFinalGate {
+					done++
+				}
 				continue
 			}
-			if t.Status == TaskCompleted {
-				done++
+			// An open docs or gate task does not hold the code back.
+			if !codeTask(t) || t.Status == TaskCancelled {
 				continue
 			}
 			if t.Status == "" {
@@ -205,7 +229,7 @@ func mergeBarred(p *PRD) []string {
 		}
 	}
 	if done == 0 {
-		add("it has no completed code task")
+		add("it has no completed code task (no finished task other than gate tasks)")
 	}
 	return out
 }
