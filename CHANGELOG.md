@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.12 — reports and moved-aside files are not deleted
+
+### Fixed
+- Settling a read-only task's report no longer deletes a different report with the same name. A file is removed only when a kept file has the same content; otherwise both are kept.
+- Five related ways to lose a report or a moved-aside file are closed: deleting an Automaton, setting files aside during a task merge, the gate report, removing an unlanded worktree and the automatic stray-file repair.
+
+### Documentation
+- How reports and moved-aside files are kept.
+
 ## v9.187.11 — ids are not reused, protected holds stay held, lifecycle alerts arrive
 
 ### Fixed
