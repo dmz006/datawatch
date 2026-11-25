@@ -68,7 +68,9 @@ func (m *Manager) decomposeViaLadder(prd *PRD, prdID string, rp routedPlan, prom
 				}
 				r, derr := m.decomposeAdmitted(prd, backend, model, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: model, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 				if derr != nil {
-					if errors.Is(derr, errDecomposeCancelled) {
+					// A record closed during planning gets no further planner,
+					// on this rung or the next.
+					if errors.Is(derr, errDecomposeCancelled) || m.closedToRecoveryID(prd.ID) {
 						fatal = derr
 						cancel()
 						return "", derr
