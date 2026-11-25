@@ -128,9 +128,12 @@ work:
 
 - **Rules files carrying only the daemon's sections.** If the branch's
   committed `AGENT.md` or `CLAUDE.md` differs from the base commit only by the
-  daemon's marked sections, the file is restored to the base content; if it
+  daemon's own sections, the file is restored to the base content; if it
   also carries a real edit, the daemon's sections are stripped and the edit is
-  kept.
+  kept. Only text that is
+  [exactly what the daemon writes](automaton-protected-paths.md#the-daemons-own-sections-in-the-rules-file)
+  is stripped. Other text between its markers, under its headings, or after a
+  marker that is never closed is merged as it stands.
 - **The root launcher files.** If the branch committed the session launcher's
   own root files — `worker-mcp.json` and `worker-starting-context.md` — they
   are removed, but **only when the merge target state has no such files**

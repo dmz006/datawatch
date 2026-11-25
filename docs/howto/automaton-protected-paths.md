@@ -132,7 +132,9 @@ answers from git alone, read-only, with no model involved. It compares the
 task's directory with the **base commit**, so it sees:
 
 - files the task committed;
-- edits to tracked files that are not committed yet;
+- edits to tracked files that are not committed yet, staged or not;
+- a change that is committed or staged and then undone only in the working
+  copy: the index and the last commit are compared with the base too;
 - new files that are not tracked yet;
 - renames and deletions, which count for both the old and the new path.
 
@@ -148,12 +150,14 @@ daemon's work, not the worker's, and they are not changes: the uncommitted
 work check, the read-only task check, this protected-paths gate, the merge
 preflight before a task branch is folded back, the dirty-tree start guard, the
 await probe that decides when the tree may be taken again, and the dirty check
-when a worktree is cleaned up all compare the file with those marked sections
-stripped on both sides, so a protected rules file counts as changed only when
-its content changes outside them. In the merge preflight the same rule means a
-rules-file commit that carries only daemon sections is stripped out before the
-merge, while a rules file that also carries a real edit is rewritten without
-the daemon's sections and the real edit is kept. The same pre-merge cleanup
+when a worktree is cleaned up all set those sections aside. The protected-paths
+gate and the pre-merge cleanup set aside only text that is
+[exactly what the daemon writes](#the-daemons-own-sections-in-the-rules-file);
+the other checks, which only decide what counts as uncommitted work, go by the
+section's markers and headings. In the merge preflight this means a rules-file
+commit that carries only the daemon's text is stripped out before the merge,
+while a rules file that also carries a real edit is rewritten without the
+daemon's text and everything else is kept. The same pre-merge cleanup
 also drops the two launcher files — `worker-mcp.json` and
 `worker-starting-context.md` — when the branch committed one at its root and
 the merge target has none of that file; a launcher-named file that belongs to
@@ -380,15 +384,30 @@ directory. You want both protected, plus the code owners file.
 
 ## The daemon's own sections in the rules file
 
-When a session starts, the session tracker writes its own marked sections into
-the project rules file by itself — the session guardrails header, the memory,
-RTK, cross-session and platform context sections. They are recognised
-everywhere as the daemon's work, not the worker's: they never count as a
-change in any of the checks above, and they never reach the held paths. What
-a hold names is a change outside those sections — a real edit to the rules, by
-the worker or by hand — and it is answered exactly like any other protected
-path: **Approve this change** if you want it, or authorise the rules file for
-the Automaton so its tasks pass.
+While `rtk.write_rules_files` is on, a session start writes datawatch's own
+sections into the project rules file: the session guardrails header and the
+memory, RTK and cross-session sections. Their exact text is the daemon's work,
+not the worker's, and never reaches the held paths. What a hold names is any
+other change — a real edit to the rules, by the worker or by hand — and it is
+answered exactly like any other protected path: **Approve this change** if you
+want it, or authorise the rules file for the Automaton so its tasks pass.
+
+A marker or a heading does not make text the daemon's. The gate compares each
+block line by line with what the daemon writes:
+
+- the RTK, cross-session and memory sections, and the platform context block
+  (with your `platform_context.note`, if you set one), as this release writes
+  them;
+- a session guardrails header only while `rtk.write_rules_files` is on, and
+  only as the daemon writes it for a session it still knows that ran in that
+  directory. Refreshing an older header is recognised when the old and new
+  headers differ only in the session, the task and the directory.
+
+Anything else counts as a change: a line added inside a block or under one of
+these headings, text after a marker that is never closed, and the removal of a
+block whose text is not the daemon's. When the gate cannot tell, the task is
+held. This includes a block an older release wrote with different wording, if
+a task adds or removes it, and a header whose session has since been deleted.
 
 A change counts as the daemon's own only when the daemon can show it. All of
 these must be true:
@@ -399,7 +418,9 @@ these must be true:
   one of their headings;
 - it is a regular file, and both it and its version at the base commit can be
   read;
-- the two versions are equal once the daemon's sections are stripped.
+- the working copy, the staged copy and the last committed copy can all be
+  read, and each is equal to the base version once the daemon's exact text is
+  set aside.
 
 If any of this cannot be shown, the path counts as changed. So a protected
 file that is not a rules file is also held when only its permissions or its
@@ -442,7 +463,9 @@ If a worker adds a checkpoint entry to the rules file anyway, the gate deals
 with that one case itself, before any hold, warn or block is decided:
 
 - **the entry is the file's only change** against the base commit — the gate
-  removes the entry from the working copy and lets the task go on. There is
+  removes the entry from the working copy and lets the task go on. This
+  happens only while the entry is neither staged nor committed: a staged or
+  committed entry is handled like any other change. There is
   no question and no alert. It records one decision on the Automaton named
   **`protected_paths_checkpoint_reverted`** (its note reads *task <id>: removed
   a worker checkpoint entry from <path>*), so you can see in the Automaton's
@@ -504,8 +527,10 @@ Nothing else. The base version must be an ordered subsequence of the working
 copy — the worker may have added lines, but not changed or removed one — and
 a non-dated new section, body text outside an entry block, or a second
 `## Checkpoints` heading keeps the hit and puts the file back in the normal
-hold / warn / block path. The revert is line-level and deterministic: no model
-is involved and no git write is issued. The daemon's own marked sections in
+hold / warn / block path. So does an entry that is already staged or
+committed, because rewriting the working copy would leave it there. The revert
+is line-level and deterministic: no model is involved and no git write is
+issued. The daemon's own marked sections in
 the rules file are never part of what is stripped — an entry written next to
 them is still stripped, and the sections are preserved byte for byte.
 
