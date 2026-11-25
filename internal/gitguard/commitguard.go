@@ -21,26 +21,56 @@ const CommitTokenEnv = "DATAWATCH_COMMIT_TOKEN"
 // reaping matches nothing else under the OS temp dir.
 const guardDirPrefix = "datawatch-commitguard-"
 
-// guardHooks lists the hooks written into a guard directory. The
-// reference-transaction hook is the backstop that still fires for
-// commit --no-verify and for plumbing ref updates.
+// guardHooks lists the hooks that can refuse. The reference-transaction hook
+// is the backstop that still fires for commit --no-verify and for plumbing ref
+// updates.
 var guardHooks = []string{"pre-commit", "commit-msg", "reference-transaction"}
 
-// CommitGuard owns a harness-controlled hooks directory that refuses every
-// commit and ref update unless the commit token is present in the
-// environment. Workers get Env() and cannot commit; the harness commits with
-// CommitEnv() after validation.
+// passThroughHooks lists the other hooks written into a guard directory. They
+// never refuse: because core.hooksPath points at the guard directory, each one
+// only runs the repository's own hook of that name. push-to-checkout and
+// proc-receive are left out, as git behaves differently when either one merely
+// exists.
+var passThroughHooks = []string{
+	"applypatch-msg", "pre-applypatch", "post-applypatch",
+	"pre-merge-commit", "prepare-commit-msg", "post-commit",
+	"pre-rebase", "post-checkout", "post-merge", "post-rewrite",
+	"pre-push", "pre-receive", "update", "post-receive", "post-update",
+	"pre-auto-gc", "post-index-change", "sendemail-validate",
+	"p4-changelist", "p4-prepare-changelist", "p4-post-changelist", "p4-pre-submit",
+}
+
+// CommitGuard owns a harness-controlled hooks directory that refuses commits
+// and ref updates in one repository, the session's own, unless the commit
+// token is present in the environment. All its worktrees count, as they share
+// its git common directory; every other repository is allowed. A guard that
+// knows no repository of its own refuses in every repository. Workers get
+// Env() and cannot commit; the harness commits with CommitEnv() after
+// validation.
+//
+// The guard stops a worker from committing by mistake. It is not a barrier
+// against a program that sets out to get around it.
 type CommitGuard struct {
 	dir   string
 	token string
+	repo  string
 
 	mu      sync.Mutex
 	cleaned bool
 }
 
-// NewCommitGuard creates the hooks directory under the OS temp dir (never
-// inside a worktree or repository) and writes the hook scripts.
+// NewCommitGuard creates a guard that knows no repository of its own, so it
+// refuses in every repository. See NewRepoCommitGuard.
 func NewCommitGuard(sessionID string) (*CommitGuard, error) {
+	return NewRepoCommitGuard(sessionID, "")
+}
+
+// NewRepoCommitGuard creates the hooks directory under the OS temp dir (never
+// inside a worktree or repository) and writes the hook scripts. The guard
+// refuses in the repository that holds projectDir. When that cannot be
+// determined (no folder, or a folder outside git) it refuses in every
+// repository.
+func NewRepoCommitGuard(sessionID, projectDir string) (*CommitGuard, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return nil, fmt.Errorf("commit guard token: %w", err)
@@ -51,9 +81,9 @@ func NewCommitGuard(sessionID string) (*CommitGuard, error) {
 	if err != nil {
 		return nil, fmt.Errorf("commit guard dir: %w", err)
 	}
-	g := &CommitGuard{dir: dir, token: token}
-	script := hookScript(token)
-	for _, name := range guardHooks {
+	g := &CommitGuard{dir: dir, token: token, repo: repositoryCommonDir(projectDir)}
+	script := hookScript(token, g.repo)
+	for _, name := range append(append([]string{}, guardHooks...), passThroughHooks...) {
 		// #nosec G306 -- git hooks must be executable.
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
 			_ = os.RemoveAll(dir)
@@ -67,12 +97,95 @@ func NewCommitGuard(sessionID string) (*CommitGuard, error) {
 	return g, nil
 }
 
-func hookScript(token string) string {
+// repositoryCommonDir returns the real path of the git common directory of the
+// repository that holds dir, or "" when it cannot be determined.
+func repositoryCommonDir(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	// git prints a path relative to the folder it really runs in, so resolve
+	// symlinks before joining.
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return ""
+	}
+	if real, err = filepath.Abs(real); err != nil {
+		return ""
+	}
+	cmd := exec.Command("git", "-c", "core.fsmonitor=false", "-C", real, "rev-parse", "--git-common-dir") // #nosec G204 -- fixed arguments; real is an existing folder passed as the -C value
+	// These would make git answer for another repository.
+	for _, kv := range os.Environ() {
+		switch name, _, _ := strings.Cut(kv, "="); name {
+		case "GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_CEILING_DIRECTORIES":
+		default:
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	common := strings.TrimSuffix(string(out), "\n")
+	if common == "" {
+		return ""
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(real, common)
+	}
+	if common, err = filepath.EvalSymlinks(common); err != nil {
+		return ""
+	}
+	return common
+}
+
+// shellQuote makes v one literal word of a POSIX shell script.
+func shellQuote(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+}
+
+// hookScript is the one script every hook in a guard directory runs; it goes
+// by its own file name. ownRepo is the git common directory to guard, or "" to
+// guard every repository. With the commit token nothing is checked or run, so
+// the harness commit runs no hook a worker could have written. The token
+// comparison must stay the first one in the script: tokenFromHook reads it.
+func hookScript(token, ownRepo string) string {
 	return `#!/bin/sh
 # Generated by the harness. Do not edit.
 if [ "${` + CommitTokenEnv + `:-}" != "` + token + `" ]; then
-  echo "commit refused: the harness commits after validation; the worker must not run git commit (or update refs directly)." >&2
-  exit 1
+  dw_own=` + shellQuote(ownRepo) + `
+  dw_name=${0##*/}
+  # The git common directory of the repository this hook runs for.
+  dw_cur=$(git rev-parse --git-common-dir </dev/null 2>/dev/null) || dw_cur=
+  if [ -z "$dw_cur" ] && [ -n "${GIT_DIR:-}" ] && [ ! -f "$GIT_DIR/commondir" ]; then
+    # git init runs a hook before rev-parse can open the new repository.
+    dw_cur=${GIT_COMMON_DIR:-$GIT_DIR}
+  fi
+  case $dw_name in
+  ` + strings.Join(guardHooks, " | ") + `)
+    # Allow only what is certainly outside the session's repository. -ef
+    # compares the folders themselves, whatever path or symlink names them.
+    if [ -z "$dw_own" ] || [ ! -d "$dw_own" ] || [ ! -d "$dw_cur" ] || [ "$dw_cur" -ef "$dw_own" ]; then
+      echo "commit refused: the harness commits after validation; the worker must not run git commit (or update refs directly)." >&2
+      exit 1
+    fi
+    ;;
+  esac
+  # Run the repository's own hook, which core.hooksPath replaced here. Without
+  # GIT_CONFIG_COUNT git reports the repository's own core.hooksPath.
+  dw_dir=$(unset GIT_CONFIG_COUNT; git config --type=path --get core.hooksPath </dev/null 2>/dev/null)
+  case $? in
+  0) ;;
+  1) dw_dir=${dw_cur:+$dw_cur/hooks} ;;
+  *) dw_dir= ;;
+  esac
+  case $dw_dir in
+  "" | *` + guardDirPrefix + `*) ;;
+  *)
+    if [ -f "$dw_dir/$dw_name" ] && [ -x "$dw_dir/$dw_name" ]; then
+      exec "$dw_dir/$dw_name" "$@"
+    fi
+    ;;
+  esac
 fi
 exit 0
 `
@@ -83,6 +196,11 @@ func (g *CommitGuard) Dir() string { return g.dir }
 
 // Token returns the per-session commit token.
 func (g *CommitGuard) Token() string { return g.token }
+
+// Repository returns the git common directory a guard made by this process
+// guards, or "" when it refuses in every repository. An adopted guard keeps
+// what its hook scripts say and reports "".
+func (g *CommitGuard) Repository() string { return g.repo }
 
 // Env returns the config-injection environment that points core.hooksPath at
 // the guard directory without writing to any .git/config.
@@ -193,12 +311,14 @@ func ReapStaleGuardDirs(sessionIDs map[string]bool) {
 	}
 }
 
-// AdoptCommitGuard re-attaches to the guard directory an earlier daemon
+// AdoptRepoCommitGuard re-attaches to the guard directory an earlier daemon
 // generation created for sessionID, reading the token back from the hook
 // script. The worker's environment still points at that directory, so a
-// fresh directory would not guard it. When no directory exists it creates a
-// new guard.
-func AdoptCommitGuard(sessionID string) (*CommitGuard, error) {
+// fresh directory would not guard it. The hook scripts, and with them the
+// guarded repository, stay as they are. When no directory exists it creates a
+// new guard for the repository that holds projectDir, as NewRepoCommitGuard
+// does.
+func AdoptRepoCommitGuard(sessionID, projectDir string) (*CommitGuard, error) {
 	tmp := os.TempDir()
 	prefix := guardDirPrefix + sanitizeSessionID(sessionID) + "-"
 	entries, err := os.ReadDir(tmp)
@@ -217,7 +337,7 @@ func AdoptCommitGuard(sessionID string) (*CommitGuard, error) {
 			}
 		}
 	}
-	return NewCommitGuard(sessionID)
+	return NewRepoCommitGuard(sessionID, projectDir)
 }
 
 // tokenFromHook extracts the token written by hookScript.

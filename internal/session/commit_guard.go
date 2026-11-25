@@ -23,16 +23,21 @@ func sessionGuarded(sess *Session) bool {
 // armCommitGuard creates a commit guard for the session, keeps it in the
 // manager and sets its config-injection environment for the tmux session (the
 // launch loads it into the worker's pane shell) so a worker git commit hits the
-// hooks. Nothing is written to any repository config. Failures are logged and
-// leave the session unguarded.
+// hooks. The guard refuses in the repository of the session's project folder
+// and its worktrees; a project folder outside git gives a guard that refuses in
+// every repository. Nothing is written to any repository config. Failures are
+// logged and leave the session unguarded.
 func (m *Manager) armCommitGuard(sess *Session, tmuxSession string) {
 	if !sessionGuarded(sess) {
 		return
 	}
-	g, err := gitguard.NewCommitGuard(sess.FullID)
+	g, err := gitguard.NewRepoCommitGuard(sess.FullID, sess.ProjectDir)
 	if err != nil {
 		fmt.Printf("[warn] commit guard for %s: %v\n", sess.ID, err)
 		return
+	}
+	if g.Repository() == "" {
+		fmt.Printf("[warn] commit guard for %s: no git repository found for the project folder %q, so commits and ref updates are refused in every repository\n", sess.ID, sess.ProjectDir)
 	}
 	m.installCommitGuard(sess, tmuxSession, g)
 }
@@ -124,7 +129,7 @@ func (m *Manager) adoptCommitGuards(live []*Session) {
 		if !liveIDs[s.FullID] {
 			continue
 		}
-		g, err := gitguard.AdoptCommitGuard(s.FullID)
+		g, err := gitguard.AdoptRepoCommitGuard(s.FullID, s.ProjectDir)
 		if err != nil {
 			fmt.Printf("[warn] adopt commit guard for %s: %v\n", s.ID, err)
 			continue
