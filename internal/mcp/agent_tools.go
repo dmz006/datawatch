@@ -199,7 +199,7 @@ func (s *Server) sessionsCall(method, action string, body interface{}) (*http.Re
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.loopbackDo(http.DefaultClient, req)
 	if err != nil {
 		return nil, "", err
 	}
@@ -240,7 +240,7 @@ func (s *Server) agentCall(method, pathSuffix string, body interface{}) (*http.R
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.loopbackDo(http.DefaultClient, req)
 	if err != nil {
 		return nil, "", err
 	}

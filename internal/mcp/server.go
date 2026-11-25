@@ -1302,7 +1302,7 @@ func (s *Server) webDo(req *http.Request) (*http.Response, error) {
 	if s.token != "" {
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
-	return httpProxy.Do(req) // loopback client that accepts the daemon's self-signed cert
+	return s.loopbackDo(httpProxy, req) // loopback client that accepts the daemon's self-signed cert
 }
 
 // SetFedPeerStore wires the federation peer registry for MCP SSE auth (BL317).
@@ -2114,7 +2114,7 @@ func (s *Server) toolSessionChildren() mcpsdk.Tool {
 
 func (s *Server) toolReplyToParent() mcpsdk.Tool {
 	return mcpsdk.NewTool("reply_to_parent",
-		mcpsdk.WithDescription("Send a message to the parent session that spawned this session (BL347). Equivalent to send_input targeting the parent. No-op when called from a root session."),
+		mcpsdk.WithDescription("Send a message to the parent session that spawned this session (BL347). Equivalent to send_input targeting the parent, and refused on the same prompts. No-op when called from a root session."),
 		mcpsdk.WithString("text",
 			mcpsdk.Required(),
 			mcpsdk.Description("Text to send to the parent session's input."),
@@ -2169,7 +2169,7 @@ func (s *Server) toolSessionSummarize() mcpsdk.Tool {
 
 func (s *Server) toolSendInput() mcpsdk.Tool {
 	return mcpsdk.NewTool("send_input",
-		mcpsdk.WithDescription("Send text input to a session that is waiting for a response."),
+		mcpsdk.WithDescription("Send text input to a session that is waiting for a response. Refused, with nothing typed, while the session shows an approval, permission, safety or other confirmation prompt (those wait for the operator) or while its screen cannot be read."),
 		mcpsdk.WithString("session_id",
 			mcpsdk.Description("Session ID (4-char hex, full hostname-hex, or human-readable name set via rename_session) (required if session_name not provided)"),
 		),
@@ -2323,7 +2323,7 @@ func (s *Server) toolListSavedCommands() mcpsdk.Tool {
 
 func (s *Server) toolSendSavedCommand() mcpsdk.Tool {
 	return mcpsdk.NewTool("send_saved_command",
-		mcpsdk.WithDescription("Send a named saved command to a session."),
+		mcpsdk.WithDescription("Send a named saved command to a session. Refused, with nothing typed, while the session shows an approval, permission, safety or other confirmation prompt (those wait for the operator) or while its screen cannot be read."),
 		mcpsdk.WithString("session_id",
 			mcpsdk.Description("Session ID (required if session_name not provided)"),
 		),
@@ -2820,7 +2820,7 @@ func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallTool
 	if s.token != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+s.token)
 	}
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := s.loopbackDo(http.DefaultClient, httpReq)
 	if err != nil {
 		return toolError("session_summarize", err), nil
 	}
@@ -2987,7 +2987,7 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 		return toolErrorf("send_input", "session %q not found", id), nil
 	}
 
-	if err := s.manager.SendInput(sess.FullID, text, "mcp"); err != nil {
+	if err := s.manager.SendToolInput(sess.FullID, text, "mcp"); err != nil {
 		return toolError("send_input", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Input sent to session %s.", sess.ID)), nil
@@ -3186,7 +3186,7 @@ func (s *Server) handleReplyToParent(ctx context.Context, req mcpsdk.CallToolReq
 	if !ok {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Parent session %q no longer exists.", childSess.ParentID)), nil
 	}
-	if err := s.manager.SendInput(parent.FullID, text, "mcp-reply"); err != nil {
+	if err := s.manager.SendToolInput(parent.FullID, text, "mcp-reply"); err != nil {
 		return toolErrorf("reply_to_parent", "sending to parent session %s: %s", parent.ID, err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Sent to parent session %s.", parent.ID)), nil
@@ -3459,7 +3459,7 @@ func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRe
 		return toolErrorf("send_saved_command", "session %q not found", id), nil
 	}
 
-	if err := s.manager.SendInput(sess.FullID, cmd.Command, "mcp"); err != nil {
+	if err := s.manager.SendToolInput(sess.FullID, cmd.Command, "mcp"); err != nil {
 		return toolError("send_saved_command", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Sent command %q (%q) to session %s.", name, cmd.Command, sess.ID)), nil

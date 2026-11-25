@@ -4734,6 +4734,12 @@ func (m *Manager) SendRawKeys(fullID, data string) error {
 // shows a permission, safety or confirmation prompt. Output-filter input is
 // also held to the filter gate, marked as typed by the filter, and audited.
 func (m *Manager) SendInput(fullID, input, source string) error {
+	return m.sendInput(fullID, input, source, IsAutomatedInputSource(source), false)
+}
+
+// sendInput is SendInput and SendToolInput. guarded holds the input to the
+// prompt rules; tool words a refusal for the AI session that called the tool.
+func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) error {
 	filterID, isFilter := filterSourceID(source)
 	if isFilter {
 		if err := m.checkFilterGate(filterID); err != nil {
@@ -4766,10 +4772,12 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 
 	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, snap.TmuxSession, input, snap.BackendFamily)
 
-	automated := IsAutomatedInputSource(source)
 	// Chat-mode sessions have no terminal prompt to answer.
-	if automated && snap.OutputMode != "chat" {
+	if guarded && snap.OutputMode != "chat" {
 		if err := m.automatedBlocked(snap.TmuxSession, source); err != nil {
+			if tool {
+				err = toolRefusalFor(err, errToolPromptWaiting, errToolScreenUnreadable)
+			}
 			m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: fullID, Source: source, FilterID: filterID, Length: len(input), Reason: err.Error()})
 			return err
 		}
@@ -4857,11 +4865,11 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	// session.schedule_settle_ms. Falls back to defaultSendSettle (120ms) if
 	// not configured (scheduleSettleMs == 0).
 	var sendErr error
-	guarded, canGuard := m.tmux.(guardedSubmitter)
+	submitter, canGuard := m.tmux.(guardedSubmitter)
 	switch {
-	case automated && canGuard:
+	case guarded && canGuard:
 		// Re-checked between the typed text and the Enter.
-		sendErr = guarded.SendKeysGuarded(snap.TmuxSession, input,
+		sendErr = submitter.SendKeysGuarded(snap.TmuxSession, input,
 			time.Duration(m.scheduleSettleMs)*time.Millisecond, paneShowsApprovalMenu)
 	case m.scheduleSettleMs > 0:
 		sendErr = m.tmux.SendKeysWithSettle(snap.TmuxSession, input,
@@ -4870,6 +4878,11 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		sendErr = m.tmux.SendKeys(snap.TmuxSession, input)
 	}
 	if sendErr != nil {
+		if tool && errors.Is(sendErr, ErrPromptOnScreen) {
+			err := toolRefusalFor(sendErr, errToolPromptAppeared, errToolRereadFailed)
+			m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: fullID, Source: source, Length: len(input), Reason: err.Error()})
+			return err
+		}
 		return fmt.Errorf("send input: %w", sendErr)
 	}
 	m.debugf("SendInput OK")

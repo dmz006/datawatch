@@ -121,7 +121,7 @@ func (s *Server) dispatchDiscussionEntry(discussionID, content string) {
 			continue
 		}
 		msg := fmt.Sprintf("[discussion:%s] %s", discussionID, content)
-		if err := s.manager.SendInput(sess.FullID, msg, "discussion-sub"); err != nil {
+		if err := s.manager.SendToolInput(sess.FullID, msg, "discussion-sub"); err != nil {
 			fmt.Printf("[discussion-sub] failed to deliver to %s: %v\n", sname, err)
 		}
 	}

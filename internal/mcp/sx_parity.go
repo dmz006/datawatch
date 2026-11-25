@@ -61,7 +61,7 @@ func (s *Server) proxyGetWithHeaders(path string, q url.Values) ([]byte, http.He
 	if s.token != "" {
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
-	resp, err := httpProxy.Do(req)
+	resp, err := s.loopbackDo(httpProxy, req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -132,7 +132,7 @@ func (s *Server) proxyJSON(method, path string, body any) ([]byte, error) {
 	if s.token != "" {
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
-	resp, err := httpProxy.Do(req)
+	resp, err := s.loopbackDo(httpProxy, req)
 	if err != nil {
 		return nil, err
 	}
