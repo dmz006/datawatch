@@ -135,7 +135,7 @@ func TestCommitGuardScrubHooksPath(t *testing.T) {
 
 func TestCommitGuardReapStaleDirs(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
-	live, err := NewCommitGuard("live-sess")
+	live, err := NewOwnedCommitGuard("/data/self", "live-sess")
 	if err != nil {
 		t.Fatal(err)
 	}
