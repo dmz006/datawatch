@@ -193,8 +193,8 @@ spend.
 
 Each failed, stalled or cancelled entry in a task's `attempts` list (same
 response, `detail=full`) also carries `queue_wait_seconds` (lease request to
-grant) and `verify_seconds` (the task entering `verifying` to the verdict, so it
-currently includes the worker's run). See
+grant) and `verify_seconds` (the end of the wait for the worker to the
+verdict, so the worker's run is not included). See
 [howto/failed-attempt-cost.md](../howto/failed-attempt-cost.md#reading-the-attempt-record).
 
 Errors: `400` for a bad `group_by`, a bad date, or a `since` after `until`

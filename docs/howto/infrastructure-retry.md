@@ -14,7 +14,7 @@ exec_steps:
     args: {automaton: "{{params.automaton_id}}", limit: 50}
     read_only: true
   - tool: autonomous_prd_get
-    description: Read one Automaton, with each task's infra_retries history, infra_retry_count and failure_reason (a held task has the source infra-retry-hold)
+    description: Read one Automaton, with each task's infra_retries history, infra_retry_count and failure_reason (a held task has the source infra-retry-hold, or verifier-fault-hold when the verifier gave no verdict)
     args: {id: "{{params.automaton_id}}"}
     read_only: true
 ---
@@ -167,10 +167,40 @@ and the records stay on the task as history.
 - **The decision log.** Every scheduled retry adds an `infra_retry` entry to the
   Automaton's decisions.
 
+## When the verifier is at fault
+
+A verifier can fail without saying anything about the work: the ask call fails,
+the verifier session produces no output or hits its time limit, no capacity can
+be had, the diff cannot be read, or the reply cannot be read as a verdict (it is
+not JSON, or has no `ok` field). **Only the verification runs again.** The
+worker is not launched again, its commit stays, and no failed attempt is
+counted. Only a verdict that found a problem, or a fault of the worker itself
+(such as its harness crashing and leaving no change), runs the worker again.
+
+These retries use the same `max_tries` and `backoff_seconds` as above, with a
+count of their own (`verifier_fault_retries` on the task), and appear in the
+task's retry list with the class `verifier_fault`. That class is not one of
+`categories` and cannot be left out. A daemon restart during a back-off
+verifies again without running the worker.
+
+When the tries are used up the task is **held** for you, whatever
+`exhausted_action` says, because counting the failure would run the worker
+again. With `autonomous.infra_retry.enabled` off, the first fault holds it. The
+task's `failure_reason` source is `verifier-fault-hold`; the supervisor loop
+does not retry this hold by itself. You get one error alert, "Automaton task
+held: no verdict from the verifier", and, when the question channel and
+`raise_question` are on, one question offering retry or cancel. Its default is
+`hold`: nothing runs until you answer.
+
+**Retry** runs the worker again and then verifies. To keep the commit that is
+there, check it yourself and **accept** the held task instead (see
+[failure-escalation.md](failure-escalation.md#the-operator-actions)). There is
+no action that runs only the verification on a held task.
+
 ## When the retries run out
 
-When a task has used all its tries and the next failure is again a retried
-class, what happens depends on `autonomous.infra_retry.exhausted_action`.
+When a task has used all its tries on one of the four classes and the next
+failure is again a retried class, what happens depends on `autonomous.infra_retry.exhausted_action`.
 
 **`hold` (the default).** The task is held for you, in the same
 `review_needed` state used by failure escalation:

@@ -1381,6 +1381,11 @@ type Task struct {
 	// current incident. It is reset when the task gets a fair attempt; the
 	// InfraRetries history is not.
 	InfraRetryCount int `json:"infra_retry_count,omitempty"`
+	// VerifierFaultRetries is the consecutive verifier-only retries of the
+	// current worker's result. Above zero, the worker is known to have
+	// finished, so a restart verifies again instead of running it. It returns
+	// to zero with a verdict, a new worker run or a reset.
+	VerifierFaultRetries int `json:"verifier_fault_retries,omitempty"`
 	// GateRestartRetryUsed is true once the Automaton has retried this final
 	// gate after a daemon restart killed it; a second kill is not retried.
 	GateRestartRetryUsed bool `json:"gate_restart_retry_used,omitempty"`
@@ -1949,6 +1954,12 @@ type VerificationResult struct {
 	// Recording only; it never changes how the result is judged.
 	CeilingPath string `json:"ceiling_path,omitempty"`
 	CeilingMB   int    `json:"ceiling_mb,omitempty"`
+	// VerifierFault and WorkerFault are set by the verify path when it knows
+	// whose fault a failed result is: the verifier's (only the verifier runs
+	// again) or the worker's (the worker runs again). See isVerifierFault.
+	// Never read from a verifier's reply and never stored.
+	VerifierFault bool `json:"-"`
+	WorkerFault   bool `json:"-"`
 }
 
 // Learning is a post-task insight extracted by the loop and saved

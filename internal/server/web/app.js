@@ -41299,6 +41299,7 @@ function _metricCardsStop() {
 const INFRA_RETRY_TASK_ROWS = 20;
 const INFRA_RETRY_ENTRY_ROWS = 3;
 const INFRA_RETRY_HOLD_SOURCE = 'infra-retry-hold';
+const VERIFIER_FAULT_HOLD_SOURCE = 'verifier-fault-hold';
 const INFRA_RETRY_POLICY_KEYS = { hold: 'infra_retry_policy_on_hold', count: 'infra_retry_policy_on_count' };
 // _infraRetryTime formats a server time; the zero time the server sends when
 // unset has no reading, so it renders as nothing.
@@ -41397,7 +41398,7 @@ window.attemptCapTaskBadgesHtml = function(task, cap) {
 };
 window.infraRetryTaskHeld = function(task) {
   return !!(task && task.status === 'review_needed' && task.failure_reason &&
-    task.failure_reason.source === INFRA_RETRY_HOLD_SOURCE);
+    (task.failure_reason.source === INFRA_RETRY_HOLD_SOURCE || task.failure_reason.source === VERIFIER_FAULT_HOLD_SOURCE));
 };
 // infraRetryHeldCauseHtml is the cause line shown in the expanded body of a task
 // held for an infrastructure reason; empty for any other task.

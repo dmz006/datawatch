@@ -88,6 +88,9 @@ func verifierSessionInfraResult(err error) autonomouspkg.VerificationResult {
 		Summary:    "verifier(session): " + err.Error(),
 		VerifiedAt: time.Now(),
 		Category:   "infra",
+		// Only the verifier runs again, even when the text names a
+		// machinery failure.
+		VerifierFault: true,
 	}
 	if autonomouspkg.IsVerifierRunCapEnd(err) {
 		res.EndReason = autonomouspkg.VerifierMaxRunEndReason

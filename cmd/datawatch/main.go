@@ -5634,6 +5634,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						waitTick++
 						s, ok := mgr.GetSession(task.SessionID)
 						if !ok {
+							// A verifier-only run judges a worker that already
+							// finished; its session may have been pruned since.
+							if task.VerifierFaultRetries > 0 {
+								break waitLoop
+							}
 							// Session not yet visible in the store; keep waiting.
 							continue
 						}
@@ -6222,6 +6227,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					return autonomouspkg.VerificationResult{}, autonomouspkg.LaunchFailureErrorWithReason(ls.FullID, ls.BackendFamily, string(ls.State), mgr.TaskDeliveryFailure(ls.FullID))
 				}
 			}
+			// The worker wait is over: verify time counts from here.
+			if autonomousMgrRef != nil {
+				autonomousMgrRef.NoteVerificationStarted(task.ID)
+			}
 			// BL366 — git-diff grounding: capture the worker's actual change.
 			// v8.25.9: when PreTaskSHA is set, an empty diff is a hard failure —
 			// the session made no changes, so the task cannot be verified as done.
@@ -6233,7 +6242,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// BL410 Phase 0 — the git command itself failed; no
 					// judgment ever ran on real content.
 					return autonomouspkg.VerificationResult{
-						OK: false, Severity: "medium",
+						OK: false, Severity: "medium", VerifierFault: true,
 						Summary:    fmt.Sprintf("verifier: git diff failed: %v", diffErr),
 						VerifiedAt: time.Now(),
 						Category:   "infra",
@@ -6402,6 +6411,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						Summary:    summary,
 						VerifiedAt: time.Now(),
 						Category:   category,
+						// A crashed worker harness is the worker's fault: it
+						// runs again.
+						WorkerFault: category == "infra",
 					}, nil
 				}
 				maxBytes := liveCfg.VerifierDiffMaxBytes
@@ -6702,7 +6714,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
 						return autonomouspkg.VerificationResult{
-							OK: false, Severity: "medium",
+							OK: false, Severity: "medium", VerifierFault: true,
 							Summary:    "verifier: capacity: " + aerr.Error(),
 							VerifiedAt: time.Now(),
 							Category:   "infra",
@@ -6792,18 +6804,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// A run-cap end lands here too, as infra.
 					return verifierSessionInfraResult(serr), nil
 				}
-				var parsed autonomouspkg.VerificationResult
-				if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
-					// Written but unparseable — a TERMINAL, non-retryable
-					// "invalid-response" verdict, NOT "infra": an infra block
-					// makes runGuardrailWithInfraRetry re-run the whole judge,
-					// and the retry re-delivers the same already-relocated
-					// output file, so the response is consumed twice (the same
-					// class of defect that discarded a 28KB decompose plan) or
-					// not at all. It must not be empty either — an empty
-					// category reads as a content-category block eligible for
-					// content auto-fix. Only a genuine no-output session
-					// failure (the serr branch above) is "infra".
+				parsed, uerr := parseVerifierReply(content)
+				if uerr != nil {
+					// Written but unreadable: an "invalid-response" verdict,
+					// not a finding about the work (an empty category would
+					// read as one and start content auto-fix). The executor
+					// runs only the verifier again.
 					return autonomouspkg.VerificationResult{
 						OK:         false,
 						Severity:   "medium",
@@ -6834,7 +6840,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			resp, err := http.DefaultClient.Do(httpReq)
 			if err != nil {
-				return autonomouspkg.VerificationResult{}, err
+				if ctx.Err() != nil {
+					return autonomouspkg.VerificationResult{}, err
+				}
+				// The ask never got an answer: the verifier's fault.
+				return autonomouspkg.VerificationResult{
+					OK: false, Severity: "medium", VerifierFault: true,
+					Summary:    "verifier: ask call failed: " + err.Error(),
+					VerifiedAt: time.Now(),
+					Category:   "infra",
+				}, nil
 			}
 			defer resp.Body.Close() //nolint:errcheck
 			rb, _ := io.ReadAll(resp.Body)
@@ -6842,7 +6857,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				// BL410 Phase 0 — the /api/ask call itself failed; no
 				// judgment ever ran.
 				return autonomouspkg.VerificationResult{
-					OK: false, Severity: "medium",
+					OK: false, Severity: "medium", VerifierFault: true,
 					Summary:    "verifier: ask call failed: " + reason,
 					VerifiedAt: time.Now(),
 					Category:   "infra",
@@ -6852,17 +6867,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				Answer string `json:"answer"`
 			}
 			_ = json.Unmarshal(rb, &ask)
-			// v8.25.9: unparseable LLM response is a verification failure, not a pass.
-			// OK: false triggers AutoFixRetries so the task is re-run rather than
-			// silently advancing the DAG on a verifier that couldn't respond.
-			var parsed autonomouspkg.VerificationResult
-			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &parsed); uerr != nil {
-				// Written but unparseable — a TERMINAL, non-retryable
-				// "invalid-response" verdict, for exactly the reasons the
-				// session branch above documents: never "infra" (that would
-				// auto-retry a judge whose written response we simply could
-				// not read), never empty (that would trigger content
-				// auto-fix on a failure that was never a judgment).
+			// v8.25.9: unparseable LLM response is a verification failure, not a
+			// pass: a verifier that could not respond never advances the DAG.
+			parsed, uerr := parseVerifierReply(ask.Answer)
+			if uerr != nil {
+				// "invalid-response", as on the session path above.
 				return autonomouspkg.VerificationResult{
 					OK:         false,
 					Severity:   "medium",

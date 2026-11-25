@@ -146,9 +146,12 @@ func boundInfraReason(text string) string {
 func (m *Manager) recordInfraRetry(prd *PRD, t *Task, plan infraRetryPlan) {
 	now := time.Now()
 	m.store.WithLock(func() {
-		if plan.Class == InfraClassModelUnresponsive {
+		switch plan.Class {
+		case InfraClassModelUnresponsive:
 			t.ModelUnresponsiveRetries++
-		} else {
+		case InfraClassVerifierFault:
+			t.VerifierFaultRetries++
+		default:
 			t.InfraRetryCount++
 		}
 		t.InfraRetries = append(t.InfraRetries, InfraRetryRecord{
@@ -216,11 +219,16 @@ func (m *Manager) waitInfraRetry(ctx context.Context, prd *PRD, t *Task, plan in
 	return err
 }
 
-// clearInfraRetryCount ends an incident: the consecutive count goes back to
-// zero while the records stay as history.
+// clearInfraRetryCount ends an incident: the consecutive counts go back to
+// zero while the records stay as history. A verifier hold's reason ends with
+// it too, so a resolved task (retried or accepted) does not keep it.
 func clearInfraRetryCount(t *Task) {
 	if t != nil {
 		t.InfraRetryCount = 0
 		t.ModelUnresponsiveRetries = 0
+		t.VerifierFaultRetries = 0
+		if t.FailureReason != nil && t.FailureReason.Source == verifierFaultHoldSource {
+			t.FailureReason = nil
+		}
 	}
 }

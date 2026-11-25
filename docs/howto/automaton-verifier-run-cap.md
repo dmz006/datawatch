@@ -99,8 +99,9 @@ verifier policy order after the one that was cut. The retry backend runs on its
 registry default model. A cut run is **not a failed task**: the cap ends a verifier
 session, not the Automaton's work, so the verification runs again on the retry. If the
 retry was already spent, or the policy lists only one backend, there is no retry and the
-verification ends as an infrastructure result (not a content verdict), which the usual
-infra escalation handles.
+verification ends as an infrastructure result (not a content verdict): a verifier fault,
+so only the verification runs again and the worker is not run again (see
+[infrastructure-retry.md](infrastructure-retry.md#when-the-verifier-is-at-fault)).
 
 ## Related
 

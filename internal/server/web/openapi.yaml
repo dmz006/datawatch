@@ -8489,8 +8489,8 @@ paths:
         derives it at view time; the field and the value are read-only and
         no record, alert or write happens for it.
         Each entry of a task's `attempts` list can carry `queue_wait_seconds`
-        (worker lease request to grant) and `verify_seconds` (the task
-        entering verifying to the verdict); both are whole seconds and absent
+        (worker lease request to grant) and `verify_seconds` (the end of the
+        wait for the worker to the verdict); both are whole seconds and absent
         when zero.
         A record whose run reached a final outcome can also carry `leftover_warnings`:
         an array of plain sentences (for example `leftover file: scratch.txt`), one
