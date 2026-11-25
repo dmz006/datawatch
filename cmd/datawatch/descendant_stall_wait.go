@@ -20,7 +20,7 @@ func workDescendantPIDs(tmuxSession, projectDir string) map[int]bool {
 	if !ok {
 		return nil
 	}
-	return workChildPIDs(roots, tree, resolveRunnerName, readProcessCmdline, sessionOwnMCPServers(projectDir))
+	return workChildPIDs(roots, tree, resolveRunnerName, readProcessCmdline, sessionLaunchMCPSpecs(tmuxSession, projectDir))
 }
 
 // descendantOutputObservation remembers the wait loop's last look at the

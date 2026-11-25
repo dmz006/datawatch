@@ -61,6 +61,9 @@ const ProjectMCPEntryName = "datawatch"
 // preserved so an operator can hand-add their own MCP servers without
 // losing them on the next spawn.
 //
+// The daemon's own launches do not call this: a session's entry carries its
+// token and goes to its private launch folder (WriteSessionMCPConfig).
+//
 // extras maps server-name → spec; nil/empty is a no-op for extras.
 // Returns nil with no side effect when projectDir is empty.
 func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]string, extras map[string]MCPServerSpec) error {
@@ -68,32 +71,9 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 		return nil
 	}
 
-	// v5.27.10 — when the Go bridge is the active path, write the
-	// project mcp.json pointing at the bridge binary directly. The JS
-	// fallback fields are only emitted when no Go bridge is on hand.
-	// Operator-flagged: ring-laptop had a stale `~/.mcp.json` pointing
-	// at `node + ~/.datawatch/channel/channel.js` (a non-existent path)
-	// because this writer used to hardcode the JS shape regardless.
-	var spec MCPServerSpec
-	if bin := BridgePath(); bin != "" {
-		spec = MCPServerSpec{
-			Command: bin,
-			Args:    []string{},
-			Env:     env,
-		}
-	} else {
-		if channelJSPath == "" {
-			return fmt.Errorf("WriteProjectMCPConfig: channel.js path required when Go bridge unavailable")
-		}
-		nodePath, err := NodePath()
-		if err != nil {
-			return fmt.Errorf("WriteProjectMCPConfig: %w", err)
-		}
-		spec = MCPServerSpec{
-			Command: nodePath,
-			Args:    []string{channelJSPath},
-			Env:     env,
-		}
+	spec, err := bridgeSpec(channelJSPath, env)
+	if err != nil {
+		return fmt.Errorf("WriteProjectMCPConfig: %w", err)
 	}
 
 	path := filepath.Join(projectDir, ".mcp.json")
@@ -131,6 +111,25 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 		return fmt.Errorf("chmod %s: %w", path, err)
 	}
 	return nil
+}
+
+// bridgeSpec is the datawatch bridge entry with env: the native bridge when
+// there is one, else channel.js run by node.
+//
+// v5.27.10 — hardcoding the JS shape left stale entries pointing at a
+// channel.js that did not exist.
+func bridgeSpec(channelJSPath string, env map[string]string) (MCPServerSpec, error) {
+	if bin := BridgePath(); bin != "" {
+		return MCPServerSpec{Command: bin, Args: []string{}, Env: env}, nil
+	}
+	if channelJSPath == "" {
+		return MCPServerSpec{}, fmt.Errorf("channel.js path required when Go bridge unavailable")
+	}
+	nodePath, err := NodePath()
+	if err != nil {
+		return MCPServerSpec{}, err
+	}
+	return MCPServerSpec{Command: nodePath, Args: []string{channelJSPath}, Env: env}, nil
 }
 
 // InjectExtrasIntoMCPConfig merges extra MCP server entries into
