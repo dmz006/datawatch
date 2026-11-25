@@ -391,3 +391,42 @@ func TestRejectAndArchiveFollowCleanupModeOff(t *testing.T) {
 		f.mustHaveWorktree(t)
 	})
 }
+
+// Report mode is the preview of on mode: a verification script that on mode
+// would save and then remove must not be reported as a reason to keep, and
+// report mode still saves nothing.
+func TestReportModePreviewMatchesOnModeForVerificationScripts(t *testing.T) {
+	for _, step := range []struct {
+		name, would string
+		run         func(*completionFixture, *testing.T)
+	}{
+		{"completion", "autonomous_completion_worktree_would_remove", func(f *completionFixture, t *testing.T) { f.complete(t) }},
+		{"reject and archive", "autonomous_orphan_worktree_would_remove", func(f *completionFixture, _ *testing.T) { f.m.cleanupOrphanedWorktree(f.prd) }},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			f := newCompletionFixture(t, config.CleanupModeReport)
+			ignoreDatawatch(t, f.repo)
+			keepWrite(t, f.path, ".datawatch/verify/check.sh", "script\n")
+			step.run(f, t)
+			f.mustHaveWorktree(t)
+			if got := f.events(step.would); len(got) != 1 {
+				t.Fatalf("would-remove audit = %v", got)
+			}
+			if _, err := os.Stat(savedVerifyScriptsDir(f.wtDir, f.prd.ID)); !os.IsNotExist(err) {
+				t.Fatalf("report mode saved scripts: %v", err)
+			}
+		})
+	}
+	t.Run("periodic worktrees pass", func(t *testing.T) {
+		f := newReleaseFixture(t, config.CleanupModeReport)
+		ignoreDatawatch(t, f.repo)
+		keepWrite(t, f.worktree, ".datawatch/verify/check.sh", "script\n")
+		res := f.m.CleanupWorktreesPass()
+		if len(res.WouldRemove) != 1 {
+			t.Fatalf("want one would-remove, got would=%v skipped=%v", res.WouldRemove, res.Skipped)
+		}
+		if _, err := os.Stat(savedVerifyScriptsDir(f.m.cfg.WorktreeDir, f.prd.ID)); !os.IsNotExist(err) {
+			t.Fatalf("report mode saved scripts: %v", err)
+		}
+	})
+}

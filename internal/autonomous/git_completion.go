@@ -90,7 +90,7 @@ func (m *Manager) handleWorktreeCompletion(prd *PRD) {
 	// e.g. Task.SessionID). The push covers only what was committed, so the
 	// release keeps a worktree that holds anything else, and follows
 	// cleanup_mode (completion_worktree_release.go).
-	m.releaseCompletionWorktree(prd)
+	m.releaseAutomatonCheckout(prd, completionCheckoutStep)
 }
 
 // handleClusterCompletion (BL407 Phase 3) is handleWorktreeCompletion's
@@ -183,24 +183,21 @@ func (m *Manager) openCompletionPR(prd *PRD, url, bodyNote string) (string, erro
 // and Archive() (manager.go) — found live 2026-10-11, same session
 // that added decompose-time worktree creation in the first place.
 //
-// Deliberately NOT forced: a plain `git worktree remove` (told to look
-// for untracked files whatever the git settings say) refuses outright
-// if the checkout has any uncommitted changes, which is exactly the
-// safety net wanted here — a worktree with nothing of value is
-// removed; one with real, never-committed work is left in place for
-// the operator to find, same spirit as Decision 5's "keep on
-// blocked/failed for inspection." No-op for a cluster-dispatched PRD
-// (no local worktree ever existed) or one that never got a worktree
-// at all.
+// It follows cleanup_mode like every other removal (off and report
+// remove nothing) and keeps a worktree that holds work
+// (completion_worktree_release.go). It is deliberately never forced:
+// a plain `git worktree remove` refuses outright if the checkout has
+// uncommitted or untracked files, which is a second safety net — a
+// worktree with nothing of value is removed; one with real,
+// never-committed work is left in place for the operator to find,
+// same spirit as Decision 5's "keep on blocked/failed for
+// inspection." No-op for a cluster-dispatched PRD (no local worktree
+// ever existed) or one that never got a worktree at all.
 func (m *Manager) cleanupOrphanedWorktree(prd *PRD) {
 	if prd.ClusterProfile != "" || prd.Git.Branch == "" || prd.ProjectDir == "" {
 		return
 	}
-	if out, err := runGitIn(prd.ProjectDir, "-c", showUntrackedOverride, "worktree", "remove", prd.ProjectDir); err != nil {
-		log.Printf("[autonomous] prd=%s orphan worktree cleanup skipped (left for inspection, likely uncommitted content or already removed): %v\n%s", prd.ID, err, out)
-		return
-	}
-	log.Printf("[autonomous] prd=%s orphaned worktree removed (%s)", prd.ID, prd.ProjectDir)
+	m.releaseAutomatonCheckout(prd, orphanCheckoutStep)
 }
 
 func (m *Manager) recordGitCompletionFailure(prd *PRD, note string) {

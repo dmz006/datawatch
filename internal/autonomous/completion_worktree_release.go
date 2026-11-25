@@ -1,9 +1,11 @@
-// Releasing the Automaton worktree after completion with an automatic pull
-// request. The same rules as for task worktrees (task_worktree_keep.go) apply:
-// cleanup_mode off and report remove nothing; a worktree with its own
-// uncommitted or untracked files, a live session, detached commits of its own,
-// or anything that cannot be checked is kept; and what was removed or kept is
-// written to the audit log. This step deletes no branch.
+// Releasing the Automaton worktree: after completion with an automatic pull
+// request, and in the cleanup of a rejected or archived Automaton. The same
+// rules as for task worktrees (task_worktree_keep.go) apply: cleanup_mode off
+// and report remove nothing; a worktree with its own uncommitted or untracked
+// files, real files in an ignored folder (parked_work.go), a live session,
+// detached commits of its own, or anything that cannot be checked is kept; and
+// what was removed or kept is written to the audit log. Neither step deletes a
+// branch.
 package autonomous
 
 import (
@@ -16,11 +18,19 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// Audit actions for the Automaton worktree released at completion.
-const (
-	auditCompletionWorktreeRemove      = "autonomous_completion_worktree_remove"
-	auditCompletionWorktreeKept        = "autonomous_completion_worktree_kept"
-	auditCompletionWorktreeWouldRemove = "autonomous_completion_worktree_would_remove"
+// automatonCheckoutStep is one of the steps that releases an Automaton
+// worktree. Its name is part of its audit actions:
+// autonomous_<name>_worktree_remove, _kept and _would_remove.
+type automatonCheckoutStep struct {
+	name string
+	// mayForce lets the step pass --force when only the daemon's own files
+	// are left. The reject and archive cleanup never forces.
+	mayForce bool
+}
+
+var (
+	completionCheckoutStep = automatonCheckoutStep{name: "completion", mayForce: true}
+	orphanCheckoutStep     = automatonCheckoutStep{name: "orphan"}
 )
 
 // showUntrackedOverride makes git's own unforced "worktree remove" look for
@@ -28,13 +38,35 @@ const (
 // settings, git would otherwise delete them without refusing.
 const showUntrackedOverride = "status.showUntrackedFiles=normal"
 
-// releaseCompletionWorktree removes prd's worktree when cleanup_mode is on and
+// verifyCopiesFor returns the folders whose identical copy makes a
+// verification script of the Automaton worktree dir safe to remove. In on mode
+// the scripts are saved first, so only a script that really was saved counts.
+// Report mode writes nothing and previews that: the worktree's own folder
+// stands for the copies the save would make (the files directly in it).
+func (m *Manager) verifyCopiesFor(prdID, wtDir, dir, mode string) []string {
+	saved := savedVerifyScriptsDir(wtDir, prdID)
+	own := filepath.Join(dir, ".datawatch", "verify")
+	if mode != config.CleanupModeOn {
+		return []string{saved, own}
+	}
+	if _, err := saveVerifyScripts(own, saved); err != nil {
+		log.Printf("[autonomous] prd=%s worktree release: saving verification scripts: %v", prdID, err)
+	}
+	return []string{saved}
+}
+
+// releaseAutomatonCheckout removes prd's worktree when cleanup_mode is on and
 // nothing in it would be lost. The work branch stays in every case.
-func (m *Manager) releaseCompletionWorktree(prd *PRD) {
+func (m *Manager) releaseAutomatonCheckout(prd *PRD, step automatonCheckoutStep) {
 	dir := prd.ProjectDir
 	if dir == "" {
 		return
 	}
+	_, statErr := os.Stat(dir)
+	if errors.Is(statErr, os.ErrNotExist) {
+		return // already gone: nothing to remove or keep
+	}
+	action := func(what string) string { return "autonomous_" + step.name + "_worktree_" + what }
 	m.mu.Lock()
 	mode := m.cfg.Automation.EffectiveCleanupMode()
 	repo, wtDir := m.cfg.WorktreeBaseRepo, m.cfg.WorktreeDir
@@ -44,7 +76,7 @@ func (m *Manager) releaseCompletionWorktree(prd *PRD) {
 	}
 
 	tip, head := "", ""
-	audit := func(action string, extra map[string]any) {
+	audit := func(name string, extra map[string]any) {
 		details := map[string]any{
 			"automaton_id": prd.ID,
 			"worktree":     dir,
@@ -56,16 +88,16 @@ func (m *Manager) releaseCompletionWorktree(prd *PRD) {
 		for k, v := range extra {
 			details[k] = v
 		}
-		if err := m.worktreeCleanupAudit()(action, details); err != nil {
-			log.Printf("[autonomous] prd=%s completion worktree: audit %s: %v", prd.ID, action, err)
+		if err := m.worktreeCleanupAudit()(name, details); err != nil {
+			log.Printf("[autonomous] prd=%s %s worktree: audit %s: %v", prd.ID, step.name, name, err)
 		}
 	}
 	keep := func(reason, detail string, files ...string) {
 		if len(files) > maxKeptFiles {
 			files = files[:maxKeptFiles]
 		}
-		log.Printf("[autonomous] prd=%s completion: worktree %s kept (%s): %s", prd.ID, dir, reason, detail)
-		audit(auditCompletionWorktreeKept, map[string]any{"reason": reason, "detail": detail, "files": files})
+		log.Printf("[autonomous] prd=%s %s: worktree %s kept (%s): %s", prd.ID, step.name, dir, reason, detail)
+		audit(action("kept"), map[string]any{"reason": reason, "detail": detail, "files": files})
 	}
 
 	if mode == config.CleanupModeOff {
@@ -76,11 +108,8 @@ func (m *Manager) releaseCompletionWorktree(prd *PRD) {
 	ctx, cancel := context.WithTimeout(context.Background(), worktreeReleaseGitTimeout)
 	defer cancel()
 
-	if _, err := os.Stat(dir); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return // already gone
-		}
-		keep(taskKeepUnverified, "the worktree could not be read: "+err.Error())
+	if statErr != nil {
+		keep(taskKeepUnverified, "the worktree could not be read: "+statErr.Error())
 		return
 	}
 	// Without its .git entry, git would answer for a parent repository.
@@ -112,15 +141,7 @@ func (m *Manager) releaseCompletionWorktree(prd *PRD) {
 	}
 	head = wt.head
 
-	// A verification script counts as safe only once an identical copy is
-	// saved. Report mode writes nothing.
-	saved := savedVerifyScriptsDir(wtDir, prd.ID)
-	if mode == config.CleanupModeOn {
-		if _, err := saveVerifyScripts(filepath.Join(dir, ".datawatch", "verify"), saved); err != nil {
-			log.Printf("[autonomous] prd=%s completion: saving verification scripts: %v", prd.ID, err)
-		}
-	}
-	own, clean, err := taskWorktreeStatus(ctx, dir, []string{saved})
+	own, clean, err := taskWorktreeStatus(ctx, dir, m.verifyCopiesFor(prd.ID, wtDir, dir, mode))
 	if err != nil {
 		keep(taskKeepUnverified, "git status failed: "+err.Error())
 		return
@@ -141,19 +162,19 @@ func (m *Manager) releaseCompletionWorktree(prd *PRD) {
 		}
 	}
 	if mode != config.CleanupModeOn {
-		audit(auditCompletionWorktreeWouldRemove, map[string]any{"reason": taskKeepReportMode,
+		audit(action("would_remove"), map[string]any{"reason": taskKeepReportMode,
 			"detail": "cleanup_mode is report: the worktree is clean and would be removed"})
 		return
 	}
 	// Without --force git itself refuses a worktree that changed since the
 	// check. It is passed only when what is left is the daemon's own.
 	args := []string{"-c", showUntrackedOverride, "worktree", "remove"}
-	if !clean {
+	if !clean && step.mayForce {
 		args = append(args, "--force")
 	}
 	if _, err := taskGitOut(ctx, dir, append(args, dir)...); err != nil {
 		keep(taskKeepRemoveFailed, err.Error())
 		return
 	}
-	audit(auditCompletionWorktreeRemove, nil)
+	audit(action("remove"), nil)
 }

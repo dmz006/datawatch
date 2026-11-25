@@ -247,9 +247,10 @@ func findLinkedWorktree(ctx context.Context, repo, path string) (wt linkedWorktr
 }
 
 // taskWorktreeStatus reads the worktree's status. own lists the task's own
-// uncommitted and untracked files; clean is true when git reports nothing at
-// all. A record that cannot be parsed is an error, never an empty answer. The
-// flags override any repository setting that would hide files.
+// uncommitted and untracked files, and the real files in ignored folders
+// (parked_work.go, marked "!!"); clean is true when git reports nothing at all.
+// A record that cannot be parsed is an error, never an empty answer. The flags
+// override any repository setting that would hide files.
 func taskWorktreeStatus(ctx context.Context, dir string, verifyDirs []string) (own []string, clean bool, err error) {
 	out, err := taskGitOut(ctx, dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none")
 	if err != nil {
@@ -257,6 +258,7 @@ func taskWorktreeStatus(ctx context.Context, dir string, verifyDirs []string) (o
 	}
 	fields := strings.Split(out, "\x00")
 	clean = true
+	listed := map[string]bool{}
 	for i := 0; i < len(fields); i++ {
 		rec := fields[i]
 		if rec == "" {
@@ -272,6 +274,16 @@ func taskWorktreeStatus(ctx context.Context, dir string, verifyDirs []string) (o
 		}
 		if !daemonOwnedWorktreeFile(ctx, dir, status, p, verifyDirs) {
 			own = append(own, status+" "+p)
+			listed[p] = true
+		}
+	}
+	parked, err := parkedWork(ctx, dir, verifyDirs)
+	if err != nil {
+		return nil, false, fmt.Errorf("checking the ignored folders: %w", err)
+	}
+	for _, p := range parked {
+		if !listed[p] {
+			own = append(own, "!! "+p)
 		}
 	}
 	sort.Strings(own)
@@ -290,7 +302,7 @@ func daemonOwnedWorktreeFile(ctx context.Context, dir, status, p string, verifyD
 			// repository: its contents were not looked at.
 			return false
 		}
-		if isGeneratedWorktreeArtifact(p) || isDaemonMarkerPath(p) || isBookkeepingPath(p) {
+		if isGeneratedWorktreeArtifact(p) || isDaemonMarkerPath(p) || isBookkeepingPath(p) || p == defaultGateReportPath {
 			return true
 		}
 		if sameAsSavedVerifyScript(dir, p, verifyDirs) {
@@ -351,10 +363,10 @@ func sameAsSavedVerifyScript(dir, p string, verifyDirs []string) bool {
 	return false
 }
 
-// writeTaskBranchBackup keeps tip under refs/datawatch/reap-backup/ before the
+// writeBranchBackup keeps tip under refs/datawatch/reap-backup/ before the
 // branch is deleted. It only ever creates a ref: an earlier backup of another
 // commit is never overwritten.
-func writeTaskBranchBackup(ctx context.Context, repo, branch, tip string, ts int64) (string, error) {
+func writeBranchBackup(ctx context.Context, repo, branch, tip string, ts int64) (string, error) {
 	var lastErr error
 	for i := int64(0); i < 100; i++ {
 		ref := reapBackupRef(branch, ts+i)
@@ -570,7 +582,7 @@ func (p *taskCleanupPass) handleBranch(t *Task, branch, tip string) {
 		refuse(taskKeepReportMode, "cleanup_mode is report: every commit is on "+on+" and the branch would be deleted")
 		return
 	}
-	ref, err := writeTaskBranchBackup(p.ctx, p.repo, branch, tip, p.m.holdNow().Unix())
+	ref, err := writeBranchBackup(p.ctx, p.repo, branch, tip, p.m.holdNow().Unix())
 	if err != nil {
 		refuse(taskKeepBackupFailed, err.Error())
 		return

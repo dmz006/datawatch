@@ -88,6 +88,9 @@ const worktreeCleanupAuditAction = "autonomous_worktree_remove"
 // resolves the entry and the hold lifts.
 const worktreeSkipHoldReleaseAction = "commit the work or discard the held files so the work tree is clean; the next worktree cleanup pass then resolves the entry and the hold lifts"
 
+// parkedWorkReleaseAction releases a hold on files in an ignored folder.
+const parkedWorkReleaseAction = "copy what you need from the listed files elsewhere, then delete them; the next worktree cleanup pass then resolves the entry and the hold lifts"
+
 // Skip reasons reported by CleanupWorktrees. Each one is a single fact
 // about why an entry was not removed.
 const (
@@ -129,6 +132,7 @@ const (
 	cleanupStageStatus = "status_check"
 	cleanupStageSize   = "size_lookup"
 	cleanupStageAudit  = "audit_write"
+	cleanupStageBackup = "backup_ref"
 	cleanupStageRemove = "worktree_remove"
 	cleanupStageBranch = "branch_delete"
 	cleanupStageRecord = "record"
@@ -257,6 +261,14 @@ type WorktreeCleanupOptions struct {
 	// note); a non-nil error is surfaced in the result's Failed list
 	// but never un-removes the entry: the removal happened.
 	Record func(branch, text string) error
+	// ParkedWork lists the real files a work tree holds in ignored folders,
+	// which git status does not show; any entry keeps the work tree. The
+	// daemon always sets it (worktreeCleanupRun).
+	ParkedWork func(ctx context.Context, branch, worktree string) ([]string, error)
+	// Backup keeps the branch's tip under a ref that is only ever created, and
+	// returns that ref and the tip. When it fails, the branch is not deleted.
+	// The daemon always sets it (worktreeCleanupRun).
+	Backup func(ctx context.Context, branch string, ts int64) (ref, tip string, err error)
 }
 
 // CleanupWorktrees acts on one safe-to-delete report under the
@@ -382,6 +394,24 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 				})
 				continue
 			}
+			if opts.ParkedWork != nil {
+				parked, perr := opts.ParkedWork(ctx, e.Branch, e.Worktree)
+				if perr != nil {
+					failed(cleanupStageStatus, "checking the ignored folders: %v", perr)
+					continue
+				}
+				if len(parked) > 0 {
+					res.Skipped = append(res.Skipped, WorktreeCleanupSkipped{
+						Branch:        e.Branch,
+						Worktree:      e.Worktree,
+						Reason:        cleanupSkipDirty,
+						Detail:        "the work tree holds real files in an ignored folder",
+						Files:         parked,
+						ReleaseAction: parkedWorkReleaseAction,
+					})
+					continue
+				}
+			}
 		}
 		base := opts.Probe.BaseBranch(e.Branch)
 		if base == "" {
@@ -423,6 +453,18 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			}
 			size = s
 		}
+		// The backup comes before anything is removed: without it the entry
+		// is left whole.
+		backupAt := opts.Now().Unix()
+		backupRef, backupTip := "", ""
+		if opts.Backup != nil {
+			ref, tip, berr := opts.Backup(ctx, e.Branch, backupAt)
+			if berr != nil {
+				failed(cleanupStageBackup, "writing the backup ref: %v", berr)
+				continue
+			}
+			backupRef, backupTip = ref, tip
+		}
 		details := map[string]any{
 			"branch":      e.Branch,
 			"worktree":    e.Worktree,
@@ -437,6 +479,9 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			// record names them so the cleaned-up work tree is accounted
 			// for, not opaque.
 			details["resolved_files"] = resolvedGenerated
+		}
+		if backupRef != "" {
+			details["backup_ref"], details["branch_tip"] = backupRef, backupTip
 		}
 		if err := opts.Audit(worktreeCleanupAuditAction, details); err != nil {
 			failed(cleanupStageAudit, "audit log write: %v", err)
@@ -466,6 +511,14 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 				continue
 			}
 		}
+		if opts.Backup != nil {
+			// The tip may have moved since: keep what is about to be deleted.
+			// An unchanged tip finds the ref written above.
+			if _, _, berr := opts.Backup(ctx, e.Branch, backupAt); berr != nil {
+				failed(cleanupStageBackup, "writing the backup ref: %v", berr)
+				continue
+			}
+		}
 		out, derr := opts.Git.Run(ctx, opts.Repo, "branch", "-d", e.Branch) // never -D
 		if derr != nil {
 			failed(cleanupStageBranch, "git branch -d: %v: %s", derr, strings.TrimSpace(out))
@@ -473,6 +526,9 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 		}
 		removed++
 		text := fmt.Sprintf("work branch %s and its work tree removed (%d bytes freed): %s", e.Branch, size, e.Reason)
+		if backupRef != "" {
+			text += fmt.Sprintf("; the branch tip %s is kept at %s", backupTip, backupRef)
+		}
 		if opts.Record != nil {
 			if err := opts.Record(e.Branch, text); err != nil {
 				log.Printf("[autonomous] worktree-cleanup: recording removal of %s: %v", e.Branch, err)
@@ -867,8 +923,44 @@ func skippedReasonDigest(skipped []WorktreeCleanupSkipped) map[string]int {
 func (m *Manager) worktreeCleanupRun(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 	opts.Audit = m.worktreeCleanupAudit()
 	opts.Record = m.recordWorktreeRemoval
+	opts.ParkedWork = m.releaseParkedWork(opts.Mode)
+	opts.Backup = branchBackupIn(opts.Repo)
 	opts.Now = func() time.Time { return time.Now().UTC() }
 	return CleanupWorktrees(opts)
+}
+
+// releaseParkedWork is the release's check of the ignored folders. In on mode
+// it saves the verification scripts first, so a script with a saved copy does
+// not keep the work tree (verifyCopiesFor).
+func (m *Manager) releaseParkedWork(mode string) func(context.Context, string, string) ([]string, error) {
+	return func(ctx context.Context, branch, worktree string) ([]string, error) {
+		var copies []string
+		if prd := (&managerWorktreeProbe{m: m}).prdFor(branch); prd != nil {
+			m.mu.Lock()
+			wtDir := m.cfg.WorktreeDir
+			m.mu.Unlock()
+			if wtDir == "" {
+				wtDir = defaultWorktreeDir(m.dataDir)
+			}
+			copies = m.verifyCopiesFor(prd.ID, wtDir, worktree, mode)
+		}
+		return parkedWork(ctx, worktree, copies)
+	}
+}
+
+// branchBackupIn keeps a branch's tip in repo under the reap-backup refs.
+func branchBackupIn(repo string) func(context.Context, string, int64) (string, string, error) {
+	return func(ctx context.Context, branch string, ts int64) (string, string, error) {
+		tip, exists, err := branchTip(ctx, repo, branch)
+		if err != nil {
+			return "", "", err
+		}
+		if !exists {
+			return "", "", fmt.Errorf("branch %s not found", branch)
+		}
+		ref, err := writeBranchBackup(ctx, repo, branch, tip, ts)
+		return ref, tip, err
+	}
 }
 
 // ReleaseAutomatonWorktree attempts to release one finished (completed
