@@ -9067,6 +9067,8 @@ The splash is shown only when one of these is true for that browser and origin (
 - **New version** — the daemon's version differs from the version the splash last showed for.
 - **> 24 hours** — more than 24 hours have elapsed since the splash was last shown.
 
+- **An unfinished hold** — the previous page was navigated away from before its splash hold finished (for example the one worker navigation after a release change). The next load shows the same splash again and holds it in full. A hold that runs out, or that you dismiss with a tap, click or key, counts as shown.
+
 Otherwise the splash is removed immediately on connect, with no dwell and no fade.
 
 ### How long it stays
