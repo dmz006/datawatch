@@ -1983,9 +1983,9 @@ Retry the commit after the change. The guard evaluates each automatic commit aga
 
 ### Worker commit fails with "the harness commits after validation"
 
-**Symptom:** A `git commit` run inside a session fails with a message saying the harness commits after validation.
+**Symptom:** A `git commit` run inside a session, or another git operation that updates a ref, fails with a message saying the harness commits after validation.
 
-**What it means:** This is expected. Only the harness commits, and only after the session's validation passes. The refusal is enforced by hooks in a harness-owned temporary directory outside the worktree. Those hooks are removed at session end and when the daemon adopts sessions on startup.
+**What it means:** In the repository of the session's project folder, and in every worktree of it, this is expected. Only the harness commits, and only after the session's validation passes. Other repositories are not restricted. If git is refused in an unrelated repository, the project folder was probably not in a git repository when the session started: the guard then refuses everywhere, and the daemon log has a `commit guard` line saying so. The refusal is enforced by hooks in a harness-owned temporary directory outside the worktree. Those hooks are removed at session end and when the daemon adopts sessions on startup. What is refused, how the repository's own hooks run and what the guard does not stop are listed in [implementation.md](implementation.md) (*Automatic commit staging guard*).
 
 **How to fix it:** Nothing is needed. Leave the changes in the working tree and finish the task; the harness commits after validation. If validation fails, no commit is made, so fix the failure and let the session complete again.
 

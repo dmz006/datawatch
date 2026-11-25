@@ -61,8 +61,11 @@ it — not to weaken the guard wholesale.
 ## What gets staged, and how the scope works
 
 The daemon makes the automatic commits for its task sessions; a worker
-session can never commit (a `git commit` run by a worker fails with a
-message saying the harness commits after validation). The automatic
+session cannot commit in its own repository or any worktree of it (a
+`git commit` run by a worker there fails with a message saying the harness
+commits after validation). Other repositories, such as the ones a test
+creates, are not restricted; see
+[the guard's scope and limits](../implementation.md). The automatic
 commits that stage task work are the **pre-session snapshot** (the tree
 state at launch, so the session's work can always be told apart from
 what was already there), made for automaton task sessions, and the
