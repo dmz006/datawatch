@@ -6209,17 +6209,27 @@ remote name always comes from `git.push_remote`.
 | Value | Behaviour |
 |-------|-----------|
 | `never` | No push at all. The finished commit stays in the local checkout; nothing is pushed and no push state or alert is recorded. |
-| `branch` (default) | The finished work branch is pushed to `<remote>/<branch>` with upstream tracking. For PRD work this happens after each *validated* task, and again once at completion; a repeat push of an already-up-to-date branch is a no-op. |
-| `default_branch` | `HEAD` is pushed onto the remote's default branch — but only after the automaton's **final gates passed** at completion. A validated mid-run task never pushes the default branch, because the run's final validation has not happened yet. |
+| `branch` (default) | The finished work branch is pushed to `<remote>/<branch>` with upstream tracking. For PRD work this happens after each *validated* task, and again once at completion; a repeat push of an already-up-to-date branch is a no-op. When the branch is the remote's default branch (or `main` or `master`) nothing is pushed. |
+| `default_branch` | **Pushes nothing.** Finishing work never moves the remote's default branch. At completion the Automaton or session is recorded as `not_pushed` with that reason and one alert is raised; the work reaches the default branch through a merge. |
 
 Empty or an unrecognised value behaves as `branch`.
 
 ### When a push happens
 
 - **PRD work, `branch`** — after each task that passes validation, and once more when the PRD completes. Per-PRD serialised; repeated calls are safe.
-- **PRD work, `default_branch`** — once, at PRD completion, strictly after the final gates passed.
+- **PRD work, `default_branch`** — nothing is pushed; the refusal is recorded once, at completion.
 - **One-shot (non-PRD) sessions** — right after the session's own validated commit, per the same policy, subject to the session having ended with a commit.
-- **Before teardown (last-resort save)** — when a worker container is about to be torn down, or a session is killed with `git.push_before_teardown` on (it is **off by default**: a kill pushes nothing unless you turn it on), committed-but-unpushed work is pushed first so the commits survive the teardown. For a session the push carries only the session's *own* commits: when another local branch also holds some of the unpushed commits (a task branch cut from a local main that is ahead of the remote), nothing is pushed and the session record says `not pushed: ... not this session's own ... push them yourself`. Turn it on with `datawatch config set git.push_before_teardown true`, `configure git.push_before_teardown=true`, `PUT /api/config`, the MCP `config_set` tool, or Settings → General → *Push a killed session's own commits*. This step only ever pushes a *work branch*: at teardown time the final gates' outcome is unknown, so if the current branch *is* the remote's default branch it is deliberately not pushed — the commits stay local with a `not pushed` note explaining the default-branch push waits for the final gates. It never runs under `never`, and it is strictly best-effort: a failure does not block the teardown.
+- **Before teardown (last-resort save)** — when a worker container is about to be torn down, or a session is killed with `git.push_before_teardown` on (it is **off by default**: a kill pushes nothing unless you turn it on), committed-but-unpushed work is pushed first so the commits survive the teardown. For a session the push carries only the session's *own* commits: when another local branch also holds some of the unpushed commits (a task branch cut from a local main that is ahead of the remote), nothing is pushed and the session record says `not pushed: ... not this session's own ... push them yourself`. Turn it on with `datawatch config set git.push_before_teardown true`, `configure git.push_before_teardown=true`, `PUT /api/config`, the MCP `config_set` tool, or Settings → General → *Push a killed session's own commits*. This step only ever pushes a *work branch*: at teardown time the final gates' outcome is unknown, so if the current branch *is* the remote's default branch it is deliberately not pushed — the commits stay local with a `not pushed` note. It never runs under `never`, and it is strictly best-effort: a failure does not block the teardown.
+
+### What no completion push does
+
+No push datawatch makes because work finished or a session ended (the harness
+push, the ship step, the pull-request push, the one-shot push, the teardown
+save and the worker pull-request hook) moves the remote's default branch, and
+none creates or pushes a tag. A configured `push.followTags` in the repository
+does not add tags to a datawatch push. Every push datawatch makes also goes
+through the [outgoing check](howto/secret-scan-push-gate.md#the-outgoing-check),
+which refuses the push when a check does not pass or cannot run.
 
 ### The never-force rule
 

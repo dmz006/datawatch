@@ -66,13 +66,16 @@ Every check is report-only: none edits a file. Each has a mode.
 
 | Step | Setting | What it does |
 |---|---|---|
-| Push | `autonomous.ship.push` | Pushes the branch to the remote (`autonomous.ship.remote`, default `origin`) |
-| Tag | `autonomous.ship.tag` | Creates an annotated tag named from `autonomous.ship.tag_format` (default `v{version}`) and pushes it |
-| CI watch | `autonomous.ship.ci_watch` | Follows the CI runs of the pushed commit and the tag, limited to `autonomous.ship.ci_workflows` |
+| Push | `autonomous.ship.push` | Pushes the work branch to the remote (`autonomous.ship.remote`, default `origin`). The remote's default branch, `main` and `master` are refused |
+| Tag | `autonomous.ship.tag` | Not applied when an Automaton finishes: completion never creates or pushes a tag. The ship result notes this when the mode is not `off` |
+| CI watch | `autonomous.ship.ci_watch` | Follows the CI runs of the pushed commit, limited to `autonomous.ship.ci_workflows` |
 
 The modes are the same three. In `shadow` the exact git commands are recorded
 and not run. The step never force-pushes and refuses a working tree with
-uncommitted changes.
+uncommitted changes. The push goes through the
+[outgoing check](secret-scan-push-gate.md#the-outgoing-check); a refused push
+is recorded on the Automaton (`push_state: not_pushed` with the reason) and
+raises one alert.
 
 ## See the findings
 

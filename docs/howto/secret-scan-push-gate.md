@@ -20,25 +20,32 @@ exec_steps:
 # Secret scan push gate
 
 The **secret scan push gate** is the daemon's pre-push check for secret
-material. Before the daemon pushes anything — PRD push-on-complete, a
-one-shot session's completion push, or the pre-teardown save push — it scans
-the commits that are about to be pushed and, per the configured **mode**,
-either records the findings (shadow) or refuses the push (enforce).
+material. Before datawatch pushes anything — an Automaton's push-on-complete,
+the ship step, the pull-request push, a one-shot session's completion push, the
+pre-teardown save push, the worker pull-request hook or a merge run's push — it
+scans what the push would send and, per the configured **mode**, either records
+the findings (shadow) or refuses the push (enforce). It is part of
+[the outgoing check](#the-outgoing-check).
 
 It is on by default, in **shadow** mode: a fresh install scans, records and
-alerts on findings, and never refuses a push.
+alerts on findings, and does not refuse a push because of one.
 
 ## What is scanned
 
 For each push attempt to a remote (default `origin`):
 
-- **The commits** on the current branch (`HEAD`) that are present on **no
-  ref of that remote** — the exact set the push would deliver. Commits
-  already on the remote are never re-scanned, and neither is a commit that
-  was pushed on an earlier attempt.
-- **The lines those commits *add***. A finding is a line added by one of
-  those commits that matches a detector — with the file path and the
-  line number in that commit's version of the file.
+- **The commits the push would deliver**: those reachable from the pushed
+  commit and from nothing the remote itself lists. The branch being pushed is
+  what is scanned, whatever is checked out. Local `refs/remotes` tracking refs
+  are not trusted for this, and replace refs are ignored.
+- **The lines those commits *add***, with file path and line number. For a
+  merge commit these are the lines that are in none of its parents, which is
+  where conflict resolutions are. Git attributes and textconv settings cannot
+  hide a file's content.
+- **Commit objects** (message, author, committer), **annotated tag objects**
+  (message, tagger), **new file names** and **destination ref names**. A
+  finding in a name is reported as `(file name)` or `(ref name)`, so the name
+  is not printed.
 - **The built-in detectors**, unless a shorter list is configured:
 
 | Detector | Matches |
@@ -50,10 +57,65 @@ For each push attempt to a remote (default `origin`):
 | `slack_token` | Slack tokens (`xoxb-`, `xoxp-`, …) |
 
 An **unknown detector name is a hard error at scan time**, not a silent
-no-op: the scan fails, is logged, and the push proceeds. Because of that,
-check the daemon log if you set a detector list and expected findings are
-missing — a typo in the list disables the scan rather than failing the
-push.
+no-op: in `shadow` and `enforce` the scan cannot run, so the push is
+**refused** (`check_failed`) until the list is fixed.
+
+## The outgoing check
+
+Every push datawatch makes goes through one check, in this order:
+
+1. **The project's own check**, when the project declares one: a
+   `check-outgoing` target in its top-level makefile (`GNUmakefile`,
+   `makefile` or `Makefile`; a target that exists only in an included file is
+   not seen). datawatch reads and runs it **from the base commit** — the head
+   of the remote's default branch — in a temporary copy of that commit, so a
+   branch that edits or removes the check is still judged by the base copy. It
+   runs whatever the secret scan mode is.
+2. **The secret scan**, per `git.secret_scan.mode`.
+3. **The push**, of the checked object ids only. A branch that moved during the
+   check, `push.followTags` and submodule recursion add nothing.
+
+**A check that cannot run refuses the push** (`check_failed`): the remote
+cannot be read, the remote has more than one push address, the base commit
+cannot be fetched, the diff is too large (more than 5000 commits or 256 MB),
+a new file name holds a tab or line break, the scan fails, or the project's
+target exits non-zero or runs longer than 10 minutes. When the project
+declares `check-outgoing` on the pushed branch or on its local default branch
+but the remote's default branch does not have it, there is no trusted copy and
+the push is refused: put the target on the remote's default branch first (by
+hand, since completion never pushes it).
+
+The target receives these environment variables:
+
+| Variable | Content |
+|---|---|
+| `OUTGOING_MANIFEST_DIR` | a private temporary directory with `added.txt` (one added line per line) and `added.idx` (commit, path, line, `text` or `binary` for the same line number), `commits/<id>` and `tags/<id>` (raw objects), `files.tsv` (commit, new file name), `refs.tsv` (destination ref, old id, new id) and `identities.tsv` (object id, role, name, email) |
+| `OUTGOING_PROJECT_DIR` | the project's main working tree, also for a linked worktree, where files that are never committed live |
+
+Variables naming a token, secret or password, and the terminal-server, make and
+shell option variables, are removed. When the target fails, the end of its
+output is shown in the push warning and the alert, so **a check must not print
+what it matched**: print the place and the kind of finding only.
+
+A refused push has `push_state: not_pushed` and a `push_warning` with the
+reason. The failure kinds are `check_failed`, `secret_found` and
+`default_branch_refused`.
+
+### This repository's check
+
+datawatch's own repository declares `make check-outgoing`
+(`scripts/check-outgoing.sh`). It applies the local-environment leak classes
+(private addresses, home paths, email addresses and the private pattern list)
+to everything in the manifest, refuses any author, committer or tagger address
+that is not in `scripts/leak-check.allowed-emails`, and **requires**
+`.leak-patterns.local` in the main working tree with at least one pattern
+(`make leak-patterns-init` creates it). Its output names places and classes,
+never matched text; a file or ref name that matches is shown by number. To run
+the same checks by hand before a push of your own (nothing is sent):
+
+```
+make outgoing-check REF=HEAD DEST=refs/heads/my-branch
+```
 
 ## Modes, and the shadow-first rollout
 
@@ -213,15 +275,13 @@ path exempts a tree.
   `path:line`, fingerprint). The allow-list stores hashes only.
 - **Never touches the commit.** A refusal is a refusal: no rollback, no
   amend, no force-push; the local branch is exactly where it was.
-- **Never wedges a legitimate push on a scanner fault.** If the scan
-  itself errors (for example, an unknown detector name), the error is
-  logged and the push proceeds — no finding is ever invented from an error.
-  The trade-off to remember: with a broken detector list the gate
-  silently stops finding things, so after changing `detectors`, confirm
-  the expected findings still appear (or the log is quiet *and* the list
-  is right).
-- **Never scans pushed history.** Only lines added by commits not yet on
-  the remote; once a commit is pushed it is out of scope.
+- **Never lets a push go when the scan could not run.** In `shadow` and
+  `enforce` a scan error (for example, an unknown detector name) refuses the
+  push as `check_failed`; no finding is invented from an error.
+- **Never scans pushed history.** Only what the remote does not have yet;
+  once a commit is pushed it is out of scope.
+- **Never reads large-file or submodule content.** Only the lines a commit
+  adds for them (the pointer) are scanned.
 
 See also: [`secrets-manager.md`](secrets-manager.md) (where secrets should
 live) and

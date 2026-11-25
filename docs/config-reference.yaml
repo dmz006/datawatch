@@ -316,11 +316,10 @@ git:
   #                    work this runs after each validated task, then again
   #                    at completion (a second push of an up-to-date branch
   #                    is a no-op).
-  #   default_branch — push onto the remote's default branch, and only
-  #                    after the automaton's final gates have passed
-  #                    (i.e. at PRD completion). A mid-run task never pushes
-  #                    the default branch, because the final validation is
-  #                    not done yet.
+  #   default_branch — pushes nothing: finishing work never moves the
+  #                    remote's default branch. The record shows not_pushed
+  #                    with that reason. (Under branch, a checkout that is on
+  #                    the default branch, main or master is refused too.)
   # Empty or an unrecognised value behaves as branch. When a push cannot
   # happen (no remote, auth, non-fast-forward), the commit is kept
   # locally, a visible "not pushed" warning is recorded on the PRD
@@ -342,10 +341,13 @@ git:
   # autonomous.push_and_tag is on. 0 or unset reads as the 60-minute
   # default. See docs/howto/release-push-and-tag.md.
   release_ci_window_minutes: 60
-  # Pre-push secret scan (the "secret scan push gate"). Before any daemon
-  # push attempt (PRD push-on-complete, one-shot push, pre-teardown save
-  # push) it scans the commits on HEAD that are on no ref of push_remote,
-  # looking only at the lines those commits add. Read live on every push
+  # Pre-push secret scan (the "secret scan push gate"), part of the outgoing
+  # check every daemon push goes through. It scans exactly what the push would
+  # send, compared with the remote's own list of refs: added lines (merge
+  # conflict resolutions included), commit and tag messages, authors, new file
+  # names and ref names. In shadow and enforce a scan that cannot run refuses
+  # the push. A project may add its own check as a `check-outgoing` make
+  # target, run from the remote default branch's copy. Read live on every push
   # attempt — a runtime change (REST/MCP/comm/CLI) applies on the next
   # push, no restart. Findings are redacted everywhere: detector, commit,
   # file:line and a 16-hex fingerprint (sha256 of the matched material);
@@ -4132,7 +4134,9 @@ autonomous:
     registry_readme: on
   # Ship steps for a finished release. Modes as above; shadow records the
   # command it would run and runs nothing. Per-project overrides live under
-  # autonomous.ship.projects.<project_dir>.
+  # autonomous.ship.projects.<project_dir>. When work finishes, the push is of
+  # the work branch only (never the default branch), through the outgoing
+  # check, and no tag is created or pushed, whatever the tag mode says.
   ship:
     push: on
     tag: on
