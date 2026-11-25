@@ -17031,6 +17031,10 @@ components:
           type: string
           description: "Re-arm state: empty, `retrying` (after a failed start), `waiting_capacity` (refused for capacity; retries with backoff, never later than the next scheduled time), `gave_up` (the re-arm policy gave up; the schedule stays failed and an alert was raised) or `waiting_session` (a command schedule with a session_name and no live session of that name; it stays pending)"
           enum: ["", retrying, waiting_capacity, gave_up, waiting_session]
+        firing_since:
+          type: string
+          format: date-time
+          description: Set while a due command is being typed, and saved before any key is sent. One still set when the daemon starts means a restart cut the send off; the command is not typed again.
         name_wait_alerted:
           type: boolean
           description: True once an alert was raised that no live session has `session_name`; cleared when the command is delivered.

@@ -131,6 +131,25 @@ for a session the schedule has moved to.
 
 Schedules that had already failed or been cancelled stay that way. Create them again.
 
+## One fire of a command is typed once
+
+Two passes of the daemon, and the handler for an input prompt, can see the same due
+command. Before typing, one of them **claims** the fire, so it is typed at most once.
+
+- A send that is held by a prompt, or that waits for a session, gives the claim back:
+  the schedule stays due.
+- Only one scheduled command at a time is typed into a session. A second one that is
+  due stays due until a later pass, so two lines never run together.
+- A command chained after another (`run_after_id`) is typed right after it, by
+  whichever pass typed the first one.
+- The claim is saved with the schedule before any key is sent (`firing_since`). If the
+  daemon stops in the middle of a send, the command may or may not have arrived. At the
+  next start it is **not typed again**: a recurring schedule moves to its next fire
+  (`skipped`), any other is marked `failed`. The list shows the reason and you get a
+  **warn** alert. Check the session, and create the schedule again if the command did
+  not arrive.
+- If the claim cannot be saved, nothing is typed and the schedule stays due.
+
 ## One path fires due spawns
 
 The manager's own schedule loop and the daemon's scheduler both look for due spawns.

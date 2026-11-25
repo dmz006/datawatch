@@ -218,11 +218,28 @@ func (sc *ScheduledCommand) InputSource() string {
 }
 
 // FireScheduled types a due queued command into fullID and records the
-// outcome. A command held back by a prompt on screen stays pending; one whose
-// filter may no longer type is cancelled; a name schedule whose session can no
-// longer take input stays pending (ErrScheduleTargetGone); any other failure
-// marks it failed. It reports whether the command was typed.
+// outcome. It is the one way a queued command is typed, and it claims the fire
+// first, so one fire is typed at most once whichever passes see it: a pass that
+// comes too late gets ErrFireTaken, and one that finds another schedule being
+// typed into fullID gets ErrFireDeferred. A command held back by a prompt on
+// screen stays pending; one whose filter may no longer type is cancelled; a
+// name schedule whose session can no longer take input stays pending
+// (ErrScheduleTargetGone); any other failure marks it failed. It reports
+// whether the command was typed.
 func (m *Manager) FireScheduled(store *ScheduleStore, fullID string, sc *ScheduledCommand) (bool, error) {
+	claimed, release, err := store.claimFire(sc.ID, fullID, time.Now())
+	if err != nil {
+		return false, err
+	}
+	// Not deferred: after a panic it is unknown whether the text arrived, so
+	// the claim stays and the next start settles it.
+	sent, err := m.typeClaimed(store, fullID, &claimed)
+	release()
+	return sent, err
+}
+
+// typeClaimed is FireScheduled once the fire is claimed.
+func (m *Manager) typeClaimed(store *ScheduleStore, fullID string, sc *ScheduledCommand) (bool, error) {
 	err := m.SendInput(fullID, sc.Command, sc.InputSource())
 	switch {
 	case err == nil:

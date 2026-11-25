@@ -7676,11 +7676,14 @@ func (m *Manager) GetScheduleStore() *ScheduleStore {
 }
 
 // StartScheduleTimer starts a background goroutine that checks for due scheduled
-// commands and deferred sessions every 30 seconds.
+// commands and deferred sessions every 30 seconds. The daemon calls it once, at
+// start and before anything else can type a schedule: it first closes the fires
+// the previous daemon was typing when it stopped.
 func (m *Manager) StartScheduleTimer(ctx context.Context) {
 	if m.schedStore == nil {
 		return
 	}
+	m.settleInterruptedFires(time.Now())
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -7711,15 +7714,12 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			continue
 		}
 		if sent, err := m.FireScheduled(m.schedStore, sess.FullID, sc); !sent {
-			if !errors.Is(err, ErrPromptOnScreen) {
+			if !errors.Is(err, ErrPromptOnScreen) && !errors.Is(err, ErrFireTaken) {
 				fmt.Printf("[schedule] failed to send to %s: %v\n", sess.FullID, err)
 			}
 		} else {
 			fmt.Printf("[schedule] sent command to %s: %s\n", sess.FullID, sc.Command)
-		}
-		// Process any chained commands
-		for _, after := range m.schedStore.AfterDone(sc.ID) {
-			_ = after // will be picked up in next tick when their dependency is done
+			m.FireChained(m.schedStore, sess.FullID, sc.ID)
 		}
 	}
 
@@ -7737,6 +7737,7 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 		for _, sc := range m.WaitingInputSchedules(m.schedStore, sess) {
 			if sent, _ := m.FireScheduled(m.schedStore, sess.FullID, sc); sent {
 				fmt.Printf("[schedule] sent waiting_input command to %s: %s\n", sess.FullID, sc.Command)
+				m.FireChained(m.schedStore, sess.FullID, sc.ID)
 			}
 		}
 	}
