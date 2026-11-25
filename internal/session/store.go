@@ -325,6 +325,10 @@ type Session struct {
 	// sets --effort from it. False means the built-in default filled it in.
 	EffortNamed bool `json:"effort_named,omitempty"`
 
+	// PermissionMode is the claude permission mode the start named; a restart
+	// runs in it. Empty = the mode configured when the daemon started.
+	PermissionMode string `json:"permission_mode,omitempty"`
+
 	// ClaudeEffort is the claude --effort level the start request named,
 	// kept so a restart runs at it. Empty when the request named none.
 	ClaudeEffort string `json:"claude_effort,omitempty"`

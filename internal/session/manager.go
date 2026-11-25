@@ -2943,6 +2943,10 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	if opt != nil && opt.Model != "" {
 		sess.Model = opt.Model
 	}
+	if opt != nil {
+		// Kept so a restart runs in the mode the launch named.
+		sess.PermissionMode = opt.PermissionMode
+	}
 	if opt != nil && opt.OllamaURL != "" {
 		sess.OllamaURL = opt.OllamaURL
 	}
@@ -3165,22 +3169,15 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		nb.SetSessionName(sess.Name)
 	}
 
-	// Pi family: fall back to the configured pi model when the session
-	// names none. Without this a one-shot `pi --print` launch uses pi's
-	// own default (a 27b model), which evicts the pinned 64k model on
-	// the GPU node. An explicit opt.Model below still overrides this.
-	if sm, ok := backendObj.(interface{ SetModel(string) }); ok {
-		switch backendName {
-		case "pi-prompt":
-			if mo := m.cfg.PiPrompt.Model; mo != "" {
-				sm.SetModel(mo)
-			}
-		case "pi":
-			if mo := m.cfg.Pi.Model; mo != "" {
-				sm.SetModel(mo)
-			}
-		}
+	// Model and permission mode are this session's own, set or cleared on
+	// every launch: the backend is a singleton. An explicit opt.Model or
+	// opt.PermissionMode below overrides what this leaves.
+	ownModel := ""
+	if opt != nil {
+		ownModel = opt.Model
 	}
+	m.resetLaunchModel(backendObj, backendName, ownModel)
+	setLaunchPermissionMode(backendObj, "")
 
 	// Pi family: point the launch at the session's compute node. The backend
 	// is shared across sessions, so this runs on every launch; a session that
@@ -3265,11 +3262,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	// silently no-op. PRD executor populates these from the
 	// per-task fields (most-specific-wins fallthrough).
 	if opt != nil {
-		if opt.PermissionMode != "" {
-			if pm, ok := backendObj.(interface{ SetPermissionMode(string) }); ok {
-				pm.SetPermissionMode(opt.PermissionMode)
-			}
-		}
+		setLaunchPermissionMode(backendObj, opt.PermissionMode)
 		if opt.Model != "" {
 			if mm, ok := backendObj.(interface{ SetModel(string) }); ok {
 				mm.SetModel(opt.Model)
@@ -5134,6 +5127,10 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		nb.SetSessionName(sess.Name)
 	}
 
+	// As on start: nothing an earlier launch left carries into a restart.
+	m.resetLaunchModel(backendObj, backendName, sess.Model)
+	setLaunchPermissionMode(backendObj, sess.PermissionMode)
+
 	// Pi family: a restart reuses the node the session was started on.
 	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
 		nh.SetNodeHost(sess.NodeAddress)
@@ -5179,12 +5176,11 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		}
 	}
 
-	// Claude Code: re-inject the persisted model on restart. The backend is a
-	// shared singleton whose model field may already have been overwritten by
-	// another session; the explicit-model backstop guarantees a claude-code
-	// record carries the model its launch used, so the relaunch keeps passing
-	// exactly that --model value (never the account default).
-	if b, ok := backendObj.(interface{ Name() string }); ok && b.Name() == "claude-code" && sess.Model != "" {
+	// Re-inject the session's own model on restart. The explicit-model
+	// backstop guarantees a claude-code record carries the model its launch
+	// used, so the relaunch keeps passing exactly that --model value. A record
+	// with none keeps only what resetLaunchModel left.
+	if sess.Model != "" {
 		if sm, ok := backendObj.(interface{ SetModel(string) }); ok {
 			sm.SetModel(sess.Model)
 		}
@@ -7308,6 +7304,37 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 // Returns the matched line and context (surrounding non-empty lines) or empty strings.
 func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, context string) {
 	return m.matchPromptLines(lines, n, true)
+}
+
+// resetLaunchModel is for a launch or restart with no model of its own (own
+// ""; otherwise the caller sets that model). It replaces whatever an earlier
+// launch left on the shared backend with the pi family's configured model, or
+// none, so it never runs on another session's. Without the pi fallback a one-shot
+// `pi --print` uses pi's own default (a 27b model), which evicts the pinned
+// 64k model on the GPU node.
+func (m *Manager) resetLaunchModel(backendObj interface{}, backendName, own string) {
+	sm, ok := backendObj.(interface{ SetModel(string) })
+	if !ok || own != "" {
+		return
+	}
+	model := ""
+	if m.cfg != nil {
+		switch backendName {
+		case "pi-prompt":
+			model = m.cfg.PiPrompt.Model
+		case "pi":
+			model = m.cfg.Pi.Model
+		}
+	}
+	sm.SetModel(model)
+}
+
+// setLaunchPermissionMode sets this launch's own permission mode on a backend
+// that has one; "" leaves it at the configured mode.
+func setLaunchPermissionMode(backendObj interface{}, mode string) {
+	if pm, ok := backendObj.(interface{ SetLaunchPermissionMode(string) }); ok {
+		pm.SetLaunchPermissionMode(mode)
+	}
 }
 
 // setLaunchEffort sets the claude --effort level for the launch about to
