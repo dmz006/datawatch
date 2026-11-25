@@ -1915,7 +1915,7 @@ func (r *Router) sendScheduleList() {
 			label = "SPAWN: " + sc.DeferredSession.Name
 		}
 		lines = append(lines, fmt.Sprintf("  [%s] %s @ %s: %s", sc.ID, label, when2, sc.Command))
-		if sc.LastFireResult != "" || sc.State == session.SchedFailed {
+		if sc.LastFireResult != "" || sc.RearmState != "" || sc.State == session.SchedFailed {
 			lines = append(lines, "      "+sc.RearmText())
 		}
 	}

@@ -247,6 +247,8 @@ This sends the text as input to the parent session so it can act on the result.
 
 Schedule a command to fire on a cron schedule, targeting a session by name rather than by ID — so the schedule survives session restarts.
 
+Killing, deleting or ending the session does not cancel or fail a schedule created with a session name. It stays pending, goes to the next live session with that name, and raises one alert while there is none. A recurring schedule skips the fires it misses. A schedule created with a session id only ends with its session. Nothing is typed into a session that shows an approval or confirmation prompt. Details: [`howto/schedule-rearm.md`](howto/schedule-rearm.md#commands-sent-to-a-session-by-name).
+
 **Creating a recurring schedule:**
 
 - **MCP:** `schedule_add(cron_expr="*/5 * * * *", session_name="worker", command="summarize")`

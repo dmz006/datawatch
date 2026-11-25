@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [schedules, scheduled spawn, cron, re-arm, retry, backoff, session cap, capacity, alert, restart, supervisor, detector]
+  topics: [schedules, scheduled spawn, cron, re-arm, retry, backoff, session cap, capacity, alert, restart, supervisor, detector, session name, waiting_session]
 exec_steps:
   - tool: schedule_list
     description: Read every pending and failed schedule with its next fire, last result and re-arm state
@@ -96,6 +96,40 @@ or `deferred` (refused for capacity).
 All five are read at every failed start, so a change applies without a restart. Set them
 in `datawatch.yaml`, with `datawatch config set schedule.rearm_mode backoff`, the MCP
 `config_set` tool, `PUT /api/config`, the chat `configure` command or the web card.
+
+## Commands sent to a session by name
+
+A schedule can also send a **command** to a running session. How you address it
+decides what happens when that session goes away.
+
+| Created with | When the session is killed, deleted or ends |
+|--------------|----------------------------------------------|
+| a session id only | Kill and delete **cancel** the schedule. A session that ends by itself makes the next send **fail** it. |
+| a session name (with or without an id) | The schedule **stays pending** and goes to the next live session with that name. |
+
+A schedule with a name goes to the session it first resolved to while that session
+can take input. After that it goes to a **live** session with the name: running or
+waiting for input first, then rate limited, and the oldest when several tie.
+
+While no live session has the name, the schedule waits:
+
+- A recurring schedule (cron or interval) **skips** each fire it misses and moves to
+  the next one, so a new session does not get a stale command. It still ends at its
+  deadline, if it has one.
+- A one-time schedule stays due and is sent once a session with the name can take it.
+  This is within seconds of the session appearing, even if it is still starting.
+- A schedule that fires on the next input prompt waits until the session with the
+  name asks for input.
+- You get **one** warn alert for each wait. A delivery ends the wait.
+- Lists show the state `waiting_session` until the next delivery.
+
+There is no time limit on the wait. Cancel the schedule when you no longer want it.
+
+A scheduled command is **never typed into a session that shows an approval or
+confirmation prompt**. It stays pending until the prompt is gone. This also holds
+for a session the schedule has moved to.
+
+Schedules that had already failed or been cancelled stay that way. Create them again.
 
 ## One path fires due spawns
 
