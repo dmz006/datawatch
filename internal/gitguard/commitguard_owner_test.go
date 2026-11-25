@@ -95,6 +95,13 @@ func TestAdoptCommitGuardPrefersOwnDirectory(t *testing.T) {
 func TestCommitGuardRecordTmuxSocket(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	g := ownerTestGuard(t, "/data/a", "h-1")
+	// The file count at the end looks for leftovers of the record writes, so
+	// start from the refusing hooks and the record only.
+	for _, name := range passThroughHooks {
+		if err := os.Remove(filepath.Join(g.Dir(), name)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	seen := func() string {
 		got := "not asked"
 		ReapDeadGuardDirs("/data/a", func(_, socket string) bool { got = socket; return false })
