@@ -605,6 +605,12 @@ type Manager struct {
 	// means outcomes are counted and recorded but not audited externally.
 	uiPromptAudit uiPromptAuditRoute
 
+	// inputAudit, filterInputGate and inputRefusedAt serve the guard on
+	// input the daemon types on its own (see prompt_guard.go). Guarded by mu.
+	inputAudit      func(InputAuditEvent)
+	filterInputGate func(filterID string) error
+	inputRefusedAt  map[string]time.Time
+
 	// uiPromptDismissStats is the in-memory dismissal outcome counter
 	// (reset at daemon restart; see ui_prompt_dismiss.go and
 	// UIPromptStatsSnapshot). Zero value is production-ready.
@@ -4723,7 +4729,22 @@ func (m *Manager) SendRawKeys(fullID, data string) error {
 	return m.tmux.SendKeysLiteral(sess.TmuxSession, data)
 }
 
+// SendInput types input into a session. A source that is not a person asking
+// for that exact input (see IsAutomatedInputSource) is refused while the pane
+// shows a permission, safety or confirmation prompt. Output-filter input is
+// also held to the filter gate, marked as typed by the filter, and audited.
 func (m *Manager) SendInput(fullID, input, source string) error {
+	filterID, isFilter := filterSourceID(source)
+	if isFilter {
+		if err := m.checkFilterGate(filterID); err != nil {
+			m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: fullID, Source: source, FilterID: filterID, Length: len(input), Reason: err.Error()})
+			return err
+		}
+		if strings.ContainsFunc(input, isControlRune) {
+			return fmt.Errorf("%w: filter input may not carry control characters or line breaks", ErrFilterInputNotAllowed)
+		}
+		input = MarkFilterInput(filterID, input)
+	}
 	sess, ok := m.store.Get(fullID)
 	if !ok {
 		// Try short ID
@@ -4745,15 +4766,51 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 
 	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, snap.TmuxSession, input, snap.BackendFamily)
 
+	automated := IsAutomatedInputSource(source)
+	// Chat-mode sessions have no terminal prompt to answer.
+	if automated && snap.OutputMode != "chat" {
+		if err := m.automatedBlocked(snap.TmuxSession, source); err != nil {
+			m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: fullID, Source: source, FilterID: filterID, Length: len(input), Reason: err.Error()})
+			return err
+		}
+	}
+	// delivered records filter input as soon as it has reached the session,
+	// whichever route carried it.
+	delivered := func() {
+		if isFilter {
+			m.emitInputAudit(InputAuditEvent{Action: InputAuditFilterTyped, SessionFullID: fullID, Source: source, FilterID: filterID, Text: input, Length: len(input)})
+		}
+	}
+	// routedDelivered is the same for the API routes below, which also owe
+	// the session timeline a line for filter input.
+	routedDelivered := func() {
+		if !isFilter {
+			return
+		}
+		delivered()
+		m.mu.Lock()
+		tr := m.trackers[fullID]
+		m.mu.Unlock()
+		if tr != nil {
+			if err := tr.RecordInputSent(input, source); err != nil {
+				fmt.Printf("[warn] tracker.RecordInputSent: %v\n", err)
+			}
+		}
+	}
+
 	// For chat-mode sessions, intercept memory commands before sending to backend.
 	// This works for any backend with output_mode=chat (Ollama, OpenWebUI, etc.)
 	if snap.OutputMode == "chat" {
 		sessionID := strings.TrimPrefix(snap.TmuxSession, "cs-")
 		// Memory command interception
+		chatRole := "user"
+		if isFilter {
+			chatRole = "system"
+		}
 		if m.chatMemoryFn != nil {
 			if response, handled := m.chatMemoryFn(snap.TmuxSession, input); handled {
 				if m.onChatMessage != nil {
-					m.onChatMessage(sessionID, "user", input, false)
+					m.onChatMessage(sessionID, chatRole, input, false)
 					m.onChatMessage(sessionID, "system", response, false)
 				}
 				return nil
@@ -4762,7 +4819,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		// Emit user input as a chat message so it appears in the chat UI
 		// (for inputs from comm channels, API, CLI — not just web UI)
 		if m.onChatMessage != nil {
-			m.onChatMessage(sessionID, "user", input, false)
+			m.onChatMessage(sessionID, chatRole, input, false)
 		}
 	}
 
@@ -4770,6 +4827,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	if snap.BackendFamily == "opencode-acp" {
 		if opencode.SendMessageACP(snap.TmuxSession, input) {
 			m.debugf("SendInput routed via opencode ACP HTTP")
+			routedDelivered()
 			return nil
 		}
 		m.debugf("SendInput ACP not active, falling back to tmux send-keys")
@@ -4778,6 +4836,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	if snap.BackendFamily == "openwebui" {
 		if openwebui.SendMessageOWUI(snap.TmuxSession, input) {
 			m.debugf("SendInput routed via openwebui Go conversation manager")
+			routedDelivered()
 			return nil
 		}
 		m.debugf("SendInput openwebui conversation not active, falling back to tmux send-keys")
@@ -4786,6 +4845,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	if snap.BackendFamily == "ollama" && snap.OutputMode == "chat" {
 		if ollama.SendMessageOllama(snap.TmuxSession, input) {
 			m.debugf("SendInput routed via ollama Go conversation manager")
+			routedDelivered()
 			return nil
 		}
 		m.debugf("SendInput ollama conversation not active, falling back to tmux send-keys")
@@ -4797,16 +4857,23 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	// session.schedule_settle_ms. Falls back to defaultSendSettle (120ms) if
 	// not configured (scheduleSettleMs == 0).
 	var sendErr error
-	if m.scheduleSettleMs > 0 {
+	guarded, canGuard := m.tmux.(guardedSubmitter)
+	switch {
+	case automated && canGuard:
+		// Re-checked between the typed text and the Enter.
+		sendErr = guarded.SendKeysGuarded(snap.TmuxSession, input,
+			time.Duration(m.scheduleSettleMs)*time.Millisecond, paneShowsApprovalMenu)
+	case m.scheduleSettleMs > 0:
 		sendErr = m.tmux.SendKeysWithSettle(snap.TmuxSession, input,
 			time.Duration(m.scheduleSettleMs)*time.Millisecond)
-	} else {
+	default:
 		sendErr = m.tmux.SendKeys(snap.TmuxSession, input)
 	}
 	if sendErr != nil {
 		return fmt.Errorf("send input: %w", sendErr)
 	}
 	m.debugf("SendInput OK")
+	delivered()
 
 	// Increment input counter
 	m.store.Mutate(func() { sess.InputCount++ })
@@ -6255,6 +6322,9 @@ func (m *Manager) SendTrustDialogAccept(fullID string) error {
 	if !ok {
 		return fmt.Errorf("session %s not found", fullID)
 	}
+	if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
+		return err
+	}
 	return m.tmux.SendTrustPromptAccept(sess.TmuxSession)
 }
 
@@ -6335,6 +6405,11 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 	if sess == nil || sess.BackendFamily != "claude-code" || !sess.OneShot || sess.TmuxSession == "" {
 		return false
 	}
+	// Dialog wording quoted on a pane that shows an approval prompt is not a
+	// dialog: nothing is pressed.
+	if PaneShowsApprovalPrompt(text) {
+		return false
+	}
 	lower := strings.ToLower(StripANSI(text))
 
 	specs := []struct {
@@ -6351,6 +6426,9 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			name:    claudeDialogTrust,
 			visible: strings.Contains(lower, "yes, i trust this folder") || strings.Contains(lower, "quick safety check"),
 			sendAccept: func() error {
+				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
+					return err
+				}
 				return m.tmux.SendTrustPromptAccept(sess.TmuxSession)
 			},
 		},
@@ -6362,6 +6440,9 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			name:    claudeDialogChannels,
 			visible: strings.Contains(lower, "i am using this for local development"),
 			sendAccept: func() error {
+				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
+					return err
+				}
 				return m.tmux.SendKeys(sess.TmuxSession, "Enter")
 			},
 		},
@@ -6793,7 +6874,11 @@ func (m *Manager) ResumeRateLimitedSession(ctx context.Context, fullID string) {
 
 	// Send resume prompt to tmux — reference the PAUSED.md file for context
 	resumeMsg := "The rate limit has reset. Please read PAUSED.md in your working directory for context on what was in progress, then continue the task."
-	_ = m.tmux.SendKeys(sess.TmuxSession, resumeMsg)
+	if err := m.automatedBlocked(sess.TmuxSession, "rate-limit-resume"); err != nil {
+		m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: sess.FullID, Source: "rate-limit-resume", Length: len(resumeMsg), Reason: err.Error()})
+	} else {
+		_ = m.tmux.SendKeys(sess.TmuxSession, resumeMsg)
+	}
 
 	if m.onStateChange != nil {
 		m.onStateChange(sess, oldState)
@@ -7496,11 +7581,11 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			_ = m.schedStore.MarkDone(sc.ID, true) // session not found
 			continue
 		}
-		if err := m.SendInput(sess.FullID, sc.Command, "schedule"); err != nil {
-			_ = m.schedStore.MarkDone(sc.ID, true)
-			fmt.Printf("[schedule] failed to send to %s: %v\n", sess.FullID, err)
+		if sent, err := m.FireScheduled(m.schedStore, sess.FullID, sc); !sent {
+			if !errors.Is(err, ErrPromptOnScreen) {
+				fmt.Printf("[schedule] failed to send to %s: %v\n", sess.FullID, err)
+			}
 		} else {
-			_ = m.schedStore.MarkDone(sc.ID, false)
 			fmt.Printf("[schedule] sent command to %s: %s\n", sess.FullID, sc.Command)
 		}
 		// Process any chained commands
@@ -7524,10 +7609,7 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			pending = m.schedStore.WaitingInputPending(sess.ID) // try short ID
 		}
 		for _, sc := range pending {
-			if err := m.SendInput(sess.FullID, sc.Command, "schedule"); err != nil {
-				_ = m.schedStore.MarkDone(sc.ID, true)
-			} else {
-				_ = m.schedStore.MarkDone(sc.ID, false)
+			if sent, _ := m.FireScheduled(m.schedStore, sess.FullID, sc); sent {
 				fmt.Printf("[schedule] sent waiting_input command to %s: %s\n", sess.FullID, sc.Command)
 			}
 		}
@@ -8625,9 +8707,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			// by sending "1" + Enter to the tmux session after a brief delay.
 			go func() {
 				time.Sleep(2 * time.Second)
-				_ = m.tmux.SendKeys(sess.TmuxSession, "1")
-				time.Sleep(300 * time.Millisecond)
-				_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").Run() //nolint:errcheck
+				m.acceptRateLimitWait(sess)
 			}()
 
 			// Schedule auto-resume via persisted ScheduleStore (survives daemon restart).
@@ -8673,9 +8753,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				m.debugf("MCP server failed for %s (attempt %d/%d) — sending /mcp to retry", sess.FullID, count+1, m.mcpMaxRetries)
 				go func() {
 					time.Sleep(3 * time.Second)
-					_ = m.tmux.SendKeys(sess.TmuxSession, "/mcp")
-					time.Sleep(3 * time.Second)
-					_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").Run()
+					m.retryMCPServers(sess, 3*time.Second)
 				}()
 			} else {
 				m.debugf("MCP server failed for %s — max retries (%d) exhausted", sess.FullID, m.mcpMaxRetries)

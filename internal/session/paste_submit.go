@@ -131,7 +131,7 @@ func confirmPromptSubmitted(tmux TmuxAPI, tmuxSession string, assistantActive fu
 	if err != nil {
 		return fmt.Errorf("confirm prompt submitted: capture pane %s: %w", tmuxSession, err)
 	}
-	if !pastePending(pane) {
+	if !pastePending(pane) || paneShowsApprovalMenu(pane) {
 		// Already submitted (or nothing pending): do not send Enter at
 		// all — a stray Enter in an idle TUI is exactly the class of bug
 		// this function exists to prevent.
@@ -295,9 +295,38 @@ func submitPastedInput(tm pasteDeliverer, session, keys string) error {
 		if !pastePending(pane) && !inputHoldsText(pane, tail) {
 			return nil
 		}
+		// A retry Enter would answer an approval menu that has appeared
+		// since the first one.
+		if live, lerr := livePane(tm, session); lerr == nil && paneShowsApprovalMenu(live) {
+			return nil
+		}
 		if err := tm.SendEnter(session); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// submitUnlessVetoed is submitPastedInput behind a last look at the pane:
+// when veto matches it, no Enter is pressed.
+func submitUnlessVetoed(tm pasteDeliverer, session, keys string, veto func(pane string) bool) error {
+	if veto != nil {
+		pane, err := livePane(tm, session)
+		if err != nil {
+			return fmt.Errorf("%w (the pane could not be re-read: %v)", ErrPromptOnScreen, err)
+		}
+		if veto(pane) {
+			return ErrPromptOnScreen
+		}
+	}
+	return submitPastedInput(tm, session, keys)
+}
+
+// livePane reads the live screen where the tmux layer can, so a scrolled-back
+// view never hides a prompt.
+func livePane(tm pasteDeliverer, session string) (string, error) {
+	if l, ok := tm.(interface{ CapturePaneLiveTail(string) (string, error) }); ok {
+		return l.CapturePaneLiveTail(session)
+	}
+	return tm.CapturePaneVisible(session)
 }
