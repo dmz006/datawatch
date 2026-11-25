@@ -568,6 +568,13 @@ re-arm state (`retrying`, `waiting_capacity`, `gave_up`).
 - **Chat:** `schedule list`; `configure schedule.rearm_mode=backoff`
 - **Web:** Settings → General → Scheduled Spawns; a line under each schedule in the Monitor tab's Scheduled Events list
 
+A due **command** is typed at most once: the daemon saves a claim on the fire
+(`firing_since` in `GET /api/schedules`) before it sends any key, and types one
+scheduled command at a time into a session. A send held by a prompt gives the
+claim back and the schedule stays due. A claim still there when the daemon starts
+means a restart cut the send off; it is not typed again (a recurring schedule
+moves to its next fire, any other is marked failed) and a warn alert is raised.
+
 See [howto/schedule-rearm](howto/schedule-rearm.md).
 
 ---
