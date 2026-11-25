@@ -7,8 +7,8 @@
 // record.
 //
 // The run made when work finishes (AtCompletion) pushes the work branch only:
-// it never moves the remote's default branch and never creates or pushes a tag,
-// whatever the tag mode says.
+// it never moves the remote's default branch and never creates or pushes a tag.
+// Tag mode on is not applied there; shadow still records, and runs nothing.
 package autonomous
 
 import (
@@ -47,8 +47,14 @@ func RunShipStep(ctx context.Context, dir, branch string, p ShipPolicy) ShipResu
 	var r ShipResult
 	pushMode, tagMode := p.Push, p.Tag
 	if p.AtCompletion && tagMode != config.ChecksModeOff {
-		tagMode = config.ChecksModeOff
-		r.Notes = append(r.Notes, "completion never creates or pushes a tag: the tag mode is not applied here")
+		note := "completion never creates or pushes a tag"
+		if tagMode == config.ChecksModeOn {
+			tagMode = config.ChecksModeOff
+			note += ": tag mode on is not applied here"
+		} else {
+			note += ": the tag commands are recorded only and would not run with tag mode on"
+		}
+		r.Notes = append(r.Notes, note)
 	}
 	if pushMode == config.ChecksModeOff && tagMode == config.ChecksModeOff {
 		r.Notes = append(r.Notes, "push and tag are off: skipped")

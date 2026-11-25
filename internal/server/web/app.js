@@ -27791,7 +27791,7 @@ const GENERAL_CONFIG_FIELDS = [
     { type: 'platform_context_card' },
     { label: 'Ship steps', labelKey: 'settings_ship_group', docsKey: 'settings_ship_group', type: 'group' },
     { key: 'autonomous.ship.push', label: 'Ship push (off, shadow or on; default on; finished work pushes its work branch only, never the default branch)', labelKey: 'settings_ship_push', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
-    { key: 'autonomous.ship.tag', label: 'Ship tag (off, shadow or on; default on; not applied when work finishes: completion never creates or pushes a tag)', labelKey: 'settings_ship_tag', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { key: 'autonomous.ship.tag', label: 'Ship tag (off, shadow or on; default on; work finishing never creates or pushes a tag: on does nothing there, shadow only records the commands)', labelKey: 'settings_ship_tag', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
     { key: 'autonomous.ship.ci_watch', label: 'Ship CI watch (off, shadow or on; default on)', labelKey: 'settings_ship_ci_watch', docsKey: 'settings_ship_ci_watch', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
     { key: 'autonomous.ship.tag_format', label: 'Ship tag format (must contain {version}, default v{version})', labelKey: 'settings_ship_tag_format', type: 'text', placeholder: 'v{version}' },
     { key: 'autonomous.ship.remote', label: 'Ship remote (default origin)', labelKey: 'settings_ship_remote', type: 'text', placeholder: 'origin' },

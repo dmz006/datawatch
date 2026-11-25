@@ -4428,7 +4428,7 @@
   "settings_checks_registry_readme": "Registry check (off, shadow or on; default on)",
   "settings_ship_group": "Ship steps",
   "settings_ship_push": "Ship-Push (off, shadow oder on; Standard on; beendete Arbeit pusht nur ihren Arbeitsbranch, nie den Standardbranch)",
-  "settings_ship_tag": "Ship-Tag (off, shadow oder on; Standard on; gilt nicht beim Abschluss: der Abschluss erstellt und pusht nie ein Tag)",
+  "settings_ship_tag": "Ship-Tag (off, shadow oder on; Standard on; beim Abschluss wird nie ein Tag erstellt oder gepusht: on bewirkt dort nichts, shadow zeichnet nur die Befehle auf)",
   "settings_ship_ci_watch": "Ship CI watch (off, shadow or on; default on)",
   "settings_ship_tag_format": "Ship tag format (must contain {version}, default v{version})",
   "settings_ship_remote": "Ship remote (default origin)",

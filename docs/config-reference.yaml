@@ -4136,7 +4136,8 @@ autonomous:
   # command it would run and runs nothing. Per-project overrides live under
   # autonomous.ship.projects.<project_dir>. When work finishes, the push is of
   # the work branch only (never the default branch), through the outgoing
-  # check, and no tag is created or pushed, whatever the tag mode says.
+  # check, and no tag is created or pushed: tag mode on is not applied there,
+  # shadow only records the commands.
   ship:
     push: on
     tag: on

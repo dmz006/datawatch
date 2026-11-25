@@ -5,7 +5,8 @@ Status: draft only; no issue filed.
 ## What changed in the daemon
 
 - Finishing work never moves the remote's default branch and never creates or
-  pushes a tag. `autonomous.ship.tag` is not applied at completion, and
+  pushes a tag. `autonomous.ship.tag` mode `on` is not applied at completion
+  (`shadow` only records the commands), and
   `git.push_on_complete=default_branch` pushes nothing.
 - Every daemon push goes through the outgoing check. A refused push keeps
   `push_state: not_pushed`; `push_warning` carries the reason. Two new refusal

@@ -4428,7 +4428,7 @@
   "settings_checks_registry_readme": "Registry check (off, shadow or on; default on)",
   "settings_ship_group": "Ship steps",
   "settings_ship_push": "出荷プッシュ（off・shadow・on、既定は on。完了した作業は作業ブランチのみをプッシュし、デフォルトブランチはプッシュしません）",
-  "settings_ship_tag": "出荷タグ（off・shadow・on、既定は on。作業完了時には適用されません。完了処理はタグを作成もプッシュもしません）",
+  "settings_ship_tag": "出荷タグ（off・shadow・on、既定は on。作業完了時にタグを作成・プッシュすることはありません。on はそこでは何もせず、shadow はコマンドを記録するだけです）",
   "settings_ship_ci_watch": "Ship CI watch (off, shadow or on; default on)",
   "settings_ship_tag_format": "Ship tag format (must contain {version}, default v{version})",
   "settings_ship_remote": "Ship remote (default origin)",

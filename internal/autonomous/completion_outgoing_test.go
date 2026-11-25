@@ -90,6 +90,23 @@ func TestCompletion_ShipTagOnCreatesNoTag(t *testing.T) {
 	}
 }
 
+// Shadow tag mode at completion runs nothing and says the commands would not
+// run with tag mode on.
+func TestCompletion_ShadowTagRecordsAndSaysSo(t *testing.T) {
+	shipOn(t, "off", "shadow")
+	m, prd, work, remote := completionRepo(t, "work")
+	before := remoteRefs(t, remote)
+
+	res := m.runShipStep(prd)
+
+	if res == nil || res.Err != nil || !strings.Contains(strings.Join(res.Notes, " "), "completion never creates or pushes a tag") {
+		t.Fatalf("ship result %+v", res)
+	}
+	if got := remoteRefs(t, remote); got != before || sgit(t, work, "tag", "-l") != "" {
+		t.Error("shadow must run nothing")
+	}
+}
+
 func TestCompletion_ShipNeverMovesRemoteMain(t *testing.T) {
 	shipOn(t, "on", "on")
 	m, prd, work, remote := completionRepo(t, "main")

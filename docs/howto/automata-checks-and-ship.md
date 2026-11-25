@@ -67,7 +67,7 @@ Every check is report-only: none edits a file. Each has a mode.
 | Step | Setting | What it does |
 |---|---|---|
 | Push | `autonomous.ship.push` | Pushes the work branch to the remote (`autonomous.ship.remote`, default `origin`). The remote's default branch, `main` and `master` are refused |
-| Tag | `autonomous.ship.tag` | Not applied when an Automaton finishes: completion never creates or pushes a tag. The ship result notes this when the mode is not `off` |
+| Tag | `autonomous.ship.tag` | An Automaton finishing never creates or pushes a tag: `on` is not applied there. `shadow` still records the tag commands and runs nothing. The ship result notes this when the mode is not `off` |
 | CI watch | `autonomous.ship.ci_watch` | Follows the CI runs of the pushed commit, limited to `autonomous.ship.ci_workflows` |
 
 The modes are the same three. In `shadow` the exact git commands are recorded

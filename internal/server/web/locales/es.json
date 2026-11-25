@@ -4428,7 +4428,7 @@
   "settings_checks_registry_readme": "Registry check (off, shadow or on; default on)",
   "settings_ship_group": "Ship steps",
   "settings_ship_push": "Push de envío (off, shadow u on; por defecto on; el trabajo finalizado solo empuja su rama de trabajo, nunca la rama por defecto)",
-  "settings_ship_tag": "Etiqueta de envío (off, shadow u on; por defecto on; no se aplica al finalizar: la finalización nunca crea ni empuja una etiqueta)",
+  "settings_ship_tag": "Etiqueta de envío (off, shadow u on; por defecto on; al finalizar el trabajo nunca se crea ni se empuja una etiqueta: on no hace nada ahí, shadow solo registra los comandos)",
   "settings_ship_ci_watch": "Ship CI watch (off, shadow or on; default on)",
   "settings_ship_tag_format": "Ship tag format (must contain {version}, default v{version})",
   "settings_ship_remote": "Ship remote (default origin)",
