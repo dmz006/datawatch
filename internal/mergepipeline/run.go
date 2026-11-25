@@ -94,6 +94,8 @@ type RunRequest struct {
 // RunResult is the outcome of a run.
 type RunResult struct {
 	Run autonomous.MergePipelineRun
+	// Pushed says a push-release step really ran (not held or skipped).
+	Pushed bool
 }
 
 // Runner runs a merge through the pipeline the Resolver picks for the
@@ -156,6 +158,12 @@ type Runner struct {
 	// Completer marks the Automaton Completed for the mark_completed
 	// built-in; nil makes that hook fail rather than skip silently.
 	Completer Completer
+	// Selection is the daemon's merge selection rule. When set, a run merges
+	// only what it selects, pinned to the exact commit selected.
+	Selection Selection
+	// Landing records the Automaton landed after a push, once the remote is
+	// confirmed to contain the merge commit.
+	Landing Landing
 	// VersionFiles carry `var Version = "X.Y.Z"`; they come from the
 	// operator's autonomous.merge_pipeline.version_files setting. None means
 	// the release-version step fails rather than guess at a path.
@@ -269,6 +277,10 @@ type runState struct {
 	nothingNew bool
 	// skipped is set by a step that ended as skipped or deferred.
 	skipped bool
+	// pushed is set once a push-release step really ran.
+	pushed bool
+	// pins holds each selected branch to the commit it must point at.
+	pins map[string]string
 }
 
 // releaseSteps are the actions a run with nothing new to merge skips. They
@@ -324,7 +336,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		end := r.now()
 		st.run.End, st.run.Result = &end, result
 		st.record()
-		return RunResult{Run: st.run}, err
+		return RunResult{Run: st.run, Pushed: st.pushed}, err
 	}
 	if rerr != nil {
 		st.run.Reason = redact(rerr.Error())
@@ -348,6 +360,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 				log.Printf("[merge-pipeline] release the merge lock on %s: %v", r.Dir, rerr)
 			}
 		}()
+	}
+	if err := st.applySelection(ctx); err != nil {
+		st.run.Reason = redact(err.Error())
+		return finish(autonomous.MergeRunFailed, err)
 	}
 	st.m = &Merger{
 		Dir: r.Dir, Pipeline: res.Definition, Settings: r.ConflictSettings, Model: r.Model, Questions: r.Questions,
@@ -383,6 +399,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		if ok {
 			if step.Action == ActionPushRelease {
 				st.pushReleaseOK = true
+				if st.lastStepOK() {
+					st.pushed = true
+					st.recordLanding(ctx, step)
+				}
 			}
 			i++
 			continue
@@ -759,6 +779,9 @@ func (s *runState) rebaseOntoMain(ctx context.Context) (string, error) {
 		if err != nil {
 			return fail(fmt.Sprintf("branch %q does not exist", b), fmt.Errorf("branch %q does not exist: %w", b, err))
 		}
+		if err := s.checkPin(b, old); err != nil {
+			return fail(err.Error()+"; nothing was merged", err)
+		}
 		anc, err := s.m.git(ctx, s.r.Dir, "merge-base", "--is-ancestor", "refs/heads/"+main, ref)
 		if err != nil {
 			return fail(fmt.Sprintf("checking whether %q is on %s failed", b, main), err)
@@ -838,8 +861,11 @@ func (s *runState) rebaseBranch(ctx context.Context, branch, old, main string) e
 	if err != nil {
 		return err
 	}
-	_, err = s.m.gitOK(ctx, s.r.Dir, "update-ref", "refs/heads/"+branch, strings.TrimSpace(head), old)
-	return err
+	if _, err = s.m.gitOK(ctx, s.r.Dir, "update-ref", "refs/heads/"+branch, strings.TrimSpace(head), old); err != nil {
+		return err
+	}
+	s.repin(branch, strings.TrimSpace(head)) // the run's own rewrite of the selected commit
+	return nil
 }
 
 func (s *runState) checkBranchVersions(ctx context.Context) (string, error) {
@@ -866,6 +892,9 @@ func (s *runState) mergeBranches(ctx context.Context) (string, error) {
 	var merged, already []string
 	s.nothingNew = false
 	for _, b := range s.req.Branches {
+		if err := s.checkPinnedBranch(ctx, b); err != nil {
+			return s.mergeStopNote(merged, b, err.Error()), err
+		}
 		in, err := s.branchInMain(ctx, b)
 		if err != nil {
 			return "", err
