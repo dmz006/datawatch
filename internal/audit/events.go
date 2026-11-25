@@ -481,7 +481,11 @@ const (
 // the web app marker), alert_raised, alert_id, alert_skipped.
 const ActionSafeguardAction = "safeguard_action"
 
-// ActionMergeDeployRunRefused — a merge run or deploy run request was refused
-// because autonomous.merge_deploy_run_enabled is off. Subject: merge_run or
-// deploy_run. Details: setting, route, outcome.
+// ActionMergeDeployRunRefused — a merge or deploy was refused: a run request
+// while autonomous.merge_deploy_run_enabled is off, or a supervisor loop merge
+// or deploy job or a deferred deploy retry held by that setting or the
+// operator pause. Subject: merge_run or deploy_run. Details: outcome; setting,
+// or held_by=operator_pause with pause_scope, pause_project, pause_reason and
+// paused_by; route for a request; job for a loop job; trigger (manual, daemon,
+// daemon_start) for a loop job or a retry.
 const ActionMergeDeployRunRefused = "merge_deploy_run_refused"

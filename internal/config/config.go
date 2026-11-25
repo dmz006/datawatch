@@ -4092,8 +4092,9 @@ type AutonomousConfig struct {
 	// (POST /api/autonomous/merge/run and /api/autonomous/deploy/run, and the
 	// MCP, CLI, chat and web actions that send them) may act. Off (the
 	// default) refuses each request and writes an audit entry. Reads and
-	// status stay available. It does not hold the daemon's own supervisor
-	// loop steps or the deploy resume at start.
+	// status stay available. It also holds the supervisor loop jobs
+	// run_merge_until_conflict and deploy_after_ship and the retry of a
+	// deferred deploy at daemon start; not finishing an interrupted deploy.
 	MergeDeployRunEnabled bool `yaml:"merge_deploy_run_enabled" json:"merge_deploy_run_enabled"`
 	// RequestWatch — observation of the in-flight model request of a worker
 	// or verifier whose model runs on a registered compute node, so a hung

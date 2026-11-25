@@ -2,9 +2,10 @@
 // (autonomous.merge_deploy_run_enabled, off by default).
 //
 // Both run routes ask it first, so every surface that sends one of those
-// requests (REST, MCP, CLI, chat, web) gets the same refusal. It holds
-// requests only: the daemon's supervisor loop steps and the deploy resume at
-// start do not pass through these routes.
+// requests (REST, MCP, CLI, chat, web) gets the same refusal. The daemon's own
+// ways to start a merge or a deploy ask it too: the supervisor loop jobs
+// deploy_after_ship and run_merge_until_conflict, and the retry of a deferred
+// deploy at daemon start. Finishing a deploy a restart interrupted does not.
 
 package server
 
@@ -17,7 +18,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// Audit subjects of a refused request.
+// Audit subjects of a refused merge or deploy.
 const (
 	mergeRunSubject  = "merge_run"
 	deployRunSubject = "deploy_run"
@@ -35,20 +36,26 @@ func (s *Server) refuseMergeDeployRun(w http.ResponseWriter, r *http.Request, su
 	if s.mergeDeployRunEnabled() {
 		return false
 	}
-	if s.auditLog != nil {
-		_ = s.auditLog.Write(audit.Entry{
-			Actor:   s.auditActor(r.Context()),
-			Action:  audit.ActionMergeDeployRunRefused,
-			Subject: subject,
-			Details: map[string]any{
-				"setting": config.MergeDeployRunKey,
-				"route":   r.URL.Path,
-				"outcome": "refused",
-			},
-		})
-	}
+	s.writeRunRefusal(s.auditActor(r.Context()), subject, map[string]any{
+		"setting": config.MergeDeployRunKey,
+		"route":   r.URL.Path,
+	})
 	http.Error(w, config.MergeDeployRunRefusal, http.StatusForbidden)
 	return true
+}
+
+// writeRunRefusal writes the audit entry of a refused merge or deploy.
+func (s *Server) writeRunRefusal(actor, subject string, details map[string]any) {
+	if s.auditLog == nil {
+		return
+	}
+	details["outcome"] = "refused"
+	_ = s.auditLog.Write(audit.Entry{
+		Actor:   actor,
+		Action:  audit.ActionMergeDeployRunRefused,
+		Subject: subject,
+		Details: details,
+	})
 }
 
 // mergeDeployRunValue reads a patch value for the switch: a JSON boolean, or
