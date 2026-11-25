@@ -3800,7 +3800,7 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous write capability}
         "405": {description: Method not allowed}
-        "409": {description: A merge or deploy is already running}
+        "409": {description: "A merge or deploy is already running, or the operator paused new work (the body names the pause)"}
         "503": {description: Automata is disabled, or no worktree base repository is set}
 
   /api/autonomous/merge-pipeline:
@@ -4804,7 +4804,8 @@ paths:
         both `automaton_id` and `task_id` to repair that one failed gate now, or
         send no targets (an empty body) to run one pass over every currently
         failed gate. Giving exactly one of the two is refused with a 400. Needs
-        the autonomous run capability when called by a federated peer.
+        the autonomous run capability when called by a federated peer. In on
+        mode a repair for a paused project is held and its outcome says so.
       operationId: autonomousGateRepairRun
       tags: [Autonomous]
       requestBody:
