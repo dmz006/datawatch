@@ -37,6 +37,13 @@ func ownsWorktree(prd *PRD, t *Task, s SessionInfo, dir string) bool {
 	return dir != "" && s.ProjectDir != "" && filepath.Clean(s.ProjectDir) == filepath.Clean(dir)
 }
 
+// ownsWorktreeAsWorker is ownsWorktree for adoption: a verifier or judge runs
+// in the same worktree under the same task id and is never the worker. The
+// worktree reset guard keeps counting every such session.
+func ownsWorktreeAsWorker(prd *PRD, t *Task, s SessionInfo, dir string) bool {
+	return !isNonWorkerSessionName(s.Name) && ownsWorktree(prd, t, s, dir)
+}
+
 // liveWorkersOwningWorktree returns the live sessions of t that own dir, newest
 // first.
 func liveWorkersOwningWorktree(prd *PRD, t *Task, sessions []SessionInfo, dir string) []SessionInfo {
@@ -74,7 +81,7 @@ func (m *Manager) adoptLiveWorkerBeforeSpawn(prd *PRD, t *Task, attempt int, dir
 	}
 	var eligible []SessionInfo
 	for _, s := range liveWorkersOwningWorktree(prd, t, listFn(), dir) {
-		if claimed[sessionShortID(s.ID)] {
+		if claimed[sessionShortID(s.ID)] || !ownsWorktreeAsWorker(prd, t, s, dir) {
 			continue
 		}
 		if attempt > 0 && sameSessionID(s.ID, t.SessionID) {

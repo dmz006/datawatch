@@ -41,7 +41,8 @@ func (m *Manager) SetSessionListerFn(fn func() []SessionInfo) {
 // when its task text contains the task id and its ProjectDir equals the task's
 // resolved project dir. The newest match is the adopted one here; adopted is nil
 // when nothing matches. Sessions already linked to a different task of the PRD
-// are never matched, whichever id form the task or the lister uses.
+// are never matched, whichever id form the task or the lister uses. Only a
+// worker is matched, never a verifier, judge or planner session.
 func findAdoptableSession(prd *PRD, t *Task, sessions []SessionInfo) (adopted *SessionInfo, others []SessionInfo) {
 	return findAdoptableSessionKeep(prd, t, sessions, config.DuplicateSessionKeepNewer)
 }
@@ -65,7 +66,7 @@ func findAdoptableSessionKeep(prd *PRD, t *Task, sessions []SessionInfo, keep st
 	}
 	var matches []SessionInfo
 	for _, s := range sessions {
-		if !s.Alive || s.ID == "" || claimed[sessionShortID(s.ID)] {
+		if !s.Alive || s.ID == "" || claimed[sessionShortID(s.ID)] || isNonWorkerSessionName(s.Name) {
 			continue
 		}
 		if s.TaskID != "" {
