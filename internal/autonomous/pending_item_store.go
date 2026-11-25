@@ -23,6 +23,8 @@ type PendingItemStore struct {
 	mu    sync.Mutex // guards items and the file
 	path  string
 	items map[string]*PendingItem // keyed by PendingItem.ID
+	// idLeftoversFn, wired by NewManager, scans for leftover work (id_alloc.go).
+	idLeftoversFn func() idLeftovers
 }
 
 // NewPendingItemStore opens (or creates) pending_items.json under dir. A
@@ -129,14 +131,15 @@ func (s *PendingItemStore) Create(title, ref string, source PendingItemSource) (
 	}
 	ref = strings.TrimSpace(ref)
 
+	left := scanWith(s.idLeftoversFn)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if other, taken := s.refTakenLocked(source, ref, ""); taken {
 		return nil, fmt.Errorf("409: a %s pending item with ref %q already exists (%s)", source, ref, other.ID)
 	}
-	id := newAutomationID()
-	for s.items[id] != nil {
-		id = newAutomationID()
+	id, err := drawUnusedID(newAutomationID, func(id string) bool { return s.items[id] != nil || left.holds(id) })
+	if err != nil {
+		return nil, fmt.Errorf("500: new pending item id: %w", err)
 	}
 	now := time.Now()
 	p := &PendingItem{

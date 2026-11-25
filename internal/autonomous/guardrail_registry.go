@@ -15,6 +15,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -330,9 +331,13 @@ func (m *Manager) InvokeGuardrailByName(name, projectDir string) (GuardrailVerdi
 	}, nil
 }
 
+// profileIDReader is where newProfileID draws its randomness; tests swap it to
+// force a repeated id.
+var profileIDReader io.Reader = rand.Reader
+
 // newProfileID generates a short hex ID for a guardrail profile.
 func newProfileID() string {
 	b := make([]byte, 4)
-	_, _ = rand.Read(b)
+	_, _ = io.ReadFull(profileIDReader, b)
 	return hex.EncodeToString(b)
 }

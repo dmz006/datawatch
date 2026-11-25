@@ -1473,6 +1473,9 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
+	// idRootsCfg is the live config the id check reads (id_alloc.go).
+	idRootsCfg atomic.Pointer[idRootsSnapshot]
+
 	// archiveSettings reads the autonomous.archive settings (manager_archive.go).
 	// Guarded by mu.
 	archiveSettings func() (enabled bool, retentionDays int)
@@ -3384,6 +3387,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	st.SetObjectTagDeriver(m)
 	automs.SetObjectTagDeriver(m)
 	m.templates.SetObjectTagDeriver(m)
+	m.wireIDGuard()
 	return m, nil
 }
 
@@ -3426,6 +3430,7 @@ func (m *Manager) SetConfig(cfg Config) {
 	// reads as true.
 	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m.cfg = cfg
+	m.setIDRootsSnapshot(cfg)
 }
 
 // Config returns a copy of the current config.
@@ -8585,8 +8590,12 @@ func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []
 	if err := ValidateNotifyEvents(notifyEvents); err != nil {
 		return nil, err
 	}
+	id, err := m.store.unusedID(newProfileID)
+	if err != nil {
+		return nil, fmt.Errorf("new guardrail profile id: %w", err)
+	}
 	p := &GuardrailProfile{
-		ID:               newProfileID(),
+		ID:               id,
 		Name:             name,
 		Description:      description,
 		Guardrails:       guardrails,
@@ -8659,8 +8668,12 @@ func (m *Manager) CreateRetryProfile(name, description string, budgets map[strin
 	if name == "" {
 		return nil, fmt.Errorf("profile name is required")
 	}
+	id, err := m.store.unusedID(newProfileID)
+	if err != nil {
+		return nil, fmt.Errorf("new retry profile id: %w", err)
+	}
 	p := &RetryProfile{
-		ID:                      newProfileID(),
+		ID:                      id,
 		Name:                    name,
 		Description:             description,
 		Budgets:                 budgets,

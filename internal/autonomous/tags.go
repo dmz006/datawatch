@@ -132,8 +132,12 @@ func (m *Manager) CreateTag(name, parentID, color, description string) (*Tag, er
 			return nil, err
 		}
 	}
+	id, err := m.store.unusedID(newID)
+	if err != nil {
+		return nil, fmt.Errorf("new tag id: %w", err)
+	}
 	now := time.Now()
-	t := &Tag{ID: newID(), Name: name, ParentID: parentID, Color: color,
+	t := &Tag{ID: id, Name: name, ParentID: parentID, Color: color,
 		Description: description, CreatedAt: now, UpdatedAt: now}
 	if err := m.store.SaveTag(t); err != nil {
 		return nil, err
@@ -159,8 +163,12 @@ func (m *Manager) EnsureSystemTag(name string) (*Tag, error) {
 			return existing, nil
 		}
 	}
+	id, err := m.store.unusedID(newID)
+	if err != nil {
+		return nil, fmt.Errorf("new tag id: %w", err)
+	}
 	now := time.Now()
-	t := &Tag{ID: newID(), Name: name, System: true, CreatedAt: now, UpdatedAt: now}
+	t := &Tag{ID: id, Name: name, System: true, CreatedAt: now, UpdatedAt: now}
 	if err := m.store.SaveTag(t); err != nil {
 		return nil, err
 	}

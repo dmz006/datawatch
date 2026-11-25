@@ -51,6 +51,8 @@ type AutomationStore struct {
 	// Automation's SystemTags with the derived list on Create and Update
 	// (see ObjectTagDeriver). A nil deriver leaves SystemTags untouched.
 	objectTagDeriver ObjectTagDeriver
+	// idLeftoversFn, wired by NewManager, scans for leftover work (id_alloc.go).
+	idLeftoversFn func() idLeftovers
 }
 
 // NewAutomationStore opens (or creates) automations.jsonl under dir —
@@ -313,21 +315,26 @@ func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
 	}
 	now := time.Now()
 	if a.ID == "" {
-		for {
-			id := newAutomationID()
+		left := scanWith(s.idLeftoversFn)
+		id, err := drawUnusedID(newAutomationID, func(id string) bool {
 			s.mu.Lock()
-			used := s.automations[id] != nil
-			s.mu.Unlock()
-			if !used {
-				a.ID = id
-				break
-			}
+			defer s.mu.Unlock()
+			return s.automations[id] != nil || left.holds(id)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("new automation id: %w", err)
 		}
+		a.ID = id
 	}
+	usedMembers := automationMemberIDs(a)
 	for i := range a.Members {
 		m := &a.Members[i]
 		if m.ID == "" {
-			m.ID = newAutomationID()
+			id, err := newMemberID(usedMembers)
+			if err != nil {
+				return nil, fmt.Errorf("new member id: %w", err)
+			}
+			m.ID = id
 		}
 		if m.AddedAt.IsZero() {
 			m.AddedAt = now
@@ -371,6 +378,11 @@ func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
 	err := s.WithLock(a.ID, func() error {
 		clone := cloneAutomation(a)
 		s.mu.Lock()
+		if s.automations[a.ID] != nil {
+			// Never replace a record: checked under the same lock as the insert.
+			s.mu.Unlock()
+			return fmt.Errorf("409: automation id %s is already used", a.ID)
+		}
 		s.automations[a.ID] = clone
 		if a.Status != AutomationCompleted && a.Status != AutomationCancelled {
 			for _, m := range a.Members {

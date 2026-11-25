@@ -165,7 +165,11 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 		}
 		oldMembers = append([]AutomationMember(nil), cur.Members...)
 		now := time.Now()
-		memberID = newAutomationID()
+		next, err := newMemberID(automationMemberIDs(cur))
+		if err != nil {
+			return fmt.Errorf("new member id: %w", err)
+		}
+		memberID = next
 		if hold {
 			cur.PendingInserts = append(cur.PendingInserts, PendingInsert{
 				ID: memberID, PRDID: in.PRDID, PendingItemID: in.PendingItemID, Question: in.Question, Name: in.Name, Urgent: in.Urgent,

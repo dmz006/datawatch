@@ -241,6 +241,10 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 				}
 			}
 		}
+		usedMembers := automationMemberIDs(a)
+		for _, im := range in.Members {
+			usedMembers[im.ID] = true
+		}
 		members := make([]AutomationMember, 0, len(in.Members))
 		for _, im := range in.Members {
 			if em, ok := byID[im.ID]; ok {
@@ -263,7 +267,11 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 				}
 			}
 			if im.ID == "" {
-				im.ID = newAutomationID()
+				id, err := newMemberID(usedMembers)
+				if err != nil {
+					return fmt.Errorf("new member id: %w", err)
+				}
+				im.ID = id
 			}
 			if im.AddedAt.IsZero() {
 				im.AddedAt = now

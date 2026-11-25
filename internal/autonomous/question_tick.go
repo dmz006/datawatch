@@ -127,6 +127,7 @@ func (m *Manager) SetDecisionRecords(d *DecisionRecords) {
 	if d != nil {
 		if rs := d.RecordStore(); rs != nil {
 			rs.SetObjectTagDeriver(m)
+			m.GuardRecordIDs(rs)
 		}
 		if qs := d.QuestionStore(); qs != nil {
 			qs.SetObjectTagDeriver(m)
