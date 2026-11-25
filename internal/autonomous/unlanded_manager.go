@@ -80,9 +80,16 @@ func (m *Manager) DeleteUnlandedWorktree(ctx context.Context, branch string, con
 		return DeleteWorktreeResult{Branch: branch}, err
 	}
 	repo, wtBase, _ := m.housekeepingPaths()
-	return DeleteWorktree(ctx, NewMergeGitRunner(), DeleteWorktreeOptions{
+	res, err := DeleteWorktree(ctx, NewMergeGitRunner(), DeleteWorktreeOptions{
 		Branch: entry, Confirm: confirm, BaseRepo: repo, WorktreeBase: wtBase,
 	})
+	// Written even when a later step failed: the copies are on disk.
+	if res.FilesBackupPath != "" {
+		m.auditKeptFiles("autonomous_unlanded_delete_files_backed_up", map[string]any{
+			"branch": res.Branch, "backup": res.FilesBackupPath, "files": res.BackedUpFiles,
+		})
+	}
+	return res, err
 }
 
 func (m *Manager) listedUnlanded(ctx context.Context, branch string) (UnlandedBranch, error) {

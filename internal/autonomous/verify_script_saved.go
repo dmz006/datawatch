@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,7 +143,10 @@ func restoreVerifyScripts(srcDirs []string, dstWorktree string, only []string) (
 	return n, nil
 }
 
-// removeSavedVerifyScripts deletes the saved folder of one Automaton; an
+// removeSavedVerifyScripts deletes the saved verification scripts of one
+// Automaton: the regular files directly in its saved folder, and the folder
+// once it is empty. Anything else in it stays, above all a whole folder that
+// was moved aside from the Automaton's worktree path (EnsureWorktree). An
 // absent folder is not an error.
 func removeSavedVerifyScripts(worktreeDir, prdID string) error {
 	// The id arrives from the REST path; the cleaned target must stay
@@ -152,5 +156,60 @@ func removeSavedVerifyScripts(worktreeDir, prdID string) error {
 	if prdID == "" || !strings.HasPrefix(full, base+string(filepath.Separator)) {
 		return fmt.Errorf("saved verification scripts: refusing unsafe Automaton id %q", prdID)
 	}
-	return os.RemoveAll(full)
+	st, err := os.Lstat(full)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !st.IsDir() {
+		return os.Remove(full) // a link or a plain file: only that entry goes
+	}
+	entries, err := os.ReadDir(full)
+	if err != nil {
+		return err
+	}
+	left := 0
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			left++
+			continue
+		}
+		if err := os.Remove(filepath.Join(full, e.Name())); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if left > 0 {
+		return nil
+	}
+	return os.Remove(full)
+}
+
+// maxListedKeptFiles bounds the file list of one audit event; the count it
+// carries is always the full one.
+const maxListedKeptFiles = 500
+
+// listKeptSavedFiles lists what is left in a saved folder, as paths relative
+// to it, with the full count. Links are listed and not followed. A part that
+// cannot be read is listed as unreadable.
+func listKeptSavedFiles(dir string) (files []string, count int) {
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if p == dir || (err == nil && d.IsDir()) {
+			return nil
+		}
+		rel, rerr := filepath.Rel(dir, p)
+		if rerr != nil {
+			rel = p
+		}
+		if err != nil {
+			rel += " (unreadable)"
+		}
+		count++
+		if len(files) < maxListedKeptFiles {
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	return files, count
 }

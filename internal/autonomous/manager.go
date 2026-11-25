@@ -11,6 +11,7 @@ import (
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/pause"
 	"log"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -4513,6 +4514,21 @@ func (m *Manager) DeletePRD(id string) error {
 	}
 	if err := removeSavedVerifyScripts(wtDir, id); err != nil {
 		log.Printf("[autonomous] removing saved verification scripts for %s: %v", id, err)
+	}
+	// What was not a saved script is still there: say what and where, since
+	// the Automaton record that pointed at it is gone.
+	folder := savedVerifyScriptsDir(wtDir, id)
+	if st, err := os.Lstat(folder); err == nil && st.IsDir() {
+		files, count := listKeptSavedFiles(folder)
+		var entries []string
+		if left, rerr := os.ReadDir(folder); rerr == nil {
+			for _, e := range left {
+				entries = append(entries, e.Name())
+			}
+		}
+		m.auditKeptFiles("autonomous_delete_kept_moved_aside", map[string]any{
+			"automaton_id": id, "folder": folder, "entries": entries, "files": files, "file_count": count,
+		})
 	}
 	return nil
 }

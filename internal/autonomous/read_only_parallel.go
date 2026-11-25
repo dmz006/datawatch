@@ -248,10 +248,13 @@ func readOnlyBaselineUntracked(baseline string) map[string]bool {
 // settleReadOnlyReportFiles runs after a read-only task finished and before
 // the violation check. Each new untracked file under docs/plans/reports/ (not
 // in baseline) is moved into the folder of the task's report path under
-// .datawatch/reports/ (name kept, folder created), or deleted when a file of
-// that name already exists there. A Decision names every file moved or
-// deleted. Paths that resolve outside the tree root, symlinks and anything
-// else are left alone, so the violation check still fails them.
+// .datawatch/reports/ (folder created). The name is kept unless a different
+// file already has it, or it is the daemon's default gate report; the stray
+// copy then gets a distinct name (moveKeepingBoth). It is deleted only when a
+// kept file has the same content. A Decision and an audit event name every
+// file moved or deleted and where its content is. Paths that resolve outside
+// the tree root, symlinks and anything else are left alone, so the violation
+// check still fails them.
 func (m *Manager) settleReadOnlyReportFiles(ctx context.Context, prd *PRD, t *Task, baseline string) {
 	_, root, err := ResolveTreeKey(prd, t)
 	if err != nil || root == "" {
@@ -271,7 +274,12 @@ func (m *Manager) settleReadOnlyReportFiles(ctx context.Context, prd *PRD, t *Ta
 		destDir = path.Dir(rp)
 	}
 	inBaseline := readOnlyBaselineUntracked(baseline)
-	var moved, deleted []string
+	var moved, renamed, deleted []string
+	var records []movedFile
+	// Worktree cleanup treats the default gate report as disposable and a
+	// gate run writes over it, so no other report may take its name.
+	gateReport := filepath.Join(realRoot, filepath.FromSlash(defaultGateReportPath))
+	reserved := func(p string) bool { return p == gateReport }
 	for _, rel := range strings.Split(string(out), "\x00") {
 		if rel == "" || !strings.HasPrefix(rel, strayReportsDir) || path.Clean(rel) != rel || inBaseline[rel] {
 			continue
@@ -291,26 +299,37 @@ func (m *Manager) settleReadOnlyReportFiles(ctx context.Context, prd *PRD, t *Ta
 		if real, err := filepath.EvalSymlinks(dst); err != nil || !within(filepath.Join(realRoot, ".datawatch", "reports"), real) {
 			continue
 		}
-		target := filepath.Join(dst, filepath.Base(src))
-		if _, err := os.Lstat(target); err == nil {
-			if os.Remove(src) == nil {
-				deleted = append(deleted, rel)
-			}
+		to, identical, err := moveKeepingBoth(src, filepath.Join(dst, filepath.Base(src)), reserved)
+		if err != nil {
+			log.Printf("[autonomous] settleReadOnlyReportFiles: %s left in place: %v", rel, err)
 			continue
 		}
-		if os.Rename(src, target) == nil {
+		kept := path.Join(destDir, filepath.Base(to))
+		records = append(records, movedFile{From: rel, To: kept, Identical: identical})
+		switch {
+		case identical:
+			deleted = append(deleted, rel+" (same content as "+kept+")")
+		case filepath.Base(to) != filepath.Base(src):
+			renamed = append(renamed, rel+" -> "+kept)
+		default:
 			moved = append(moved, rel)
 		}
 	}
-	if len(moved)+len(deleted) == 0 {
+	if len(records) == 0 {
 		return
 	}
+	m.auditKeptFiles("autonomous_read_only_report_settled", map[string]any{
+		"automaton_id": prd.ID, "task_id": t.ID, "tree": root, "files": records,
+	})
 	var parts []string
 	if len(moved) > 0 {
 		parts = append(parts, fmt.Sprintf("moved to %s/: %s", destDir, strings.Join(moved, ", ")))
 	}
+	if len(renamed) > 0 {
+		parts = append(parts, "kept under a new name, because the usual name was not free: "+strings.Join(renamed, ", "))
+	}
 	if len(deleted) > 0 {
-		parts = append(parts, fmt.Sprintf("deleted (same name already in %s/): %s", destDir, strings.Join(deleted, ", ")))
+		parts = append(parts, "deleted as identical copies: "+strings.Join(deleted, ", "))
 	}
 	note := fmt.Sprintf("read-only task %s left report files under %s; %s", t.ID, strayReportsDir, strings.Join(parts, "; "))
 	m.store.WithLock(func() {

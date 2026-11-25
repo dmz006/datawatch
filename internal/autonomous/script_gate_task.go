@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -166,7 +167,19 @@ func (m *Manager) finishScriptGateTask(prd *PRD, t *Task, report, note, failReas
 		reportRel = defaultGateReportPath
 	}
 	if report != "" {
-		if werr := writeGateReport(ResolveTaskProjectDir(prd, t), reportRel, report); werr != nil {
+		dir := ResolveTaskProjectDir(prd, t)
+		keptAt, werr := keepForeignReport(dir, reportRel)
+		if keptAt != "" {
+			m.auditKeptFiles("autonomous_gate_report_kept_previous", map[string]any{
+				"automaton_id": prd.ID, "task_id": t.ID, "tree": dir,
+				"files": []movedFile{{From: reportRel, To: keptAt}},
+			})
+			note += "; the file already at " + reportRel + " is kept as " + keptAt
+		}
+		if werr == nil {
+			werr = writeGateReport(dir, reportRel, report)
+		}
+		if werr != nil {
 			log.Printf("[autonomous] %s/%s write gate report: %v", prd.ID, t.ID, werr)
 			note += " (report not written: " + werr.Error() + ")"
 		} else {
@@ -211,6 +224,53 @@ func (m *Manager) finishScriptGateTask(prd *PRD, t *Task, report, note, failReas
 			}()
 		}
 	}
+}
+
+// isDaemonGateReport reports whether text is a finished report of the
+// daemon's own script gate.
+func isDaemonGateReport(text string) bool {
+	if !strings.HasPrefix(text, "== check 1 of ") {
+		return false
+	}
+	for _, end := range []string{"passed", "failed", "failed (timeout)"} {
+		if strings.HasSuffix(text, "\nfinal verdict: "+end+"\n") {
+			return true
+		}
+	}
+	return false
+}
+
+// keepForeignReport makes room for a gate report at rel under projectDir. An
+// earlier report of the gate itself is left to be replaced. Anything else
+// there is moved to a distinct name, returned relative to projectDir. An
+// error means rel must not be written.
+func keepForeignReport(projectDir, rel string) (string, error) {
+	if strings.TrimSpace(projectDir) == "" {
+		return "", nil // writeGateReport reports this
+	}
+	full := filepath.Join(projectDir, filepath.FromSlash(rel))
+	st, err := os.Lstat(full)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !st.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a regular file", rel)
+	}
+	old, err := os.ReadFile(full) // #nosec G304 -- a validated report path in the task's tree
+	if err != nil {
+		return "", err
+	}
+	if len(old) == 0 || isDaemonGateReport(string(old)) {
+		return "", nil
+	}
+	to, _, err := moveKeepingBoth(full, full, func(p string) bool { return p == full })
+	if err != nil {
+		return "", fmt.Errorf("keep the file already at %s: %w", rel, err)
+	}
+	return path.Join(path.Dir(rel), filepath.Base(to)), nil
 }
 
 // writeGateReport writes report to rel under projectDir, creating folders.

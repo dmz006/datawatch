@@ -238,12 +238,18 @@ func (m *Manager) MergeTaskBranch(ctx context.Context, prd *PRD, t *Task) (Merge
 		return MergeOutcomeDeferred, fmt.Errorf("task merge: %w", serr)
 	}
 	dropped, aside, uerr := clearOverwritableUntracked(ctx, dir, t.WorktreeBranch, t.ID)
+	if len(dropped) > 0 {
+		log.Printf("[autonomous] %s task %s: before the merge, dropped %d untracked file(s) identical to the task branch's (%s)",
+			prd.ID, t.ID, len(dropped), strings.Join(dropped, ", "))
+	}
+	// Recorded before the error check: files moved before a failure stay moved.
+	if len(aside) > 0 {
+		m.auditKeptFiles("autonomous_merge_files_moved_aside", map[string]any{
+			"automaton_id": prd.ID, "task_id": t.ID, "tree": dir, "files": aside,
+		})
+	}
 	if uerr != nil {
 		return MergeOutcomeDeferred, fmt.Errorf("task merge: %w", uerr)
-	}
-	if len(dropped) > 0 || len(aside) > 0 {
-		log.Printf("[autonomous] %s task %s: before the merge, dropped %d untracked file(s) identical to the task branch's (%s) and moved %d differing one(s) aside under .datawatch/merge-aside/%s (%s)",
-			prd.ID, t.ID, len(dropped), strings.Join(dropped, ", "), len(aside), t.ID, strings.Join(aside, ", "))
 	}
 
 	msg := fmt.Sprintf("Merge task %s: %s", t.ID, t.Title)
