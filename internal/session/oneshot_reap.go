@@ -166,7 +166,12 @@ func (m *Manager) ReapFinishedOneShots() []string {
 // oneShotReapInterval until ctx is done. This is the prevention half of the
 // zombie fix: a one-shot whose work has ended is closed even if its completion
 // watcher missed the marker.
+//
+// Only the daemon calls it, right after ResumeMonitors, so it is also where
+// delivery claims the last daemon never verified are taken over. A second
+// process that only resumes monitors must never type a task.
 func (m *Manager) StartOneShotReaper(ctx context.Context) {
+	m.recoverUnverifiedDeliveries(ctx)
 	go func() {
 		// The startup pass runs here, not inline: a reaped one-shot can run
 		// validation commands for minutes, and daemon boot must not wait on that.

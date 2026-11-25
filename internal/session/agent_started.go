@@ -3,7 +3,8 @@
 // A session counts as started when either its agent process is running in
 // the tmux pane, or its recorded output (or the session record) shows the
 // agent got going: a first assistant turn, a channel-ready event, or a
-// delivered task. It is read-only: it sends no keys and changes no state.
+// delivered task (for a daemon-typed task: a verified delivery). It is
+// read-only: it sends no keys and changes no state.
 
 package session
 
@@ -52,8 +53,10 @@ func (m *Manager) AgentStarted(fullID string) bool {
 	if daemonDelivers {
 		// The task is typed by the daemon, never on the command line: a ready
 		// channel or a running agent process is also what an agent at an empty
-		// prompt looks like. Only a delivered task or an answer counts.
-		return m.TaskDelivered(fullID) || logShowsAssistantTurn(logFile)
+		// prompt looks like. A claim alone is not proof either (it is saved
+		// before anything is typed): only a verified delivery or an answer
+		// counts, or the daemon's own retype after a restart while it runs.
+		return m.taskDeliveryProven(fullID) || logShowsAssistantTurn(logFile)
 	}
 	if channelReady || m.TaskDelivered(fullID) {
 		return true

@@ -37,6 +37,7 @@ func TestAgentStarted_DaemonDelivery_DeliveredTaskIsStarted(t *testing.T) {
 	if !mgr.ClaimTaskDelivery(sess.FullID) {
 		t.Fatal("claim should succeed on a fresh session")
 	}
+	mgr.MarkTaskDelivered(sess.FullID) // the task was seen to reach the session
 
 	if !mgr.AgentStarted(sess.FullID) {
 		t.Error("session whose task was delivered reported as not started")
