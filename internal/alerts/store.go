@@ -58,6 +58,10 @@ type Alert struct {
 	Source    string    `json:"source,omitempty"`
 	Read      bool      `json:"read"`
 	CreatedAt time.Time `json:"created_at"`
+	// SkipCommFanout marks an alert whose chat text another path sends,
+	// so a listener must not send it to the comm channels again. It only
+	// matters to listeners at creation time and is not persisted.
+	SkipCommFanout bool `json:"-"`
 }
 
 // Store is a persistent, thread-safe alert store.
@@ -113,6 +117,17 @@ func (s *Store) AddListener(fn func(*Alert)) {
 
 // Add creates a new alert and persists it. Returns the created alert.
 func (s *Store) Add(level Level, title, body, sessionID string) *Alert {
+	return s.add(level, title, body, sessionID, false)
+}
+
+// AddSkipCommFanout creates a session-less alert whose chat text the
+// caller delivers itself (see Alert.SkipCommFanout). It is stored and
+// announced to listeners like any other alert.
+func (s *Store) AddSkipCommFanout(level Level, title, body string) *Alert {
+	return s.add(level, title, body, "", true)
+}
+
+func (s *Store) add(level Level, title, body, sessionID string, skipCommFanout bool) *Alert {
 	b := make([]byte, 4)
 	rand.Read(b) //nolint:errcheck
 	a := &Alert{
@@ -123,6 +138,8 @@ func (s *Store) Add(level Level, title, body, sessionID string) *Alert {
 		SessionID: sessionID,
 		Read:      false,
 		CreatedAt: time.Now(),
+
+		SkipCommFanout: skipCommFanout,
 	}
 	s.mu.Lock()
 	s.alerts = append(s.alerts, a)

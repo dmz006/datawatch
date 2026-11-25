@@ -32,10 +32,13 @@ type SinkConfig struct {
 	// push to (the daemon forwards each to the SSE/mobile bus).
 	PublishTopics func(topics []string, title, message string)
 	// CommSink and CommWindow are both optional; when CommSink is nil
-	// the comm fan-out is inactive. When set, matched events are NOT
-	// delivered immediately via the sinks above (which would flood the
-	// channel on an event burst) but accumulate per Automaton and are
-	// sent as ONE coalesced message per PRD after a quiet window;
+	// the comm fan-out is inactive. When set, matched events also
+	// accumulate per Automaton and their comm text is sent as ONE
+	// coalesced message per PRD after a quiet window, so an event burst
+	// does not flood the channel. Only the comm text is coalesced:
+	// RecordAlert and PublishTopics still run at once for every matched
+	// event. A caller that installs CommSink must therefore make sure
+	// its RecordAlert does not send the alert to comm as well.
 	// CommWindow <= 0 falls back to the package default (5s).
 	CommSink   func(text string)
 	CommWindow time.Duration
@@ -207,12 +210,13 @@ func InstallLifecycleSinks(m *Manager, sc SinkConfig) (cancel func()) {
 		if !m.NotifyEventAllowed(ev) {
 			return
 		}
-		// Comm fan-out active: this event COALESCES instead of sending
-		// immediately — it joins its Automaton's bucket and rides along
-		// in the next quiet-window flush.
+		// Comm fan-out active: the event's comm text joins its
+		// Automaton's bucket and goes out in the next quiet-window
+		// flush. Handle only accumulates, and runs first so that a
+		// panicking sink below cannot cost the comm message. The alert
+		// and topic sinks below are not coalesced.
 		if comm != nil {
 			comm.Handle(ev)
-			return
 		}
 		msg := DescribeLifecycleEvent(ev)
 		if sc.RecordAlert != nil {
