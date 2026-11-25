@@ -23,11 +23,18 @@ type guardRecord struct {
 	TmuxSocket string `json:"tmux_socket,omitempty"`
 }
 
-// NewOwnedCommitGuard is NewCommitGuard for a daemon: it also records owner
-// in the directory. With an empty owner, or if the record cannot be written,
-// the guard still works but its ownership is unknown, so reaping keeps it.
+// NewOwnedCommitGuard is NewOwnedRepoCommitGuard with no project folder, so
+// the guard refuses in every repository.
 func NewOwnedCommitGuard(owner, sessionID string) (*CommitGuard, error) {
-	g, err := NewCommitGuard(sessionID)
+	return NewOwnedRepoCommitGuard(owner, sessionID, "")
+}
+
+// NewOwnedRepoCommitGuard is NewRepoCommitGuard for a daemon: it also records
+// owner in the directory. With an empty owner, or if the record cannot be
+// written, the guard still works but its ownership is unknown, so reaping
+// keeps it.
+func NewOwnedRepoCommitGuard(owner, sessionID, projectDir string) (*CommitGuard, error) {
+	g, err := NewRepoCommitGuard(sessionID, projectDir)
 	if err != nil || owner == "" {
 		return g, err
 	}

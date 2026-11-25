@@ -22,17 +22,23 @@ func sessionGuarded(sess *Session) bool {
 }
 
 // armCommitGuard creates a commit guard for the session, keeps it in the
-// manager and puts its config-injection environment into the tmux session so
-// a worker git commit hits the hooks. Nothing is written to any repository
-// config. Failures are logged and leave the session unguarded.
+// manager and sets its config-injection environment for the tmux session (the
+// launch loads it into the worker's pane shell) so a worker git commit hits the
+// hooks. The guard refuses in the repository of the session's project folder
+// and its worktrees; a project folder outside git gives a guard that refuses in
+// every repository. Nothing is written to any repository config. Failures are
+// logged and leave the session unguarded.
 func (m *Manager) armCommitGuard(sess *Session, tmuxSession string) {
 	if !sessionGuarded(sess) {
 		return
 	}
-	g, err := gitguard.NewOwnedCommitGuard(m.guardOwner(), sess.FullID)
+	g, err := gitguard.NewOwnedRepoCommitGuard(m.guardOwner(), sess.FullID, sess.ProjectDir)
 	if err != nil {
 		fmt.Printf("[warn] commit guard for %s: %v\n", sess.ID, err)
 		return
+	}
+	if g.Repository() == "" {
+		fmt.Printf("[warn] commit guard for %s: no git repository found for the project folder %q, so commits and ref updates are refused in every repository\n", sess.ID, sess.ProjectDir)
 	}
 	m.installCommitGuard(sess, tmuxSession, g)
 }
@@ -45,7 +51,7 @@ func (m *Manager) installCommitGuard(sess *Session, tmuxSession string, g *gitgu
 		}
 	}
 	if tmuxSession != "" {
-		if err := m.tmux.SetEnvironment(tmuxSession, env); err != nil {
+		if err := m.SetPaneEnv(tmuxSession, env); err != nil {
 			fmt.Printf("[warn] set commit guard env for %s: %v\n", sess.ID, err)
 			// A new guard was never handed to a worker. An adopted one may
 			// be in use by a live worker: keep it, with its token.
@@ -216,7 +222,7 @@ func (m *Manager) adoptCommitGuards(live []*Session) {
 		if !liveIDs[s.FullID] {
 			continue
 		}
-		g, err := gitguard.AdoptCommitGuard(owner, s.FullID)
+		g, err := gitguard.AdoptOwnedRepoCommitGuard(owner, s.FullID, s.ProjectDir)
 		if err != nil {
 			fmt.Printf("[warn] adopt commit guard for %s: %v\n", s.ID, err)
 			continue

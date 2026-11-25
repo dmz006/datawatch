@@ -48,6 +48,7 @@ var keystrokeCallSites = map[string]struct {
 	"internal/session/filter.go":                           {1, "automated: filter"},
 	"internal/session/filter_input_rules.go":               {1, "automated: schedule or filter, via FireScheduled"},
 	"internal/session/manager.go":                          {13, "SendInput itself; launch shell setup; guarded: dialog accept/decline, channel-task"},
+	"internal/session/pane_env.go":                         {1, "launch shell setup"},
 	"internal/session/paste_submit.go":                     {4, "submit Enter; retries stop at an approval menu"},
 	"internal/session/prompt_guard.go":                     {4, "guarded: rate-limit wait, MCP retry, raw keys"},
 	"internal/session/tmux.go":                             {8, "tmux layer"},

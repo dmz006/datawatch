@@ -386,6 +386,13 @@ type Manager struct {
 	resultTokenMinter SessionTokenMinter // mints the per-session scoped token (nil = no token env var)
 	subprocessBaseURL string             // daemon base URL injected as DATAWATCH_BASE_URL
 
+	// Variables set for a tmux session but not yet loaded into its first
+	// pane's shell, by tmux session name (see pane_env.go).
+	paneEnvMu    sync.Mutex
+	paneEnvNames map[string]map[string]bool
+	// Extra environment of a subprocess session about to run, by full id.
+	subprocessExtraEnv map[string][]string
+
 	// commitGuards holds the commit guard of each guarded session, keyed by
 	// session full ID. Guarded by guardMu.
 	guardMu      sync.Mutex
@@ -2154,6 +2161,7 @@ func (m *Manager) planPaneLaunch(sess *Session, ov resources.Override) paneLaunc
 // path on it. The scope path hands the wrapped shell command to tmux as the
 // pane command; the watchdog path starts a plain pane and watches it.
 func (m *Manager) startWorkerPane(sess *Session, cols, rows int, ov resources.Override) error {
+	m.takePaneEnvNames(sess.TmuxSession) // a new pane has nothing pending
 	plan := m.planPaneLaunch(sess, ov)
 	if plan.Path != "" {
 		sess.CeilingPath, sess.CeilingMB = plan.Path, plan.CeilingMB
@@ -3066,6 +3074,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		// there is no window where it runs but is not registered.
 		// runSubprocess releases it when it returns.
 		m.RegisterRunner(sess.FullID)
+		m.prepareSubprocessEnv(sess, opt.Env)
 		go m.runSubprocess(sess)
 		m.notifySessionStart(sess)
 		m.runPlacementStartHook(sess)
@@ -3295,10 +3304,8 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	}
 
 	// Apply profile environment variables to tmux session if provided
-	if opt != nil && len(opt.Env) > 0 {
-		if err := m.tmux.SetEnvironment(tmuxSession, opt.Env); err != nil {
-			fmt.Printf("[warn] set profile env for %s: %v\n", sess.ID, err)
-		}
+	if opt != nil {
+		m.setProfileEnv(sess, opt.Env)
 	}
 
 	// Always inject DATAWATCH_SESSION_ID + DATAWATCH_BASE_URL so Claude Code
@@ -3307,19 +3314,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	// in ~/.claude/ (default) so spawned claude processes find them without
 	// any config-dir override. Injecting a datawatch-scoped CLAUDE_CONFIG_DIR
 	// caused auth credential and first-run onboarding issues.
-	{
-		port := 8080
-		if m.cfg != nil && m.cfg.Server.Port > 0 {
-			port = m.cfg.Server.Port
-		}
-		hookEnv := map[string]string{
-			"DATAWATCH_SESSION_ID": fullID,
-			"DATAWATCH_BASE_URL":   fmt.Sprintf("http://127.0.0.1:%d", port),
-		}
-		if err := m.tmux.SetEnvironment(tmuxSession, hookEnv); err != nil {
-			fmt.Printf("[warn] set DATAWATCH_SESSION_ID for %s: %v\n", sess.ID, err)
-		}
-	}
+	m.setSessionIdentityEnv(sess)
 
 	// Guarded sessions (autonomous task, or one-shot with validation
 	// commands): a worker git commit hits the guard hooks; the harness
@@ -3335,6 +3330,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		launchTask = task + `; echo "DATAWATCH_COMPLETE: shell task done"`
 	}
 	launchTask = m.prependPlatformContextOnce(sess, backendName, launchTask)
+	m.loadPaneEnv(sess) // the pane shell is already running; before the scrub
 	m.scrubPaneTmuxEnv(sess)
 	m.upsertLedger(sess)
 	m.notifySessionCreated(sess)
@@ -4551,7 +4547,7 @@ func (m *Manager) runSubprocess(sess *Session) {
 
 	cmd := subprocessCommand(sess)
 	// GH#204 Phase 1 — identity + scope the job's result-posting credential.
-	cmd.Env = m.subprocessEnv(sess)
+	cmd.Env = append(m.subprocessEnv(sess), m.takeSubprocessEnv(sess.FullID)...)
 	cmd.Stdout = f
 	cmd.Stderr = f
 
@@ -5120,6 +5116,10 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		}
 	}
 
+	// A restart has a new pane: it needs the session's environment again.
+	m.setProfileEnv(sess, m.restartProfileEnv(sess))
+	m.setSessionIdentityEnv(sess)
+
 	// Pre-launch hook
 	if m.onPreLaunch != nil {
 		m.onPreLaunch(sess)
@@ -5225,6 +5225,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 			resumeLaunchTask = ""
 		}
 	}
+	m.loadPaneEnv(sess) // the pane shell is already running; before the scrub
 	m.scrubPaneTmuxEnv(sess)
 	var launchErr error
 	// A session profile (e.g. a lean one whose MCP selection is datawatch)
