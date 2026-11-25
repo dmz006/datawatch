@@ -225,6 +225,67 @@ sessions are not registered as runners yet, so only subprocess sessions count
 as held by a runner. Watch the journal after the first scheduled run on a busy
 daemon to confirm that a session you are still using is not finalised.
 
+## Ending finished idle sessions
+
+An interactive session that reports done stays at `waiting_input`, so it keeps
+its capacity slot until somebody ends it. The daemon can end it for you. This
+is off by default.
+
+```bash
+datawatch config set session.finished_idle_close_minutes 12   # suggested value
+datawatch config set session.finished_idle_close_minutes 0    # off (default)
+```
+
+The same key works on the Settings page (General, **Sessions**, *End finished
+idle sessions after*), with chat
+`configure session.finished_idle_close_minutes=12`, the `config_set` MCP tool,
+`PUT /api/config` and `finished_idle_close_minutes` under `session:` in the
+config file. A change applies at the next check, without a restart.
+
+A session is ended only when it is **proven finished**. The daemon checks once a
+minute, and every one of these must hold on every check for the whole period:
+
+- it is an interactive claude-code session in `waiting_input`;
+- its screen ends on its own `DATAWATCH_COMPLETE:` line (not the one quoted in
+  its task), followed only by turn notes and the input box;
+- the screen shows no running shell, monitor or background agent, and no
+  permission dialog;
+- its hooks show no turn still running;
+- no tmux client is attached, no child session is live, and no scheduled input
+  is pending for it.
+
+These are never ended this way: one-shot sessions (they end on their own), an
+Automaton's sessions, supervisor and agent sessions, other backends, and a
+restarted or resumed session that has had no input since (its screen replays
+the old completion line). If the screen or the attached clients cannot be read,
+the session is left alone.
+
+The period runs from the first check that saw the present screen. New output, or
+typing in the input box, starts it again, and so does a daemon restart. A web
+page showing the session does not count as attached; typing in it does count as
+a change.
+
+**What to check.** The session ends as `complete`:
+
+```bash
+datawatch sessions get a3f2 | jq '.state, .completion_summary, .end_note'
+```
+
+`end_note` names the setting, and the daemon journal has one
+`[session] ended ...` line. The record, `output.log` and the project folder are
+kept, and `restart:<id>` brings the session back. As with a kill, what the pane
+left running is ended, and unpushed commits follow
+`git.push_before_teardown`.
+
+## Model and permission mode stay with the session
+
+Each start and restart passes its own `--model` and `--permission-mode`. A start
+that names no mode runs in the claude-code mode configured when the daemon
+started (a REST start first takes the claude-code LLM's current mode), and never
+in the mode of the session launched before it. A restart runs in the session's
+own recorded mode and model. A restarted record with no model passes no
+`--model`; pi and goose sessions get their family's configured model.
+
 ## How a worker pane is capped
 
 A pane that an Automaton task runs in is held to a memory ceiling. With a systemd user scope, the pane's shell starts inside that scope. Without one, the daemon watches the pane's processes through `/proc` and ends them if they pass the ceiling. With neither, the pane runs uncapped. The session records `ceiling_path` and `ceiling_mb`. Sessions you start yourself are not capped. See [Memory ceiling](../operations.md#memory-ceiling).

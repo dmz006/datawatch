@@ -218,6 +218,12 @@ session:
   # process is gone. Default 10. 0 turns the scheduled runs off (the
   # start-up run always happens). A negative value falls back to 10.
   finalise_interval_minutes: 10
+  # End an interactive claude-code session that is proven finished (its screen
+  # ends on its completion marker, nothing is running, no terminal is attached,
+  # nothing is scheduled to type into it) after it has stayed unchanged this
+  # many minutes; this frees its capacity slot. 0 = off (default). 12 is the
+  # suggested value.
+  finished_idle_close_minutes: 0
   # BL30: when true, hitting a rate limit on any backend pauses new
   # session creation until the cooldown elapses or the operator clears
   # it via DELETE /api/cooldown. Default false.
