@@ -6,6 +6,15 @@ import (
 
 func TestBootResume_PlanningPRDKillsItsOrphanDecomposeSession(t *testing.T) {
 	m, api, _, _ := apiFixture(t)
+	// The restart starts the decompose in the background. Hold it until the test
+	// ends: this test reads the state right after boot-resume, and a planner that
+	// had already finished would have moved the Automaton on.
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	m.decompose = func(DecomposeRequest) (string, error) {
+		<-release
+		return `{"title":"T","stories":[{"title":"S","tasks":[{"title":"Task","spec":"do it"}]}]}`, nil
+	}
 	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
 	other, _ := m.CreatePRD("s2", "/w/proj", "opencode", "", EffortNormal)
 	// No planner record is set, so without the restart flag boot-resume would
