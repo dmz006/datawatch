@@ -44,7 +44,7 @@ func (f *lanGit) Run(_ context.Context, _ string, args ...string) (string, error
 		return "", errors.New("not an ancestor")
 	case args[0] == "merge-base":
 		if f.ff[args[1]] {
-			tip, _ := f.tips[args[1]]
+			tip := f.tips[args[1]]
 			return tip + "\n", nil // fast-forward: the merge base is the branch tip
 		}
 		return "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", nil

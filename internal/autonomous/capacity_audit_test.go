@@ -180,7 +180,7 @@ func TestCapacityAudit_BackoffSetAndClear(t *testing.T) {
 		t.Errorf("operator set source = %v", es[1].Details["source"])
 	}
 	// Normalised: trimmed, lower-cased, de-duplicated, sorted.
-	if got, _ := es[1].Details["models"]; !reflect.DeepEqual(got, []string{"model-a", "model-b"}) {
+	if got := es[1].Details["models"]; !reflect.DeepEqual(got, []string{"model-a", "model-b"}) {
 		t.Errorf("model-scoped set models = %v, want normalised [model-a model-b]", got)
 	}
 
@@ -194,7 +194,7 @@ func TestCapacityAudit_BackoffSetAndClear(t *testing.T) {
 	rec.BackoffCleared(AuditActorOperator, "opencode", []string{"model-b"})
 	es = ac.all()
 	wantEntry(t, es[3], "operator", audit.ActionUsageBackoffCleared, "opencode", ac.Now())
-	if got, _ := es[3].Details["models"]; !reflect.DeepEqual(got, []string{"model-b"}) {
+	if got := es[3].Details["models"]; !reflect.DeepEqual(got, []string{"model-b"}) {
 		t.Errorf("model-scoped cleared models = %v", got)
 	}
 
