@@ -269,6 +269,14 @@ every problem listed and nothing applied:
   `allow_premium_model: true`. Opus and Fable are never used unless a row
   names one.
 
+When you save a change, a row that is identical to a row already in force for
+the same task type is not looked up in the LLM registry again. A server that
+does not have the backends named by the shipped default rows can therefore
+still save, switch, import and delete profiles. A new or changed row is always
+looked up, and the other rules still apply to every row. The validation result
+that `GET /api/autonomous/task-routing` returns checks every row, so it can
+still list the unchanged ones.
+
 ### When a config write is refused
 
 A routing change made as a config key (`autonomous.task_routing` for the whole

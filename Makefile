@@ -399,6 +399,7 @@ test:
 	bash tests/test-plans-registry-archive.sh
 	bash tests/test-plans-tidy-daily.sh
 	bash tests/test-pre-tag.sh
+	env -u TMUX -u TMUX_TMPDIR bash tests/test-restart-matrix-sandbox-config.sh
 	env -u TMUX -u TMUX_TMPDIR bash tests/integration/tmux_scoped_kill_regression.sh
 	env -u TMUX -u TMUX_TMPDIR bash tests/integration/unsafe_tmux_call_check_negative.sh
 	bash tests/test-trivy-scan-image.sh

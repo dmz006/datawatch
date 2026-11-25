@@ -9,6 +9,7 @@ package config
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -174,6 +175,26 @@ type TaskRoutingChecks struct {
 	// ModelPairs returns an error when the model does not pair with the
 	// backend.
 	ModelPairs func(backend, model string) error
+	// InForce is the routing table already in force, set when a change is
+	// being saved. A row identical to a row of the same task type anywhere
+	// in it skips the BackendKnown and ModelPairs lookups, so unchanged
+	// rows (the shipped default rows on a daemon without those backends,
+	// or a copy of them) do not block a change elsewhere. New and changed
+	// rows are always looked up. Nil checks every row.
+	InForce *TaskRoutingConfig
+}
+
+// hasRow reports whether row appears unchanged for taskType in c.
+func (c *TaskRoutingConfig) hasRow(taskType string, row TaskRoutingRow) bool {
+	if c == nil {
+		return false
+	}
+	for _, prof := range c.Profiles {
+		if old, ok := prof[taskType]; ok && reflect.DeepEqual(old, row) {
+			return true
+		}
+	}
+	return false
 }
 
 func isPremiumModelName(m string) bool {
@@ -213,8 +234,9 @@ func ValidateTaskRouting(cfg TaskRoutingConfig, chk TaskRoutingChecks) []error {
 			if !IsTaskRoutingTaskType(t) {
 				add("%s: unknown task type", where)
 			}
+			unchanged := chk.InForce.hasRow(t, row)
 			check := func(field, backend, model string) {
-				if backend != "" && chk.BackendKnown != nil && !chk.BackendKnown(backend) {
+				if backend != "" && !unchanged && chk.BackendKnown != nil && !chk.BackendKnown(backend) {
 					add("%s: %s names LLM backend %q, which is not known", where, field, backend)
 				}
 				if model != "" && backend == "" {
@@ -223,7 +245,7 @@ func ValidateTaskRouting(cfg TaskRoutingConfig, chk TaskRoutingChecks) []error {
 						add("%s: %s names model %q with no backend", where, field, model)
 					}
 				}
-				if backend != "" && model != "" && chk.ModelPairs != nil {
+				if backend != "" && model != "" && !unchanged && chk.ModelPairs != nil {
 					if err := chk.ModelPairs(backend, model); err != nil {
 						add("%s: %s: %v", where, field, err)
 					}

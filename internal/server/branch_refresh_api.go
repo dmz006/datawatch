@@ -43,6 +43,13 @@ type branchRefreshStatser interface {
 	BranchRefreshStats() autonomous.BranchRefreshStats
 }
 
+// The daemon wires *autonomous.API into the server. It must carry both
+// optional surfaces, or the routes answer 501.
+var (
+	_ branchRefreshOverrideSetter = (*autonomous.API)(nil)
+	_ branchRefreshStatser        = (*autonomous.API)(nil)
+)
+
 // BranchRefreshRESTOperation is one branch refresh REST route, read by the
 // parity test.
 type BranchRefreshRESTOperation struct {

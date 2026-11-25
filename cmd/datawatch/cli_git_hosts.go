@@ -141,7 +141,7 @@ func fetchGitHosts(baseURL, token string) ([]gitHostRow, error) {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient().Do(req) // trusts the daemon's own TLS certificate
 	if err != nil {
 		return nil, fmt.Errorf("daemon not reachable: %w", err)
 	}

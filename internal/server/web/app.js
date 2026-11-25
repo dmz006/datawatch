@@ -28509,7 +28509,7 @@ function loadCommsConfig() {
         } else {
           html += `<div class="settings-row" style="justify-content:space-between;">
             <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(f.label)}</div>
-            <input type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(String(val === 0 ? 0 : (val || '')))}"
+            <input type="${f.type === 'number' ? 'number' : 'text'}" data-cfg-key="${escHtml(f.key)}" class="form-input general-cfg-input" value="${escHtml(String(val === 0 ? 0 : (val || '')))}"
               placeholder="${escHtml(f.placeholder || '')}"${f.min !== undefined ? ` min="${f.min}"` : ''}
               onchange="saveGeneralField('${f.key}', this.value)" />
           </div>`;
@@ -29404,7 +29404,7 @@ function loadGeneralConfig() {
             const _pbkHint = f.hintKey ? t(f.hintKey) : '';
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
-              <input type="text" class="form-input general-cfg-input" value="${escHtml(_priorityByKindTableText(val))}"
+              <input type="text" data-cfg-key="${escHtml(f.key)}" class="form-input general-cfg-input" value="${escHtml(_priorityByKindTableText(val))}"
                 ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
                 onchange="saveGeneralField('${f.key}', this.value)" />
               ${_pbkHint && _pbkHint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(_pbkHint)}</div>` : ''}

@@ -8568,7 +8568,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if raw, ok := patch["autonomous.task_routing"]; ok {
 		var in config.TaskRoutingConfig
 		if b, err := json.Marshal(raw); err == nil && json.Unmarshal(b, &in) == nil {
-			if errs := config.ValidateTaskRouting(in, s.taskRoutingChecks()); len(errs) > 0 {
+			if errs := config.ValidateTaskRouting(in, s.taskRoutingSaveChecks(s.cfg.Autonomous.TaskRouting)); len(errs) > 0 {
 				routingProblems = taskRoutingProblems(errs)
 				routingRefused = true
 				delete(patch, "autonomous.task_routing")

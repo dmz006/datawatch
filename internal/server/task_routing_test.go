@@ -633,3 +633,81 @@ func TestTaskRoutingDuplicateRoutePatternsNotRegistered(t *testing.T) {
 		t.Fatalf("expected the task-routing routes to be found, got %d", total)
 	}
 }
+
+// A daemon whose LLM registry has none of the backends the shipped default
+// rows name (a fresh install, the release smoke's scratch daemon) must still
+// save, activate, import and delete profiles: rows already in force are not
+// re-checked. A new row naming an unknown backend is still refused.
+func TestTaskRoutingRESTProfilesWorkWhenDefaultBackendsUnknown(t *testing.T) {
+	s, mgr, h := taskRoutingFixture(t)
+	s.inferenceReg = inference.NewRegistry()
+	mgr.SetTaskRoutingBackendCheck(func(string) bool { return false })
+
+	ok := func(what, method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		rr := taskRoutingDo(h, method, path, body)
+		if rr.Code != http.StatusOK {
+			t.Errorf("%s: %d %s", what, rr.Code, rr.Body.String())
+		}
+		return rr
+	}
+	ok("save a copy of the active profile", http.MethodPost, "/api/autonomous/task-routing/profiles", `{"name":"copy"}`)
+	ok("activate", http.MethodPut, "/api/autonomous/task-routing/active-profile", `{"name":"copy"}`)
+	ok("activate back", http.MethodPut, "/api/autonomous/task-routing/active-profile", `{"name":"default"}`)
+	doc := ok("export", http.MethodGet, "/api/autonomous/task-routing/profiles/copy/export", "").Body.String()
+	ok("import the export", http.MethodPost, "/api/autonomous/task-routing/profiles/import?name=again", doc)
+	ok("delete", http.MethodDelete, "/api/autonomous/task-routing/profiles/copy", "")
+
+	before := taskRoutingLiveSnapshot(t, mgr)
+	rr := taskRoutingDo(h, http.MethodPost, "/api/autonomous/task-routing/profiles",
+		`{"name":"bad","rows":{"docs_set":{"worker_backend":"ghost-llm"}}}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("new unknown-backend row: %d %s", rr.Code, rr.Body.String())
+	}
+	taskRoutingWantRow(t, rr.Body.String(), "bad", "docs_set", "worker")
+	if got := taskRoutingLiveSnapshot(t, mgr); got != before {
+		t.Error("a refused row changed the stored table")
+	}
+}
+
+// The same holds for a whole block sent through PUT /api/config.
+func TestTaskRoutingConfigPutBlockWithUnchangedUnknownRows(t *testing.T) {
+	s := newTaskRoutingConfigServer(t)
+	s.inferenceReg = inference.NewRegistry()
+	block := config.DefaultTaskRouting()
+	block.Enabled = true
+	b, _ := json.Marshal(map[string]any{"autonomous.task_routing": block})
+	rr := taskRoutingPutConfig(t, s, string(b))
+	if skipped, _ := taskRoutingSkippedKeys(t, rr); len(skipped) != 0 {
+		t.Fatalf("unchanged default rows refused: %v %s", skipped, rr.Body.String())
+	}
+	if !taskRoutingGetConfig(t, s).Enabled {
+		t.Fatal("block not stored")
+	}
+}
+
+// A draft Automaton with no tasks yet answers the dry run and the routing
+// read with an empty list, never null.
+func TestTaskRoutingRESTDraftWithNoTasksAnswersEmptyList(t *testing.T) {
+	_, mgr, h := taskRoutingFixture(t)
+	p, err := mgr.CreatePRD("draft with no tasks", t.TempDir(), "", "", autonomous.EffortLow)
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+	for _, c := range []struct{ method, path, key string }{
+		{http.MethodPost, "/api/autonomous/prds/" + p.ID + "/task-routing/dry-run", "entries"},
+		{http.MethodGet, "/api/autonomous/prds/" + p.ID + "/task-routing", "tasks"},
+	} {
+		rr := taskRoutingDo(h, c.method, c.path, `{}`)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s %s: %d %s", c.method, c.path, rr.Code, rr.Body.String())
+		}
+		var o map[string]json.RawMessage
+		if err := json.Unmarshal(rr.Body.Bytes(), &o); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if string(o[c.key]) != "[]" {
+			t.Errorf("%s %s: %s = %s, want []", c.method, c.path, c.key, o[c.key])
+		}
+	}
+}

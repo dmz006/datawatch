@@ -26,6 +26,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -118,7 +119,12 @@ func writeTaskRoutingError(w http.ResponseWriter, code int, msg string, problems
 // is not valid. It reports whether the table was applied.
 func (s *Server) commitTaskRouting(w http.ResponseWriter, r *http.Request, in config.TaskRoutingConfig, auditAction string) bool {
 	in = config.TaskRoutingWithDefaults(in)
-	if errs := config.ValidateTaskRouting(in, s.taskRoutingChecks()); len(errs) > 0 {
+	inForce, err := s.taskRoutingCurrent()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return false
+	}
+	if errs := config.ValidateTaskRouting(in, s.taskRoutingSaveChecks(inForce)); len(errs) > 0 {
 		writeTaskRoutingError(w, http.StatusBadRequest, "the routing table is not valid; nothing was changed", taskRoutingProblems(errs))
 		return false
 	}
@@ -363,7 +369,7 @@ func (s *Server) handleTaskRoutingProfileImport(w http.ResponseWriter, r *http.R
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	overwrite := r.URL.Query().Get("overwrite") == "true" || r.URL.Query().Get("overwrite") == "1"
-	next, err := autonomous.ImportProfile(cur, doc, name, overwrite, s.taskRoutingChecks())
+	next, err := autonomous.ImportProfile(cur, doc, name, overwrite, s.taskRoutingSaveChecks(cur))
 	if err != nil {
 		var problems []string
 		msg := err.Error()
@@ -436,7 +442,9 @@ func (s *Server) handleAutomatonTaskRouting(w http.ResponseWriter, r *http.Reque
 		writeTaskRoutingError(w, code, msg, nil)
 		return
 	}
-	if out == nil {
+	// A nil slice inside the interface (an Automaton with no tasks yet) is
+	// not == nil and would encode as null.
+	if rv := reflect.ValueOf(out); !rv.IsValid() || (rv.Kind() == reflect.Slice && rv.IsNil()) {
 		out = []any{}
 	}
 	key := "tasks"
