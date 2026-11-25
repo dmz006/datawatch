@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-no-config-copies config-audit check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build check-absolute-symlinks \
+.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-outgoing outgoing-check check-no-config-copies config-audit check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build check-absolute-symlinks \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs help check-toolchain \
@@ -315,6 +315,20 @@ check-sarif-upload:
 check-leaks:
 	bash scripts/check-no-local-leaks.sh .
 	bash scripts/check-generated-reports-leaks.sh
+
+# This repository's check of what is about to leave the machine. datawatch runs
+# it from the base commit before every push it makes, over the manifest of
+# exactly what the push would send: the four leak classes over added lines,
+# commit and tag messages, new file names and ref names, every author,
+# committer and tagger address on the allowed list, and .leak-patterns.local
+# required.
+check-outgoing:
+	@bash scripts/check-outgoing.sh
+
+# The same checks by hand, for a push you are about to make (nothing is sent):
+#   make outgoing-check [REF=HEAD] [DEST=refs/heads/<branch>] [REMOTE=origin]
+outgoing-check:
+	@go run ./scripts/outgoing-check -ref "$(or $(REF),HEAD)" -dest "$(DEST)" -remote "$(or $(REMOTE),origin)"
 
 # Generated reports leak check: every tracked and untracked report file
 # under docs/plans/reports is copied to a throwaway directory and scanned
