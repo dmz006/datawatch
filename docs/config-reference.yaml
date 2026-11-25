@@ -477,8 +477,11 @@ server:
 #                            work.
 #   CLAUDE_SESSION_ID        Session ID injected so the bridge can tag replies correctly.
 #                            Auto-set by the daemon; do not override unless testing.
-#   DATAWATCH_MCP_CONFIG     Set in the tmux environment of a session that is not
+#   DATAWATCH_MCP_CONFIG     Set in the environment of a session that is not
 #                            claude-code: the path (never a token) of its private MCP file.
+#   DATAWATCH_PANE_SESSION   Set with DATAWATCH_SESSION_ID in a session's terminal. The
+#                            session-end process cleanup does not treat that id as proof
+#                            for a process carrying this mark. Do not set it yourself.
 #
 # Run `datawatch channel diagnostics` or check GET /api/channel/diagnostics to see
 # per-session port registrations and live bridge /health probe results.

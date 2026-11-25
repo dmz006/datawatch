@@ -110,7 +110,7 @@ of evidence are:
 | `script` | A script run directly, or through a known interpreter (`sh`, `bash`, `python3`, `node`, …), lives inside the session folders | strong |
 | `cwd` | The working directory is inside the session folders **and** the process was orphaned (its parent is `init` or a service that adopts orphans) | weak — an operator's live shell or editor sitting in the folder is never touched |
 | `ancestry` | The process's parent chain reaches one of the session's known root pids | direct |
-| `env` | One of its environment variable *values* equals the session id (the environment is read in memory and never logged) | direct |
+| `env` | One of its environment variable *values* equals the session id (the environment is read in memory and never logged). `DATAWATCH_SESSION_ID` does not count for a process marked as started from that session's own terminal (`DATAWATCH_PANE_SESSION`): everything started there carries the id, including work meant to outlive the session. A subprocess session's task has no mark, so its id counts | direct |
 
 **How it ends them.** One pid at a time, in order: a polite `SIGTERM`, a
 short grace (2 seconds), and a forced `SIGKILL` for whatever did not exit.

@@ -4013,7 +4013,7 @@ sessions whose profile selects `datawatch`. Sessions sharing a project dir
 share nothing here. `<project_dir>/.mcp.json` gets only the
 `session.extra_mcp_servers` entries (operator-added entries are preserved).
 A session that is not claude-code has the file's path in
-`DATAWATCH_MCP_CONFIG` in its tmux environment.
+`DATAWATCH_MCP_CONFIG`, in the environment of the program it starts.
 - **Instance-level** — `<data_dir>/.mcp.json`, refreshed at each session
 launch so it tracks the current bridge and carries a current scoped
 credential; not tied to a specific session. Its `datawatch` entry is
