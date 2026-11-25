@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -60,18 +61,29 @@ func MCPFileHoldsDaemonEntry(raw []byte) bool {
 	return false
 }
 
-// IsMCPFileWithDaemonEntry reports whether the file at filePath is an
+// IsMCPFileWithDaemonEntry reports whether the file rel inside dir is an
 // .mcp.json holding a daemon entry. No automatic commit or snapshot may take
-// such a file.
-func IsMCPFileWithDaemonEntry(filePath string) bool {
-	if path.Base(strings.ReplaceAll(filePath, "\\", "/")) != mcpProjectFileName {
+// such a file. The file is read through a root opened on dir, so a parent
+// folder that is, or is swapped for, a link leaving dir is not followed; git
+// does not add a file through such a link either.
+func IsMCPFileWithDaemonEntry(dir, rel string) bool {
+	if path.Base(strings.ReplaceAll(rel, "\\", "/")) != mcpProjectFileName {
 		return false
 	}
-	fi, err := os.Lstat(filePath)
+	if dir == "" {
+		dir = "." // git runs in the working directory too
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = root.Close() }()
+	name := filepath.FromSlash(rel)
+	fi, err := root.Lstat(name)
 	if err != nil || !fi.Mode().IsRegular() {
 		return false // git stores a link as its target path, not its content
 	}
-	raw, err := os.ReadFile(filePath) // #nosec G304 -- a candidate .mcp.json in the session's own repository
+	raw, err := root.ReadFile(name)
 	if err != nil {
 		return false
 	}

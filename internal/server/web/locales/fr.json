@@ -2281,6 +2281,7 @@
   "schedule_rearm_retrying": "Nouvel essai (%1$d démarrages échoués)",
   "schedule_rearm_gave_up": "Abandon après %1$d démarrages échoués",
   "schedule_rearm_gave_up_waiting": "Abandon après attente de capacité (%1$d essais)",
+  "schedule_rearm_waiting_session": "En attente d’une session nommée %1$s",
   "settings_session_liveness_window_label": "Fenêtre de vivacité (s)",
   "settings_session_liveness_window_hint": "Nombre de secondes sans sortie avant qu'une session en cours soit considérée comme stagnante. 0 ou vide utilise la valeur par défaut (120).",
   "settings_session_liveness_overrides_label": "Délais d'inactivité par backend",

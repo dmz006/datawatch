@@ -60,6 +60,41 @@ func Run(m *testing.M) int {
 	return m.Run()
 }
 
+// RunPrivateTmp is Run with TMPDIR also pointed at a throwaway directory, for
+// a package whose code walks the temp directory and may remove what it finds
+// there: its tests then cannot reach anything another process put in the shared
+// one. Setup failures print "temp isolation: <err>" and return 1 without
+// running any test.
+func RunPrivateTmp(m *testing.M) int {
+	// Strays in the shared temp directory must be swept before leaving it.
+	if err := SweepStale(os.TempDir(), time.Hour, time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "temp isolation: WARNING: sweep: %v\n", err)
+	}
+	dir, err := os.MkdirTemp("", "dw-test-tmp-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "temp isolation:", err)
+		return 1
+	}
+	Record(dir)
+	old, had := os.LookupEnv("TMPDIR")
+	defer func() {
+		if had {
+			os.Setenv("TMPDIR", old) //nolint:errcheck
+		} else {
+			os.Unsetenv("TMPDIR") //nolint:errcheck
+		}
+		if err := Remove(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "temp isolation: WARNING: could not remove %s: %v\n", dir, err)
+		}
+		forget(dir)
+	}()
+	if err := os.Setenv("TMPDIR", dir); err != nil {
+		fmt.Fprintln(os.Stderr, "temp isolation:", err)
+		return 1
+	}
+	return Run(m)
+}
+
 // Remove deletes dir and everything under it, including trees the go tool
 // made read-only (module cache). It first makes every directory readable and
 // writable and every regular file writable, without following symlinks.

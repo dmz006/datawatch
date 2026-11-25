@@ -119,17 +119,24 @@ func TestAdoptCommitGuardsKeepsLiveRemovesStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale, err := gitguard.NewCommitGuard("host-stale1")
+	dataDir := t.TempDir()
+	stale, err := gitguard.NewOwnedCommitGuard((&Manager{dataDir: dataDir}).guardOwner(), "host-stale1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = live.Cleanup(); _ = stale.Cleanup() }()
+	if err := stale.RecordTmuxSocket(NewFakeTmux().SocketPath()); err != nil {
+		t.Fatal(err)
+	}
 	st, err := NewStore(filepath.Join(t.TempDir(), "sessions.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	m := &Manager{hostname: "host", store: st, tmux: NewFakeTmux()}
+	m := &Manager{hostname: "host", dataDir: dataDir, store: st, tmux: NewFakeTmux()}
+	if err := st.Save(&Session{FullID: "host-stale1", Hostname: "host", TmuxSession: "cs-stale", State: StateKilled}); err != nil {
+		t.Fatal(err)
+	}
 	sess := &Session{FullID: "host-live1", PRDID: "p", TmuxSession: "cs-live"}
 	m.adoptCommitGuards([]*Session{sess})
 	if _, err := os.Stat(stale.Dir()); !os.IsNotExist(err) {
@@ -351,7 +358,7 @@ func TestCommitGuardAdoptResumeMonitorsReapsStaleKeepsLive(t *testing.T) {
 
 	deadDir := guardTestRepo(t)
 	liveDir := guardTestRepo(t)
-	deadGuard, err := gitguard.NewCommitGuard("testhost-dead1")
+	deadGuard, err := gitguard.NewOwnedCommitGuard(mgr.guardOwner(), "testhost-dead1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,6 +367,9 @@ func TestCommitGuardAdoptResumeMonitorsReapsStaleKeepsLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = deadGuard.Cleanup(); _ = liveGuard.Cleanup() }()
+	if err := deadGuard.RecordTmuxSocket(fake.SocketPath()); err != nil {
+		t.Fatal(err)
+	}
 	commitGuardSetHooksPath(t, deadDir, deadGuard.Dir())
 
 	_ = mgr.SaveSession(&Session{

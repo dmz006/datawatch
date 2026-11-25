@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/gitguard"
@@ -28,7 +29,7 @@ func (m *Manager) armCommitGuard(sess *Session, tmuxSession string) {
 	if !sessionGuarded(sess) {
 		return
 	}
-	g, err := gitguard.NewCommitGuard(sess.FullID)
+	g, err := gitguard.NewOwnedCommitGuard(m.guardOwner(), sess.FullID)
 	if err != nil {
 		fmt.Printf("[warn] commit guard for %s: %v\n", sess.ID, err)
 		return
@@ -46,8 +47,15 @@ func (m *Manager) installCommitGuard(sess *Session, tmuxSession string, g *gitgu
 	if tmuxSession != "" {
 		if err := m.tmux.SetEnvironment(tmuxSession, env); err != nil {
 			fmt.Printf("[warn] set commit guard env for %s: %v\n", sess.ID, err)
-			_ = g.Cleanup()
-			return
+			// A new guard was never handed to a worker. An adopted one may
+			// be in use by a live worker: keep it, with its token.
+			if !g.Adopted() {
+				_ = g.Cleanup()
+				return
+			}
+		} else if err := g.RecordTmuxSocket(m.tmuxSocket()); err != nil {
+			// tmux took the variables, so this server holds the session.
+			fmt.Printf("[warn] record tmux socket of commit guard for %s: %v\n", sess.ID, err)
 		}
 	}
 	m.guardMu.Lock()
@@ -57,7 +65,7 @@ func (m *Manager) installCommitGuard(sess *Session, tmuxSession string, g *gitgu
 	}
 	m.commitGuards[sess.FullID] = g
 	m.guardMu.Unlock()
-	if old != nil {
+	if old != nil && old.Dir() != g.Dir() {
 		_ = old.Cleanup()
 	}
 }
@@ -101,10 +109,92 @@ func (m *Manager) releaseCommitGuard(fullID, projectDir string) {
 	}
 }
 
-// adoptCommitGuards runs at daemon adoption. Guard directories of sessions
-// that are not live are removed; a live session that is still guarded gets
-// its guard back (same directory and token), and every other worktree is
-// scrubbed of a leftover guard hooksPath.
+// guardOwner identifies the guard directories this daemon makes: its resolved
+// data directory, which survives a restart. "" means unknown; such a manager
+// owns, and so reaps, nothing.
+func (m *Manager) guardOwner() string {
+	if m.dataDir == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(m.dataDir)
+	if err != nil {
+		return ""
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return ""
+	}
+	return resolved
+}
+
+// paneGoneProber is implemented by a TmuxAPI that can tell "the session is
+// not there" apart from "tmux could not be asked", which SessionExists cannot.
+type paneGoneProber interface {
+	SessionGone(name string) bool
+}
+
+// tmuxSocketProber is implemented by a TmuxAPI that can name the socket of the
+// tmux server it reaches.
+type tmuxSocketProber interface {
+	SocketPath() string
+}
+
+// tmuxSocket is the socket of the tmux server this daemon reaches, or "" when
+// unknown.
+func (m *Manager) tmuxSocket() string {
+	if p, ok := m.tmux.(tmuxSocketProber); ok {
+		return p.SocketPath()
+	}
+	return ""
+}
+
+// guardServerMatches reports whether what tmux says now is evidence about this
+// session: the server reached must be on the socket in the guard's record. A
+// daemon restarted with another TMUX_TMPDIR reaches another server, which
+// truthfully does not have the session. An unknown socket on either side does
+// not match. A session without a tmux session does not depend on any server.
+func (m *Manager) guardServerMatches(fullID, recorded string) bool {
+	rec, ok := m.store.Get(fullID)
+	if !ok {
+		return false
+	}
+	if m.store.Snapshot(rec).TmuxSession == "" {
+		return true
+	}
+	return recorded != "" && recorded == m.tmuxSocket()
+}
+
+// guardSessionDead reports whether the session's process is provably over, so
+// that nothing can still be relying on its guard. Anything it cannot establish
+// reads as alive: no record here, another host's record, a pane that exists,
+// a tmux that does not answer, or a subprocess with no recorded exit.
+func (m *Manager) guardSessionDead(fullID string) bool {
+	rec, ok := m.store.Get(fullID)
+	if !ok {
+		return false
+	}
+	sess := m.store.Snapshot(rec)
+	if sess.FullID != fullID || sess.Hostname != m.hostname {
+		return false
+	}
+	if sess.TmuxSession == "" {
+		if !sess.Subprocess {
+			return false
+		}
+		if _, ended := readSubprocessRC(&sess); !ended {
+			return false
+		}
+		pid, ok := readSubprocessPID(&sess)
+		return !ok || !subprocessAlive(pid, sess.Task)
+	}
+	prober, ok := m.tmux.(paneGoneProber)
+	return ok && prober.SessionGone(sess.TmuxSession)
+}
+
+// adoptCommitGuards runs at daemon adoption. This daemon's guard directories
+// for sessions that are provably over are removed; a live session that is
+// still guarded gets its guard back (same directory and token), and every
+// other worktree is scrubbed of a leftover guard hooksPath.
 func (m *Manager) adoptCommitGuards(live []*Session) {
 	liveIDs := map[string]bool{}
 	for _, s := range live {
@@ -112,7 +202,10 @@ func (m *Manager) adoptCommitGuards(live []*Session) {
 			liveIDs[s.FullID] = true
 		}
 	}
-	gitguard.ReapStaleGuardDirs(liveIDs)
+	owner := m.guardOwner()
+	gitguard.ReapDeadGuardDirs(owner, func(id, socket string) bool {
+		return !liveIDs[id] && m.guardServerMatches(id, socket) && m.guardSessionDead(id)
+	})
 	for _, s := range m.store.List() {
 		if s.Hostname != m.hostname || liveIDs[s.FullID] || s.ProjectDir == "" {
 			continue
@@ -123,7 +216,7 @@ func (m *Manager) adoptCommitGuards(live []*Session) {
 		if !liveIDs[s.FullID] {
 			continue
 		}
-		g, err := gitguard.AdoptCommitGuard(s.FullID)
+		g, err := gitguard.AdoptCommitGuard(owner, s.FullID)
 		if err != nil {
 			fmt.Printf("[warn] adopt commit guard for %s: %v\n", s.ID, err)
 			continue

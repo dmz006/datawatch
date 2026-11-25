@@ -5,6 +5,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.19 — A schedule types once; commit guards are only removed by their owner
+
+### Fixed
+- A scheduled command is typed at most once. The two scheduler loops could type the same due command in the same second, and the two copies could join into one different command. A send interrupted by a restart is not typed again and raises one alert. Chained scheduled commands now fire from both loops.
+- One daemon or test run can no longer remove another's live commit guard. A guard is removed only when the daemon can prove it is its own and that its session has ended.
+
+### Documentation
+- How scheduled commands are claimed and how commit guard folders are cleaned up.
+
+## v9.187.18 — Name schedules outlive their session; tool config read stays in the project
+
+### Fixed
+- A command schedule created with a session name no longer stops for good when that session is killed, deleted or ends. It waits for the next live session with that name and raises one alert while it waits. Schedules created with a session id are unchanged.
+
+### Security
+- A tool configuration file is now read only through the project folder, so a linked parent folder can no longer make datawatch read a file outside the project.
+- The git reads behind Accept never run a configured signature program.
+
+### Before you upgrade
+- Killing a session no longer cancels schedules created with its name. Cancel them by schedule id or name.
+
+### Documentation
+- Schedules that wait for a session name.
+
 ## v9.187.17 — Saved settings take effect; verifier faults hold; weekly estimate; session modes
 
 ### Fixed

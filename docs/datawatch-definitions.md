@@ -248,6 +248,8 @@ This sends the text as input to the parent session so it can act on the result.
 
 Schedule a command to fire on a cron schedule, targeting a session by name rather than by ID — so the schedule survives session restarts.
 
+Killing, deleting or ending the session does not cancel or fail a schedule created with a session name. It stays pending, goes to the next live session with that name, and raises one alert while there is none. A recurring schedule skips the fires it misses. A schedule created with a session id only ends with its session. Nothing is typed into a session that shows an approval or confirmation prompt. Details: [`howto/schedule-rearm.md`](howto/schedule-rearm.md#commands-sent-to-a-session-by-name).
+
 **Creating a recurring schedule:**
 
 - **MCP:** `schedule_add(cron_expr="*/5 * * * *", session_name="worker", command="summarize")`
@@ -566,6 +568,13 @@ re-arm state (`retrying`, `waiting_capacity`, `gave_up`).
 - **REST:** `GET /api/schedules` (`last_fire_result`, `last_error`, `rearm_state`, `consecutive_failures`, `consecutive_waits`, `fire_history`); `PUT /api/config`
 - **Chat:** `schedule list`; `configure schedule.rearm_mode=backoff`
 - **Web:** Settings → General → Scheduled Spawns; a line under each schedule in the Monitor tab's Scheduled Events list
+
+A due **command** is typed at most once: the daemon saves a claim on the fire
+(`firing_since` in `GET /api/schedules`) before it sends any key, and types one
+scheduled command at a time into a session. A send held by a prompt gives the
+claim back and the schedule stays due. A claim still there when the daemon starts
+means a restart cut the send off; it is not typed again (a recurring schedule
+moves to its next fire, any other is marked failed) and a warn alert is raised.
 
 See [howto/schedule-rearm](howto/schedule-rearm.md).
 

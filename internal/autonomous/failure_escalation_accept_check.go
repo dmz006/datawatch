@@ -132,7 +132,7 @@ func findTaskCommits(ctx context.Context, in acceptInput) (found []acceptCommit,
 		if dir == "" || ref == "" || strings.HasPrefix(ref, "-") {
 			return
 		}
-		args := []string{"log", "--no-merges", "--format=%H%x09%s", "-n", acceptLogMax}
+		args := []string{"log", "--no-show-signature", "--no-merges", "--format=%H%x09%s", "-n", acceptLogMax}
 		if !in.created.IsZero() {
 			// A commit older than the Automaton is never this task's work.
 			args = append(args, "--since="+in.created.Format(time.RFC3339))
@@ -247,7 +247,7 @@ func strayCommitFiles(ctx context.Context, in acceptInput, commits []acceptCommi
 	}
 	stray := map[string]bool{}
 	for _, c := range commits {
-		out, err := taskGitOut(ctx, c.dir, "show", "--name-only", "--format=", c.sha, "--")
+		out, err := taskGitOut(ctx, c.dir, "show", "--no-show-signature", "--name-only", "--format=", c.sha, "--")
 		if err != nil {
 			continue
 		}

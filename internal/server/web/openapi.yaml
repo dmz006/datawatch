@@ -17032,7 +17032,7 @@ components:
           description: RFC3339 timestamp for one-shot schedules — omit for recurring
         session_name:
           type: string
-          description: "BL353: Resolve target by session name at fire time (survives session restarts)"
+          description: "Target session by name. A command schedule with a name is typed into session_id while that session can take input, else into the live session with this name. Killing, deleting or ending a session does not cancel or fail it: it stays pending (rearm_state waiting_session) until a live session has the name. A schedule with only session_id ends with its session."
         cron_expr:
           type: string
           description: "BL353: 5-field cron expression (alias for `cron`; preferred in new entries)"
@@ -17073,8 +17073,15 @@ components:
           description: When the current run of waits for capacity began. A one-time schedule gives up `schedule.one_time_max_wait_hours` after it (rearm_state `gave_up`, reason in `last_error`). Cleared by a successful start.
         rearm_state:
           type: string
-          description: "Re-arm state: empty, `retrying` (after a failed start), `waiting_capacity` (refused for capacity; retries with backoff, never later than the next scheduled time) or `gave_up` (the re-arm policy gave up; the schedule stays failed and an alert was raised)"
-          enum: ["", retrying, waiting_capacity, gave_up]
+          description: "Re-arm state: empty, `retrying` (after a failed start), `waiting_capacity` (refused for capacity; retries with backoff, never later than the next scheduled time), `gave_up` (the re-arm policy gave up; the schedule stays failed and an alert was raised) or `waiting_session` (a command schedule with a session_name and no live session of that name; it stays pending)"
+          enum: ["", retrying, waiting_capacity, gave_up, waiting_session]
+        firing_since:
+          type: string
+          format: date-time
+          description: Set while a due command is being typed, and saved before any key is sent. One still set when the daemon starts means a restart cut the send off; the command is not typed again.
+        name_wait_alerted:
+          type: boolean
+          description: True once an alert was raised that no live session has `session_name`; cleared when the command is delivered.
         last_error:
           type: string
           description: Reason of the last refused or failed start

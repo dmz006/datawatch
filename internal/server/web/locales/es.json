@@ -2281,6 +2281,7 @@
   "schedule_rearm_retrying": "Reintentando (%1$d inicios fallidos)",
   "schedule_rearm_gave_up": "Se rindió tras %1$d inicios fallidos",
   "schedule_rearm_gave_up_waiting": "Se rindió esperando capacidad (%1$d intentos)",
+  "schedule_rearm_waiting_session": "Esperando una sesión llamada %1$s",
   "settings_session_liveness_window_label": "Ventana de actividad (s)",
   "settings_session_liveness_window_hint": "Segundos sin salida antes de que una sesión en ejecución se considere estancada. 0 o vacío usa el valor predeterminado (120).",
   "settings_session_liveness_overrides_label": "Tiempos de inactividad por backend",

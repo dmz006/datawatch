@@ -2324,6 +2324,7 @@
   "schedule_rearm_retrying": "Retrying (%1$d failed starts)",
   "schedule_rearm_gave_up": "Gave up after %1$d failed starts",
   "schedule_rearm_gave_up_waiting": "Gave up waiting for capacity (%1$d tries)",
+  "schedule_rearm_waiting_session": "Waiting for a session named %1$s",
   "settings_session_liveness_window_label": "Liveness window (sec)",
   "settings_session_liveness_window_hint": "How many seconds without output before a running session counts as stalled. 0 or empty uses the default (120).",
   "settings_session_liveness_overrides_label": "Liveness idle timeouts by backend",

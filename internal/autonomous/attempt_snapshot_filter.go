@@ -41,7 +41,7 @@ func snapshotCandidates(ctx context.Context, top string) ([]string, error) {
 		}
 		for _, f := range splitNUL(out) {
 			if !seen[f] && !isLauncherToolingFile(f) &&
-				!session.IsMCPFileWithDaemonEntry(filepath.Join(top, f)) {
+				!session.IsMCPFileWithDaemonEntry(top, f) {
 				seen[f] = true
 				candidates = append(candidates, f)
 			}

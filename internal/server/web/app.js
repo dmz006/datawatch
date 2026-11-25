@@ -57789,7 +57789,8 @@ function _scheduleRearmSummary(sc) {
     if (sc.last_error && sc.last_fire_result !== 'spawned') last += ' (' + sc.last_error + ')';
     parts.push(t('schedule_row_last', [last]));
   }
-  if (sc.rearm_state === 'waiting_capacity') parts.push(t('schedule_rearm_waiting', [sc.consecutive_waits || 0]));
+  if (sc.rearm_state === 'waiting_session') parts.push(t('schedule_rearm_waiting_session', [sc.session_name || '']));
+  else if (sc.rearm_state === 'waiting_capacity') parts.push(t('schedule_rearm_waiting', [sc.consecutive_waits || 0]));
   else if (sc.rearm_state === 'retrying') parts.push(t('schedule_rearm_retrying', [sc.consecutive_failures || 0]));
   else if (sc.rearm_state === 'gave_up' && !sc.consecutive_failures && sc.consecutive_waits) parts.push(t('schedule_rearm_gave_up_waiting', [sc.consecutive_waits]));
   else if (sc.rearm_state === 'gave_up') parts.push(t('schedule_rearm_gave_up', [sc.consecutive_failures || 0]));

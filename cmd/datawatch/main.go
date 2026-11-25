@@ -126,7 +126,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.17"
+var Version = "9.187.19"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2222,7 +2222,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	mgr.SetScheduleStore(schedStore)
 	wireScheduleRearm(mgr, cfg)
-	mgr.StartScheduleTimer(ctx)
 
 	// BL356 — exit hook store + config seeding.
 	exitHookStore, err := session.NewExitHookStore(exitHooksStorePath(cfg))
@@ -2290,6 +2289,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	// BL226 — register global so any package can call alerts.EmitSystem
 	alertspkg.SetGlobal(alertStore)
+	// After SetGlobal: starting the schedule timer first closes the fires a
+	// restart cut off, and alerts the operator about each one.
+	mgr.StartScheduleTimer(ctx)
 
 	// One-shot push-on-complete (session manager): ad-hoc one-shots (no
 	// PRD owner) push their finished work after their own validation is
@@ -15233,31 +15235,46 @@ func newScheduleTopCmd() *cobra.Command {
 // fireInputSchedules fires any on-input-prompt scheduled commands for a session.
 // Called from the combined NeedsInputHandler in runStart.
 func fireInputSchedules(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session) {
-	pending := store.WaitingInputPending(sess.FullID)
-	if len(pending) == 0 {
-		pending = store.WaitingInputPending(sess.ID)
-	}
-	for _, sc := range pending {
+	for _, sc := range mgr.WaitingInputSchedules(store, sess) {
 		fireQueuedCommand(store, mgr, sess, sc)
 	}
 }
 
 // fireQueuedCommand types one due command and then the ones chained after it.
-// A command held back by a prompt on screen stays pending for a later pass; a
-// chained one has no later pass, so it is marked failed.
+// A command held back by a prompt on screen stays pending for a later pass. See
+// Manager.FireChained for what happens to a chained one that is not typed.
 func fireQueuedCommand(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session, sc *session.ScheduledCommand) {
 	if sent, err := mgr.FireScheduled(store, sess.FullID, sc); !sent {
-		if !errors.Is(err, session.ErrPromptOnScreen) {
+		if !errors.Is(err, session.ErrPromptOnScreen) && !errors.Is(err, session.ErrFireTaken) {
 			fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
 		}
 		return
 	}
 	fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
-	for _, next := range store.AfterDone(sc.ID) {
-		if sent, err := mgr.FireScheduled(store, sess.FullID, next); !sent {
-			fmt.Printf("[scheduler] failed to send chained input [%s]: %v\n", next.ID, err)
-			_ = store.MarkDone(next.ID, true)
+	fireChainedCommands(store, mgr, sess, sc.ID)
+}
+
+// fireChainedCommands types into sess the commands chained after doneID.
+func fireChainedCommands(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session, doneID string) {
+	mgr.FireChained(store, sess.FullID, doneID)
+}
+
+// fireDueCommands types the command schedules due at t. One created with a
+// session name and no live session to go to stays pending; one by id whose
+// session is not found is marked failed.
+func fireDueCommands(store *session.ScheduleStore, mgr *session.Manager, t time.Time) {
+	for _, sc := range store.DuePending(t) {
+		sess, ok := mgr.ScheduleTarget(sc)
+		if !ok {
+			if sc.NameTargeted() {
+				mgr.HoldNameSchedule(store, sc, t)
+				continue
+			}
+			fmt.Printf("[scheduler] session %q not found for command [%s], skipping\n", sc.SessionID, sc.ID)
+			_ = store.MarkDone(sc.ID, true)
+			continue
 		}
+		fireQueuedCommand(store, mgr, sess, sc)
 	}
 }
 
@@ -15277,22 +15294,7 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 			return
 		case t := <-ticker.C:
 			// Command schedules: send to an existing named/ID session.
-			for _, sc := range store.DuePending(t) {
-				sess, ok := mgr.GetSession(sc.SessionID)
-				if !ok && sc.SessionName != "" {
-					sess, ok = mgr.FindSessionByName(sc.SessionName)
-				}
-				if !ok {
-					// Session may use short ID
-					fmt.Printf("[scheduler] session %q (name:%q) not found for command [%s], skipping\n", sc.SessionID, sc.SessionName, sc.ID)
-					// Don't mark failed for name-targeted schedules — the session may not be started yet.
-					if sc.SessionName == "" {
-						_ = store.MarkDone(sc.ID, true)
-					}
-					continue
-				}
-				fireQueuedCommand(store, mgr, sess, sc)
-			}
+			fireDueCommands(store, mgr, t)
 			// GH#128: spawn/new_session schedules — start a fresh independent
 			// session. The same path as the manager's own schedule loop; a
 			// refused start is re-armed under the schedule re-arm policy.

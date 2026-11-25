@@ -3579,7 +3579,7 @@ func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest)
 			extra += " sched-name:" + sc.ScheduleName
 		}
 		fmt.Fprintf(&sb, "[%s] session:%s%s %s — %q\n", sc.ID, sc.SessionID, extra, runDesc, sc.Command)
-		if sc.LastFireResult != "" || sc.State == "failed" {
+		if sc.LastFireResult != "" || sc.RearmState != "" || sc.State == "failed" {
 			fmt.Fprintf(&sb, "    %s\n", sc.RearmText())
 		}
 	}

@@ -562,7 +562,7 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 		}
 		// An .mcp.json holding a daemon entry carries a session token: never
 		// added, never part of the commit.
-		if session.IsMCPFileWithDaemonEntry(filepath.Join(dir, rel)) {
+		if session.IsMCPFileWithDaemonEntry(dir, rel) {
 			skipped = append(skipped, p)
 			continue
 		}
