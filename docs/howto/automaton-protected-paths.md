@@ -475,6 +475,15 @@ with that one case itself, before any hold, warn or block is decided:
   applies to the file, and the gate leaves it exactly as the worker wrote it,
   so nothing is lost.
 
+**An entry under the daemon's own heading sections is held and asked.** The
+`# Session Guardrails` and `# Memory & Knowledge (datawatch)` sections run to
+the next `# ` line, or to the end of the file, so a `## YYYY-MM-DD` entry
+appended after one of these headings is inside that section. It is not text the
+daemon writes, so it is a change to the rules file, and the gate does not remove
+it. Under the default action `hold`, the task is held and you are asked; `warn`
+and `block` act as they do for any other change. Nothing removes such an entry
+automatically: it stays in the file until you answer or edit it yourself.
+
 What counts as an entry the gate may remove, and the cases where it leaves
 the file alone, are spelt out in
 [the checkpoint-entry revert](#the-checkpoint-entry-revert) below.
@@ -531,8 +540,10 @@ hold / warn / block path. So does an entry that is already staged or
 committed, because rewriting the working copy would leave it there. The revert
 is line-level and deterministic: no model is involved and no git write is
 issued. The daemon's own marked sections in
-the rules file are never part of what is stripped — an entry written next to
-them is still stripped, and the sections are preserved byte for byte.
+the rules file are never part of what is stripped, and are preserved byte for
+byte when an entry outside them is stripped. An entry under one of the daemon's
+two heading sections is not stripped: it is
+[held and asked](#checkpoint-entries-in-the-rules-file).
 
 It fails closed. A base version that cannot be read, a symlink or other
 non-regular file, a failed write, or a stripped copy that does not line up
@@ -669,7 +680,7 @@ list. When a search for one finds nothing, try the other.
 | Symptom | Likely cause and fix |
 |---|---|
 | A task is held and you did not expect it | Read the held paths with `datawatch autonomous protected-paths`. If the path is on the list by mistake, change the list; if the Automaton is meant to edit it, authorise the path for it |
-| A hold names the rules file and it looks like a progress note | The change went beyond the worker's checkpoint entry — a plain entry append is now stripped by the gate (`protected_paths_checkpoint_reverted` in the decision log, no hold). For a hold that did fire, **Reject it** to put the file back (the entry is removed with it); the note's content is still in `CHECKPOINT.md` and the session record |
+| A hold names the rules file and it looks like a progress note | Either the entry sits under `# Session Guardrails` or `# Memory & Knowledge (datawatch)`, which is [held and asked](#checkpoint-entries-in-the-rules-file), or it is staged or committed, or the change went beyond the worker's checkpoint entry. Otherwise a plain entry append is stripped by the gate (`protected_paths_checkpoint_reverted` in the decision log, no hold). For a hold that did fire, **Reject it** to put the file back (the entry is removed with it); the note's content is still in `CHECKPOINT.md` and the session record |
 | A path you listed is not protected | An explicit list replaces the defaults, and an entry is matched whole: `docs/plans/*.md` does not match `docs/plans/sub/a.md`, and a `*` never crosses a slash. Use the directory form `docs/plans/` for everything below it |
 | Nothing is ever held | The action may be `off` or `warn`; read `action` in the status. Check the Automaton has a task directory, and look for a `protected_paths_check_skipped` decision |
 | A task is blocked and no question was raised | The action is `block`. Authorise the path or edit the task, then reset it |
