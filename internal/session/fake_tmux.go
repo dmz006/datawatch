@@ -68,6 +68,11 @@ type FakeTmux struct {
 	// swallowed.
 	NoEcho bool
 
+	// AttachedCount simulates how many tmux clients are attached to a
+	// session; AttachedErr, when set, makes that query fail.
+	AttachedCount map[string]int
+	AttachedErr   error
+
 	// ListSessionsErr, when set, is returned by ListSessions in place of the
 	// session list, so a test can make the terminal listing fail.
 	ListSessionsErr error
@@ -270,6 +275,16 @@ func (f *FakeTmux) CapturePaneScrollback(session string, lines int) (string, err
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.Pane[session], nil
+}
+
+// AttachedClients reports the seeded number of attached tmux clients.
+func (f *FakeTmux) AttachedClients(session string) (int, error) {
+	if err := f.record("attached-clients", session); err != nil {
+		return 0, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.AttachedCount[session], f.AttachedErr
 }
 
 func (f *FakeTmux) PipeOutput(session, logFile string) error {

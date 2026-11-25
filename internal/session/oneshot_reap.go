@@ -189,6 +189,7 @@ func (m *Manager) StartOneShotReaper(ctx context.Context) {
 				return
 			case <-reap.C:
 				m.ReapFinishedOneShots()
+				m.CloseFinishedIdle() // does nothing unless session.finished_idle_close_minutes is set
 			case now := <-prune.C:
 				m.PruneSessionFolders(now)
 			}

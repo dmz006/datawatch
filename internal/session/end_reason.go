@@ -67,6 +67,12 @@ func (m *Manager) Kill(fullID string) error {
 // asks for it, ends its children. The state becomes killed unless the session
 // is already terminal.
 func (m *Manager) EndSession(fullID string, why EndReason) error {
+	return m.endSessionAs(fullID, why, StateKilled)
+}
+
+// endSessionAs is EndSession with the state a not-yet-terminal session is left
+// in: killed, or complete for one that had finished its work.
+func (m *Manager) endSessionAs(fullID string, why EndReason, final State) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
 		// Accept short 4-char hex IDs (e.g. from Task.SessionID).
@@ -128,7 +134,7 @@ func (m *Manager) EndSession(fullID string, why EndReason) error {
 	m.store.Mutate(func() {
 		oldState = sess.State
 		if !oldState.IsTerminal() {
-			sess.State = StateKilled
+			sess.State = final
 			sess.UpdatedAt = time.Now()
 		}
 		newState = sess.State
@@ -333,6 +339,9 @@ func (m *Manager) recordHookTurnEvent(fullID, event string) {
 	default:
 		return
 	}
+	if event == "UserPromptSubmit" {
+		m.liftRelaunchHold(fullID)
+	}
 	sess, ok := m.store.Get(fullID)
 	if !ok {
 		sess, ok = m.store.GetByShortID(fullID)
@@ -344,7 +353,9 @@ func (m *Manager) recordHookTurnEvent(fullID, event string) {
 	defer m.mu.Unlock()
 	if event == "Stop" {
 		m.hookStopAt[sess.FullID] = m.now()
+		delete(m.hookTurnOpen, sess.FullID)
 		return
 	}
 	delete(m.hookStopAt, sess.FullID)
+	m.hookTurnOpen[sess.FullID] = true
 }

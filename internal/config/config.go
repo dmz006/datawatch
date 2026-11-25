@@ -2852,6 +2852,12 @@ type SessionConfig struct {
 	// 0 means the default of 30 days; set a value to change the window.
 	SessionRetentionDays int `yaml:"session_retention_days,omitempty"`
 
+	// FinishedIdleCloseMinutes — end an interactive claude-code session that is
+	// proven finished (its screen ends on its completion marker) after it has
+	// stayed unchanged and unattached this many minutes, which frees its
+	// capacity slot. 0 (default) = off; 12 is the suggested value.
+	FinishedIdleCloseMinutes int `yaml:"finished_idle_close_minutes,omitempty"`
+
 	// ResponseSummarizer — when Enabled, the last captured session
 	// response is summarized via the referenced LLM before use in
 	// alerts and TTS auto-play.

@@ -6201,6 +6201,8 @@
   "cost_charts_col_active": "Active time",
   "cost_charts_not_reported_marker": "not reported (%1$s)",
   "cost_report_not_reported": "not reported (%1$s)",
+  "settings_session_finished_idle_close": "End finished idle sessions after (min; 0 = off)",
+  "settings_session_finished_idle_close_help": "Ends an interactive claude-code session whose screen ends on its completion marker, after it stays unchanged with no terminal attached and nothing left running for this many minutes. This frees its capacity slot. 0 is off (default); 12 is suggested.",
   "settings_finalise_interval": "Session finalise interval (min)",
   "settings_finalise_interval_help": "How often the daemon marks sessions whose process is gone as finished. 0 turns the scheduled runs off; a run always happens at start-up.",
   "session_state_process_gone": "Process gone, finalised",

@@ -38,6 +38,9 @@ type Backend struct {
 	// permissionMode is non-empty, --dangerously-skip-permissions
 	// is suppressed (the operator's explicit mode wins).
 	permissionMode string
+	// launchPermissionMode is the mode the session being launched or
+	// restarted asked for itself. Empty = permissionMode, the configured one.
+	launchPermissionMode string
 	// model (v5.27.5) — passed to claude as `--model <value>`.
 	// Either an alias ("sonnet", "opus", "haiku") or a full name
 	// ("claude-sonnet-5"). Empty = claude default.
@@ -79,7 +82,13 @@ func NewWithOptions(binaryPath string, skipPermissions bool, channelEnabled bool
 // `--permission-mode` at launch. Caller's responsibility to validate
 // the value against claude's known modes; an unknown value will
 // just make claude error out at launch with its own message.
+// This is the configured mode, set once at daemon start.
 func (b *Backend) SetPermissionMode(mode string) { b.permissionMode = mode }
+
+// SetLaunchPermissionMode sets the mode of the one session about to launch or
+// restart; "" falls back to the configured mode. The session manager calls it
+// on every launch: the backend is a shared singleton.
+func (b *Backend) SetLaunchPermissionMode(mode string) { b.launchPermissionMode = mode }
 
 // SetModel (v5.27.5) — alias or full name forwarded to `--model`.
 func (b *Backend) SetModel(model string) { b.model = model }
@@ -416,9 +425,13 @@ func (b *Backend) postFlagsStr() string {
 	// configure both intend the explicit mode (e.g. "plan" for
 	// PRD design sessions) — silently dropping skipPermissions
 	// avoids the conflict claude would otherwise complain about.
+	mode := b.launchPermissionMode
+	if mode == "" {
+		mode = b.permissionMode
+	}
 	switch {
-	case b.permissionMode != "":
-		flags += " --permission-mode " + shellQuote(b.permissionMode)
+	case mode != "":
+		flags += " --permission-mode " + shellQuote(mode)
 	case b.skipPermissions:
 		flags += " --dangerously-skip-permissions"
 	}

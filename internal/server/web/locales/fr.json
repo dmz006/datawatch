@@ -6201,6 +6201,8 @@
   "cost_charts_col_active": "Temps actif",
   "cost_charts_not_reported_marker": "non communiqué (%1$s)",
   "cost_report_not_reported": "non communiqué (%1$s)",
+  "settings_session_finished_idle_close": "Fermer les sessions terminées et inactives après (min ; 0 = désactivé)",
+  "settings_session_finished_idle_close_help": "Ferme une session interactive claude-code dont l’écran se termine par son marqueur de fin, lorsqu’elle reste inchangée, sans terminal attaché et sans rien en cours pendant ce nombre de minutes. Sa place de capacité est ainsi libérée. 0 désactive (par défaut) ; 12 est conseillé.",
   "settings_finalise_interval": "Session finalise interval (min)",
   "settings_finalise_interval_help": "How often the daemon marks sessions whose process is gone as finished. 0 turns the scheduled runs off; a run always happens at start-up.",
   "session_state_process_gone": "Process gone, finalised",

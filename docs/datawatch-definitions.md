@@ -381,6 +381,10 @@ Detects when Claude has exited but the shell is still running inside the tmux pa
 
 **Status today:** the daemon starts the finaliser loop, so gone records and folders are finalised on the interval above and carry `ended_at` and `end_note`. The restart check still runs first and still marks a missing pane `failed`; the finaliser never changes a record already in a final state. Nothing shows the finalise summary yet (no REST, MCP, CLI, chat or PWA surface, and the PWA does not show `end_note`), and only subprocess sessions are registered as runners. Detail: [operations.md — Gone session records and the shared live judgement](operations.md#restart-safety) and [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#gone-session-records).
 
+**Finished session close** — the setting `session.finished_idle_close_minutes`: end an interactive claude-code session that is proven finished and has stayed idle this many minutes, which frees its capacity slot. Default 0 (off); 12 is the suggested value; a negative value sent to the config API is ignored. The session is left `complete`, with its completion summary, its output log and the reason in `end_note`; unpushed commits follow the same push-before-teardown setting as a kill. Detail: [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#ending-finished-idle-sessions).
+
+**Proven finished** — all of these, on every check (once a minute) for the whole period: the session is an interactive claude-code session in `waiting_input`; its screen ends on its own `DATAWATCH_COMPLETE:` line (not the one quoted in its task) with nothing after it but turn notes and the input box; no shell, monitor or background agent is shown as running; no permission dialog is open; its hooks show no turn still running; no tmux client is attached; no live child session exists; no scheduled input is pending for it; and it is not a one-shot, an Automaton's session, a supervisor or agent session, or a restarted or resumed session that has had no input since. Anything that cannot be read counts as not proven. The period starts again whenever the output or the text in the input box changes, and after a daemon restart.
+
 ---
 
 ### Session exit hooks
@@ -1716,6 +1720,8 @@ The `start_session` MCP tool accepts a `permission_mode` string that sets the cl
 | `bypassPermissions` | Skip all permission prompts (use with caution) |
 
 Use `permission_mode: "plan"` to spawn a session that can analyse code but not modify it — useful for autonomous review steps inside a PRD that should not write files.
+
+The mode and the model belong to that one session. A start that names no mode runs in the claude-code mode that was configured when the daemon started (a start through REST first takes the claude-code LLM's current mode), never in the mode another session was started with. A restart runs in the session's own recorded mode (`permission_mode` in the session JSON) and on its own recorded model. A restarted record with no model passes no `--model`, except that pi and goose sessions get their family's configured model.
 
 **See also:** [`howto/mcp-tools.md`](howto/mcp-tools.md)
 
