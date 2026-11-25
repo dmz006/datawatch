@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.11 — ids are not reused, protected holds stay held, lifecycle alerts arrive
+
+### Fixed
+- New records, stories, tasks, tags, templates and learnings no longer reuse an id that is already taken. Ids repeated every few seconds, so a new record could overwrite an older one. A start-up check raises a warning for a record whose id has older work under it.
+- A protected-path hold is released automatically only when the daemon can prove that the change is its own section of a rules file. A removed task worktree, an answered question or any doubt keeps the hold.
+- A planning attempt that gives up no longer writes over a cancelled or closed record.
+- Failed, blocked and other lifecycle events now reach the web app Alerts view, push topics and coalesced chat messages.
+- The web app launch splash is held in full when a page reload cuts its hold short.
+
+### Documentation
+- Recovery, protected paths, alerts and web app update notes.
+
 ## v9.187.10 — Closing an Automaton never deletes work, on any cleanup path
 
 ### Fixed
