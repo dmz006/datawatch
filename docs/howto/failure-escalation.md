@@ -423,7 +423,7 @@ The five ways to change a held task, plus **Accept** for a task whose work is al
 | **Change worker** | Retries with a different backend, model and effort for this task. | **Change worker** (opens a form) | add `--backend`, `--model`, `--effort` | add `"backend"`, `"model"`, `"effort"` | `backend`, `model`, `effort` | add `backend=… model=… effort=…` |
 | **Narrow scope** | Retries with the list of files the task may change cut down. | **Narrow scope** (opens a form) | add `--files a.go,b.go` | add `"files":["a.go","b.go"]` | `files` | add `files=a.go,b.go` |
 | **Cancel** | Cancels the task. The Automaton can roll up without it. | **Cancel task** button on the task | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action cancel` | `{"task_id":"…","action":"cancel"}` | `action=cancel` | `autonomous review-task <automaton> <task> cancel` |
-| **Accept** | Completes a held task with the result or commit its worker already produced, without running it again. Allowed only when the task's last worker session printed a completion marker; otherwise it is refused and the task stays held, so retry or cancel it instead. | Not in the web UI yet; use another surface | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action accept` | `{"task_id":"…","action":"accept"}` | `action=accept` | `autonomous review-task <automaton> <task> accept` |
+| **Accept** | Completes a held task with the result or commit its worker already produced, without running it again. Allowed only when the task's last worker session printed a completion marker **and** the daemon's [checks](#what-accept-checks) pass; otherwise it is refused and the task stays held, so retry or cancel it instead. | Not in the web UI yet; use another surface | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action accept` | `{"task_id":"…","action":"accept"}` | `action=accept` | `autonomous review-task <automaton> <task> accept` |
 
 Notes on the actions:
 
@@ -444,14 +444,55 @@ Notes on the actions:
   withdraws the held question, records who accepted it on the decision log and
   in the audit log, and reopens an Automaton that was blocked on it. A note
   (`--note`, `note`, `note=…`) is recorded with the decision. Accepting a task
-  with no completion marker answers an error on every surface and changes
-  nothing.
+  with no completion marker, or one that fails a check below, answers an error
+  on every surface and changes nothing.
 - A retry can carry a spec, a worker and a file list in one go. Each change is
   checked before anything is written, so a refused change leaves the task held.
 - A `--note` (REST and MCP `note`, comm `note=…`) is recorded on the decision log
   and given to the next attempt.
 - Asking to act on a task that is not held answers **409** on REST and an error
   on the other surfaces. Nothing changes.
+
+### What Accept checks
+
+The completion marker is only the worker's own word, so it never completes a
+task by itself. Before it completes anything, the daemon checks the following,
+and a refusal names what is missing:
+
+1. **A task commit.** A commit that names the task must be in the task
+   worktree, on the task branch or on the Automaton branch (the project
+   directory's current branch when the Automaton has none). It is the daemon's
+   `task(<first 8 characters of the Automaton id>): <task title>` commit, or a
+   commit whose subject is the task title, alone or after a `prefix: `. It must
+   not be older than the Automaton. A `snapshot before task …` commit does not
+   count. A commit from an earlier attempt does count, so a retried task keeps
+   the commit it already made. A `read_only` task needs no commit, but it must
+   have a report path or a verification script.
+2. **The named files.** Every entry in the task's `files` and
+   `files_generated`, and a read-only task's `report_path`, must be in the task
+   commit or in the Automaton worktree (or the task's own project directory).
+   A `.datawatch/` file, which is never committed, may also be in the task
+   worktree. A file the task was meant to delete counts as missing while it is
+   still named.
+3. **The task's own check.** When the task names a verification script, the
+   daemon runs it again: in the task's directory, or else the Automaton
+   worktree, with `nice -n 19`, outside tmux. The script must exit 0 within
+   `autonomous.script_gate_timeout_seconds`. This run always has a limit: when
+   that setting is `0`, the limit is the shipped default of 900 seconds. The
+   Accept request waits for the script, so a slow script can outlast the
+   client's own request timeout; read the task again to see the outcome. If the
+   task is retried or cancelled while the script runs, that decision stands and
+   the Accept is refused.
+
+Files that the task commit changes but the task does not name (docs, changelog
+and golden files are usual) never cause a refusal. They are listed as a warning
+on the decision log and in the audit record.
+
+There is no override. When Accept refuses, use **Retry** (you can narrow or
+change the task with it) or **Cancel**. A task whose work cannot leave a commit
+in this repository, such as one run on a remote worker that pushed its own
+branch or one in a directory that is not a git repository, cannot be accepted
+unless it is read-only.
 
 ### Examples
 
