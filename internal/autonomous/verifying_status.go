@@ -113,7 +113,7 @@ func ResolveVerifyingResume(alive, agentStarted func(sessionID string) bool, out
 			return VerifyingResumeConsume
 		}
 	}
-	if taskHasWorkerResult(t) {
+	if taskHasWorkerResult(t) || t.VerifierFaultRetries > 0 {
 		return VerifyingResumeReverify
 	}
 	if t.SessionID != "" && output != nil {

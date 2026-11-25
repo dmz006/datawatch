@@ -77,7 +77,9 @@ Same shape as guardrail resolution ([guardrail-library.md](guardrail-library.md)
 
 - **`infra`**: the exact same guardrail/verifier call is retried, with
   no changes — see "Default behavior" above for how many times and
-  with which backend/model.
+  with which backend/model. A task verification that fails through a
+  fault of the verifier is retried on its own, without the worker: see
+  [infrastructure-retry.md](infrastructure-retry.md#when-the-verifier-is-at-fault).
 - **`content`, at task or story level**: the block's own findings
   (`GuardrailVerdict.Issues`) are fed back as a hint, and the existing
   unit (task or story) is respawned with that hint — the same

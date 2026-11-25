@@ -372,3 +372,9 @@ test('the glossary has the section the help link opens', () => {
     .map((l) => l.replace(/^#+ /, '').toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().replace(/ /g, '-'));
   assert.ok(slugs.includes(anchor), 'docs/datawatch-definitions.md has no heading for #' + anchor);
 });
+
+test('a task held because its verifier gave no verdict shows the held label and its cause', () => {
+  const html = badges({ status: 'review_needed', infra_retries: [entry({ number: 3, class: 'verifier_fault' })], failure_reason: { source: 'verifier-fault-hold', detail: 'verifier_fault: ask call failed' } }, 3);
+  assert.ok(html.includes('Held for the operator'), html);
+  assert.ok(html.includes('title="Cause: verifier_fault: ask call failed"'), html);
+});

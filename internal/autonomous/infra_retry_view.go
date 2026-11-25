@@ -135,7 +135,7 @@ func (a *API) InfraRetryStatus(automatonID string, limit int) InfraRetryStatus {
 // caller holds the store lock.
 func infraRetryTaskRow(prd *PRD, t *Task, maxTries int) (InfraRetryTask, bool) {
 	held := t.Status == TaskReviewNeeded && t.FailureReason != nil &&
-		t.FailureReason.Source == infraRetryHoldSource
+		(t.FailureReason.Source == infraRetryHoldSource || t.FailureReason.Source == verifierFaultHoldSource)
 	if !held && t.InfraRetryCount == 0 && len(t.InfraRetries) == 0 {
 		return InfraRetryTask{}, false
 	}

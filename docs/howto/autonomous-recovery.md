@@ -602,6 +602,10 @@ fixed value, not a config key.
   (for example the daemon stopped between creating the session and saving the
   link), boot reconcile still looks for a live session that belongs to the
   task and adopts it instead of starting a second worker.
+- **Only a worker is adopted.** A verifier, judge or planner session can carry
+  the same task id and run in the same worktree; restart adoption never takes
+  one as the task's worker. If such a session is all that is live and the task
+  is reset, the reset rule below applies to it like any other.
 - **A reset ends every live session first.** When a task is reset and
   relaunched, every live session of that task and of its worktree is ended
   before the new worker starts, so two workers never write to the same

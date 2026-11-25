@@ -1636,7 +1636,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// verifying): its recorded output holds the marker, or the task
 				// carries a recorded worker result, so verify it instead of
 				// killing and respawning.
-				finished := t.Verification == nil && taskHasWorkerResult(t)
+				finished := t.Verification == nil && (taskHasWorkerResult(t) || t.VerifierFaultRetries > 0)
 				if !finished && outputFn != nil {
 					if out, ok := outputFn(t.SessionID); ok && outputHasCompletionMarker(out) {
 						finished = true
@@ -2108,6 +2108,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				oldSession = t.SessionID
 				t.SessionID = sr.SessionID
 				t.ComputeNode = placedNode
+				t.VerifierFaultRetries = 0 // a new worker result, not yet verified
 			})
 			// placement-tags: the session's system tags now say where it runs —
 			// which node, which backend and model, which lane and role, which
@@ -2174,7 +2175,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		var vr VerificationResult
 		if verify != nil {
 			var idleHeld bool
-			vr, idleHeld, err = m.verifyRetryingIdle(ctx, prd, t, verify)
+			vr, idleHeld, err = m.verifyRetryingFaults(ctx, prd, t, run, verify)
 			if err == nil {
 				m.noteVerdict(t.ID)
 			}
