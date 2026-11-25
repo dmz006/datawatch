@@ -2311,7 +2311,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// effectiveSecretScanMode), so a fresh install scans + alerts without
 	// ever refusing a push; enforce refuses (Kind=secret_found) with the
 	// remote untouched.
-	mgr.SetSecretScanSettings(func() gitpkg.SecretScanPolicy {
+	daemonSecretScan := func() gitpkg.SecretScanPolicy {
 		al := cfg.Git.EffectiveSecretScanAllowList()
 		return gitpkg.SecretScanPolicy{
 			Mode:         cfg.Git.EffectiveSecretScanMode(),
@@ -2319,7 +2319,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PathPatterns: al.Paths,
 			Fingerprints: al.Fingerprints,
 		}
-	})
+	}
+	mgr.SetSecretScanSettings(daemonSecretScan)
+	// Daemon pushes that name no policy of their own (the merge run's push, a
+	// tag push, the worker pull request hook) use the same live settings.
+	gitpkg.SetDaemonScanPolicy(daemonSecretScan)
 	// Operator alert sink for one-shot push failures → the same alert
 	// store every other system alert goes to.
 	mgr.SetPushAlertFn(func(level, title, body string) {
