@@ -12956,7 +12956,7 @@ func runConfigGet(cfg *config.Config, key string) error {
 	if cfg.Server.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient().Do(req) // trusts the daemon's own TLS certificate
 	if err != nil {
 		return fmt.Errorf("daemon not reachable on port %d: %w", cfg.Server.Port, err)
 	}
@@ -13030,7 +13030,7 @@ func putConfigNote(url, token, body string) (string, error) {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient().Do(req) // trusts the daemon's own TLS certificate
 	if err != nil {
 		return "", fmt.Errorf("daemon not reachable: %w", err)
 	}
