@@ -15,8 +15,8 @@
 // (platformcontext.SameBesidesDaemonText): anything else between its markers,
 // under its headings or after an unclosed marker is the branch's own text and
 // is merged as it stands. A file the branch did not change, or whose committed
-// content has no daemon sections, is left alone — and a branch with nothing of the sort gets no cleanup
-// commit at all, so a merge of it moves the base branch exactly once.
+// content has no daemon sections, is left alone — and a branch with nothing of
+// the sort gets no cleanup commit at all, so a merge of it moves the base branch exactly once.
 //
 // The same cleanup removes the two root launcher files (worker-mcp.json,
 // worker-starting-context.md, see launcher_files.go) when a belt branch
