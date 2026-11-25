@@ -7188,7 +7188,8 @@ fi
 
 # ---------------------------------------------------------------------------
 H "Housekeeping repairs — GET /api/autonomous/housekeeping-repairs and autonomous.housekeeping_repairs.*"
-# The read lists four groups (task_chain, advance_judge, lane_fill, leftovers),
+# The read lists six groups (task_chain, advance_judge, lane_fill, leftovers,
+# planning, unarchive),
 # each with a mode in off|report|on and the would/did/failed/skipped_unsafe
 # lists. It is read only. A bad mode is refused with a 400 naming the key and
 # stores nothing. On a scratch daemon only, a group set to report reads back
@@ -7203,13 +7204,13 @@ import json,sys
 d=json.load(sys.stdin)
 assert isinstance(d["grace_seconds"], int) and d["grace_seconds"] >= 0, d["grace_seconds"]
 names=[g["group"] for g in d["groups"]]
-assert names==["task_chain","advance_judge","lane_fill","leftovers"], names
+assert names==["task_chain","advance_judge","lane_fill","leftovers","planning","unarchive"], names
 for g in d["groups"]:
     assert g["mode"] in ("off","report","on"), g["mode"]
     for k in ("would","did","failed","skipped_unsafe"):
         assert isinstance(g[k], list), (g["group"], k)
 ' 2>/dev/null; then
-    ok "housekeeping repairs: GET answers 200 with the four groups, their modes and the four record lists"
+    ok "housekeeping repairs: GET answers 200 with the six groups, their modes and the four record lists"
   else
     ko "housekeeping repairs: read returned HTTP $HK_CODE or a malformed body: $(echo "$HK_JSON" | head -c 300)"
   fi
