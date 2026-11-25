@@ -4113,8 +4113,16 @@ func (m *Manager) SetState(fullID string, newState State) error {
 		}
 	}
 	oldState := sess.State
-	sess.State = newState
-	sess.UpdatedAt = time.Now()
+	switch {
+	case newState.IsTerminal() && !oldState.IsTerminal():
+		m.markEnded(sess, newState, EndReason{Caller: callerAt(0), Reason: "state set by an override"})
+	default:
+		sess.State = newState
+		sess.UpdatedAt = time.Now()
+		if !newState.IsTerminal() {
+			clearEndStamp(sess)
+		}
+	}
 	if newState == StateRateLimited {
 		// Clear rate limit reset time
 		sess.RateLimitResetAt = nil
@@ -5039,6 +5047,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	oldState := sess.State
 	sess.State = StateRunning
 	sess.UpdatedAt = time.Now()
+	clearEndStamp(sess)
 	sess.PendingInput = ""
 	sess.LastPrompt = ""
 	sess.PromptContext = ""
@@ -5320,12 +5329,12 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 	// Temporarily set state to a terminal state so Restart's guard passes, then
 	// let Restart do the full relaunch sequence.
 	from := sess.State
-	sess.State = StateKilled
+	why := EndReason{Caller: callerAt(0), Reason: "restart requested: state set to killed before relaunch"}
+	m.markEnded(sess, StateKilled, why)
 	if err := m.store.Save(sess); err != nil {
 		return nil, fmt.Errorf("save before restart: %w", err)
 	}
-	m.recordEnd(sess, m.getTracker(sess.FullID), from, StateKilled,
-		EndReason{Caller: callerAt(0), Reason: "restart requested: state set to killed before relaunch"})
+	m.recordEnd(sess, m.getTracker(sess.FullID), from, StateKilled, why)
 
 	return m.Restart(ctx, sess.FullID)
 }
@@ -6605,8 +6614,7 @@ func (m *Manager) ReconnectBackends(reconnectFn func(sess *Session, bs *BackendS
 			// Commit the worker's work BEFORE the state is saved as Complete so
 			// no poller can observe Complete while changes are still uncommitted.
 			m.commitOnCompletion(sess, NewProjectGit(sess.ProjectDir))
-			sess.State = StateComplete
-			sess.UpdatedAt = time.Now()
+			m.markEnded(sess, StateComplete, EndReason{Caller: callerAt(0), Reason: "terminal gone when the daemon reconnected after a restart"})
 			_ = m.store.Save(sess)
 			continue
 		}
@@ -7013,8 +7021,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			}
 			// Mark as failed — tmux session is confirmed gone
 			oldState := sess.State
-			sess.State = StateFailed
-			sess.UpdatedAt = time.Now()
+			m.markEnded(sess, StateFailed, EndReason{Caller: callerAt(0), Reason: "terminal gone after a daemon restart"})
 			_ = m.store.Save(sess)
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
@@ -7027,6 +7034,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		if recovering {
 			oldState := sess.State
 			sess.State = StateRunning
+			clearEndStamp(sess)
 			fmt.Printf("[resume] recovered session %s: %s -> running — tmux pane %q is still alive after boot\n", sess.FullID, oldState, sess.TmuxSession)
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
@@ -7780,6 +7788,7 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 				oldState := sess.State
 				sess.State = StateRunning
 				sess.UpdatedAt = time.Now()
+				clearEndStamp(sess)
 				_ = m.store.Save(sess)
 				if m.onStateChange != nil {
 					m.onStateChange(sess, oldState)

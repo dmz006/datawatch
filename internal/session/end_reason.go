@@ -4,7 +4,8 @@
 // and why. The record goes to the daemon journal and to the session's
 // timeline.md, and the session record carries the result too: EndedAt and
 // EndNote are written on every end path (a kill with its caller and reason, a
-// natural complete or fail, a gone-session finalise), first end wins. No other
+// natural complete or fail, a gone-session finalise), first end wins, and both
+// are cleared when a session is brought back or restarted. No other
 // session field, config key or endpoint carries end attribution.
 //
 // A terminal state is sticky. Once a session is complete, failed or killed,
@@ -192,6 +193,27 @@ func stampEnd(sess *Session, at time.Time, note string) {
 	if sess.EndNote == "" {
 		sess.EndNote = note
 	}
+}
+
+// markEnded moves a record to a terminal state and stamps its end time and exit
+// note. Every path that writes a terminal state itself, instead of going
+// through EndSession or emitSessionEnd, uses it. The caller saves the record.
+func (m *Manager) markEnded(sess *Session, state State, why EndReason) {
+	m.store.Mutate(func() {
+		from := sess.State
+		now := time.Now()
+		sess.State = state
+		sess.UpdatedAt = now
+		stampEnd(sess, now, endNoteFor(from, state, why))
+	})
+}
+
+// clearEndStamp drops the end time and exit note of a record that is brought
+// back to life, so its next end is recorded: the first end wins only within one
+// run of a session.
+func clearEndStamp(sess *Session) {
+	sess.EndedAt = nil
+	sess.EndNote = ""
 }
 
 // endNoteFor is the exit note an end through EndSession leaves on the record:
