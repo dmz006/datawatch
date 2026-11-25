@@ -452,6 +452,19 @@ func sessionChannelName(tmuxSession string) string {
 	return "datawatch-" + fullID
 }
 
+// launchChannelName is the server name --channels gets. Claude Code accepts a
+// channel only from a configured server with exactly that name. A strict
+// profile launch configures nothing but its own MCP file, where the bridge is
+// "datawatch"; any other launch has the per-session registration.
+func launchChannelName(tmuxSession string, w WorkerProfileLaunch, profileFlags string) string {
+	if strings.Contains(profileFlags, "--strict-mcp-config") && w.Profile.MCP.Includes(channel.ProjectMCPEntryName) {
+		if _, ok := w.MCPServers[channel.ProjectMCPEntryName]; ok {
+			return channel.ProjectMCPEntryName
+		}
+	}
+	return sessionChannelName(tmuxSession)
+}
+
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	return b.LaunchWithProfile(ctx, b.workerProfile, task, tmuxSession, projectDir, logFile)
 }
@@ -470,12 +483,11 @@ func (b *Backend) LaunchWithProfile(ctx context.Context, w WorkerProfileLaunch, 
 // profile and the apply error text is returned as fallbackReason (empty when
 // the profile applied, or when there was no profile). See launchFlags.
 func (b *Backend) LaunchWithProfileFallback(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile string) (fallbackReason string, err error) {
-	channelName := sessionChannelName(tmuxSession)
-	pre := b.preFlagsStr(channelName)
 	profileFlags, fallbackReason, err := b.launchFlags(projectDir, tmuxSession, w)
 	if err != nil {
 		return "", err
 	}
+	pre := b.preFlagsStr(launchChannelName(tmuxSession, w, profileFlags))
 	post := b.postFlagsStr() + profileFlags
 
 	// Derive a deterministic session ID from the tmux session name so that
@@ -530,12 +542,11 @@ func (b *Backend) LaunchResumeWithProfile(ctx context.Context, w WorkerProfileLa
 // LaunchResumeWithProfileFallback is LaunchResumeWithProfile with the profile
 // fallback of LaunchWithProfileFallback.
 func (b *Backend) LaunchResumeWithProfileFallback(ctx context.Context, w WorkerProfileLaunch, task, tmuxSession, projectDir, logFile, resumeID string) (fallbackReason string, err error) {
-	channelName := sessionChannelName(tmuxSession)
-	pre := b.preFlagsStr(channelName)
 	profileFlags, fallbackReason, err := b.launchFlags(projectDir, tmuxSession, w)
 	if err != nil {
 		return "", err
 	}
+	pre := b.preFlagsStr(launchChannelName(tmuxSession, w, profileFlags))
 	post := b.postFlagsStr() + profileFlags
 
 	// If resumeID is not a UUID, derive the deterministic UUID from the name
