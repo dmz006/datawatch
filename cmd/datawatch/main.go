@@ -5001,6 +5001,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// in...)` would collapse empty into nil.
 			NotifyDefaultEvents: cloneNotifyDefaultEvents(acfgIn.Notify.DefaultEvents),
 		}
+		// Every saved setting the list above leaves unset reaches the engine too
+		// (autonomous_boot_config.go).
+		if err := carryAutonomousSettings(&amgrCfg, acfgIn); err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] %v\n", err)
+		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.
 		if amgrCfg.MaxRecursionDepth == 0 && !acfgIn.AutoApproveChildren {
