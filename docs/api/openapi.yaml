@@ -7603,7 +7603,7 @@ paths:
                 decision: {type: string, enum: [keep, drop], description: "The landing decision for a branch with commits not on the default branch"}
                 reason: {type: string, description: "Required with decision"}
       responses:
-        "200": {description: The archived Automaton}
+        "200": {description: "The archived Automaton. When it had task worktrees or branches, task_worktree_cleanup (TaskWorktreeCleanup) says how many are kept and why; archiving removes none of them."}
         "400": {description: "Not terminal, branch not landed (the message says how to record a decision), or a bad decision"}
   /api/autonomous/archive:
     post:
@@ -7764,6 +7764,7 @@ paths:
                   status: {type: string, enum: [cancelled, deleted]}
                   killed_sessions: {type: integer, description: "Number of session slots recorded on the PRD's tasks (may include empty slots)"}
                   killed_session_ids: {type: array, items: {type: string}, description: "Session IDs a kill was attempted on; always an array, [] when none"}
+                  task_worktree_cleanup: {$ref: '#/components/schemas/TaskWorktreeCleanup'}
                   kill_errors: {type: object, additionalProperties: {type: string}, description: "Present only when a kill failed; session ID -> error"}
                   memory_strategy: {type: string, description: "Hard delete only: keep | purge | archive"}
     patch:
@@ -13312,6 +13313,30 @@ components:
             example: "unauthorized"
 
   schemas:
+    TaskWorktreeCleanup:
+      type: object
+      description: "What closing an Automaton did with its task worktrees and task branches. Also a field of the Automaton record (task_worktree_cleanup), so the cancel and archive replies carry it. A task worktree with uncommitted or untracked files is never removed; a task branch with commits that are not on the default branch is never deleted. The compact view carries the counts without the kept list."
+      properties:
+        at: {type: string, format: date-time}
+        mode: {type: string, enum: [off, report, "on"]}
+        worktrees_removed: {type: integer}
+        branches_deleted: {type: integer}
+        worktrees_kept: {type: integer}
+        branches_kept: {type: integer}
+        reasons: {type: object, additionalProperties: {type: integer}, description: "Kept entries counted by reason"}
+        message: {type: string, description: "The same in one sentence"}
+        kept:
+          type: array
+          items:
+            type: object
+            properties:
+              task_id: {type: string}
+              worktree: {type: string, description: "The kept worktree; absent when only the branch is kept"}
+              branch: {type: string}
+              branch_tip: {type: string}
+              reason: {type: string, enum: [cleanup_off, report_mode, not_removed_by_archive, no_base_repo, live_session, uncommitted_work, detached_commits, unverified, remove_failed, unmerged_branch, no_default_branch, backup_failed, branch_delete_failed]}
+              detail: {type: string}
+              files: {type: array, items: {type: string}, description: "Up to 20 uncommitted files, as git status code and path"}
     OutcomeCheckReport:
       type: object
       properties:

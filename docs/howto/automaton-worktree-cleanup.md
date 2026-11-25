@@ -116,6 +116,8 @@ one does not, the entry is left exactly as it is and the reason is recorded.
   generated content and holds the pass — a project that tracks any of those
   names in its working tree keeps the full protection, and an untracked file
   the cleanup does not recognize is your work, so it stays.
+- The worktree holds **no real files in an ignored folder** (see **Real files in
+  ignored folders** below).
 - Every commit on the branch is **already on the project's default branch**.
   This is also checked again at removal time. A branch with work that exists
   nowhere else is never removed. If the default branch cannot be worked out, the
@@ -138,9 +140,13 @@ git itself confirms the work tree holds no untracked files before it goes
 away. The one case a strict removal cannot work — a work tree whose only
 untracked files are the harness files above — removes with `--force`, and the
 files it resolved are recorded on the removal and in the audit entry. The
-branch side is unchanged: `git branch -d`, never `-D`. If git refuses either
-one, the entry stays and the refusal is recorded with its error; the next
-pass tries again. Every removal is written to the Automaton's triage record
+branch side is `git branch -d`, never `-D`, and only after the branch tip is
+written to `refs/datawatch/reap-backup/<branch>/<time>`. That ref is only ever
+created, never overwritten. If it cannot be written, nothing is removed and the
+entry is reported as failed at stage `backup_ref`. Restore the branch the same
+way as a reaped one (see **The task sub-branch reaper** below); the backup
+expires like the reaper's. If git refuses either removal, the entry stays and
+the refusal is recorded with its error; the next pass tries again. Every removal is written to the Automaton's triage record
 and the audit log, so you can reconstruct what was removed, when and why.
 
 **Which branch counts as the default.** The cleanup uses the Automaton's own
@@ -220,6 +226,135 @@ re-fetches what it needs; that is the trade-off for leaving nothing behind. If
 `trivy` is not on PATH the scan is skipped with a message and no cache
 directory is created. The sweep above remains the net for the stray `go-build`
 and Trivy scan-cache folders it could not remove itself.
+
+## Task worktrees and task branches
+
+With a worktree per task, each task also has a worktree and a branch
+(`automaton/<id>-...--tasks-<task>`). They are looked at when the Automaton
+completes or is cancelled. The worktree and the branch are judged apart, and
+anything that cannot be checked is kept.
+
+A **task worktree** is removed only if all of these hold:
+
+- no live session works in it;
+- it has no uncommitted or untracked file. The only exceptions are the daemon's
+  own generated and tooling files: the harness files listed above, the
+  completion, checkpoint and lock files, a verification script that still has an
+  identical copy, and an instruction or ignore file whose only change is the
+  daemon's own block. A staged change always counts as your work, and so does an
+  empty new file;
+- a detached HEAD in it holds no commit that is on neither the task branch nor
+  the default branch.
+
+Real files in the daemon's own ignored folders also keep the worktree (see
+**Real files in ignored folders** below). Other files that the repository's
+ignore rules hide are not counted: git removes them with the worktree.
+
+A **task branch** is deleted only if every one of its commits is on the default
+branch, directly or through an Automaton branch that is itself on the default
+branch. Being merged into an Automaton branch that has not landed is not
+enough. A branch whose merge commit is not on the default branch is kept. Before
+the delete, the branch tip is written to
+`refs/datawatch/reap-backup/<branch>/<time>`; if that fails, the branch stays,
+and an earlier backup is never overwritten. Restore it the same way as a reaped
+branch (see **The task sub-branch reaper** below).
+
+The default branch here is the repository's own: the target of `origin/HEAD`,
+or else the branch the base repository has checked out. The Automaton's base
+branch setting is not used for task branches.
+
+A clean worktree of a branch that has not landed is removed and the branch is
+kept, so no commit is lost. A kept branch is looked at again on later passes
+over a completed Automaton.
+
+The mode applies here too. `off` removes nothing and runs no git command.
+`report` removes nothing and records what it would remove. `on` removes.
+Archiving never removes a task worktree or branch.
+
+**What was kept and why.** The Automaton record carries
+`task_worktree_cleanup`: the counts of worktrees and branches removed and kept,
+a count per reason, a one-sentence `message`, and one entry per kept task with
+the branch tip and the uncommitted files. The cancel reply and the archive reply
+carry it on every surface (REST, MCP, CLI, chat), and the web app shows a notice.
+
+| Reason | Meaning |
+|---|---|
+| `cleanup_off` | `cleanup_mode` is `off`: nothing was looked at |
+| `report_mode` | `cleanup_mode` is `report`: it would be removed in `on` |
+| `not_removed_by_archive` | Safe to remove, but archiving removes nothing |
+| `no_base_repo` | No base repository is configured |
+| `live_session` | A session is still working in the worktree |
+| `uncommitted_work` | Uncommitted or untracked files |
+| `detached_commits` | A detached HEAD holds commits that are nowhere else |
+| `unverified` | The worktree or branch could not be checked |
+| `remove_failed` | git refused to remove the worktree |
+| `unmerged_branch` | Commits that are not on the default branch |
+| `no_default_branch` | The default branch could not be worked out |
+| `backup_failed` | The backup ref could not be written |
+| `branch_delete_failed` | git refused to delete the branch |
+
+The audit log records every removal (`autonomous_task_worktree_remove`,
+`autonomous_task_branch_delete` with the backup ref) and every refusal
+(`autonomous_task_worktree_kept`, `autonomous_task_branch_kept`, and in
+`report` mode `autonomous_task_worktree_would_remove`), each with the branch
+tip. A refusal that has not changed since the last pass is not written again.
+In `off` mode nothing is written to the audit log.
+
+## The Automaton worktree after the pull request
+
+With auto-PR on, completion pushes the work branch, opens the pull request and
+then releases the Automaton's own worktree. The push covers only what was
+committed, so the release follows the same rules as for task worktrees:
+
+- `off` removes nothing and runs no git command; `report` removes nothing and
+  records what it would remove; only `on` removes.
+- A worktree with uncommitted or untracked files, other than the daemon's own
+  generated and tooling files, is kept. So is one with a live session, a
+  detached HEAD with commits of its own, or anything that cannot be checked, and
+  one git refuses to remove. Ignored files are treated as for task worktrees.
+- No branch is deleted at this step.
+
+The audit log records `autonomous_completion_worktree_remove`,
+`autonomous_completion_worktree_kept` (with the reason and the files) or
+`autonomous_completion_worktree_would_remove`, with the branch tip. In `off`
+mode the kept record has no tip, because git is not run.
+
+## Reject and archive
+
+Rejecting or archiving an Automaton also cleans up its worktree. It follows
+`cleanup_mode` in the same way: `off` and `report` remove nothing. In `on` it
+keeps everything the release after a pull request keeps, and it is never forced:
+if any untracked file is left, even one of the daemon's own, git refuses and the
+worktree stays. No branch is deleted. The audit actions are
+`autonomous_orphan_worktree_remove`, `autonomous_orphan_worktree_kept` and
+`autonomous_orphan_worktree_would_remove`.
+
+## Real files in ignored folders
+
+Projects commonly ignore `.datawatch/`, and git neither shows nor protects what
+is ignored. A worktree, for a task or for the Automaton, is kept when git does
+not track a file in any of these folders:
+
+| Folder | What is there |
+|---|---|
+| `.datawatch/merge-aside/` | Untracked files the task merge moved out of its way |
+| `.datawatch/reports/` | Reports of read-only tasks, and of gates with their own report path. The daemon's default gate report, `final-gate.txt`, does not count |
+| `.datawatch/dependency-update/` | Dependency update results (the Automaton record keeps only counts) |
+| `.datawatch/supervisor/` | Handover documents |
+| `.datawatch/verify/` | Verification scripts that have no identical saved copy |
+
+In `on` mode the Automaton worktree's verification scripts are saved before the
+check, so a script directly in that folder does not keep it. A file in a
+subfolder is not saved, so it does. `report` writes nothing and previews the
+same answer.
+
+The audit record or the cleanup status names the files. To release the worktree,
+copy what you need elsewhere and delete them.
+
+**A git setting to know about.** With `status.showUntrackedFiles=no`, git's own
+`git worktree remove`, even without `--force`, deletes untracked files without
+refusing. Completion, task worktree cleanup, the worktrees pass and the cleanup
+on reject or archive all override that setting.
 
 ## The three modes
 

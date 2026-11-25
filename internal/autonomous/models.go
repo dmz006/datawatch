@@ -467,6 +467,11 @@ type PRD struct {
 	ClosedOutcomeAt   *time.Time    `json:"closed_outcome_at,omitempty"`
 	Deploy            *DeployRecord `json:"deploy,omitempty"`
 
+	// TaskWorktreeCleanup says what closing the Automaton did with its task
+	// worktrees and task branches: how many were removed, how many were kept
+	// and why. Nil when it never had any to look at.
+	TaskWorktreeCleanup *TaskWorktreeCleanup `json:"task_worktree_cleanup,omitempty"`
+
 	// BranchRefresh is the state of the last branch refresh against main.
 	BranchRefresh *BranchRefresh `json:"branch_refresh,omitempty"`
 	// BranchRefreshOverride overrides the global branch-refresh setting for

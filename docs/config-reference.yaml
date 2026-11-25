@@ -1581,7 +1581,18 @@ autonomous:
   #
   # cleanup_mode: string, `off`, `report` (default) or `on`. Controls the
   # safe-to-delete cleanup pass: `off` does not run it, `report` records and
-  # reports only, and `on` performs the removals the pass decides on. Unlike
+  # reports only, and `on` performs the removals the pass decides on. The
+  # mode also covers the task worktrees and task branches of a completed or
+  # cancelled Automaton: `off` and `report` remove none of them. In every
+  # mode, a task worktree with uncommitted or untracked files is never
+  # removed and a task branch with commits that are not on the default branch
+  # is never deleted. It also covers the Automaton worktree after a
+  # completion pull request: only `on` removes it, and never while it holds
+  # uncommitted or untracked files. The cleanup on reject or archive follows
+  # the mode too. Real files in .datawatch/ folders the daemon fills
+  # (merge-aside, reports, dependency-update, supervisor, unsaved verify
+  # scripts) keep a worktree even when ignored, and an Automaton branch is
+  # backed up under refs/datawatch/reap-backup/ before it is deleted. Unlike
   # the other enum keys here, an absent key, an empty value and any
   # unrecognized word all read as `report` — they are not refused on config
   # load or on the write paths (only a non-string type is). Settable via PUT

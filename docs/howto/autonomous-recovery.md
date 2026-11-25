@@ -215,6 +215,12 @@ is archived, so there is time to reuse it. The cancel reply reports
 `killed_sessions` and `killed_live_sessions`. Full detail:
 [Repairing a Failed Automaton in Place](../operations.md#repairing-a-failed-automaton-in-place).
 
+When the Automaton had task worktrees or branches, the reply also carries
+`task_worktree_cleanup`: how many were removed, how many were kept and why. A
+cancel never removes a task worktree with uncommitted files, and never deletes a
+task branch with commits that are not on the default branch. See
+[Task worktrees and task branches](automaton-worktree-cleanup.md#task-worktrees-and-task-branches).
+
 ## Re-judging the completion guardrail (`rejudge`)
 
 A different stuck state from the ones above: every task completed fine, but

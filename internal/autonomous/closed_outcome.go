@@ -348,6 +348,9 @@ func (m *Manager) ArchiveWithOutcome(id, actor string, in OutcomeInput) (*PRD, e
 	// completed PRD (Phase 2 already removed its worktree on success)
 	// or one that never had a worktree.
 	m.cleanupOrphanedWorktree(prd)
+	// Archiving removes no task worktree; the result says which ones the
+	// Automaton still holds and why.
+	m.assessTaskWorktrees(prd)
 	updated, _ := m.store.GetPRD(id)
 	return updated, nil
 }

@@ -35783,6 +35783,31 @@ window.toggleAutomataSelectAll = toggleAutomataSelectAll;
 // an archive because the branch holds commits that are not on the default
 // branch, ask for a keep or drop decision and a reason, then repeat the call
 // with the decision. Any other error is passed on unchanged.
+// Closing an Automaton keeps every task worktree and branch that holds work.
+// When the reply of a cancel or an archive says some were kept, say how many
+// and why; otherwise say nothing.
+function _automataKeptNotice(res) {
+  const c = res && res.task_worktree_cleanup;
+  if (!c || !((c.worktrees_kept || 0) + (c.branches_kept || 0))) return res;
+  const keys = {
+    cleanup_off: 'task_keep_reason_cleanup_off',
+    report_mode: 'task_keep_reason_report_mode',
+    not_removed_by_archive: 'task_keep_reason_not_removed_by_archive',
+    no_base_repo: 'task_keep_reason_no_base_repo',
+    live_session: 'task_keep_reason_live_session',
+    uncommitted_work: 'task_keep_reason_uncommitted_work',
+    detached_commits: 'task_keep_reason_detached_commits',
+    unverified: 'task_keep_reason_unverified',
+    remove_failed: 'task_keep_reason_remove_failed',
+    unmerged_branch: 'task_keep_reason_unmerged_branch',
+    no_default_branch: 'task_keep_reason_no_default_branch',
+    backup_failed: 'task_keep_reason_backup_failed',
+    branch_delete_failed: 'task_keep_reason_branch_delete_failed',
+  };
+  const why = Object.keys(c.reasons || {}).sort().map(k => (keys[k] ? tOr(keys[k], k) : k) + ' (' + c.reasons[k] + ')').join(', ');
+  showToast(t('automata_task_worktrees_kept', [c.worktrees_kept || 0, c.branches_kept || 0, why]), 'warning', 8000);
+  return res;
+}
 function _automataPostWithDecision(url) {
   return apiFetch(url, { method: 'POST' }).catch(err => {
     const msg = String((err && err.message) || err);
@@ -35792,7 +35817,7 @@ function _automataPostWithDecision(url) {
     const reason = String(window.prompt(t('finished_work_reason_prompt'), '') || '').trim();
     if (!reason) throw err;
     return apiFetch(url, { method: 'POST', body: JSON.stringify({ decision: d, reason }) });
-  });
+  }).then(_automataKeptNotice);
 }
 window.batchAutomataAction = function(action) {
   // v6.12.4 — operator: "click acts on those". Filter the selected

@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // maxTaskSlugLen bounds the title part of a task branch / directory name.
@@ -187,28 +189,6 @@ func (m *Manager) taskWorktreeInUse(path string) bool {
 	return false
 }
 
-// removeTaskWorktree removes one task worktree and its branch, unless a live
-// session uses it. Returns whether it was removed.
-func (m *Manager) removeTaskWorktree(ctx context.Context, repo string, t *Task) bool {
-	if t == nil || t.WorktreePath == "" {
-		return false
-	}
-	if m.taskWorktreeInUse(t.WorktreePath) {
-		return false
-	}
-	if _, err := runGitInCtx(ctx, repo, "worktree", "remove", "--force", t.WorktreePath); err != nil {
-		if _, serr := os.Stat(t.WorktreePath); serr == nil {
-			return false // still there and git would not remove it
-		}
-	}
-	if t.WorktreeBranch != "" {
-		_, _ = runGitInCtx(ctx, repo, "branch", "-D", t.WorktreeBranch)
-	}
-	m.store.WithLock(func() { t.WorktreePath, t.WorktreeBranch = "", "" })
-	_ = m.store.SaveTask(t)
-	return true
-}
-
 // taskBranchMerged reports whether the task branch is already on the PRD branch.
 func taskBranchMerged(ctx context.Context, repo, taskBranch, prdBranch string) bool {
 	if taskBranch == "" || prdBranch == "" {
@@ -218,34 +198,80 @@ func taskBranchMerged(ctx context.Context, repo, taskBranch, prdBranch string) b
 	return err == nil
 }
 
-// CleanupTaskWorktrees removes the task worktrees of prd: those whose branch
-// is merged into the PRD branch, or all of them when the PRD has ended
-// (completed or cancelled). A worktree a live session uses is never removed.
-// Returns how many were removed.
+// CleanupTaskWorktrees releases the task worktrees of prd: those of a finished
+// task whose branch is merged into the PRD branch, or all of them when the PRD
+// has ended (completed or cancelled). Releasing is bounded by the rules in
+// task_worktree_keep.go: a worktree with uncommitted or untracked files, or
+// with a live session, is never removed, and a branch is deleted only when its
+// commits are on the default branch, after a backup ref. cleanup_mode off does
+// nothing and calls no git; report records what would be removed and removes
+// nothing. Returns how many worktrees were removed.
 func (m *Manager) CleanupTaskWorktrees(ctx context.Context, prd *PRD) int {
 	if prd == nil {
 		return 0
 	}
 	m.mu.Lock()
-	repo := m.cfg.WorktreeBaseRepo
+	mode := m.cfg.Automation.EffectiveCleanupMode()
 	m.mu.Unlock()
-	if repo == "" {
-		return 0
+	return m.cleanupTaskWorktrees(ctx, prd, taskCleanupRun{mode: mode})
+}
+
+// assessTaskWorktrees records which task worktrees and branches an Automaton
+// still holds and why, and removes nothing.
+func (m *Manager) assessTaskWorktrees(prd *PRD) {
+	if prd == nil {
+		return
 	}
-	ended := prd.Status == PRDCompleted || prd.Status == PRDCancelled
-	n := 0
+	m.mu.Lock()
+	mode := m.cfg.Automation.EffectiveCleanupMode()
+	m.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), worktreeReleaseGitTimeout)
+	defer cancel()
+	m.cleanupTaskWorktrees(ctx, prd, taskCleanupRun{mode: mode, assessOnly: true})
+}
+
+func (m *Manager) cleanupTaskWorktrees(ctx context.Context, prd *PRD, run taskCleanupRun) int {
+	lock := taskCleanupLock(prd.ID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	m.mu.Lock()
+	repo, wtDir := m.cfg.WorktreeBaseRepo, m.cfg.WorktreeDir
+	m.mu.Unlock()
+	if strings.TrimSpace(wtDir) == "" {
+		wtDir = defaultWorktreeDir(m.dataDir)
+	}
+	p := &taskCleanupPass{m: m, ctx: ctx, prd: prd, repo: repo, run: run, verifyDirs: []string{
+		filepath.Join(wtDir, prd.ID, ".datawatch", "verify"),
+		savedVerifyScriptsDir(wtDir, prd.ID),
+	}}
+	ended := run.assessOnly || prd.Status == PRDCompleted || prd.Status == PRDCancelled
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
-			if t.WorktreePath == "" {
+			if t.WorktreePath == "" && t.WorktreeBranch == "" {
 				continue
 			}
-			if ended || (isTerminalTaskStatus(t.Status) && taskBranchMerged(ctx, repo, t.WorktreeBranch, prd.Git.Branch)) {
-				if m.removeTaskWorktree(ctx, repo, t) {
-					n++
-				}
+			// While the Automaton runs, only the worktree of a finished and
+			// merged task is a candidate. After it ended, a branch kept
+			// earlier is looked at again too.
+			if !ended && (t.WorktreePath == "" || !isTerminalTaskStatus(t.Status) ||
+				run.mode == config.CleanupModeOff || repo == "" ||
+				!taskBranchMerged(ctx, repo, t.WorktreeBranch, prd.Git.Branch)) {
+				continue
+			}
+			switch {
+			case run.mode == config.CleanupModeOff:
+				p.kept = append(p.kept, TaskWorktreeKept{TaskID: t.ID, Worktree: t.WorktreePath, Branch: t.WorktreeBranch,
+					Reason: taskKeepCleanupOff, Detail: "cleanup_mode is off: nothing is looked at or removed"})
+			case repo == "":
+				p.kept = append(p.kept, TaskWorktreeKept{TaskID: t.ID, Worktree: t.WorktreePath, Branch: t.WorktreeBranch,
+					Reason: taskKeepNoBaseRepo, Detail: "no base repository is configured"})
+			default:
+				p.handle(t)
 			}
 		}
 	}
-	return n
+	p.finish()
+	return p.removed
 }

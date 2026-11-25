@@ -1137,7 +1137,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			killSessions()
 			s.audit(r.Context(), "cancel", "automaton", id, withKillDetail(map[string]any{"killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions}))
 			got, _ := s.autonomousMgr.GetPRD(id)
-			s.writeAutonomousCancelResult(w, r, got, len(sessionIDs), liveSessions, withKillDetail(map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions}))
+			s.writeAutonomousCancelResult(w, r, got, len(sessionIDs), liveSessions, withTaskCleanup(withKillDetail(map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs), "killed_live_sessions": liveSessions}), got))
 		case http.MethodPatch:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return
@@ -1251,7 +1251,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "cancel", "automaton", id, map[string]any{"outcome": ob.Outcome, "delivered_via": ob.DeliveredVia, "decision": ob.Decision}) // GH#201 Phase 4
-		writeJSONOK(w, map[string]any{"status": "cancelled", "id": id})
+		cancelled, _ := s.autonomousMgr.GetPRD(id)
+		writeJSONOK(w, withTaskCleanup(map[string]any{"status": "cancelled", "id": id}, cancelled))
 	// BL191 Q1 (v5.2.0) — review/approve gate.
 	case "approve":
 		if r.Method != http.MethodPost {
