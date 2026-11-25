@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.14 (2026-11-25).** The supervisor wake types only into its target session, and a named session effort now reaches Claude Code. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.15 (2026-11-25).** datawatch keeps session tokens out of project folders, pause now holds merges and engine planning, and a task counts as delivered only once it reaches the session. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

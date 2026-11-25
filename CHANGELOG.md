@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.15 — No tokens in project folders; pause holds merges and planning; delivery is verified
+
+### Security
+- datawatch no longer writes a session token into a project folder. A session that needs a tool configuration file gets a private one in the data folder, readable only by its owner, and it is removed when the session ends. Old entries are removed at the next launch in that folder. The hook installer writes no token, and automatic commits skip a tool configuration file that holds one.
+
+### Fixed
+- While paused, a stalled merge is no longer retried, child and scan-fix planning wait, and a planner retry or queued planner no longer starts. A plan the operator starts is not held by usage back-off, and a planner the operator ends is not retried.
+- A task counts as delivered only after its text is seen to reach the session. After a restart, an unconfirmed delivery is checked and typed again into an empty input box.
+- Session end times and reasons are recorded on more end paths.
+- Ending a session no longer ends processes that belong to another unfinished session that shares a folder.
+- Failed, stalled and cancelled task attempts record how long they waited for capacity.
+
+### Changed
+- Shell, pi, opencode, goose, gemini and aider sessions no longer get a datawatch entry in the project's tool configuration file. A client you start by hand in that folder needs the private file's path.
+
+### Known limits
+- Channel messages still do not reach Claude Code sessions. Two end paths in the daemon still record no end time. Nothing here has been proven with a live launch.
+
+### Documentation
+- The measured verifier cap report and a corrected mobile parity draft for merge shadow checks.
+
 ## v9.187.14 — Supervisor wake targets one session; named effort reaches Claude
 
 ### Fixed
