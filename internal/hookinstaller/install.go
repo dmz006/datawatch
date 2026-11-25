@@ -9,7 +9,7 @@
 //
 //	<project_dir>/.claude/settings.json   — operator-mergeable hook decls
 //	<project_dir>/.claude/sprint/post-event.sh — POST helper
-//	<project_dir>/.claude/sprint/.dw-env  — daemon URL + session ID + token (chmod 600)
+//	<project_dir>/.claude/sprint/.dw-env  — daemon URL + session ID (chmod 600, no token)
 //
 // IDEMPOTENT: existing settings.json is left intact if it already
 // declares hooks. Existing post-event.sh is overwritten (script is
@@ -41,7 +41,10 @@ import (
 // for every claude-code session. It reads the current settings.json,
 // merges, and writes back. If the operator has removed/edited hooks
 // between sessions, we re-add ours.
-func Install(projectDir, sessionFullID, daemonURL, token string) error {
+//
+// No token is ever written into the project folder; the last argument is
+// ignored.
+func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 	if projectDir == "" || sessionFullID == "" {
 		return fmt.Errorf("hookinstaller: project_dir + session_id required")
 	}
@@ -194,11 +197,16 @@ curl -ks -X POST "${DAEMON_URL:-https://localhost:8443}/api/sessions/${SESSION_I
 		return fmt.Errorf("hookinstaller: write platform-context.txt: %w", err)
 	}
 
-	// .dw-env — rewritten per session (chmod 600 — contains bearer token).
-	envBody := fmt.Sprintf("DAEMON_URL=%s\nSESSION_ID=%s\nTOKEN=%s\n", daemonURL, sessionFullID, token)
+	// .dw-env — rewritten per session. It sits in the project folder, so it
+	// never holds a token.
+	envBody := fmt.Sprintf("DAEMON_URL=%s\nSESSION_ID=%s\n", daemonURL, sessionFullID)
 	envPath := filepath.Join(sprintDir, ".dw-env")
 	if err := os.WriteFile(envPath, []byte(envBody), 0o600); err != nil {
 		return fmt.Errorf("hookinstaller: write .dw-env: %w", err)
+	}
+	// WriteFile keeps the mode of a file that already existed.
+	if err := os.Chmod(envPath, 0o600); err != nil {
+		return fmt.Errorf("hookinstaller: chmod .dw-env: %w", err)
 	}
 
 	return nil
