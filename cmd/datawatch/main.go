@@ -1729,7 +1729,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				Env:           sessionChannelEnv,
 				Extras:        extraMCPSpecs,
 				SetSessionEnv: func(tmuxSession, key, value string) error {
-					return session.TmuxCommand("set-environment", "-t", tmuxSession, key, value).Run()
+					return mgr.SetPaneEnv(tmuxSession, map[string]string{key: value})
 				},
 			})
 

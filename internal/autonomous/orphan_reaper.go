@@ -15,10 +15,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // OrphanEvidence describes what proves a process belongs to one session.
@@ -479,13 +482,22 @@ func (r *OrphanReaper) ancestryHits(pid int, roots []int) bool {
 
 // envHasID reports whether any environment value equals the session id. The
 // environment is read in memory and never returned or logged.
+//
+// DATAWATCH_SESSION_ID does not count in an environment marked as coming from
+// that session's own pane: everything started there carries it, including work
+// that is meant to outlive the session.
 func (r *OrphanReaper) envHasID(pid int, id string) bool {
 	b, err := os.ReadFile(filepath.Join(r.procRoot(), strconv.Itoa(pid), "environ"))
 	if err != nil {
 		return false
 	}
-	for _, kv := range strings.Split(string(b), "\x00") {
+	kvs := strings.Split(string(b), "\x00")
+	fromPane := slices.Contains(kvs, session.PaneSessionMarkerEnv+"="+session.PaneSessionMarker(id))
+	for _, kv := range kvs {
 		if i := strings.IndexByte(kv, '='); i >= 0 && kv[i+1:] == id {
+			if fromPane && kv[:i] == orphanSessionEnv {
+				continue
+			}
 			return true
 		}
 	}

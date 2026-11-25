@@ -21,9 +21,10 @@ func sessionGuarded(sess *Session) bool {
 }
 
 // armCommitGuard creates a commit guard for the session, keeps it in the
-// manager and puts its config-injection environment into the tmux session so
-// a worker git commit hits the hooks. Nothing is written to any repository
-// config. Failures are logged and leave the session unguarded.
+// manager and sets its config-injection environment for the tmux session (the
+// launch loads it into the worker's pane shell) so a worker git commit hits the
+// hooks. Nothing is written to any repository config. Failures are logged and
+// leave the session unguarded.
 func (m *Manager) armCommitGuard(sess *Session, tmuxSession string) {
 	if !sessionGuarded(sess) {
 		return
@@ -44,7 +45,7 @@ func (m *Manager) installCommitGuard(sess *Session, tmuxSession string, g *gitgu
 		}
 	}
 	if tmuxSession != "" {
-		if err := m.tmux.SetEnvironment(tmuxSession, env); err != nil {
+		if err := m.SetPaneEnv(tmuxSession, env); err != nil {
 			fmt.Printf("[warn] set commit guard env for %s: %v\n", sess.ID, err)
 			_ = g.Cleanup()
 			return
