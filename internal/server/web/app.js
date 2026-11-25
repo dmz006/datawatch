@@ -27908,6 +27908,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.supervisor_loop.wake.kinds', label: 'Wake event kinds (comma-separated event kinds that wake the supervisor)', labelKey: 'supervisor_loop_wake_kinds', hintKey: 'supervisor_loop_wake_kinds_hint', docsKey: 'supervisor_loop.wake.kinds', card: 'supervisor_wake', type: 'textarea' },
     { key: 'autonomous.supervisor_loop.wake.coalesce_seconds', label: 'Wake quiet window (seconds during which further events fold into one pass, 0 = every event, default 30)', labelKey: 'supervisor_loop_wake_coalesce_seconds', hintKey: 'supervisor_loop_wake_coalesce_seconds_hint', docsKey: 'supervisor_loop.wake.coalesce_seconds', card: 'supervisor_wake', type: 'number', placeholder: '30', min: 0, max: 3600, step: 1, default: '30' },
     { key: 'autonomous.supervisor_loop.wake.fallback_interval_minutes', label: 'Wake fallback interval (minutes between scheduled passes when no event wakes the supervisor, default 20)', labelKey: 'supervisor_loop_wake_fallback_interval_minutes', hintKey: 'supervisor_loop_wake_fallback_interval_minutes_hint', docsKey: 'supervisor_loop.wake.fallback_interval_minutes', card: 'supervisor_wake', type: 'number', placeholder: '20', min: 1, max: 1440, step: 1, default: '20' },
+    { key: 'autonomous.supervisor_loop.wake.session', label: 'Designated supervisor session (the only session a wake types into, empty = none)', labelKey: 'supervisor_loop_wake_session', hintKey: 'supervisor_loop_wake_session_hint', docsKey: 'supervisor_loop.wake.session', card: 'supervisor_wake', type: 'text', placeholder: '' },
     { type: 'supervisor_wake_card' },
     { key: 'autonomous.automation.create_search_mode', label: 'Automaton create search (off, shadow records overlaps without showing them, on shows them, default shadow)', labelKey: 'settings_automation_create_search_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.create_search_threshold', label: 'Automaton create search threshold (similarity above 0 and at most 1, default 0.5)', labelKey: 'settings_automation_create_search_threshold', type: 'number', placeholder: '0.5', min: 0.05, max: 1, step: 0.05, default: '0.5' },
@@ -43801,7 +43802,7 @@ window.platformContextCardHtml = function (pc, version) {
 // stored that the list does not know, so a stored kind is never hidden.
 const SUPERVISOR_WAKE_KEY = 'autonomous.supervisor_loop.wake.';
 const SUPERVISOR_WAKE_DOCS = 'howto/supervisor-loop.md#settings-and-defaults';
-const SUPERVISOR_WAKE_DEFAULTS = { enabled: false, kinds: [], coalesce_seconds: 30, fallback_interval_minutes: 20 };
+const SUPERVISOR_WAKE_DEFAULTS = { enabled: false, kinds: [], coalesce_seconds: 30, fallback_interval_minutes: 20, session: '' };
 
 function _supervisorWakeHelp(name) {
   const key = name === 'status' ? 'supervisor_wake_status_help' : 'supervisor_loop_wake_' + name + '_hint';
@@ -43844,6 +43845,11 @@ window.supervisorWakeCardHtml = function (cfg) {
     </div>
     ${_supervisorWakeNumberRow('coalesce_seconds', t('supervisor_loop_wake_coalesce_seconds'), w.coalesce_seconds, 0, 3600)}
     ${_supervisorWakeNumberRow('fallback_interval_minutes', t('supervisor_loop_wake_fallback_interval_minutes'), w.fallback_interval_minutes, 1, 1440)}
+    <div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px;">
+      <div class="settings-label">${escHtml(t('supervisor_loop_wake_session'))}${_supervisorWakeHelp('session')}</div>
+      <input type="text" id="supervisorWake_session" class="form-input general-cfg-input" value="${escHtml(String(w.session || ''))}"
+        onchange="saveGeneralField('${SUPERVISOR_WAKE_KEY}session', this.value.trim())" />
+    </div>
     <div id="supervisorWakeStatus" data-supervisor-wake="status" role="status" style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('supervisor_wake_status_loading'))}${_supervisorWakeHelp('status')}</div>
   </div>`;
 };
@@ -43877,12 +43883,34 @@ function supervisorWakeTimeText(ts) {
   return d.toLocaleString();
 }
 
+// _supervisorWakeTargetText says which session a wake types into now, or why
+// none. A code this page does not know shows the daemon's own reason.
+function _supervisorWakeTargetText(v) {
+  const code = String(v.target_code || '');
+  if (!code) return '';
+  const key = SUPERVISOR_WAKE_TARGET_KEYS.get(code);
+  if (!key) return String(v.target_reason || '');
+  return t(key, [String((code === 'ok' ? v.target : v.session) || '')]);
+}
+
+const SUPERVISOR_WAKE_TARGET_KEYS = new Map([
+  ['ok', 'supervisor_wake_target_ok'],
+  ['none_designated', 'supervisor_wake_target_none_designated'],
+  ['not_found', 'supervisor_wake_target_not_found'],
+  ['ambiguous', 'supervisor_wake_target_ambiguous'],
+  ['not_live', 'supervisor_wake_target_not_live'],
+  ['completed', 'supervisor_wake_target_completed'],
+  ['output_unreadable', 'supervisor_wake_target_output_unreadable'],
+]);
+
 window.supervisorWakeStatusText = function (v) {
   v = v || {};
   let text = t('supervisor_wake_status_line', [
     supervisorWakeTimeText(v.last_event), Number(v.event_count) || 0,
     supervisorWakeTimeText(v.last_scheduled_check), Number(v.scheduled_count) || 0]);
   if (v.events_silent_for) text += ' ' + t('supervisor_wake_status_silent', [String(v.events_silent_for)]);
+  const target = _supervisorWakeTargetText(v);
+  if (target) text += ' ' + target;
   return text;
 };
 
@@ -43894,6 +43922,8 @@ window.supervisorWakeApplyView = function (v) {
   if (en) en.checked = !!v.enabled;
   const kinds = Array.isArray(v.kinds) ? v.kinds : [];
   document.querySelectorAll('.supervisor-wake-kind').forEach(b => { b.checked = kinds.includes(b.value); });
+  const sess = document.getElementById('supervisorWake_session');
+  if (sess) sess.value = String(v.session || '');
   for (const name of ['coalesce_seconds', 'fallback_interval_minutes']) {
     const inp = document.getElementById('supervisorWake_' + name);
     if (inp && v[name] != null) { inp.value = String(v[name]); inp.defaultValue = String(v[name]); }

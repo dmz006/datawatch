@@ -204,8 +204,12 @@ session:
   #   cron_expr: ""       # 5-field cron expression for recurrence
   #                       # (e.g. "*/5 * * * *"). Alias for the `cron` field.
   #   schedule_name: ""   # Human-readable label for lookup/cancel by name.
-  # BL41: per-session effort hint applied when caller doesn't supply one.
-  # One of: quick / normal / thorough. Default: normal.
+  # BL41: per-session effort applied when caller doesn't supply one.
+  # One of: quick / normal / thorough. Default: normal. For claude-code,
+  # quick or thorough here sets --effort low / high at start and restart.
+  # normal here sends no --effort flag. An effort named by the start
+  # (claude_effort, or effort: quick=low, normal=medium, thorough=high) or by
+  # its worker profile is used instead.
   default_effort: "normal"
   # BL40: running sessions older than this are reported as stale via
   # GET /api/sessions/stale. 0 disables. Default 1800 (30 min).
@@ -5165,6 +5169,11 @@ autonomous:
     # this many minutes have passed since its last one. With the wake off the
     # scheduled check runs on every idle tick, as before. Read live.
     "supervisor_loop.wake.fallback_interval_minutes": 20
+    # The designated supervisor session: the full or short id of the only
+    # session a wake types into. Empty designates none, so nothing is typed
+    # (the pass still runs). A launch role or tag never makes a session the
+    # target. Read live.
+    "supervisor_loop.wake.session": ""
   # ── Supervisor fresh sessions ──
   # A supervisor session is replaced by a fresh one on a schedule, started from
   # a handover (build context, rules, direction) plus the pinned state record.

@@ -82,6 +82,7 @@ the [definitions](../datawatch-definitions.md#supervisor-loop).
 | `wake.kinds` | the default list | The event kinds that wake the supervisor: a blocked Automaton, a task needing review, a failed task or final gate, every judge verdict, all tasks done or cancelled, an Automaton stuck running, a long capacity wait, a burn guard rung change and a priority stall (a high-priority Automaton waiting past the stall threshold; see [Priority stall wakes the supervisor](automation-supervisor-watch.md#priority-stall-wakes-the-supervisor)). Each must be a kind a subscription can filter on; written comma-separated over the CLI and the comm channel. `datawatch autonomous event-kinds` lists every valid kind and marks the ones in the default list. |
 | `wake.coalesce_seconds` | `30` | The quiet window after a wake: events arriving within it fold into the same pass. `0` to `3600`; `0` wakes on every event. |
 | `wake.fallback_interval_minutes` | `20` | Minutes between scheduled passes while the wake is on, `1` to `1440`. Events run passes in between; with the wake off the scheduled check runs on every idle tick. Read live. |
+| `wake.session` | empty | The designated supervisor session: the full or short id of the one session a wake may type into. Empty designates none, so nothing is typed. See [Which session a wake types into](#which-session-a-wake-types-into). |
 
 ## Event wake
 
@@ -98,10 +99,10 @@ How it behaves:
 - Events arriving within `wake.coalesce_seconds` of each other are folded into
   one pass. Only one pass runs at a time; events that arrive during a pass are
   queued and handled by the next one.
-- Each wake runs the loop's mechanical steps at once and, if a supervisor session
-  is running (tagged `role:supervisor`, running or waiting for input), types a line
-  such as `supervisor wake: task.failed automaton=<id> task=<id>` into it. With no
-  session running the pass still runs and only the line is skipped.
+- Each wake runs the loop's mechanical steps at once and, if the
+  [designated supervisor session](#which-session-a-wake-types-into) can take input,
+  types a line such as `supervisor wake: task.failed automaton=<id> task=<id>` into
+  it. Otherwise the pass still runs and only the line is skipped.
 - The registration follows the setting live: switching `wake.enabled` or changing
   the kinds or quiet window takes effect within a few seconds, with no restart.
 - The scheduled check is the fallback: while the wake is on it runs a pass every
@@ -111,6 +112,42 @@ How it behaves:
   last ran a scheduled check, with a count of each. If the event path has been
   silent for more than an hour, the status says so, which usually means the
   kinds list is too narrow or nothing you subscribed to has happened.
+
+### Which session a wake types into
+
+Every typed line costs a model turn, so a wake types into one session only: the
+one you designate in `wake.session`. A session launched with the supervisor role,
+or carrying the `role:supervisor` tag, is **not** a target by that alone (build
+and landing sessions use that role too).
+
+```sh
+datawatch supervisor-loop wake --session <session-id>   # designate
+datawatch supervisor-loop wake --session ''             # designate none
+```
+
+On the comm channel: `supervisor wake set session=<id>` (`session=none` clears
+it). Supervisor set-up only adds schedules and starts no session, so it
+designates nothing; designate your long-lived supervisor session yourself, and
+designate again if you replace it with a new session.
+
+The designated session gets a line only while all of these hold:
+
+- it is running or waiting for input;
+- its output can be read and does not **end** with a `DATAWATCH_COMPLETE:` line.
+  What Claude Code draws on its own below that line does not count (status lines,
+  the input box, a slash command it answers itself such as `/effort`, and its
+  idle compaction notes); later input, an answer, a tool call or other output
+  does;
+- the line says something new: the same batch is not typed twice into a session
+  within `wake.fallback_interval_minutes`, and `priority_stall` entries are typed
+  only when the list of stalled Automata or their blockers has changed since the
+  session was last told, however long ago. A stall entry names its blocker.
+
+What was already typed is remembered until the daemon restarts, so after a
+restart the current items can be typed once more.
+
+The wake status shows the designated session, the **target** (the session a wake
+would type into now, or none) and **why**.
 
 For the whole path (choosing events, subscribing to a peer, extension
 registration, MCP resource subscriptions and what a peer forwards), see
@@ -126,7 +163,7 @@ Change the settings and read the status on any surface:
 | Surface | Settings and status |
 |---|---|
 | Web UI | **Settings → Automata → Supervisor wake**; the status line sits in the same group. |
-| CLI | `datawatch supervisor-loop wake` shows the status; add `--enabled=true`, `--kinds A,B`, `--coalesce-seconds N` or `--fallback-interval-minutes N` to set. |
+| CLI | `datawatch supervisor-loop wake` shows the status; add `--enabled=true`, `--kinds A,B`, `--coalesce-seconds N`, `--fallback-interval-minutes N` or `--session ID` to set. |
 | REST API | `GET /api/supervisor-loop/wake` for the status; write the `autonomous.supervisor_loop.wake.*` keys with `PUT /api/config`. |
 | MCP | `supervisor_loop_stats` returns a `wake` object; write the keys with `config_set`. |
 | Comm channel | `supervisor wake` or `supervisor wake status`; `supervisor wake set key=value ...` to change. |

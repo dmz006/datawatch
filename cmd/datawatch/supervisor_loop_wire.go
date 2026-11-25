@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"path/filepath"
+	"strings"
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -29,22 +30,63 @@ func (supervisorLoopClock) AfterFunc(d time.Duration, f func()) func() bool {
 type supervisorSessionAPI interface {
 	ListSessionsFiltered(f session.SessionFilter) []*session.Session
 	SendInput(fullID, input, source string) error
+	CapturePaneScrollback(fullID string, lines int) (string, error)
 }
 
-// supervisorSessionID returns the id of a running supervisor session (one
-// carrying the role:supervisor tag that is running or waiting for input), or "".
-func supervisorSessionID(sessions supervisorSessionAPI) func() string {
-	return func() string {
-		if sessions == nil {
-			return ""
-		}
-		for _, s := range sessions.ListSessionsFiltered(session.SessionFilter{Tags: []string{"role:supervisor"}}) {
-			if s != nil && (s.State == session.StateRunning || s.State == session.StateWaitingInput) {
-				return s.FullID
-			}
-		}
-		return ""
+// supervisorWakePaneLines is how much of a session's pane is read to see
+// whether it ends with a completion marker.
+const supervisorWakePaneLines = 200
+
+// supervisorWakeTarget says which session a wake may type into right now, and
+// why. Only the designated session (supervisor_loop.wake.session) can be the
+// target: a launch role or tag never makes a session one. It must be running
+// or waiting for input, and its output must be readable and must not end with
+// a completion marker.
+func supervisorWakeTarget(sessions supervisorSessionAPI, designated string) supervisorloop.WakeTarget {
+	t := supervisorloop.WakeTarget{Session: designated}
+	none := func(code, reason string) supervisorloop.WakeTarget {
+		t.Code, t.Reason = code, reason+"; nothing is typed"
+		return t
 	}
+	if designated == "" {
+		return none(supervisorloop.WakeTargetNoneDesignated, "no supervisor session is designated ("+supervisorloop.KeyWakeSession+" is empty)")
+	}
+	if sessions == nil {
+		return none(supervisorloop.WakeTargetNotFound, "sessions are unavailable")
+	}
+	var full, short []*session.Session
+	for _, s := range sessions.ListSessionsFiltered(session.SessionFilter{}) {
+		switch {
+		case s == nil:
+		case s.FullID == designated:
+			full = append(full, s)
+		case s.ID == designated:
+			short = append(short, s)
+		}
+	}
+	if len(full) == 0 {
+		full = short
+	}
+	switch {
+	case len(full) == 0:
+		return none(supervisorloop.WakeTargetNotFound, "designated session "+designated+" was not found")
+	case len(full) > 1:
+		return none(supervisorloop.WakeTargetAmbiguous, "more than one session has the id "+designated+"; designate the full id")
+	}
+	s := full[0]
+	if s.State != session.StateRunning && s.State != session.StateWaitingInput {
+		return none(supervisorloop.WakeTargetNotLive, "designated session "+s.FullID+" is "+string(s.State)+", not running or waiting for input")
+	}
+	pane, err := sessions.CapturePaneScrollback(s.FullID, supervisorWakePaneLines)
+	if err != nil || strings.TrimSpace(pane) == "" {
+		return none(supervisorloop.WakeTargetUnreadable, "the output of designated session "+s.FullID+" cannot be read")
+	}
+	if session.OutputEndsWithCompletion(pane) {
+		return none(supervisorloop.WakeTargetCompleted, "the last output of designated session "+s.FullID+" ends with a completion marker")
+	}
+	t.Target, t.Code = s.FullID, supervisorloop.WakeTargetOK
+	t.Reason = "designated by " + supervisorloop.KeyWakeSession + " and " + string(s.State)
+	return t
 }
 
 // supervisorWakeDeps is what startSupervisorWake wires together.
@@ -57,6 +99,17 @@ type supervisorWakeDeps struct {
 	Sessions supervisorSessionAPI
 	Record   *supervisorloop.WakeRecord
 	Clock    supervisorloop.WakeClock
+	// Stalls returns the current priority stall list; may be nil.
+	Stalls func() []string
+}
+
+// target resolves the wake target from the live settings.
+func (d supervisorWakeDeps) target() supervisorloop.WakeTarget {
+	designated := ""
+	if d.Settings != nil {
+		designated = d.Settings().Wake.Session
+	}
+	return supervisorWakeTarget(d.Sessions, designated)
 }
 
 // startSupervisorWake registers the wake subscription set from the live
@@ -80,7 +133,8 @@ func startSupervisorWake(ctx context.Context, d supervisorWakeDeps, every time.D
 	}
 	c := server.NewSupervisorWakeController(server.SupervisorWakeControllerConfig{
 		Subscriber: d.Subscriber, Settings: d.Settings, Run: run,
-		Session: supervisorSessionID(d.Sessions), SendInput: send, Clock: d.Clock, Record: d.Record,
+		Session: func() string { return d.target().Target }, SendInput: send, Clock: d.Clock, Record: d.Record,
+		Stalls: d.Stalls,
 	})
 	c.Start(ctx, every)
 	return c
@@ -143,10 +197,21 @@ func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Ma
 		srv.SetSupervisorWake(wakeRecord)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	wake := startSupervisorWake(ctx, supervisorWakeDeps{
+	deps := supervisorWakeDeps{
 		Subscriber: amgr, Settings: settings, Steps: steps, Sessions: sessions,
 		Record: wakeRecord, Clock: supervisorLoopClock{},
-	}, server.DefaultSupervisorWakeReconcile)
+		Stalls: func() []string {
+			var list []string
+			for _, st := range amgr.PriorityStalls(time.Now()) {
+				list = append(list, supervisorloop.WakeStallEntry(st.AutomatonID, st.BlockerCode))
+			}
+			return list
+		},
+	}
+	if srv != nil {
+		srv.SetSupervisorWakeTarget(deps.target)
+	}
+	wake := startSupervisorWake(ctx, deps, server.DefaultSupervisorWakeReconcile)
 	return func() {
 		cancel()
 		wake.Close()

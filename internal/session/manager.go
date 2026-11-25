@@ -2234,9 +2234,11 @@ type StartOptions struct {
 
 	// Effort (BL41) — operator-supplied thoroughness hint:
 	// "quick", "normal", "thorough". Empty falls through to
-	// session.default_effort config. Recorded on Session.Effort only;
-	// it does NOT reach claude's `--effort` flag — that is
-	// ClaudeEffort below.
+	// session.default_effort config. Recorded on Session.Effort. For
+	// claude-code a value given here also sets `--effort` (quick=low,
+	// normal=medium, thorough=high) when neither ClaudeEffort below nor
+	// the worker profile names an effort. So does a configured default
+	// other than the built-in "normal".
 	Effort string
 
 	// v5.27.5 — claude-code per-session overrides forwarded to
@@ -2250,10 +2252,9 @@ type StartOptions struct {
 	// ClaudeEffort is claude-code's real reasoning-effort level, emitted
 	// as `--effort <level>` on the claude CLI (low|medium|high|xhigh|max).
 	// Applied in Start only to backends implementing SetEffort(string);
-	// other backends silently ignore it. Empty = no --effort flag (claude
-	// uses its own default). This is NOT the BL41 thoroughness hint in
-	// Effort above — the two are independent and neither is derived from
-	// the other.
+	// other backends silently ignore it. When set it is authoritative at
+	// launch and restart; empty leaves the level to the worker profile,
+	// then to Effort above (see launchClaudeEffort).
 	ClaudeEffort string
 
 	// ThinkingLevel — the pi --thinking level override (off|minimal|
@@ -2885,9 +2886,14 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		GroupID:        groupID,
 		BackendFamily:  backendName,
 		Effort:         m.resolveEffort(opt),
+		EffortNamed:    m.chosenEffort(opt) != "",
 	}
 	if opt != nil && opt.EphemeralWorkspace {
 		sess.EphemeralWorkspace = true
+	}
+	if opt != nil {
+		// Kept so a restart runs at the level the launch named.
+		sess.ClaudeEffort = opt.ClaudeEffort
 	}
 	if opt != nil && opt.ScrubTmuxEnv {
 		sess.ScrubTmuxEnv = true
@@ -3150,7 +3156,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	// The claude --effort level is this launch's own request, set on every
 	// launch for the same reason: left alone, the value of an earlier session
 	// would carry into this one.
-	setLaunchEffort(backendObj, startEffort(opt))
+	setLaunchEffort(backendObj, m.startEffort(opt))
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
@@ -5100,8 +5106,9 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
 		ex.SetExcludeAncestorClaudeMd(sess.PRDID != "")
 	}
-	// A restart names no effort; clear what an earlier launch left behind.
-	setLaunchEffort(backendObj, "")
+	// A restart runs at the session's own level, set (or cleared) on every
+	// restart so an earlier launch's level never carries over.
+	setLaunchEffort(backendObj, restartEffort(sess))
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
@@ -7300,12 +7307,65 @@ func setLaunchEffort(backendObj interface{}, effort string) {
 	}
 }
 
-// startEffort is the claude effort a start request names, or "".
-func startEffort(opt *StartOptions) string {
-	if opt == nil {
+// claudeEffortLevels are the levels claude's --effort flag takes.
+var claudeEffortLevels = map[string]bool{"low": true, "medium": true, "high": true, "xhigh": true, "max": true}
+
+// sessionToClaudeEffort maps the session effort to a claude --effort level.
+// thorough is high, never above it.
+var sessionToClaudeEffort = map[string]string{"quick": "low", "normal": "medium", "thorough": "high"}
+
+// builtinDefaultEffort is the session effort the daemon configures when the
+// operator chose none, so as a default it names no claude level. An operator
+// who sets session default_effort to this value cannot be told apart.
+const builtinDefaultEffort = "normal"
+
+// launchClaudeEffort is the --effort level of a claude launch. A named claude
+// level is authoritative: the launch's own (explicit), else the worker
+// profile's, which may also be a session effort word. Otherwise the chosen
+// session effort sets it; "" means no flag.
+func launchClaudeEffort(explicit string, profile *workerprofile.WorkerProfile, chosenSessionEffort string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if profile != nil && profile.Name != "" {
+		if claudeEffortLevels[profile.Effort] {
+			return profile.Effort
+		}
+		if level := sessionToClaudeEffort[profile.Effort]; level != "" {
+			return level
+		}
+	}
+	return sessionToClaudeEffort[chosenSessionEffort]
+}
+
+// chosenEffort is the session effort somebody chose for this start: the
+// request's, else a configured default (session default_effort) other than
+// the built-in one. "" means nobody chose.
+func (m *Manager) chosenEffort(opt *StartOptions) string {
+	if opt != nil && opt.Effort != "" && IsValidEffort(opt.Effort) {
+		return opt.Effort
+	}
+	if m.defaultEffort == builtinDefaultEffort {
 		return ""
 	}
-	return opt.ClaudeEffort
+	return m.defaultEffort
+}
+
+// startEffort is the claude effort of a start request.
+func (m *Manager) startEffort(opt *StartOptions) string {
+	if opt == nil {
+		return sessionToClaudeEffort[m.chosenEffort(nil)]
+	}
+	return launchClaudeEffort(opt.ClaudeEffort, &opt.WorkerProfile, m.chosenEffort(opt))
+}
+
+// restartEffort is the claude effort of a restart of sess.
+func restartEffort(sess *Session) string {
+	chosen := ""
+	if sess.EffortNamed {
+		chosen = sess.Effort
+	}
+	return launchClaudeEffort(sess.ClaudeEffort, sess.WorkerProfile, chosen)
 }
 
 // inputRowIndex returns the index of the last input row ("❯" alone, or "❯"

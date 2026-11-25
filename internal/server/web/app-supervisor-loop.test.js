@@ -17,7 +17,7 @@ const EXPECTED_KEYS = ['enabled']
   .concat(STEPS.map(s => s + '.enabled'))
   .concat(MODEL_JOBS.reduce((a, j) => a.concat([j + '.style', j + '.backend', j + '.model']), []))
   .concat(['validator_retries', 'escalate_after_failures', 'run_retention', 'archive_cancelled_after_minutes', 'lane_count.min', 'lane_count.max',
-    'wake.enabled', 'wake.kinds', 'wake.coalesce_seconds', 'wake.fallback_interval_minutes']);
+    'wake.enabled', 'wake.kinds', 'wake.coalesce_seconds', 'wake.fallback_interval_minutes', 'wake.session']);
 
 const JOBS_BODY = {
   enabled: true,

@@ -40,7 +40,7 @@ A profile is a **named, configurable set** of the things a session starts with:
 | **tools** | the session's tool set: **all tools**, or an **allow-list** of named tools |
 | **skills** | whether skills are on or off |
 | **context** | the level of starting context: **minimal**, **digest** or **full** — the task's spec and constraints, the project's rules in the level the profile names (full, rules digest, or neither), and the daemon's platform context |
-| **model and effort** | which model the session runs and at what effort, so a cheap job does not start on the strongest model |
+| **model and effort** | which model the session runs and at what effort, so a cheap job does not start on the strongest model. For Claude Code the effort is `low`, `medium`, `high`, `xhigh` or `max`, or `quick`, `normal` or `thorough` (`low`, `medium`, `high`) |
 
 A profile with `mcp: none` and a small context level starts a session with none of the roughly 36,000 MCP tokens measured on 2026-11-08 and none it did not need — while still having everything the task's spec names.
 

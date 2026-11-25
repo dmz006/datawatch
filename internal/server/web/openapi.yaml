@@ -5235,8 +5235,11 @@ paths:
         last woke for an event (`last_event`) and last ran a scheduled check
         (`last_scheduled_check`), with the counts of each. `events_silent_for` is
         set when the event path has been quiet longer than an hour. A time of
-        `0001-01-01T00:00:00Z` means it has not happened yet. Read-only; needs the
-        autonomous read capability when called by a federated peer.
+        `0001-01-01T00:00:00Z` means it has not happened yet. `session` is the
+        designated supervisor session (`supervisor_loop.wake.session`),
+        `target` the full id a wake would type into now (empty when nothing is
+        typed), and `target_code` with `target_reason` say why. Read-only; needs
+        the autonomous read capability when called by a federated peer.
       operationId: supervisorLoopWake
       tags: [Autonomous]
       responses:
@@ -5257,6 +5260,10 @@ paths:
                   event_count: {type: integer}
                   scheduled_count: {type: integer}
                   events_silent_for: {type: string}
+                  session: {type: string}
+                  target: {type: string}
+                  target_code: {type: string, enum: ["", ok, none_designated, not_found, ambiguous, not_live, completed, output_unreadable]}
+                  target_reason: {type: string}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
@@ -16595,6 +16602,12 @@ components:
           type: string
           description: Path to the session's output log
           example: ".datawatch/logs/hal9000-a3f2.log"
+        claude_effort:
+          type: string
+          description: "The claude --effort level the start request named; a restart runs at it. Absent when none was named."
+        effort_named:
+          type: boolean
+          description: "True when the start request, or a configured default other than the built-in normal, chose the session effort, so a restart sets claude --effort from it. Absent when the built-in default filled it in."
         state:
           $ref: "#/components/schemas/SessionState"
         created_at:

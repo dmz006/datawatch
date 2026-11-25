@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // Wake setting keys. The wake path lets a lifecycle event start a supervisor
@@ -24,6 +25,10 @@ const (
 	// KeyWakeFallbackIntervalMinutes is how often, in minutes, the supervisor
 	// still runs when no event wakes it.
 	KeyWakeFallbackIntervalMinutes = "supervisor_loop.wake.fallback_interval_minutes"
+	// KeyWakeSession designates the one supervisor session a wake may type
+	// into, by full or short session id. Empty (the default) designates
+	// none: a wake still runs the pass and types nothing.
+	KeyWakeSession = "supervisor_loop.wake.session"
 )
 
 // Wake bounds and defaults.
@@ -43,6 +48,8 @@ const (
 	// MaxWakeKinds caps the kinds list so a hand-edited config cannot grow
 	// it without bound.
 	MaxWakeKinds = 64
+	// MaxWakeSessionLen caps the designated session id.
+	MaxWakeSessionLen = 128
 )
 
 // DefaultWakeKinds are the event kinds that wake the supervisor by default:
@@ -86,6 +93,8 @@ type WakeSettings struct {
 	Kinds                   []string
 	CoalesceSeconds         int
 	FallbackIntervalMinutes int
+	// Session is the designated supervisor session id; empty is none.
+	Session string
 }
 
 // DefaultWakeSettings returns the documented defaults: off, the default
@@ -101,7 +110,7 @@ func DefaultWakeSettings() WakeSettings {
 
 // WakeKeys lists the wake setting keys in a stable order.
 func WakeKeys() []string {
-	return []string{KeyWakeEnabled, KeyWakeKinds, KeyWakeCoalesceSeconds, KeyWakeFallbackIntervalMinutes}
+	return []string{KeyWakeEnabled, KeyWakeKinds, KeyWakeCoalesceSeconds, KeyWakeFallbackIntervalMinutes, KeyWakeSession}
 }
 
 // IsWakeKey reports whether key is one of the wake setting keys.
@@ -147,6 +156,9 @@ func (w WakeSettings) validate() error {
 	}
 	if w.FallbackIntervalMinutes < MinWakeFallbackIntervalMinutes || w.FallbackIntervalMinutes > MaxWakeFallbackIntervalMinutes {
 		return fmt.Errorf("%s: must be between %d and %d, got %d", KeyWakeFallbackIntervalMinutes, MinWakeFallbackIntervalMinutes, MaxWakeFallbackIntervalMinutes, w.FallbackIntervalMinutes)
+	}
+	if len(w.Session) > MaxWakeSessionLen || strings.IndexFunc(w.Session, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return fmt.Errorf("%s: want one session id of at most %d characters without spaces, or empty", KeyWakeSession, MaxWakeSessionLen)
 	}
 	return nil
 }
@@ -207,6 +219,12 @@ func (w *WakeSettings) apply(key string, v any) (bool, error) {
 			return true, bad("list of event kinds")
 		}
 		w.Kinds = kinds
+	case KeyWakeSession:
+		id, ok := v.(string)
+		if !ok {
+			return true, bad("session id text")
+		}
+		w.Session = strings.TrimSpace(id)
 	case KeyWakeCoalesceSeconds, KeyWakeFallbackIntervalMinutes:
 		n, ok := toInt(v)
 		if !ok {
@@ -230,6 +248,7 @@ func (w WakeSettings) flat(out map[string]any) {
 	out[KeyWakeKinds] = append([]string{}, w.Kinds...)
 	out[KeyWakeCoalesceSeconds] = w.CoalesceSeconds
 	out[KeyWakeFallbackIntervalMinutes] = w.FallbackIntervalMinutes
+	out[KeyWakeSession] = w.Session
 }
 
 // Wakes reports whether an event of this kind should wake the supervisor:

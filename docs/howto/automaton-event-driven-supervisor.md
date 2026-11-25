@@ -58,8 +58,8 @@ the next scheduled pass.
 
 > **What happens when you turn it on.** Setting `supervisor_loop.wake.enabled`
 > to true registers the wake within a few seconds, with no restart. From then on
-> each matching event runs one supervisor loop pass at once and, when a
-> supervisor session is running, types a `supervisor wake:` line into it. The
+> each matching event runs one supervisor loop pass at once and, when the
+> designated supervisor session can take input, types a `supervisor wake:` line into it. The
 > scheduled check keeps running as the fallback, at
 > `supervisor_loop.wake.fallback_interval_minutes`, and the wake status shows the
 > time and count of both. Turning the setting off removes the wake again; a
@@ -84,8 +84,9 @@ settings.
 - `datawatch start`, on a release that has the supervisor loop
   (`autonomous.supervisor_loop.enabled` is on by default). The wake is a part of
   that loop and does nothing while the loop is off.
-- A supervisor session running. The wake types its line into that session.
-  With none running the wake is dropped and the scheduled check covers it.
+- A supervisor session, designated in `supervisor_loop.wake.session`. The wake
+  types its line into that session only. With none designated, or when it cannot
+  take input, nothing is typed; the pass still runs.
 - For [step 3](#3-subscribe-to-a-peer): at least one registered federation peer
   (`datawatch federation peer list`).
 
@@ -97,6 +98,7 @@ settings.
 | `supervisor_loop.wake.kinds` | the default list | The event kinds that wake the supervisor. At most 64, no duplicates, none empty while the wake is on, each a kind a subscription can filter on. |
 | `supervisor_loop.wake.coalesce_seconds` | `30` | The quiet window, `0` to `3600`. Events inside it fold into one pass. `0` wakes on every event. |
 | `supervisor_loop.wake.fallback_interval_minutes` | `20` | Minutes between scheduled fallback checks, `1` to `1440`. While the wake is on, the scheduled check runs a pass only when this many minutes have passed since its last pass; events run passes in between. While the wake is off the scheduled check runs on every tick of the idle loop, as before. Read live on every tick. |
+| `supervisor_loop.wake.session` | empty | The full or short id of the one session a wake may type into. Empty types nothing. Read live. |
 | `mcp.resource_subscriptions` | `false` | Lets an MCP client subscribe to the lifecycle events resource and be notified of matching events. Needs a daemon restart to change. |
 | `autonomous.notify.forwarding.enabled` | `false` | The one switch for federation event exchange, in both directions. Needed for a peer sink and for receiving forwarded events. |
 | `autonomous.notify.forwarding.peer_events` | `false` | Lets this daemon read a registered federation peer's lifecycle events and feed them into its own local dispatch (step 3). Start, stop and read it with the peer-events command. Needs `autonomous.notify.forwarding.enabled` too. |
@@ -139,11 +141,13 @@ How a pass starts:
 - Only one pass runs at a time. Events that arrive during a pass are queued and
   handled by the next one.
 - A pass runs the supervisor loop's mechanical steps at once (the same steps the
-  scheduled check runs). If a supervisor session is running (a session with the
-  `role:supervisor` tag that is running or waiting for input), the pass also types
-  a line such as `supervisor wake: task.failed automaton=<id> task=<id>` into it,
-  listing every folded event separated by `; `. With no session running the pass
-  still runs; only the line is skipped.
+  scheduled check runs). If the designated supervisor session can take input, the
+  pass also types a line such as `supervisor wake: task.failed automaton=<id>
+  task=<id>` into it, listing what is new in the folded events separated by `; `.
+  The role tag alone never makes a session a target. The rules for the target and
+  for repeated lines are in
+  [Which session a wake types into](supervisor-loop.md#which-session-a-wake-types-into).
+  Otherwise the pass still runs; only the line is skipped.
 - The scheduled check keeps running as the fallback. While the wake is on it runs
   a pass every `supervisor_loop.wake.fallback_interval_minutes`, whether or not an
   event arrived.
@@ -158,7 +162,7 @@ the kinds list is too narrow or nothing has happened that you subscribed to.
 on for you. The wake set listens on the daemon's event dispatcher by kind, and it
 does not apply the notify set that stored subscriptions and MCP resource
 subscriptions apply. After you switch it on, cause a real event and confirm that
-the status shows an event wake and, if a supervisor session is running, that a
+the status shows an event wake and, if you designated a supervisor session, that a
 `supervisor wake:` line reaches it.
 
 ### A stored subscription for the supervisor
@@ -463,6 +467,7 @@ Each row names one setting. In the config file the wake keys sit in the
 | `supervisor_loop.wake.kinds` | a list under `"supervisor_loop.wake.kinds":` | `PUT /api/config` with a JSON array under `autonomous.supervisor_loop.wake.kinds` | `config_set` key `supervisor_loop.wake.kinds`, a comma list or JSON array | `datawatch supervisor-loop wake --kinds A,B` | `autonomous supervisor wake set kinds=A,B` | Settings → Automata → Supervisor wake → **Wake event kinds** |
 | `supervisor_loop.wake.coalesce_seconds` | `"supervisor_loop.wake.coalesce_seconds": 30` | `PUT /api/config` with `autonomous.supervisor_loop.wake.coalesce_seconds` | `config_set` key `supervisor_loop.wake.coalesce_seconds` | `datawatch supervisor-loop wake --coalesce-seconds 30` | `autonomous supervisor wake set coalesce_seconds=30` | **Wake quiet window** |
 | `supervisor_loop.wake.fallback_interval_minutes` | `"supervisor_loop.wake.fallback_interval_minutes": 20` | `PUT /api/config` with `autonomous.supervisor_loop.wake.fallback_interval_minutes` | `config_set` key `supervisor_loop.wake.fallback_interval_minutes` | `datawatch supervisor-loop wake --fallback-interval-minutes 20` | `autonomous supervisor wake set fallback_interval_minutes=20` | **Wake fallback interval** |
+| `supervisor_loop.wake.session` | `"supervisor_loop.wake.session": "<id>"` | `PUT /api/config` with `autonomous.supervisor_loop.wake.session` | `config_set` key `supervisor_loop.wake.session` | `datawatch supervisor-loop wake --session <id>` | `autonomous supervisor wake set session=<id>` | **Designated supervisor session** |
 | `mcp.resource_subscriptions` | `resource_subscriptions: true` in the `mcp:` block | `PUT /api/config` with `{"mcp.resource_subscriptions": true}` | `config_set` key `mcp.resource_subscriptions`, value `true` | `datawatch config set mcp.resource_subscriptions true` | `configure mcp.resource_subscriptions=true` | Settings → General → MCP Server → **Resource subscriptions** |
 | `autonomous.notify.forwarding.peer_events` | `peer_events: true` in `autonomous.notify.forwarding` | `PUT /api/config` with `{"autonomous.notify.forwarding.peer_events": true}` | `config_set` key `autonomous.notify.forwarding.peer_events` | `datawatch config set autonomous.notify.forwarding.peer_events true` | `configure autonomous.notify.forwarding.peer_events=true` | Settings → Comms → Notifications, **Read a peer's lifecycle events** |
 | `autonomous.notify.forwarding.enabled` | `enabled: true` in `autonomous.notify.forwarding` | `PUT /api/config` with `{"autonomous.notify.forwarding.enabled": true}` | `config_set` key `autonomous.notify.forwarding.enabled` | `datawatch config set autonomous.notify.forwarding.enabled true` | `configure autonomous.notify.forwarding.enabled=true` | Settings → Comms → Notifications, the peer forwarding toggle |
@@ -503,8 +508,13 @@ Read the wake status on any surface:
 ## Troubleshooting
 
 - **The status never shows an event wake.** Check `wake.enabled` is true and the kind you
-  expect is in `wake.kinds`. The wake runs a pass even with no supervisor session
-  running; only the typed line needs one. The registration follows a setting change
+  expect is in `wake.kinds`. The wake runs a pass even with no designated session;
+  only the typed line needs one.
+- **No `supervisor wake:` line arrives.** Read `target` and `why` in the wake
+  status. The usual causes are an empty `wake.session`, a session id that has
+  since been replaced, a session that is not running or waiting for input, output
+  that ends with a completion marker, or a line that would repeat what the session
+  was already told. The registration follows a setting change
   within a few seconds.
 - **`peer-events start` is refused.** Read the reason it prints. The usual causes are
   `autonomous.notify.forwarding.enabled` or `autonomous.notify.forwarding.peer_events`

@@ -100,6 +100,7 @@ func TestStartSupervisorWakeFollowsConfigAndRunsLoop(t *testing.T) {
 		supervisorloop.KeyWakeEnabled:         true,
 		supervisorloop.KeyWakeKinds:           []string{autonomouspkg.KindAutomatonStuckRunning},
 		supervisorloop.KeyWakeCoalesceSeconds: 0,
+		supervisorloop.KeyWakeSession:         "host-sup1",
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for !ctl.Active() && time.Now().Before(deadline) {
@@ -135,18 +136,27 @@ func TestStartSupervisorWakeFollowsConfigAndRunsLoop(t *testing.T) {
 	}
 }
 
-func TestSupervisorSessionIDPicksRunningSupervisor(t *testing.T) {
+func TestSupervisorWakeTargetNeedsALiveDesignatedSession(t *testing.T) {
 	s := &wireSessions{list: []*session.Session{
 		{FullID: "done", State: session.StateComplete},
 		{FullID: "live", State: session.StateWaitingInput},
 	}}
-	if got := supervisorSessionID(s)(); got != "live" {
-		t.Errorf("session = %q, want live", got)
+	if got := supervisorWakeTarget(s, "live"); got.Target != "live" || got.Code != supervisorloop.WakeTargetOK || got.Reason == "" {
+		t.Errorf("target = %+v, want live with a reason", got)
 	}
-	if got := supervisorSessionID(&wireSessions{})(); got != "" {
-		t.Errorf("no sessions: %q, want empty", got)
+	for _, c := range []struct{ designated, code string }{
+		{"", supervisorloop.WakeTargetNoneDesignated},
+		{"done", supervisorloop.WakeTargetNotLive},
+		{"gone", supervisorloop.WakeTargetNotFound},
+	} {
+		if got := supervisorWakeTarget(s, c.designated); got.Target != "" || got.Code != c.code || got.Reason == "" {
+			t.Errorf("designated %q: target = %+v, want none with code %s", c.designated, got, c.code)
+		}
 	}
-	if got := supervisorSessionID(nil)(); got != "" {
-		t.Errorf("nil sessions: %q, want empty", got)
+	if got := supervisorWakeTarget(&wireSessions{}, "live"); got.Target != "" {
+		t.Errorf("no sessions: %+v, want no target", got)
+	}
+	if got := supervisorWakeTarget(nil, "live"); got.Target != "" {
+		t.Errorf("nil sessions: %+v, want no target", got)
 	}
 }

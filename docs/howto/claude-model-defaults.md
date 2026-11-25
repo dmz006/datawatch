@@ -89,11 +89,15 @@ Nothing in the daemon, a plan, or a task type silently substitutes a
 different model for yours: the session record holds exactly the model the
 CLI was passed (see [verification](#verification-which-model-actually-ran)).
 
-## Reasoning effort: the launch decides, and one thing outside it can change a default
+## Reasoning effort: what each launch runs at
 
-The reasoning level (`--effort low|medium|high|xhigh|max`) a Claude Code session starts with is the one named for that launch and nothing else: the daemon sets it fresh for every start and restart, so a session that names none starts with no `--effort` flag and Claude Code's own default, never the level an earlier session used. The `quick|normal|thorough` choice on a direct start is datawatch's own thoroughness hint and is not sent to Claude Code as `--effort`.
+The daemon sets the reasoning level (`--effort low|medium|high|xhigh|max`) of a Claude Code session fresh at every start and restart, never the level an earlier session used.
 
-One side effect belongs to Claude Code, not to datawatch: typing `/effort <level>` inside a running session is saved by Claude Code as your default in `~/.claude/settings.json`, so it also applies to Claude sessions you start afterwards. The daemon does not read or write that file. If new sessions start at a level you did not choose, check that file for an `effortLevel` entry; naming the level for the launch (an Automaton's effort setting, or the session's `claude_effort`) always takes precedence for that launch.
+**No effort named:** when neither the start request nor its worker profile names an effort, Claude Code starts with no `--effort` flag, at start and at restart, and picks its own level. This includes the built-in `session.default_effort` of `normal`.
+
+**Session effort:** a named `quick` starts Claude Code with `--effort low`, `normal` with `--effort medium` and `thorough` with `--effort high` (never higher). If you set `session.default_effort` to `quick` or `thorough`, a session that names none takes it and gets `low` or `high`. Setting it to `normal` is the same as leaving it alone and sends no flag. A level named for the launch wins over the session effort at start and restart: the start's `claude_effort` (the session record keeps it), otherwise the `effort` of its worker profile (a claude level, or `quick`, `normal` or `thorough`, mapped the same way). Name `claude_effort` when you want `xhigh` or `max`.
+
+One side effect belongs to Claude Code, not to datawatch: typing `/effort <level>` inside a running session is saved by Claude Code as your default in `~/.claude/settings.json`. The daemon does not read or write that file. A Claude Code start or restart that passes `--effort` takes precedence over that saved default for the launch. One that passes none runs at the saved default, as do Claude sessions you start yourself, outside datawatch.
 
 ## Verification: which model actually ran
 
