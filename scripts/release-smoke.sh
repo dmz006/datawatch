@@ -4590,9 +4590,13 @@ sys.exit(1 if any(b.get("backend") == os.environ["UC_B"] for b in (d.get("backof
   fi
 
   # (c) Budget wait and rollover, on a throwaway LLM with a tiny rolling ceiling.
+  # Budgets are read only for api or allowance entries: kind ollama resolves to
+  # local, where a budget is stored but GET /api/budget answers 404 and the entry
+  # is left out of the budget lists. So the entry is created as billing_mode api
+  # (the PUT below keeps it, since it updates the stored entry).
   add_cleanup llm "$UC_BUD"
   UC_BMK=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-    -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}]}" "$BASE/api/llms" 2>/dev/null || true)
+    -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}],\"billing_mode\":\"api\"}" "$BASE/api/llms" 2>/dev/null || true)
   if ! echo "$UC_BMK" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("ok")==True' 2>/dev/null; then
     skip "capacity budget: throwaway LLM create refused (${UC_BMK:0:100})"
   else
@@ -4628,6 +4632,22 @@ sys.exit(0 if any(b.get("llm") == os.environ["UC_L"] and b.get("ceiling_usd") ==
       ok "GET /api/capacity budgets array carries the throwaway budget with spend, ceiling and window end"
     else
       ko "GET /api/capacity budgets array does not carry $UC_BUD"
+    fi
+    # The other side of the rule: a local entry (kind ollama, no billing mode)
+    # stores its budget, and no read surface shows it.
+    UC_LBUD="${UC_BUD}-local"
+    add_cleanup llm "$UC_LBUD"
+    UC_LB=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"name\":\"$UC_LBUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}],\"budget\":{\"ceiling_usd\":0.01,\"hours\":1}}" "$BASE/api/llms" 2>/dev/null || true)
+    if echo "$UC_LB" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("ok")==True' 2>/dev/null; then
+      UC_LCODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/budget?llm=$UC_LBUD" 2>/dev/null || true)
+      if [[ "$UC_LCODE" == "404" ]]; then
+        ok "a local-mode budget is stored but not shown (GET /api/budget?llm= answers 404)"
+      else
+        ko "a local-mode budget was shown: GET /api/budget?llm= answered $UC_LCODE, expected 404"
+      fi
+    else
+      skip "local-mode budget rule not asserted: throwaway LLM create refused (${UC_LB:0:100})"
     fi
     skip "budget window full reason and autonomous_budget_ceiling_wait audit entry not exercised: the public REST surface has no way to record spend (GET /api/budget is read-only, spend comes only from real session usage); unit tests with an injectable clock cover it"
     skip "autonomous_budget_window_rollover audit entry not exercised: it needs a filled window and a boundary passing, which cannot be produced without recording spend; unit tests with an injectable clock cover it"
