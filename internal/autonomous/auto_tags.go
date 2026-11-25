@@ -382,9 +382,13 @@ func (m *Manager) ensureAutoTag(name, marker string) (*Tag, error) {
 // parented under root. The engine writes its records directly; the
 // operator-side rule (ErrTagSystem) stays on the operator API.
 func (m *Manager) createAutoTag(name, marker string) (*Tag, error) {
+	id, err := m.store.unusedID(newID)
+	if err != nil {
+		return nil, fmt.Errorf("new tag id: %w", err)
+	}
 	now := time.Now()
 	t := &Tag{
-		ID:          newID(),
+		ID:          id,
 		Name:        name,
 		Description: marker,
 		System:      true,

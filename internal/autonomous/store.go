@@ -69,6 +69,10 @@ type Store struct {
 	// the record's SystemTags on SavePRD/SaveTask (see ObjectTagDeriver).
 	// Nil stores leave SystemTags untouched.
 	objectTagDeriver ObjectTagDeriver
+
+	// idRootsFn, wired by NewManager, names where leftover work of an earlier
+	// id can be (id_alloc.go). Nil stores check their own records only.
+	idRootsFn func() idRoots
 }
 
 // NewStore opens (or creates) the JSONL files under dir/autonomous/.
@@ -115,10 +119,15 @@ func (s *Store) CreatePRDWithParent(spec, projectDir, backend, model string, eff
 	if strings.TrimSpace(spec) == "" {
 		return nil, fmt.Errorf("spec required")
 	}
+	left := s.idLeftovers(projectDir)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	id, err := s.unusedIDLocked(newID, left, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new automaton id: %w", err)
+	}
 	prd := &PRD{
-		ID:           newID(),
+		ID:           id,
 		Spec:         spec,
 		ProjectDir:   projectDir,
 		Backend:      backend,
@@ -466,6 +475,11 @@ func (s *Store) storiesSnapshot(prdID string) []Story {
 
 // SetStories replaces a PRD's story list (post-decompose).
 func (s *Store) SetStories(prdID string, stories []Story) error {
+	carried, missing := planIDs(stories)
+	var left idLeftovers
+	if missing {
+		left = s.idLeftovers()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prd, ok := s.prds[prdID]
@@ -477,7 +491,11 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 	// validation pass below succeeds).
 	for i := range stories {
 		if stories[i].ID == "" {
-			stories[i].ID = newID()
+			id, err := s.unusedIDLocked(newID, left, carried)
+			if err != nil {
+				return fmt.Errorf("new story id: %w", err)
+			}
+			stories[i].ID, carried[id] = id, true
 		}
 		stories[i].PRDID = prdID
 		stories[i].CreatedAt = time.Now()
@@ -488,7 +506,11 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 		stories[i].Status = StoryPending
 		for j := range stories[i].Tasks {
 			if stories[i].Tasks[j].ID == "" {
-				stories[i].Tasks[j].ID = newID()
+				id, err := s.unusedIDLocked(newID, left, carried)
+				if err != nil {
+					return fmt.Errorf("new task id: %w", err)
+				}
+				stories[i].Tasks[j].ID, carried[id] = id, true
 			}
 			stories[i].Tasks[j].StoryID = stories[i].ID
 			stories[i].Tasks[j].PRDID = prdID
@@ -890,14 +912,19 @@ func (s *Store) reindexPRDLocked(prd *PRD) {
 // requested: structural edits (add/remove a story or task) without having
 // to re-run decompose and hand the whole structure back to the LLM.
 func (s *Store) AddStory(prdID, title, description string) (*Story, error) {
+	left := s.idLeftovers()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prd, ok := s.prds[prdID]
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
+	id, err := s.unusedIDLocked(newID, left, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new story id: %w", err)
+	}
 	story := Story{
-		ID:          newID(),
+		ID:          id,
 		PRDID:       prdID,
 		Title:       title,
 		Description: description,
@@ -944,6 +971,7 @@ func (s *Store) RemoveStory(prdID, storyID string) error {
 
 // AddTask appends a new task to an existing story.
 func (s *Store) AddTask(prdID, storyID, title, spec string, dependsOn []string) (*Task, error) {
+	left := s.idLeftovers()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prd, ok := s.prds[prdID]
@@ -967,8 +995,12 @@ func (s *Store) AddTask(prdID, storyID, title, spec string, dependsOn []string) 
 		if prd.Story[i].ID != storyID {
 			continue
 		}
+		id, err := s.unusedIDLocked(newID, left, nil)
+		if err != nil {
+			return nil, fmt.Errorf("new task id: %w", err)
+		}
 		task := Task{
-			ID:        newID(),
+			ID:        id,
 			StoryID:   storyID,
 			PRDID:     prdID,
 			Title:     title,
@@ -1031,11 +1063,15 @@ const maxLearnings = 1000
 
 // AddLearning appends one learning.
 func (s *Store) AddLearning(l Learning) error {
+	if l.ID == "" {
+		id, err := s.unusedID(newID)
+		if err != nil {
+			return fmt.Errorf("new learning id: %w", err)
+		}
+		l.ID = id
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if l.ID == "" {
-		l.ID = newID()
-	}
 	if l.CreatedAt.IsZero() {
 		l.CreatedAt = time.Now()
 	}
@@ -1361,33 +1397,39 @@ func writeJSONL(path string, _ int, fn func(emit func(any) error) error) error {
 // newID returns an 8-hex string (store.go IDs throughout the package are
 // documented as "8-hex").
 //
-// The IDs are not just opaque labels: the executor falls back to ID
-// lexicographic order when scheduling dependency-free tasks (executor.go
-// topoSort: "executing in ID-sort order"), so creation order must equal ID
-// order — IDs have to be monotonic.
+// The high half is the low 16 bits of a 65.536 µs clock window and the low half
+// counts the ids drawn within one window. The id therefore repeats every 2^32
+// ns (about 4.29 s) and is NOT a unique or ordered value on its own: a caller
+// that stores it must draw it through unusedIDLocked / drawUnusedID, which
+// checks the store and leftover work (see id_alloc.go for the collision odds).
+// newID itself never returns the same value twice within one process.
 //
-// The old implementation was fmt.Sprintf("%08x", uint32(UnixNano)) — the
-// low 32 bits of the nanosecond clock, which wrapped every 2^32 ns ≈
-// 4.295s. Two objects created ~4.3s (or 8.6s, 12.9s, ...) apart therefore
-// got the SAME id, and worse, an object created earlier could get a
-// LARGER id than one created later (across the wrap), reordering the
-// ID-sort execution order. The current encoding is a 16-bit
-// microsecond-window (increments every 65536 µs ≈ 65.5 ms, wrapping in
-// ~280 years) + a 16-bit per-window counter that only ever moves
-// forward. That is strictly monotonic within a process (up to a 1M ids/s
-// sustained rate, after which the counter carries into the next window
-// rather than colliding) and unique within a process; cross-process odds
-// stay the usual 1/2^32, as with any 8-hex id scheme.
+// Ids drawn close together increase, which the executor's ID-sort fallback
+// (executor.go topoSort) relies on; that does not hold across a 4.29 s cycle.
 var (
 	idMu         sync.Mutex
 	idLastBucket uint32
 	idCounter    uint32
+	// idClock is the clock newID reads; tests replace it to force a repeat.
+	idClock = time.Now
+	// idIssued is every id newID has handed out in this process.
+	idIssued = map[string]bool{}
 )
 
 func newID() string {
 	idMu.Lock()
 	defer idMu.Unlock()
-	bucket := uint32(time.Now().UnixNano() >> 16) // µs since epoch, windowed to 65536 µs
+	for {
+		if id := nextIDLocked(); !idIssued[id] {
+			idIssued[id] = true
+			return id
+		}
+	}
+}
+
+// nextIDLocked is one draw of the generator. Callers hold idMu.
+func nextIDLocked() string {
+	bucket := uint32(idClock().UnixNano() >> 16) // ns since epoch, in windows of 65536 ns
 	if bucket > idLastBucket {
 		idLastBucket = bucket
 		idCounter = 1

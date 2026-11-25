@@ -23,6 +23,8 @@ type TemplateStore struct {
 	// template's SystemTags with the derived list on Create and Update
 	// (see ObjectTagDeriver). A nil deriver leaves SystemTags untouched.
 	objectTagDeriver ObjectTagDeriver
+	// idLeftoversFn, wired by NewManager, scans for leftover work (id_alloc.go).
+	idLeftoversFn func() idLeftovers
 }
 
 func newTemplateStore(dir string) *TemplateStore {
@@ -78,11 +80,16 @@ func (ts *TemplateStore) persist() error {
 // tags derive from (ObjectTagFactsForTemplate). Create derives only when a
 // deriver is wired (see SetObjectTagDeriver); it never writes tags itself.
 func (ts *TemplateStore) Create(title, description, spec, typ, sourcePRDID string, tags []string) (*Template, error) {
+	left := scanWith(ts.idLeftoversFn)
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	id, err := drawUnusedID(newID, func(id string) bool { return ts.templates[id] != nil || left.holds(id) })
+	if err != nil {
+		return nil, fmt.Errorf("new template id: %w", err)
+	}
 	now := time.Now()
 	tmpl := &Template{
-		ID:          newID(),
+		ID:          id,
 		Title:       title,
 		Description: description,
 		Spec:        spec,

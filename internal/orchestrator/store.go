@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,9 @@ type Store struct {
 	mu     sync.Mutex
 	dir    string
 	graphs map[string]*Graph
+	// issued is every id this store has handed out, so a node id is not drawn
+	// twice before its graph is saved.
+	issued map[string]bool
 }
 
 func NewStore(dataDir string) (*Store, error) {
@@ -26,7 +30,7 @@ func NewStore(dataDir string) (*Store, error) {
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", root, err)
 	}
-	s := &Store{dir: root, graphs: map[string]*Graph{}}
+	s := &Store{dir: root, graphs: map[string]*Graph{}, issued: map[string]bool{}}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -42,7 +46,7 @@ func (s *Store) CreateGraph(title, projectDir string, prdIDs []string) (*Graph, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g := &Graph{
-		ID:         newID(),
+		ID:         s.unusedIDLocked(),
 		Title:      title,
 		ProjectDir: projectDir,
 		PRDIDs:     append([]string{}, prdIDs...),
@@ -142,7 +146,43 @@ func (s *Store) persist() error {
 	return nil
 }
 
+// idClock is the clock newID reads; tests replace it to force a repeat.
+var idClock = time.Now
+
+// newID is the low 32 bits of the nanosecond clock, so it repeats every
+// 2^32 ns (about 4.29 s): draw ids through unusedIDLocked.
 func newID() string {
-	t := time.Now().UnixNano()
+	t := idClock().UnixNano()
 	return fmt.Sprintf("%08x", uint32(t))
+}
+
+// unusedIDLocked returns an id that no graph or node holds and that this store
+// has not issued, counting up from the clock draw. Callers hold s.mu.
+func (s *Store) unusedIDLocked() string {
+	taken := func(id string) bool {
+		if s.issued[id] || s.graphs[id] != nil {
+			return true
+		}
+		for _, g := range s.graphs {
+			for _, n := range g.Nodes {
+				if n.ID == id {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	id := newID()
+	for taken(id) {
+		v, _ := strconv.ParseUint(id, 16, 32)
+		id = fmt.Sprintf("%08x", uint32(v)+1)
+	}
+	s.issued[id] = true
+	return id
+}
+
+func (s *Store) unusedID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.unusedIDLocked()
 }

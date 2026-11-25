@@ -85,6 +85,8 @@ type DecisionRecordStore struct {
 	// Update (see ObjectTagDeriver). A nil deriver leaves SystemTags
 	// untouched.
 	objectTagDeriver ObjectTagDeriver
+	// idLeftoversFn, wired by Manager.GuardRecordIDs, scans for leftover work.
+	idLeftoversFn func() idLeftovers
 }
 
 // NewDecisionRecordStore opens (or starts, when the file is missing) the
@@ -371,6 +373,10 @@ func (s *DecisionRecordStore) Create(in DecisionRecord) (DecisionRecord, error) 
 		r.SystemTags = replaceSystemTags(r.SystemTags, d.ObjectTagsForDecisionRecord(&r))
 	}
 	s.mu.Lock()
+	scanFn := s.idLeftoversFn
+	s.mu.Unlock()
+	left := scanWith(scanFn)
+	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r.Source != "" && r.SourceRef != "" {
 		if id, ok := s.bySource[decisionSourceKey(r.Source, r.SourceRef)]; ok {
@@ -379,7 +385,7 @@ func (s *DecisionRecordStore) Create(in DecisionRecord) (DecisionRecord, error) 
 	}
 	id := ""
 	for try := 0; try < 8; try++ {
-		if cand := s.newID(); cand != "" && s.records[cand] == nil {
+		if cand := s.newID(); cand != "" && s.records[cand] == nil && !left.holds(cand) {
 			id = cand
 			break
 		}

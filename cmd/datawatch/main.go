@@ -8347,6 +8347,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				return a.ID
 			})
+			// Report records whose id already had a branch or worktree folder
+			// before they were created. Read-only, in a goroutine.
+			amgr.StartIDReuseCheck()
 			// Supervisor watch pass — wire the production views so the
 			// host, work and worktree checks run for real in the
 			// coordinator's idle loop. The probes only read; the pass

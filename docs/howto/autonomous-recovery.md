@@ -916,6 +916,48 @@ If the summary shows only node and model with no exit status and no last line,
 the pane and the log were both empty. Look at the session's own log and the
 node's health before you retry.
 
+## An Automaton id that was issued twice
+
+An id is eight hex characters taken mostly from the clock, and the same value
+comes round again about every 4.29 seconds. Most ids are therefore one of
+about 65,536 values. Before this was checked, one new Automaton had about a one
+in 65,536 chance of matching each earlier record: with 830 such records, about
+1.3% for the next create, and a chance above 99% that at least one of those 830
+creates had replaced an earlier one. A replaced record is gone from the store.
+Stories and tasks were drawn from the same values.
+
+The daemon now checks an id before it issues one. It draws again when the id is
+held by a record or a record file, by a branch under `automaton/` (local,
+remote-tracking or backup ref), or by a folder under the worktree folder
+(`autonomous.worktree_dir`, default `<data_dir>/prd-worktrees`). Branches are
+looked up in the worktree base repository, in the project folder of every
+record and in every configured project. This applies to Automata, stories,
+tasks, Automations, pending items, decision records, tags, templates,
+learnings and profiles. There is no setting; the check cannot be turned off.
+A repository the daemon cannot list is named in the daemon log and skipped.
+A branch that exists only in a repository the daemon does not know about, or
+only on a remote that was never fetched, is not seen.
+
+**The check at start.** When the daemon starts it looks for records whose id
+already had a branch or worktree folder before the record was created. It
+raises one warning alert, titled *An Automaton id was issued more than once*,
+and logs one `[autonomous] id check:` line for each such record. A branch is
+dated from its reflog (from the rename, if it was renamed to that name); a
+branch with no reflog is not reported. The check changes nothing, and it
+raises the alert again at each start while the older work is still there. It
+does not find a replaced record that left no branch or folder behind.
+
+**What to do for a reported record:**
+
+1. Do not run, reset, delete or archive the record, and do not run a branch or
+   worktree cleanup for its id. The older work carries the same id, so any of
+   these can act on it.
+2. Save the older work under names that do not carry the id: for example
+   `git branch saved/<name> automaton/<id>`, and a copy of the folders.
+3. Find what the earlier record was from the audit log (two `create` entries
+   for one id) and from the saved branches. Costs and history recorded under
+   the id belong to both records; split them by time.
+
 ## Common pitfalls
 
 - **Cancelling a story mid-run and not restarting it.** The rest of the

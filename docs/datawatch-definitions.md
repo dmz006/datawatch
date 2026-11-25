@@ -769,6 +769,8 @@ For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.
 
 ## Automata
 
+**Automaton id** — eight hex characters. The daemon issues an id only when no record, record file, `automaton/` branch or worktree folder already holds it, and at start it raises a warning alert for any record whose branch or worktree folder is older than the record. See [howto/autonomous-recovery.md](howto/autonomous-recovery.md) (*An Automaton id that was issued twice*).
+
 ### Automata list
 
 Every PRD / autonomous workflow your daemon has spawned. Filtered by state pill (Running / Stopped / Failed / All).

@@ -144,7 +144,7 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 	if st.mode == config.DecomposeLintModeOff {
 		// The lint pass stays off, but the verification-script pre-flight
 		// still runs and records what it finds; nothing is retried.
-		ensurePlanIDs(stories)
+		m.assignPlanIDs(stories)
 		pf := RunVerifyScriptPreflight(prd.ProjectDir, stories)
 		if len(pf) > 0 {
 			prd.DecomposeLint = &DecomposeLintRecord{
@@ -162,7 +162,7 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 		// after validation), and a template task needs real ids: its own
 		// id is built from its story's, and its depends_on names the
 		// story's other tasks by id.
-		ensurePlanIDs(s)
+		m.assignPlanIDs(s)
 		s, _ = ApplyTaskTemplatesForSpec(s, templateFeatureName(prd), prd.ProjectDir, prd.Spec, m.decomposeLintTemplateCfg())
 		return s
 	}
@@ -313,16 +313,32 @@ func templateFeatureName(prd *PRD) string {
 // ensurePlanIDs gives every story and task of a parsed plan that has no id
 // one, in place. The store keeps ids that are already set, so assigning them
 // early changes nothing for the planner's own tasks and lets the task
-// templates build ids and dependencies from real values.
-func ensurePlanIDs(stories []Story) {
-	for i := range stories {
-		if stories[i].ID == "" {
-			stories[i].ID = newID()
+// templates build ids and dependencies from real values. taken, when given,
+// rejects ids that are in use (Manager.assignPlanIDs passes the store check);
+// an id the plan already carries is always rejected.
+func ensurePlanIDs(stories []Story, taken ...func(string) bool) {
+	carried, _ := planIDs(stories)
+	assign := func(id *string) {
+		if *id != "" {
+			return
 		}
-		for j := range stories[i].Tasks {
-			if stories[i].Tasks[j].ID == "" {
-				stories[i].Tasks[j].ID = newID()
+		next, err := drawUnusedID(newID, func(cand string) bool {
+			for _, in := range taken {
+				if in(cand) {
+					return true
+				}
 			}
+			return carried[cand]
+		})
+		if err != nil {
+			return // SetStories draws again and reports the error
+		}
+		*id, carried[next] = next, true
+	}
+	for i := range stories {
+		assign(&stories[i].ID)
+		for j := range stories[i].Tasks {
+			assign(&stories[i].Tasks[j].ID)
 		}
 	}
 }
