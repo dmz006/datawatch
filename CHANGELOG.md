@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## v9.187.16 — Security fixes; Accept needs real evidence; recovered release test fixes
 
 ### Security
-- Fixed the open code scanning alerts. A supervisor schedule name containing a path could write a large handover file outside the project; such names are now refused. Pack folders that link outside themselves are refused, pack removal stays inside the install root, and a branch restore name is checked before any git call.
+- Fixed 27 open code scanning alerts. Two newer alerts raised by the token change in the previous release stay open. A supervisor schedule name containing a path could write a large handover file outside the project; such names are now refused. Pack folders that link outside themselves are refused, pack removal stays inside the install root, and a branch restore name is checked before any git call.
 
 ### Fixed
 - Accepting a held task now needs a real task commit, the files the task names and a passing task check. A completion marker with only a snapshot commit is refused. There is no override.
