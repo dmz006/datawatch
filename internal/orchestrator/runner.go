@@ -100,7 +100,7 @@ func (r *Runner) Plan(graphID string, deps map[string][]string) (*Graph, error) 
 	// PRD nodes first.
 	for _, pid := range g.PRDIDs {
 		n := Node{
-			ID: newID(), GraphID: g.ID, Kind: NodeKindPRD, PRDID: pid,
+			ID: r.store.unusedID(), GraphID: g.ID, Kind: NodeKindPRD, PRDID: pid,
 			Status: NodePending, CreatedAt: now, UpdatedAt: now,
 		}
 		if ds, ok := deps[pid]; ok {
@@ -117,7 +117,7 @@ func (r *Runner) Plan(graphID string, deps map[string][]string) (*Graph, error) 
 	for _, pid := range g.PRDIDs {
 		for _, gr := range guards {
 			gn := Node{
-				ID: newID(), GraphID: g.ID, Kind: NodeKindGuardrail,
+				ID: r.store.unusedID(), GraphID: g.ID, Kind: NodeKindGuardrail,
 				PRDID: pid, Guardrail: gr, Status: NodePending,
 				DependsOn: []string{prdNodeID[pid]},
 				CreatedAt: now, UpdatedAt: now,
