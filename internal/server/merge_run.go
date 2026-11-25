@@ -258,6 +258,10 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 		http.Error(w, autonomous.ErrMergeNoBaseRepo.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	if b, paused := s.operatorPauseBlock(repo); paused {
+		http.Error(w, b.Message(), http.StatusConflict)
+		return
+	}
 	project := body.Project
 	if project == "" {
 		project = filepath.Base(repo)
