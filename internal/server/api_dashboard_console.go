@@ -342,7 +342,12 @@ func (s *Server) buildUsage(ctx context.Context) (int, string, error) {
 				count = pct
 			}
 			line := fmt.Sprintf("%d%% of the weekly window used", pct)
-			if res.Stale {
+			switch {
+			case res.Advice.Estimated:
+				line += " (estimated from tokens since the reset)"
+			case res.Advice.Needs == usagecalc.NeedsReading && res.Advice.LastResetAt != nil:
+				line = "weekly usage not known: no reading since the weekly reset"
+			case res.Stale:
 				line += " (stale reading)"
 			}
 			if res.Advice.NextResetAt != nil {

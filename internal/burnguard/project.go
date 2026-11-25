@@ -32,6 +32,9 @@ type ProjectInput struct {
 // usable and the numbers are zero.
 type Projection struct {
 	Needs string `json:"needs,omitempty"`
+	// Estimated is true when a weekly reset passed since the newest reading: the base is
+	// then 0 at that reset (ReadAt, PercentAtReading) and every point comes from the tokens.
+	Estimated bool `json:"estimated,omitempty"`
 
 	ReadAt    time.Time `json:"read_at"`
 	NextReset time.Time `json:"next_reset"`
@@ -91,32 +94,103 @@ type Projection struct {
 	TokenPointsPerHour   float64 `json:"token_points_per_hour"`
 }
 
+// EstimateWeek estimates the week that holds in.Now from the tokens alone, for a week with
+// no reading yet: the points since its reset and the burn over the trailing window, both
+// priced with Coef and scaled by the calibration ratio of the earlier readings (also
+// returned). ok is false when there is nothing to estimate from: no token data, no prices
+// or no usable reset.
+func EstimateWeek(in ProjectInput) (est usagecalc.WeekEstimate, ratio float64, ok bool) {
+	last, err := in.Reset.LastReset(in.Now)
+	if err != nil || len(in.Buckets) == 0 || in.Coef == (Coefficients{}) {
+		return est, 0, false
+	}
+	window, through := in.window(), in.through()
+	// Only readings the token data reaches back to can calibrate: an older interval would
+	// count its points against no tokens.
+	var covered []usagecalc.Reading
+	for _, r := range readingsAtOrBefore(in.Readings, in.Now) {
+		if !r.At.Before(in.Buckets[0].Hour) {
+			covered = append(covered, r)
+		}
+	}
+	ratio = calibrationRatio(in.Buckets, covered, through, in.Coef)
+	est.Points = price(tokensBetween(in.Buckets, last, in.Now, through), in.Coef) * ratio
+	w, o := splitPoints(in.Buckets, in.Now.Add(-window), in.Now, through, in.Coef)
+	est.PointsPerHour = (w + o) / window.Hours() * ratio
+	return est, ratio, true
+}
+
+// window is the span the burn rate is measured over.
+func (in ProjectInput) window() time.Duration {
+	if in.RateWindow <= 0 {
+		return DefaultRateWindow
+	}
+	return in.RateWindow
+}
+
+// through is where the token data ends, at the latest Now.
+func (in ProjectInput) through() time.Time {
+	if in.Through.IsZero() || in.Through.After(in.Now) {
+		return in.Now
+	}
+	return in.Through
+}
+
+// estimatedProjection is the projection of a week with no reading yet. There is no
+// readings-only projection of that week, so AdviceProjected repeats Projected and the
+// guard's gap check never fires on it.
+func estimatedProjection(in ProjectInput, adv usagecalc.Advice, est usagecalc.WeekEstimate, ratio, margin float64) Projection {
+	last, next := *adv.LastResetAt, *adv.NextResetAt
+	p := Projection{
+		Estimated: true, ReadAt: last, NextReset: next,
+		PointsSinceReading: est.Points, EstimatedNow: est.Points,
+		Ceiling: adv.Ceiling, Margin: margin, Target: adv.Ceiling - margin,
+		AllowedPerHour: adv.AllowancePer24h / 24, AdviceVerdict: adv.Verdict,
+		CalibrationRatio: ratio, TokenPointsPerHour: est.PointsPerHour, PointsPerHour: est.PointsPerHour,
+		HoursLeft: next.Sub(in.Now).Hours(),
+	}
+	if week := next.Sub(last).Hours(); week > 0 {
+		p.LineNow = in.Now.Sub(last).Hours() / week * 100
+	}
+	window := in.window()
+	w, o := splitPoints(in.Buckets, in.Now.Add(-window), in.Now, in.through(), in.Coef)
+	p.WorkerPointsPerHour, p.OtherPointsPerHour = w/window.Hours(), o/window.Hours()
+	p.Projected = p.EstimatedNow + p.PointsPerHour*p.HoursLeft
+	p.AdviceProjected = p.Projected
+	finish(&p, in.Now)
+	return p
+}
+
 // Project projects the points used to the weekly reset and compares them with the pace line.
 // The newest percentage reading is the base; the tokens after it, priced with Coef, bring it
-// up to Now; the burn over the trailing window carries it on to the reset.
+// up to Now; the burn over the trailing window carries it on to the reset. When a weekly
+// reset has passed since the newest reading, the base is 0 at that reset (see EstimateWeek).
 func Project(in ProjectInput) Projection {
 	margin := usagecalc.DefaultSafetyPoints
 	if in.MarginPoints != nil && !math.IsNaN(*in.MarginPoints) && *in.MarginPoints >= 0 {
 		margin = *in.MarginPoints
 	}
-	window := in.RateWindow
-	if window <= 0 {
-		window = DefaultRateWindow
-	}
-	through := in.Through
-	if through.IsZero() || through.After(in.Now) {
-		through = in.Now
+	window, through := in.window(), in.through()
+	var sinceReset *usagecalc.WeekEstimate
+	var ratio float64
+	if usagecalc.ResetPassed(in.Readings, in.Reset, in.Now) {
+		if est, r, ok := EstimateWeek(in); ok {
+			sinceReset, ratio = &est, r
+		}
 	}
 	adv := usagecalc.Advise(usagecalc.Input{
 		Readings: in.Readings, Reset: in.Reset, Now: in.Now,
-		ExtraCreditPoints: in.ExtraCreditPoints, SafetyPoints: &margin,
+		ExtraCreditPoints: in.ExtraCreditPoints, SafetyPoints: &margin, SinceReset: sinceReset,
 	})
 	if adv.Needs != "" {
 		return Projection{Needs: adv.Needs}
 	}
+	if adv.Estimated {
+		return estimatedProjection(in, adv, *sinceReset, ratio, margin)
+	}
 	readAt, next := *adv.ReadAt, *adv.NextResetAt
-	if !in.Now.Before(next) || in.Now.Before(readAt) {
-		// The newest reading is from before the last reset, or is in the future.
+	if in.Now.Before(readAt) {
+		// The newest reading is in the future.
 		return Projection{Needs: usagecalc.NeedsReading}
 	}
 

@@ -490,6 +490,10 @@ func (u serverArcUsage) PlanUsage(ctx context.Context) (arcPlanUsage, error) {
 	if err != nil {
 		return arcPlanUsage{}, err
 	}
+	if res.Advice.Needs == usagecalc.NeedsReading && res.Advice.LastResetAt != nil {
+		// A reset passed and there is nothing to estimate from: 0 used would be false.
+		return arcPlanUsage{}, fmt.Errorf("no usage reading since the weekly reset")
+	}
 	// The plan is measured in points: the weekly allowance is 100 points
 	// plus any bought extra, and Percent is the points used so far.
 	return arcPlanUsage{PointsUsed: res.Advice.Percent, PointsAllowance: res.Advice.Ceiling}, nil

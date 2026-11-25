@@ -34,7 +34,7 @@ func TestUsageCalcAdviceHappyPath(t *testing.T) {
 
 	// One percent reading: the advice is built from it.
 	if rr := doUsage(t, s, http.MethodPost, "/api/usage/readings",
-		jsonMarshalUsage(t, usagecalc.Reading{At: time.Now().UTC().Add(-time.Hour), Percent: fptrUsage(61.5), Source: usagecalc.SourceTyped}), s.handleUsageReadings); rr.Code != http.StatusOK {
+		jsonMarshalUsage(t, usagecalc.Reading{At: time.Now().UTC().Add(-time.Second), Percent: fptrUsage(61.5), Source: usagecalc.SourceTyped}), s.handleUsageReadings); rr.Code != http.StatusOK {
 		t.Fatalf("POST reading = %d: %s", rr.Code, rr.Body.String())
 	}
 
@@ -108,7 +108,7 @@ func TestUsageCalcAdviceServerZone(t *testing.T) {
 	t.Setenv("TZ", "America/New_York")
 	s := newUsageCalcServer(t)
 	if rr := doUsage(t, s, http.MethodPost, "/api/usage/readings",
-		jsonMarshalUsage(t, usagecalc.Reading{At: time.Now().UTC().Add(-time.Hour), Percent: fptrUsage(61.5), Source: usagecalc.SourceTyped}), s.handleUsageReadings); rr.Code != http.StatusOK {
+		jsonMarshalUsage(t, usagecalc.Reading{At: time.Now().UTC().Add(-time.Second), Percent: fptrUsage(61.5), Source: usagecalc.SourceTyped}), s.handleUsageReadings); rr.Code != http.StatusOK {
 		t.Fatalf("POST reading = %d: %s", rr.Code, rr.Body.String())
 	}
 	rr := doUsage(t, s, http.MethodGet, "/api/usage/advice", "", s.handleUsageAdvice)

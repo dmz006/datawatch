@@ -581,6 +581,7 @@ func TestAdviseInvariantsHold(t *testing.T) {
 			Readings:          []Reading{percentReading(prevAt, prev), percentReading(newAt, cur)},
 			Reset:             sundayEight(),
 			Now:               newAt.Add(time.Duration(rng.Intn(600)) * time.Minute),
+			SinceReset:        &WeekEstimate{Points: 2, PointsPerHour: 0.5},
 			ExtraCreditPoints: float64(rng.Intn(3)) * 10,
 			Lanes:             rng.Intn(6) - 1,
 			MaxLanes:          rng.Intn(6),

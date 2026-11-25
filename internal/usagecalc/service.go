@@ -151,6 +151,17 @@ type Service struct {
 	live      LaneCounter
 	startup   StartupSource
 	now       func() time.Time
+	estimator WeekEstimator
+}
+
+// WeekEstimator estimates the week that holds now from the daemon's token data, for a week
+// that has no reading yet. It returns nil when there is no token data to estimate from.
+type WeekEstimator func(ctx context.Context, readings []Reading, reset ResetSpec, now time.Time) *WeekEstimate
+
+// WithWeekEstimator wires the estimate the advice uses once a weekly reset has passed since
+// the newest reading. Without it such an advice needs a new reading.
+func WithWeekEstimator(e WeekEstimator) ServiceOption {
+	return func(s *Service) { s.estimator = e }
 }
 
 // ServiceOption tunes a Service at construction time.
@@ -270,6 +281,19 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 		RemainingWork:     s.remainingWork(o, cfg),
 	}
 
+	// A reset since the newest reading: estimate the new week, and mark the series stale.
+	stale, staleReason := snap.Stale, snap.StaleReason
+	if ResetPassed(in.Readings, in.Reset, in.Now) {
+		if s.estimator != nil {
+			in.SinceReset = s.estimator(ctx, in.Readings, in.Reset, in.Now)
+		}
+		stale = true
+		if staleReason != "" {
+			staleReason += "; "
+		}
+		staleReason += ResetPassedReason
+	}
+
 	advice := Advise(in)
 	advice.LanesRunningNow = s.lanesRunningNow()
 	advice.LanesStamped = stamped
@@ -280,8 +304,8 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 	res := &AdviceResult{
 		Variant:     variant,
 		Policy:      advice.Advice.Policy,
-		Stale:       snap.Stale,
-		StaleReason: snap.StaleReason,
+		Stale:       stale,
+		StaleReason: staleReason,
 		Advice:      advice,
 		Startup:     s.startupAdvice(),
 	}

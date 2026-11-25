@@ -89,10 +89,14 @@ func textLines(resp Response) []string {
 
 	// reading and reset, with the reset time in the reset zone.
 	switch {
+	case ad.Estimated:
+		lines = append(lines, estimateLine(ad), "note: "+ad.EstimateNote)
 	case ad.ReadAt != nil:
 		lines = append(lines, readLine(ad))
 	case ad.Needs == NeedsReset:
 		lines = append(lines, "usage: the weekly reset is not set yet (weekday, HH:MM clock time, zone name)")
+	case ad.Needs == NeedsReading && ad.LastResetAt != nil:
+		lines = append(lines, "usage: no reading since the weekly reset of "+clockStr(*ad.LastResetAt))
 	default:
 		lines = append(lines, "usage: no weekly readings yet")
 	}
@@ -174,9 +178,8 @@ func laneCount(n *int, missing string) string {
 	return strconv.Itoa(*n)
 }
 
-// readLine is the opening line: the latest reading, the reset time in the
-// reset zone, and the days left.
-func readLine(ad Advice) string {
+// resetText is the next reset in the reset zone, with where it came from.
+func resetText(ad Advice) string {
 	reset := "not set"
 	if ad.NextResetAt != nil {
 		reset = clockStr(*ad.NextResetAt)
@@ -187,10 +190,27 @@ func readLine(ad Advice) string {
 			reset += " (server zone)"
 		}
 	}
+	return reset
+}
+
+// estimateLine is the opening line of an estimated week: it names the figure as an
+// estimate and the reading as last week's.
+func estimateLine(ad Advice) string {
+	last := ""
+	if ad.ReadAt != nil {
+		last = " (last reading " + clockStr(*ad.ReadAt) + ", before the reset)"
+	}
+	return fmt.Sprintf("usage: about %s%% estimated%s, reset %s (%s days left)",
+		txtPoints(ad.Percent), last, resetText(ad), txtHours(ad.DaysLeft))
+}
+
+// readLine is the opening line: the latest reading, the reset time in the
+// reset zone, and the days left.
+func readLine(ad Advice) string {
 	return fmt.Sprintf("usage: %s%% read %s, reset %s (%s days left)",
 		txtPoints(ad.Percent),
 		clockStr(*ad.ReadAt),
-		reset,
+		resetText(ad),
 		txtHours(ad.DaysLeft))
 }
 
@@ -318,6 +338,9 @@ func policyLabel(id string) string {
 
 // staleLine names the keeper and when the last copy was taken.
 func staleLine(resp Response) string {
+	if resp.CopiedAt == nil && resp.StaleReason == ResetPassedReason {
+		return "stale: " + ResetPassedReason // no copy is in use
+	}
 	s := "stale: using the last copy"
 	if resp.CopiedAt != nil {
 		s += " taken " + resp.CopiedAt.Format("2006-01-02 15:04:05")
