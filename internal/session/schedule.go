@@ -120,6 +120,10 @@ type ScheduledCommand struct {
 	LastError string `json:"last_error,omitempty"`
 	// FireHistory is the newest fires and attempts, oldest first, bounded.
 	FireHistory []ScheduleFire `json:"fire_history,omitempty"`
+	// FiringSince is set, and saved, before a due command is typed, and
+	// cleared when the outcome is recorded. One found at daemon start means
+	// the daemon stopped in between (see schedule_claim.go).
+	FiringSince *time.Time `json:"firing_since,omitempty"`
 }
 
 // ScheduleFire is one fire or start attempt of a schedule.
@@ -161,6 +165,8 @@ type ScheduleStore struct {
 	path    string
 	encKey  []byte
 	entries []*ScheduledCommand
+	// typing holds the sessions a schedule is being typed into now.
+	typing map[string]bool
 }
 
 // NewScheduleStore creates or loads the schedule store at path (no encryption).
@@ -637,8 +643,11 @@ func (s *ScheduleStore) MarkDone(id string, failed bool) error {
 			if sc.State == SchedCancelled {
 				return nil
 			}
+			// The claim goes in the same save as the outcome.
+			sc.FiringSince = nil
 			if !failed {
 				sc.endNameWait()
+				sc.endInterruptedNote()
 			}
 			// BL26 — recurring schedule: bump RunAt instead of marking done,
 			// unless the entry hit its RecurUntil deadline or the run failed.

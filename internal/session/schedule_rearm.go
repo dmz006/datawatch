@@ -286,13 +286,16 @@ func (s *ScheduleStore) RecordStartFailure(id string, cause error, now time.Time
 }
 
 // ScheduleAlert is what the alert hook receives when a schedule needs the
-// operator: it waited for capacity many times in a row, the policy gave up, or
-// (NoSession) no live session has the name a command schedule is for.
+// operator: it waited for capacity many times in a row, the policy gave up,
+// (NoSession) no live session has the name a command schedule is for, or
+// (Interrupted) the daemon stopped while a command was being typed.
 type ScheduleAlert struct {
 	Schedule  ScheduledCommand
 	Outcome   StartFailure
 	Err       error
 	NoSession bool
+	// Interrupted: the command may or may not have arrived.
+	Interrupted bool
 }
 
 // SetScheduleAlertHook sets the function that raises the operator alert for a

@@ -149,7 +149,8 @@ func (s *ScheduleStore) HoldForName(id string, now time.Time, canAlert bool) (he
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, sc := range s.entries {
-		if sc.ID != id || sc.State != SchedPending {
+		// One being typed has a pass that will record its outcome.
+		if sc.ID != id || sc.State != SchedPending || sc.FiringSince != nil {
 			continue
 		}
 		changed := false

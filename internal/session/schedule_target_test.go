@@ -419,6 +419,7 @@ func TestNameScheduleSendErrorOnLiveSessionStillFails(t *testing.T) {
 	mgr, f, sched := newNameSchedEnv(t)
 	holder := addNamedHolder(t, mgr, f, "aa01", "supervisor", StateRunning, idlePane)
 	sc := addCron(t, sched, holder.FullID, "supervisor")
+	makeDue(t, sched, sc.ID)
 	f.mu.Lock()
 	f.FailNextOp = map[string]int{"send-keys": 1}
 	f.mu.Unlock()

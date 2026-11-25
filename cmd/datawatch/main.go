@@ -2222,7 +2222,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	mgr.SetScheduleStore(schedStore)
 	wireScheduleRearm(mgr, cfg)
-	mgr.StartScheduleTimer(ctx)
 
 	// BL356 — exit hook store + config seeding.
 	exitHookStore, err := session.NewExitHookStore(exitHooksStorePath(cfg))
@@ -2290,6 +2289,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	// BL226 — register global so any package can call alerts.EmitSystem
 	alertspkg.SetGlobal(alertStore)
+	// After SetGlobal: starting the schedule timer first closes the fires a
+	// restart cut off, and alerts the operator about each one.
+	mgr.StartScheduleTimer(ctx)
 
 	// One-shot push-on-complete (session manager): ad-hoc one-shots (no
 	// PRD owner) push their finished work after their own validation is
@@ -15238,12 +15240,11 @@ func fireInputSchedules(store *session.ScheduleStore, mgr *session.Manager, sess
 }
 
 // fireQueuedCommand types one due command and then the ones chained after it.
-// A command held back by a prompt on screen stays pending for a later pass; a
-// chained one has no later pass, so it is marked failed. A chained name
-// schedule whose session can no longer take input stays pending.
+// A command held back by a prompt on screen stays pending for a later pass. See
+// Manager.FireChained for what happens to a chained one that is not typed.
 func fireQueuedCommand(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session, sc *session.ScheduledCommand) {
 	if sent, err := mgr.FireScheduled(store, sess.FullID, sc); !sent {
-		if !errors.Is(err, session.ErrPromptOnScreen) {
+		if !errors.Is(err, session.ErrPromptOnScreen) && !errors.Is(err, session.ErrFireTaken) {
 			fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
 		}
 		return
@@ -15254,16 +15255,7 @@ func fireQueuedCommand(store *session.ScheduleStore, mgr *session.Manager, sess 
 
 // fireChainedCommands types into sess the commands chained after doneID.
 func fireChainedCommands(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session, doneID string) {
-	for _, next := range store.AfterDone(doneID) {
-		if sent, err := mgr.FireScheduled(store, sess.FullID, next); !sent {
-			fmt.Printf("[scheduler] failed to send chained input [%s]: %v\n", next.ID, err)
-			if errors.Is(err, session.ErrScheduleTargetGone) {
-				_ = store.ReleaseChained(next.ID, time.Now())
-				continue
-			}
-			_ = store.MarkDone(next.ID, true)
-		}
-	}
+	mgr.FireChained(store, sess.FullID, doneID)
 }
 
 // fireDueCommands types the command schedules due at t. One created with a
