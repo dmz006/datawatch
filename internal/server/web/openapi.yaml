@@ -4143,7 +4143,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReapRestoreResult"
-        "400": {description: The branch is missing or empty}
+        "400": {description: "The branch is missing, empty or not a valid git branch name"}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous write capability}
@@ -4255,7 +4255,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RemoteReapRestoreResult"
-        "400": {description: The branch is missing or empty}
+        "400": {description: "The branch is missing, empty or not a valid git branch name"}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous write capability}
@@ -5053,7 +5053,7 @@ paths:
                         id: {type: string}
                         cron: {type: string}
                         created: {type: boolean}
-        "400": {description: Bad project, model, schedule name or cron}
+        "400": {description: "Bad project, model, schedule name or cron. A schedule name must be one plain name: no path separator, '..' or control character"}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous write capability}
