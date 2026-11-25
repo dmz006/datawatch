@@ -36,7 +36,8 @@ func branchShapeOK(branch string) bool {
 // taskGitCommands are the git commands the task-worktree code runs through
 // taskGitOut.
 var taskGitCommands = map[string]bool{
-	"branch": true, "cherry": true, "ls-files": true, "merge-base": true,
+	"branch": true, "cat-file": true, "cherry": true, "log": true,
+	"ls-files": true, "merge-base": true,
 	"rev-list": true, "rev-parse": true, "show": true, "status": true,
 	"symbolic-ref": true, "update-ref": true, "worktree": true,
 }
