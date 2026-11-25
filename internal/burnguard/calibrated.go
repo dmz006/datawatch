@@ -67,6 +67,16 @@ func ComputeCalibratedBurn(buckets []Bucket, readings []usagecalc.Reading, readA
 	return out
 }
 
+// CalibrationSince is the time of the oldest percentage reading the calibration ratio at
+// now is measured from, which the token data has to reach back to; zero without readings.
+func CalibrationSince(readings []usagecalc.Reading, now time.Time) time.Time {
+	rs := percentReadingsUpTo(readings, now)
+	if len(rs) == 0 {
+		return time.Time{}
+	}
+	return rs[max(len(rs)-CalibrationIntervals-1, 0)].at
+}
+
 // calibrationRatio is the points the readings moved over the token estimate of the same
 // intervals, across the newest CalibrationIntervals of them.
 func calibrationRatio(buckets []Bucket, readings []usagecalc.Reading, through time.Time, coef Coefficients) float64 {

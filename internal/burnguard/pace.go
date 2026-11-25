@@ -76,11 +76,14 @@ type PaceInput struct {
 	// changes nothing.
 	Unavailable bool
 
-	// Week side. WeekKnown is false when there is no usable weekly reading (none yet, or the
-	// newest is from before the last reset); WeekReset says it is the reset that made it so.
-	WeekKnown  bool
-	WeekReset  bool
-	WeekReadAt time.Time
+	// Week side. WeekKnown is false when there is no usable weekly figure (no reading yet, or
+	// the newest is from before the last reset and there is no token data); WeekReset says
+	// the week has no reading of its own because it reset. WeekFromTokens says the figure is
+	// estimated: no reading, WeekPointsSince is the points since the reset.
+	WeekKnown      bool
+	WeekReset      bool
+	WeekFromTokens bool
+	WeekReadAt     time.Time
 	// WeekPercent is the newest weekly reading; WeekPointsSince the points burned since it;
 	// LineNow the weekly pace line at Now.
 	WeekPercent     float64
@@ -125,6 +128,7 @@ type PaceDecision struct {
 	WeekLine        float64   `json:"week_line"`
 	WeekTolerance   float64   `json:"week_tolerance"`
 	WeekReset       bool      `json:"week_reset,omitempty"`
+	WeekFromTokens  bool      `json:"week_from_tokens,omitempty"`
 
 	WindowReadAt      time.Time `json:"window_read_at,omitempty"`
 	WindowPercent     float64   `json:"window_percent"`
@@ -179,7 +183,7 @@ func EvaluatePace(in PaceInput) PaceDecision {
 	d := PaceDecision{
 		At: in.Now, Entry: in.Entry, Mode: mode, Action: PaceActionNone,
 		WeekReadAt: in.WeekReadAt, WeekPercent: in.WeekPercent, WeekPointsSince: in.WeekPointsSince,
-		WeekLine: in.LineNow, WeekTolerance: s.WeekTolerance, WeekReset: in.WeekReset,
+		WeekLine: in.LineNow, WeekTolerance: s.WeekTolerance, WeekReset: in.WeekReset, WeekFromTokens: in.WeekFromTokens,
 		WindowReadAt: in.WindowReadAt, WindowPercent: in.WindowPercent, WindowPointsSince: in.WindowPointsSince,
 		WindowStopPercent: s.WindowStopPercent,
 	}
@@ -229,7 +233,11 @@ func EvaluatePace(in PaceInput) PaceDecision {
 	if in.WeekKnown {
 		d.WeekEstimated = in.WeekPercent + in.WeekPointsSince*factor
 		overWeek = d.WeekEstimated > in.LineNow+s.WeekTolerance
-	} else if in.WeekReset {
+	}
+	switch {
+	case in.WeekKnown && in.WeekFromTokens:
+		why = append(why, "week reset: no weekly reading in the new week yet, so the week is estimated from tokens since the reset; enter a reading to correct it")
+	case !in.WeekKnown && in.WeekReset:
 		why = append(why, "week reset: no weekly reading in the new week yet")
 	}
 

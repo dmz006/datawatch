@@ -178,6 +178,7 @@ type burnGuardStatusView struct {
 
 	LastProjection *struct {
 		Needs         string  `json:"needs"`
+		Estimated     bool    `json:"estimated"`
 		Projected     float64 `json:"projected"`
 		PointsPerHour float64 `json:"points_per_hour"`
 		Over          bool    `json:"over"`
@@ -236,6 +237,9 @@ func (r *Router) replyBurnGuard() {
 			fmt.Fprintf(&b, "line: %s%%, margin: %s pts\n", formatUsageNumber(*st.Line), formatUsageNumber(*st.Margin))
 		}
 		fmt.Fprintf(&b, "burn: %s pts/h, %s\n", formatUsageNumber(p.PointsPerHour), overUnder(p.Over, p.OverBy))
+		if p.Estimated {
+			b.WriteString("estimated from tokens since the reset; enter a reading to correct it\n")
+		}
 	} else if p != nil {
 		fmt.Fprintf(&b, "no projection yet: %s\n", p.Needs)
 	} else {

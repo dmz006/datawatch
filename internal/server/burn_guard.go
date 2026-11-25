@@ -205,6 +205,9 @@ type BurnGuard struct {
 	pace          map[string]*paceState // the pace policy's state by entry name
 	paceOrder     []string
 	paceLog       []burnguard.PaceDecision // newest first
+
+	estMu sync.Mutex // guards est
+	est   estimateTokens
 }
 
 // NewBurnGuard builds the runner. store may be nil (no persistence across restarts).
@@ -560,7 +563,10 @@ func (g *BurnGuard) project(ctx context.Context, cfg config.BurnGuardConfig, e c
 		return burnguard.Projection{Needs: "readings unavailable"}
 	}
 	readings := usagecalc.ReadingsForEntry(all, e.LLM, first)
-	buckets, through := g.tokens(ctx, e, first, now)
+	buckets, through := g.tokens(ctx, e, first, tokensSince(readings, reset, now))
+	if first {
+		g.keepEstimateData(e.LLM, now, buckets, through)
+	}
 	rate, hasRate := burnguard.ModelRate{}, false
 	if g.in.Rate != nil {
 		rate, hasRate = g.in.Rate(e)
@@ -611,8 +617,7 @@ func (g *BurnGuard) project(ctx context.Context, cfg config.BurnGuardConfig, e c
 
 // tokens reads one entry's token buckets: from the Tokens source when one is wired, else
 // the transcript directory for the first entry only.
-func (g *BurnGuard) tokens(ctx context.Context, e config.BurnGuardEntryConfig, first bool, now time.Time) ([]burnguard.Bucket, time.Time) {
-	since := now.Add(-8 * 24 * time.Hour)
+func (g *BurnGuard) tokens(ctx context.Context, e config.BurnGuardEntryConfig, first bool, since time.Time) ([]burnguard.Bucket, time.Time) {
 	if g.in.Tokens != nil {
 		b, through, err := g.in.Tokens(ctx, e.LLM, first, since)
 		if err != nil {

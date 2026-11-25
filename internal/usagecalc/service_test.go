@@ -11,13 +11,14 @@ import (
 )
 
 // Service test data: a Sunday 08:00 UTC weekly reset, the shared reading at Thursday
-// 08:00 UTC, and the service clock at Sunday 12:00 UTC — eighty hours after the reading.
+// 08:00 UTC, and the service clock at Sunday 04:00 UTC — sixty-eight hours after the
+// reading, four hours before the reset that ends its week.
 var (
 	serviceReset      = ResetSpec{Weekday: time.Sunday, Clock: "08:00", Zone: "UTC"}
 	serviceReadingAt  = time.Date(2026, 10, 22, 8, 0, 0, 0, time.UTC)
 	serviceReadingPct = 40.0
 	serviceReadingLn  = 3
-	serviceNow        = time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	serviceNow        = time.Date(2026, 10, 25, 4, 0, 0, 0, time.UTC)
 )
 
 // fakeQueue is a QueueCounter the tests can resize.
@@ -75,8 +76,8 @@ func TestServiceAdviceBasics(t *testing.T) {
 	if got := res.Advice.Percent; math.Abs(got-serviceReadingPct) > 1e-9 {
 		t.Errorf("Percent: got %v; want %v", got, serviceReadingPct)
 	}
-	if res.Advice.LatestAgeHours == nil || math.Abs(*res.Advice.LatestAgeHours-76) > 1e-9 {
-		t.Errorf("LatestAgeHours: got %v; want 76", res.Advice.LatestAgeHours)
+	if res.Advice.LatestAgeHours == nil || math.Abs(*res.Advice.LatestAgeHours-68) > 1e-9 {
+		t.Errorf("LatestAgeHours: got %v; want 68", res.Advice.LatestAgeHours)
 	}
 	if res.Advice.Lanes != 3 {
 		t.Errorf("Lanes: got %d; want the reading's 3", res.Advice.Lanes)
@@ -663,8 +664,8 @@ func TestServiceStaleSourceMarked(t *testing.T) {
 	if math.Abs(res.Advice.Percent-serviceReadingPct) > 1e-9 {
 		t.Errorf("Percent from the copy: got %v; want %v", res.Advice.Percent, serviceReadingPct)
 	}
-	if res.Advice.LatestAgeHours == nil || math.Abs(*res.Advice.LatestAgeHours-76) > 1e-9 {
-		t.Errorf("LatestAgeHours from the copy: got %v; want 76", res.Advice.LatestAgeHours)
+	if res.Advice.LatestAgeHours == nil || math.Abs(*res.Advice.LatestAgeHours-68) > 1e-9 {
+		t.Errorf("LatestAgeHours from the copy: got %v; want 68", res.Advice.LatestAgeHours)
 	}
 
 	// Without a copy at all, the call fails instead of inventing a series. A fresh

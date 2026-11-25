@@ -49,6 +49,39 @@ const (
 	PointValueSourceDefault = "default"
 )
 
+// A weekly reset that follows the newest reading makes that reading last week's. These are
+// the words every surface then shows.
+const (
+	// ResetPassedReason is the stale reason of the advice.
+	ResetPassedReason = "a weekly reset passed since the newest reading"
+	// EstimateNoteText marks a percentage estimated from the tokens since the reset.
+	EstimateNoteText = "Estimated from tokens since the reset; enter a reading to correct it."
+	// noEstimateText is the headline when there is no token data to estimate from.
+	noEstimateText = "A weekly reset passed since the newest reading and there is no token data to estimate the new week from; enter a weekly reading."
+	// estimateMinDays is the shortest span the week average of an estimate is taken over,
+	// so the first minutes of a week do not read as a very high daily burn.
+	estimateMinDays = 3.0 / 24
+)
+
+// WeekEstimate is what the token data say about a week that has no reading yet: the points
+// used since its reset and the burn now. The caller prices the tokens; this package does not
+// read them.
+type WeekEstimate struct {
+	Points        float64 `json:"points"`
+	PointsPerHour float64 `json:"points_per_hour"`
+}
+
+// ResetPassed reports whether a weekly reset at or before now follows the newest usable
+// reading, so that no reading belongs to the week that holds now.
+func ResetPassed(readings []Reading, reset ResetSpec, now time.Time) bool {
+	rs := validReadings(readings)
+	if len(rs) == 0 || now.IsZero() {
+		return false
+	}
+	next, err := reset.NextReset(rs[len(rs)-1].At)
+	return err == nil && !now.Before(next)
+}
+
 // Fallback reasons for the recent burn, and the notice shown whenever it falls back.
 const (
 	FallbackNoPrevious  = "no_previous"
@@ -167,8 +200,12 @@ type PointValue struct {
 type Input struct {
 	Readings []Reading `json:"readings"`
 	Reset    ResetSpec `json:"reset"`
-	// Now is used only for Advice.LatestAgeHours.
+	// Now is used for Advice.LatestAgeHours, and to tell whether a weekly reset has passed
+	// since the newest reading. The zero value means no reset has.
 	Now time.Time `json:"now"`
+	// SinceReset is the token estimate of the week that holds Now. It is read only when a
+	// reset has passed since the newest reading; nil then leaves the advice needing one.
+	SinceReset *WeekEstimate `json:"since_reset,omitempty"`
 	// PointValue is the billing profile's estimated value of a point and of a
 	// week of the allowance; nil leaves the advice without one.
 	PointValue *PointValue `json:"point_value,omitempty"`
@@ -264,8 +301,12 @@ type SeriesPoint struct {
 type Advice struct {
 	Needs string `json:"needs,omitempty"`
 
-	ReadAt         *time.Time `json:"read_at,omitempty"`
-	Percent        float64    `json:"percent"`
+	ReadAt  *time.Time `json:"read_at,omitempty"`
+	Percent float64    `json:"percent"`
+	// Estimated is true when Percent is not a reading: a reset has passed since the newest
+	// one (ReadAt), and Percent is estimated from the tokens since that reset.
+	Estimated      bool       `json:"estimated,omitempty"`
+	EstimateNote   string     `json:"estimate_note,omitempty"`
 	LatestAgeHours *float64   `json:"latest_age_hours,omitempty"`
 	LastResetAt    *time.Time `json:"last_reset_at,omitempty"`
 	NextResetAt    *time.Time `json:"next_reset_at,omitempty"`
@@ -517,41 +558,62 @@ func Advise(in Input) Advice {
 		return out.needing(NeedsReading, "Enter a weekly reading to see advice.")
 	}
 	newest := readings[len(readings)-1]
-	anchor, _ := in.Reset.anchor(newest.At)
+	// at is the moment the week's figures are measured at: the newest reading, or now when
+	// a reset has passed since it and the week that holds now has to be estimated.
+	at, rolled := newest.At, ResetPassed(readings, in.Reset, in.Now)
+	if rolled {
+		at = in.Now
+	}
+	anchor, _ := in.Reset.anchor(at)
 	last, next := anchor.last, anchor.at(daysPerWeek)
 	out.setWeek(anchor, newest.At)
 	if !in.Now.IsZero() {
 		age := math.Max(in.Now.Sub(newest.At).Hours(), 0)
 		out.LatestAgeHours = &age
 	}
-	if newest.SessionPercent != nil && finite(*newest.SessionPercent) {
+	if !rolled && newest.SessionPercent != nil && finite(*newest.SessionPercent) {
 		out.Session = &Session{Percent: *newest.SessionPercent, ReadAt: newest.At.In(anchor.loc), Label: SessionLabel}
 	}
 	out.Series = seriesSince(readings, last, anchor.loc)
 
-	if newest.Percent == nil {
+	var percent float64
+	switch {
+	case rolled && (in.SinceReset == nil || !finite(in.SinceReset.Points)):
+		// Last week's reading is never shown as this week's.
+		out.ReadAt, out.LatestAgeHours = nil, nil
+		return out.needing(NeedsReading, noEstimateText)
+	case rolled:
+		percent = clampPoints(in.SinceReset.Points, 0)
+		out.Estimated, out.EstimateNote = true, EstimateNoteText
+	case newest.Percent == nil:
 		return out.needing(NeedsPercent, "A weekly percentage is needed: the newest reading carries only a spend figure, and spend readings are stored but not yet turned into a verdict.")
+	default:
+		percent = *newest.Percent
 	}
-	percent := *newest.Percent
 	out.Percent = percent
 
 	// Position in the week. The pace line and the allowance per 24 hours stay on the
 	// 100-point allowance and follow the real length of the week, so on a daylight saving
 	// week (167 or 169 hours) the pace line still reaches 100 at the next reset.
 	weekDays := next.Sub(last).Hours() / 24
-	out.DaysSinceReset = newest.At.Sub(last).Hours() / 24
-	out.DaysLeft = math.Max(next.Sub(newest.At).Hours()/24, 0)
+	out.DaysSinceReset = at.Sub(last).Hours() / 24
+	out.DaysLeft = math.Max(next.Sub(at).Hours()/24, 0)
 	out.AllowancePer24h = WeeklyAllowance / weekDays
 	out.PaceLine = out.DaysSinceReset / weekDays * 100
 	out.Headroom = out.PaceLine - percent
 	out.AheadOfPace = percent > out.PaceLine
 
-	out.setBurns(readings, percent, newest.At, last)
-	out.setProjections(cfg, percent, newest.At, anchor.loc)
-	out.setLanes(cfg, percent, newest.At, anchor.loc)
-	out.Daily = dailyUse(anchor, out.Series, newest.At)
+	if rolled {
+		// No daily split: there is no reading in the week to split.
+		out.setEstimatedBurns(percent, in.SinceReset.PointsPerHour)
+	} else {
+		out.setBurns(readings, percent, at, last)
+		out.Daily = dailyUse(anchor, out.Series, at)
+	}
+	out.setProjections(cfg, percent, at, anchor.loc)
+	out.setLanes(cfg, percent, at, anchor.loc)
 
-	out.Advice = adviseByPolicy(cfg, &out, newest.At, anchor.loc)
+	out.Advice = adviseByPolicy(cfg, &out, at, anchor.loc)
 	if in.Reset.FellBack {
 		// After the policy notes: the daemon's local zone could not be resolved
 		// and the reset ran in UTC, so the operator must pin the zone.
@@ -609,6 +671,13 @@ func (a *Advice) setBurns(readings []Reading, percent float64, readAt, last time
 	if a.RecentFallback {
 		a.FallbackNotice = FallbackNoticeText
 	}
+}
+
+// setEstimatedBurns fills the burns of an estimated week: the week average from the estimate
+// since the reset, and the recent burn from the token burn now.
+func (a *Advice) setEstimatedBurns(percent, pointsPerHour float64) {
+	a.WeekAvgBurnPer24h = percent / math.Max(a.DaysSinceReset, estimateMinDays)
+	a.RecentBurnPer24h = clampPoints(pointsPerHour, 0) * 24
 }
 
 // previousPercentReading is the newest percentage reading before the newest reading; spend

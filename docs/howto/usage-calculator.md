@@ -122,6 +122,31 @@ IANA name you set is used as-is and is never rewritten to the server's zone.
 `Local` is refused because it is just the server's zone under another name,
 which is what the empty value already means.
 
+### After the reset, before your next reading
+
+When a reset has passed since your newest reading, that reading belongs to last
+week, and the advice never shows its percentage as current. The week starts at
+0 points at the reset and the advice **estimates** it from the tokens used since
+then, priced with the burn guard's cache prices and calibration (see
+[burn-guard.md](burn-guard.md#after-the-weekly-reset-before-your-next-reading)):
+
+- the JSON carries `advice.estimated: true` and `advice.estimate_note`, with
+  `stale: true` and a `stale_reason` that says a weekly reset passed since the
+  newest reading; `read_at` stays the time of that last reading;
+- the days since the reset, the days left, the pace line and the projections
+  are measured from now; the day-by-day ledger is empty;
+- the CLI, the chat reply, the web app and the dashboard say the figure is
+  estimated, and the web app leaves the reading form's percentage empty so the
+  estimate cannot be saved as a reading;
+- with auto lanes on, the lane decision follows the estimate.
+
+**Enter a reading to correct it.** The first reading after the reset replaces
+the estimate. When the daemon has no token data to estimate from (no
+transcripts, or the first paid entry is metered), the advice has
+`needs: reading` and says that a reset passed; it shows no percentage. The
+estimate reads this daemon's own transcripts only: use on another machine on
+the same account is not in it.
+
 **Where to see the effective zone.** When the config's zone is empty, the
 surfaces show the *effective* zone marked as the server's zone, not a blank
 value:

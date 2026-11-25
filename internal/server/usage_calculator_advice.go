@@ -183,7 +183,8 @@ func (s *Server) AttachUsageCalculator(queue usagecalc.QueueCounter) error {
 	}
 	s.SetUsageCalculator(usagecalc.NewService(series, store, settings, queue,
 		usagecalc.WithLiveLanes(usageLaneCounter{s: s}),
-		usagecalc.WithStartupSource(s.usageStartupProfiles)))
+		usagecalc.WithStartupSource(s.usageStartupProfiles),
+		usagecalc.WithWeekEstimator(s.usageWeekEstimate)))
 	return nil
 }
 
