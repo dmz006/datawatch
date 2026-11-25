@@ -79,13 +79,19 @@ finished-work findings all use it. A branch is **selected** when either:
   moved past the reviewed commit, and an Automaton that is `needs_review`.
 
 A branch is **never** selected, accepted or not, when the Automaton is failed,
-blocked, cancelled, archived or rejected, or its review is blocked. A later
-pass of a task or story check does not hide a blocked completion review.
+blocked, cancelled, archived or rejected, or its review is blocked. A block is
+kept for each check on each unit (the completion review, each story, each
+task): it stays until the **same check passes on that same unit**. A pass
+anywhere else does not hide it, and a later re-judge that only timed out does
+not remove it. An acceptance does not lift it.
 
 These also leave a branch out, and each answer lists every reason that
 applies: the work is not finished; an operator hold or pause (on the
 Automaton, its project or everything); uncommitted work held in its worktree;
-a code task that is not completed, or none completed; a landing already
+a code task that is not completed, or no finished task other than gate tasks
+(a finished task counts whatever its title says; an open task that is a gate,
+or whose title reads as documentation, does not hold the branch back); a
+landing already
 `landed`, `kept` or `dropped`; the answer "I will land it" (accepting the
 commit afterwards hands it back); a shipped record; a closed outcome; a branch
 that is not in the merge repository; a task branch with commits that are not on
@@ -134,7 +140,14 @@ failed, or a remote that cannot confirm it, leaves everything as it was.
 A shipped record you set by hand with source `merge_step`, for a branch in the
 merge repository that has a remote, is refused unless the remote contains the
 commit; when it does, the landing becomes `landed` too. It never changes the
-Automaton's status. A `backfill` record is stored as given.
+Automaton's status.
+
+**A `backfill` record is stored as given, with no check**, and `backfill` is
+what the CLI, MCP and chat send unless you choose `merge_step`. So such a
+record can mark work that was never pushed as shipped. The landing stays
+`pending`, and the selection rule then leaves the work out as already shipped.
+Record a shipped record only after the push, or choose `merge_step` to have the
+daemon check it.
 
 ## Reading the record
 
