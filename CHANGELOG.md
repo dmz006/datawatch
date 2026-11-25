@@ -5,6 +5,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.17 — Saved settings take effect; verifier faults hold; weekly estimate; session modes
+
+### Fixed
+- Every autonomous setting is now loaded when the daemon starts. Settings that were saved but ignored after a restart, such as plan review, plan coverage, drift and undeclared-edit modes and the check-script time limit, now take effect, and a later settings change no longer saves a blank over them.
+- A verifier that fails to run or returns an unreadable answer no longer runs the worker again. Only the verifier is retried; when retries run out the task is held with a question.
+- A launch or restart that names no model or permission mode no longer inherits another session's.
+- After the weekly usage reset with no new reading, the usage advice and the burn guard estimate the new week from token use, mark it as an estimate and hold when over.
+- Gate repair, merge run, deploy and event preview routes work again; merge and deploy runs are refused while paused. Restart adoption no longer adopts a verifier or judge session as the worker.
+- Two session end paths now record the end time and reason.
+
+### Added
+- A setting that closes a finished interactive session after an idle period so its capacity slot is freed. It is off by default.
+
+### Before you upgrade
+- Settings that were saved but had no effect start working. Check them before you resume automation.
+
+### Documentation
+- Verifier faults, the weekly estimate, finished session closing and the settings loaded at start.
+
 ## v9.187.16 — Security fixes; Accept needs real evidence; recovered release test fixes
 
 ### Security
