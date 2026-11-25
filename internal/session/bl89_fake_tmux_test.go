@@ -46,6 +46,8 @@ func TestBL89_FakeTmux_SendInput_UsesSettleForAllSourcesWhenConfigured(t *testin
 	for _, source := range []string{"web", "mcp", "cli", "api", "filter"} {
 		mgr, fake := newTestManagerWithFake(t)
 		mgr.SetScheduleSettleMs(200) // settle configured → all sources use it
+		// Filter input types only through an open gate (closed by default).
+		mgr.SetFilterInputGate(func(string) error { return nil })
 
 		_ = mgr.SaveSession(&Session{
 			ID: "bb01", FullID: "testhost-bb01", TmuxSession: "cs-bb01",

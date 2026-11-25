@@ -17605,6 +17605,7 @@ const DOCS_LINKS_BY_KEY = {
   settings_ui_prompt_dismiss_delay_seconds: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
   settings_ui_prompt_clear_bound_seconds: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
   settings_ui_prompt_max_attempts: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
+  settings_input_filters_enabled: DOCS_DEFINITIONS + '#output-filters-that-type-into-sessions',
   gc_summarizer: DOCS_DEFINITIONS + '#session-ai-summarizer',
   gc_whisper: 'howto/voice-input.md',
   test_whisper: 'howto/voice-input.md',
@@ -18742,12 +18743,13 @@ function renderSettingsView() {
               <div class="create-form">
                 <input id="newFilterPattern" class="form-input" type="text" placeholder="Regex pattern (e.g. DATAWATCH_RATE_LIMITED)" autocomplete="off" />
                 <select id="newFilterAction" class="form-select">
-                  <option value="send_input">send_input — send text to session</option>
                   <option value="alert">alert — create system alert</option>
-                  <option value="schedule">schedule — queue command for next prompt</option>
                   <option value="detect_prompt">detect_prompt — mark session as waiting for input</option>
+                  <option value="send_input">send_input — send text to session</option>
+                  <option value="schedule">schedule — queue command for next prompt</option>
                 </select>
-                <input id="newFilterValue" class="form-input" type="text" placeholder="Value (optional, e.g. y)" autocomplete="off" />
+                <input id="newFilterValue" class="form-input" type="text" placeholder="${escHtml(t('filter_value_placeholder'))}" autocomplete="off" />
+                <div style="color:var(--text2);font-size:12px;margin-top:4px;">${escHtml(t('filter_types_input_note'))}</div>
                 <button class="btn-primary" style="margin-top:6px;" onclick="createFilter()">Save Filter</button>
               </div>
             </details>
@@ -27300,6 +27302,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
+    { key: 'session.input_filters_enabled', label: 'Let output filters type into sessions', labelKey: 'settings_input_filters_enabled', helpKey: 'settings_input_filters_enabled_help', docsKey: 'settings_input_filters_enabled', type: 'toggle' },
     // UI prompt handling — Claude Code interstitial prompts: the on/off
     // switch (default on) plus the three numeric knobs. Every row links to
     // the same definitions manual section via docsKey; the numeric rows
@@ -57922,6 +57925,7 @@ function loadFilters() {
               <span class="state state-${f.enabled ? 'running' : 'failed'}" style="font-size:10px;margin-right:6px;">${f.enabled ? 'on' : 'off'}</span>
               <code class="settings-list-detail">${escHtml(f.pattern)}</code>
               <span class="settings-list-tag">${escHtml(f.action)}${f.value ? ' → ' + escHtml(f.value) : ''}</span>
+              ${filterBadgesHTML(f)}
             </div>
             <div class="settings-list-actions">
               <button class="btn-icon" title="${f.enabled ? 'Disable' : 'Enable'}" onclick="toggleFilter('${escHtml(f.id)}',${!f.enabled})">${f.enabled ? '⏸' : '▶'}</button>
@@ -57942,11 +57946,35 @@ function loadFilters() {
     .catch(e => { el.innerHTML = `<div style="color:var(--error);font-size:13px;">${escHtml(_fedMsg(e, 'Failed to load filters.'))}</div>`; });
 }
 
+// An output filter that types into sessions is marked as such in the list,
+// with the daemon's reason when it turned one off.
+function filterTypesInput(action) {
+  return action === 'send_input' || action === 'schedule';
+}
+
+function filterBadgesHTML(f) {
+  let out = '';
+  if (filterTypesInput(f.action)) {
+    out += `<span class="settings-list-tag filter-types-input">${escHtml(t('filter_types_input_badge'))}</span>`;
+  }
+  if (f.disabled_reason) {
+    out += `<span class="settings-list-detail filter-disabled-reason">${escHtml(f.disabled_reason)}</span>`;
+  }
+  return out;
+}
+
+// confirmInputFilter asks before a filter that types is created or saved.
+// Returns the request fields to add, or null when the operator declines.
+function confirmInputFilter(action) {
+  if (!filterTypesInput(action)) return {};
+  return confirm(t('filter_types_input_confirm')) ? { allow_input: true } : null;
+}
+
 function toggleFilter(id, enable) {
   // Proxy-aware (version-skew audit): _apiPath routes the PATCH to the
   // selected peer when one is active; no-op for local/all.
   fetch(_apiPath('/api/filters'), { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ id, enabled: enable }) })
-    .then(r => r.ok ? loadFilters() : showToast('Update failed', 'error'))
+    .then(r => r.ok ? loadFilters() : r.text().then(msg => showToast(msg || 'Update failed', 'error')))
     .catch(() => showToast('Update failed', 'error'));
 }
 
@@ -57980,11 +58008,16 @@ function saveFilterEdit(id) {
   const action = (document.getElementById(fid + '-act') || {}).value || '';
   const value = (document.getElementById(fid + '-val') || {}).value || '';
   if (!pattern || !action) { showToast('Pattern and action required', 'error'); return; }
+  const consent = confirmInputFilter(action);
+  if (!consent) return;
   apiFetch('/api/filters', {
     method: 'PATCH',
-    body: JSON.stringify({ id, pattern, action, value, enabled: true }),
+    body: JSON.stringify({ id, pattern, action, value, enabled: true, ...consent }),
   })
-    .then(() => { loadFilters(); showToast('Filter updated', 'success', 2000); })
+    .then(() => {
+      loadFilters();
+      showToast(filterTypesInput(action) ? t('filter_saved_off') : 'Filter updated', 'success', 2000);
+    })
     .catch(err => showToast('Update failed: ' + err.message, 'error'));
 }
 
@@ -57993,19 +58026,21 @@ function createFilter() {
   const action = (document.getElementById('newFilterAction') || {}).value || '';
   const value = (document.getElementById('newFilterValue') || {}).value || '';
   if (!pattern || !action) { showToast('Pattern and action required', 'error'); return; }
+  const consent = confirmInputFilter(action);
+  if (!consent) return;
   // Proxy-aware (version-skew audit): _apiPath routes the POST to the
   // selected peer when one is active; no-op for local/all.
   fetch(_apiPath('/api/filters'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
-    body: JSON.stringify({ pattern, action, value }),
+    body: JSON.stringify({ pattern, action, value, ...consent }),
   })
     .then(r => {
       if (r.ok) {
         document.getElementById('newFilterPattern').value = '';
         document.getElementById('newFilterValue').value = '';
         loadFilters();
-        showToast('Filter saved', 'success', 2000);
+        showToast(filterTypesInput(action) ? t('filter_saved_off') : 'Filter saved', 'success', 2000);
       } else {
         r.text().then(t => showToast(t || 'Save failed', 'error'));
       }

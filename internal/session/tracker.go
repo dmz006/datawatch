@@ -134,7 +134,11 @@ func (t *Tracker) RecordInputSent(input, source string) error {
 	if source != "" {
 		sourceLabel = fmt.Sprintf(" (via %s)", source)
 	}
-	entry := fmt.Sprintf("\n## [%s] User response%s\n\n```\n%s\n```\n", timestamp(), sourceLabel, input)
+	heading := "User response" + sourceLabel
+	if id, ok := filterSourceID(source); ok {
+		heading = "Typed by output filter " + id + " (not the operator)"
+	}
+	entry := fmt.Sprintf("\n## [%s] %s\n\n```\n%s\n```\n", timestamp(), heading, input)
 	if err := t.appendFile("conversation.md", entry); err != nil {
 		return err
 	}

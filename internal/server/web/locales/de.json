@@ -6487,5 +6487,12 @@
   "finished_work_cause_code_done_rest_pending": "Code fertig, Doku oder Gates offen",
   "finished_work_cause_reask_due": "liegen gelassen, erneut gefragt",
   "finished_work_cause_branch_gone_unlanded": "Branch weg, Landung nicht festgehalten",
-  "finished_work_cause_stuck_no_activity": "hängt, seit einer Woche keine Aktivität"
+  "finished_work_cause_stuck_no_activity": "hängt, seit einer Woche keine Aktivität",
+  "settings_input_filters_enabled": "Ausgabefilter dürfen in Sitzungen tippen",
+  "settings_input_filters_enabled_help": "Standardmäßig aus. Wenn an, darf ein aktivierter send_input- oder schedule-Filter tippen. Sein Text wird als vom Filter getippt markiert, und er beantwortet nie eine Berechtigungs- oder Bestätigungsabfrage.",
+  "filter_types_input_badge": "tippt Eingaben",
+  "filter_types_input_note": "send_input- und schedule-Filter tippen in Sitzungen. Sie starten ausgeschaltet, benötigen die Sitzungseinstellung, die Filtern das Tippen erlaubt, und beantworten nie eine Berechtigungs- oder Bestätigungsabfrage.",
+  "filter_types_input_confirm": "Dieser Filter wird in deine Sitzungen tippen. Er wird ausgeschaltet gespeichert. Erstellen?",
+  "filter_saved_off": "Filter ausgeschaltet gespeichert. In der Liste aktivieren.",
+  "filter_value_placeholder": "Wert (Warntext oder zu tippende Zeile)"
 }

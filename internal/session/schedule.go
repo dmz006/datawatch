@@ -45,6 +45,10 @@ type ScheduledCommand struct {
 	// Command is the text to send as input to the session.
 	Command string `json:"command"`
 
+	// FilterID is the output filter that queued this command; it is then
+	// typed marked as that filter's, and only while the filter may type.
+	FilterID string `json:"filter_id,omitempty"`
+
 	// RunAt is the scheduled time. Zero value means "run when session enters waiting_input".
 	RunAt time.Time `json:"run_at"`
 
@@ -218,6 +222,7 @@ type AddOptions struct {
 	SessionID    string
 	SessionName  string
 	ScheduleName string
+	FilterID     string
 	Command      string
 	RunAt        time.Time
 	RunAfterID   string
@@ -240,6 +245,7 @@ func (s *ScheduleStore) AddFull(opts AddOptions) (*ScheduledCommand, error) {
 		SessionID:         opts.SessionID,
 		SessionName:       opts.SessionName,
 		ScheduleName:      opts.ScheduleName,
+		FilterID:          opts.FilterID,
 		Command:           opts.Command,
 		RunAt:             opts.RunAt,
 		RunAfterID:        opts.RunAfterID,

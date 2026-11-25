@@ -6487,5 +6487,12 @@
   "finished_work_cause_code_done_rest_pending": "code done, docs or gates open",
   "finished_work_cause_reask_due": "left alone, asked again",
   "finished_work_cause_branch_gone_unlanded": "branch gone, landing not recorded",
-  "finished_work_cause_stuck_no_activity": "stuck, no activity for a week"
+  "finished_work_cause_stuck_no_activity": "stuck, no activity for a week",
+  "settings_input_filters_enabled": "Let output filters type into sessions",
+  "settings_input_filters_enabled_help": "Off by default. When on, an enabled send_input or schedule filter may type. Its text is marked as typed by the filter, and it never answers a permission or confirmation prompt.",
+  "filter_types_input_badge": "types input",
+  "filter_types_input_note": "send_input and schedule filters type into sessions. They start off, need the Sessions setting that lets filters type, and never answer a permission or confirmation prompt.",
+  "filter_types_input_confirm": "This filter will type into your sessions. It is saved turned off. Create it?",
+  "filter_saved_off": "Filter saved, turned off. Enable it in the list.",
+  "filter_value_placeholder": "Value (alert text, or the line to type)"
 }

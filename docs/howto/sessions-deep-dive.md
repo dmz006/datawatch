@@ -951,3 +951,22 @@ Note: the Tmux tab is a full-height page. The terminal pane fills the space betw
 - [howto/mcp-tools](mcp-tools.md)
 - [architecture-overview](../architecture-overview.md)
 - [api/sessions](../api/sessions.md)
+
+## Letting a filter type into a session
+
+Filters that type (`send_input`, `schedule`) are off until you turn them on, and
+they never answer a permission or confirmation prompt.
+
+1. Create it on purpose. It is saved turned off.
+   - Web: **Settings → Output Filters → + Add Filter**, then confirm.
+   - CLI: `datawatch filter add "waiting for the next batch" --action send_input --value "continue" --types-input`
+   - REST: `POST /api/filters` with `allow_input: true`.
+2. Turn the filter on in the list, or `datawatch filter toggle <id> --enable`.
+3. Turn on the daemon switch: **Settings → Sessions → Let output filters type
+   into sessions**, or `datawatch config set session.input_filters_enabled true`.
+
+Each line it types starts with `[datawatch filter <id> typed this, not the
+operator]`. To stop it, use `filter disable <id>` in chat, or turn the switch off;
+what it had queued is then cancelled instead of typed. Full rules:
+[Output filters that type into sessions](../datawatch-definitions.md#output-filters-that-type-into-sessions).
+

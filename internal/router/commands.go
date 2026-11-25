@@ -30,6 +30,7 @@ const (
 	CmdUpdateCheck       CommandType = "update"
 	CmdRestart           CommandType = "restart"
 	CmdSchedule          CommandType = "schedule"
+	CmdOutputFilter      CommandType = "filter"
 	CmdScheduleSpawn     CommandType = "schedule_spawn" // GH#128
 	CmdAlerts            CommandType = "alerts"
 	CmdStats             CommandType = "stats"
@@ -1184,6 +1185,9 @@ func Parse(text string) Command {
 		}
 		return cmd
 
+	case lower == "filter" || strings.HasPrefix(lower, "filter "):
+		return parseFilterCommand(text)
+
 	case lower == "schedule-results" || lower == "schedule-results list" || strings.HasPrefix(lower, "schedule-results "):
 		return parseScheduleResultsCommand(text)
 
@@ -1998,6 +2002,7 @@ schedule spawn task=<t> [dir=<d>] [backend=<b>] [cron=<c>] [name=<n>]
 schedule list                   every pending and failed schedule with next fire, last result and re-arm state
 schedule cancel id=<id>|name=<sched-name>
 schedule-results               last status + summary per scheduled job
+filter list | filter disable <id>  output filters; marks the ones that type into sessions
 schedule-results list           same as above
 schedule-results <name>         recent results history for one schedule
 alerts [n|system]               show last N alerts or system-only alerts

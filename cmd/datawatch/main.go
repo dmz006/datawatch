@@ -2398,6 +2398,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if err := filterStore.Seed(seededFilters); err != nil {
 		debugf("filter auto-seed: %v", err)
 	}
+	// Output filters type only while session.input_filters_enabled is on
+	// (read live), the filter is enabled, and no prompt waits for a person.
+	// What an upgraded-away filter had queued is cancelled before the
+	// schedule timer's first pass.
+	mgr.SetFilterInputGate(filterInputGate(cfg, filterStore))
+	cancelUpgradedFilterInput(filterStore, schedStore)
 
 	// F10 sprint 2: Project + Cluster profile stores.
 	// Files live under $DataDir/profiles/ so --secure covers them too.
@@ -2702,14 +2708,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Wire filter engine to session output
 	filterEngine := session.NewFilterEngine(filterStore, session.ActionHandlers{
-		SendInput: func(sessID, text string) error {
-			return mgr.SendInput(sessID, text, "filter")
+		MayType: mgr.FilterMayType,
+		SendInput: func(sessID, filterID, text string) error {
+			return mgr.SendInput(sessID, text, session.FilterSource(filterID))
 		},
 		AddAlert: func(sessID, title, body string) {
 			alertStore.Add(alertspkg.LevelInfo, title, body, sessID)
 		},
-		AddSchedule: func(sessID, command string) error {
-			_, err := schedStore.Add(sessID, command, time.Time{}, "")
+		AddSchedule: func(sessID, filterID, command string) error {
+			_, err := schedStore.AddFilterInput(sessID, filterID, command)
 			return err
 		},
 		DetectPrompt: func(sessID, line string) {
@@ -2832,7 +2839,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							continue
 						}
 						escaped := strings.ReplaceAll(line, "'", "'\\''")
-						_ = mgr.SendRawKeys(sess.FullID, fmt.Sprintf("echo '%s'", escaped))
+						if err := mgr.SendAutomatedRawKeys(sess.FullID, fmt.Sprintf("echo '%s'", escaped), "memory-wakeup"); err != nil {
+							fmt.Printf("[memory] stopped injecting context for session %s: %v\n", sess.ID, err)
+							return
+						}
 						time.Sleep(50 * time.Millisecond)
 					}
 					fmt.Printf("[memory] injected %d context lines for session %s\n", len(lines), sess.ID)
@@ -4330,6 +4340,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// finding report (secret_scan_shadow) — emits one entry carrying
 		// the redacted findings only (count, detector, file:line,
 		// fingerprint; never the matched secret).
+		// Text an output filter types, and every automated send refused
+		// because a prompt waits for a person, lands in the audit log.
+		mgr.SetInputAuditHook(func(ev session.InputAuditEvent) {
+			if wiredAuditLog != nil {
+				_ = wiredAuditLog.Write(inputAuditEntry(ev))
+			}
+		})
 		secretScanSink := auditpkg.NewSecretScanSink(wiredAuditLog)
 		mgr.SetSecretScanAuditFn(secretScanSink)
 		warnDeprecatedConfigKeys(cfg.DeprecatedKeys, wiredAuditLog)
@@ -15271,19 +15288,25 @@ func fireInputSchedules(store *session.ScheduleStore, mgr *session.Manager, sess
 		pending = store.WaitingInputPending(sess.ID)
 	}
 	for _, sc := range pending {
-		if err := mgr.SendInput(sess.FullID, sc.Command, "schedule"); err != nil {
+		fireQueuedCommand(store, mgr, sess, sc)
+	}
+}
+
+// fireQueuedCommand types one due command and then the ones chained after it.
+// A command held back by a prompt on screen stays pending for a later pass; a
+// chained one has no later pass, so it is marked failed.
+func fireQueuedCommand(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session, sc *session.ScheduledCommand) {
+	if sent, err := mgr.FireScheduled(store, sess.FullID, sc); !sent {
+		if !errors.Is(err, session.ErrPromptOnScreen) {
 			fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
-			_ = store.MarkDone(sc.ID, true)
-		} else {
-			fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
-			_ = store.MarkDone(sc.ID, false)
-			for _, next := range store.AfterDone(sc.ID) {
-				if err2 := mgr.SendInput(sess.FullID, next.Command, "schedule"); err2 != nil {
-					_ = store.MarkDone(next.ID, true)
-				} else {
-					_ = store.MarkDone(next.ID, false)
-				}
-			}
+		}
+		return
+	}
+	fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
+	for _, next := range store.AfterDone(sc.ID) {
+		if sent, err := mgr.FireScheduled(store, sess.FullID, next); !sent {
+			fmt.Printf("[scheduler] failed to send chained input [%s]: %v\n", next.ID, err)
+			_ = store.MarkDone(next.ID, true)
 		}
 	}
 }
@@ -15318,20 +15341,7 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 					}
 					continue
 				}
-				if err := mgr.SendInput(sess.FullID, sc.Command, "schedule"); err != nil {
-					fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
-					_ = store.MarkDone(sc.ID, true)
-				} else {
-					fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
-					_ = store.MarkDone(sc.ID, false)
-					for _, next := range store.AfterDone(sc.ID) {
-						if err2 := mgr.SendInput(sess.FullID, next.Command, "schedule"); err2 != nil {
-							_ = store.MarkDone(next.ID, true)
-						} else {
-							_ = store.MarkDone(next.ID, false)
-						}
-					}
-				}
+				fireQueuedCommand(store, mgr, sess, sc)
 			}
 			// GH#128: spawn/new_session schedules — start a fresh independent
 			// session. The same path as the manager's own schedule loop; a
@@ -18626,10 +18636,9 @@ var seededCommands = []session.SavedCommand{
 	{Name: "down", Command: "\x1b[B"},
 }
 
-// seededFilters are pre-populated output filter patterns for known claude-code prompts.
+// seededFilters are pre-populated output filter patterns for known claude-code
+// prompts. None of them types: a built-in filter may never answer a prompt.
 var seededFilters = []session.FilterPattern{
-	// "Do you want to proceed?" style patterns → schedule auto-approve
-	{Pattern: `Do you want to proceed\?`, Action: session.FilterActionSchedule, Value: "yes"},
 	// Rate limit detection → alert. v5.27.4 extends the regex to
 	// catch the modern claude-code phrasings ("5-hour limit reached",
 	// "weekly limit reached", "hit weekly limit") so the alert fires

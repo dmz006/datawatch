@@ -262,6 +262,17 @@ func settleForChunks(settle time.Duration, numChunks int) time.Duration {
 }
 
 func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Duration) error {
+	return t.sendKeysSettled(session, keys, settle, nil)
+}
+
+// SendKeysGuarded is SendKeysWithSettle for input the daemon types on its
+// own: after the text and before any Enter the pane is re-read, and when veto
+// matches, Enter is not pressed and ErrPromptOnScreen is returned.
+func (t *TmuxManager) SendKeysGuarded(session, keys string, settle time.Duration, veto func(pane string) bool) error {
+	return t.sendKeysSettled(session, keys, settle, veto)
+}
+
+func (t *TmuxManager) sendKeysSettled(session, keys string, settle time.Duration, veto func(pane string) bool) error {
 	if settle <= 0 {
 		settle = defaultSendSettle
 	}
@@ -283,7 +294,7 @@ func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Durat
 		}
 	}
 	time.Sleep(settleForChunks(settle, numChunks))
-	return submitPastedInput(t, session, sent)
+	return submitUnlessVetoed(t, session, sent, veto)
 }
 
 // SendEnter presses Enter once in the tmux session, with no text.

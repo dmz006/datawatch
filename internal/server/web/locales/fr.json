@@ -6487,5 +6487,12 @@
   "finished_work_cause_code_done_rest_pending": "code terminé, documentation ou portes ouvertes",
   "finished_work_cause_reask_due": "laissé de côté, redemandé",
   "finished_work_cause_branch_gone_unlanded": "branche disparue, atterrissage non noté",
-  "finished_work_cause_stuck_no_activity": "bloqué, sans activité depuis une semaine"
+  "finished_work_cause_stuck_no_activity": "bloqué, sans activité depuis une semaine",
+  "settings_input_filters_enabled": "Autoriser les filtres de sortie à saisir dans les sessions",
+  "settings_input_filters_enabled_help": "Désactivé par défaut. Une fois activé, un filtre send_input ou schedule activé peut saisir. Son texte est marqué comme saisi par le filtre et il ne répond jamais à une demande d’autorisation ou de confirmation.",
+  "filter_types_input_badge": "saisit du texte",
+  "filter_types_input_note": "Les filtres send_input et schedule saisissent dans les sessions. Ils sont créés désactivés, nécessitent le réglage Sessions qui autorise la saisie par les filtres et ne répondent jamais à une demande d’autorisation ou de confirmation.",
+  "filter_types_input_confirm": "Ce filtre saisira du texte dans vos sessions. Il est enregistré désactivé. Le créer ?",
+  "filter_saved_off": "Filtre enregistré désactivé. Activez-le dans la liste.",
+  "filter_value_placeholder": "Valeur (texte d’alerte ou ligne à saisir)"
 }

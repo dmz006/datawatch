@@ -20,6 +20,9 @@ const (
 	StartupDialogConfirmUnsafe   StartupKind = "confirm-unsafe"
 	StartupDialogUpdatePrompt    StartupKind = "update-prompt"
 	StartupDialogUnknownConfirm  StartupKind = "unknown-confirm"
+	// StartupDialogApproval is a tool or safety approval prompt: not a
+	// startup dialog, and only a person may answer it.
+	StartupDialogApproval StartupKind = "approval-prompt"
 )
 
 // StartupDialogAction is the pure decision for one captured pane: which
@@ -57,10 +60,19 @@ var startupConfirmSafePhrases = []string{
 	"trust", "continue", "proceed", "accept", "channels",
 }
 
+// startupConfirmHeldPhrases mark a confirm-footer question that sounds like
+// a safety confirmation: no startup dialog asks these, so nothing is sent and
+// a person decides.
+var startupConfirmHeldPhrases = []string{
+	"delete", "remove", "removal", "destructive", "dangerous", "overwrite",
+	"erase", "safety", "flagged", "approv", "command",
+}
+
 // classifyStartupDialog is a pure classifier for a raw tmux pane capture.
 // It strips ANSI (reusing StripANSI) and matches wording case-insensitively.
 //
 // Order of precedence:
+//  0. tool or safety approval prompt     -> approval-prompt, send nothing
 //  1. folder-trust arrow dialog          -> trust-folder, Down then Enter
 //     (same sequence as SendTrustPromptAccept)
 //  2. bypass-permissions disclaimer      -> bypass-accept, "2" then Enter
@@ -68,6 +80,7 @@ var startupConfirmSafePhrases = []string{
 //  4. MCP server trust prompt            -> mcp-trust, "1" then Enter
 //  5. "Enter to confirm / Esc to cancel" -> question above decides:
 //     update/settings/permission wording -> confirm-unsafe, Esc, Retry
+//     destructive or safety wording      -> unknown-confirm, send nothing
 //     trust/continue/accept wording      -> confirm-continue, Enter
 //     otherwise                          -> unknown-confirm, send nothing
 //  6. visible update banner, no footer   -> update-prompt, Esc, Retry
@@ -76,6 +89,11 @@ func classifyStartupDialog(pane string) StartupDialogAction {
 	plain := strings.ToLower(StripANSI(pane))
 
 	switch {
+	case PaneShowsApprovalPrompt(pane):
+		// Highest precedence: an approval prompt that quotes dialog wording,
+		// or carries the same confirm footer, is never answered.
+		return StartupDialogAction{Kind: StartupDialogApproval, Keys: startupKeysNone}
+
 	case containsAnyPhrase(plain,
 		"quick safety check", "trust this folder", "yes, i trust"):
 		// Arrow-key TUI with "No, exit" pre-selected: Down moves the
@@ -104,7 +122,8 @@ func classifyStartupDialog(pane string) StartupDialogAction {
 		if containsAnyPhrase(question, startupConfirmUnsafePhrases...) {
 			return StartupDialogAction{Kind: StartupDialogConfirmUnsafe, Keys: startupKeysEsc, Retry: true}
 		}
-		if containsAnyPhrase(question, startupConfirmSafePhrases...) {
+		if !containsAnyPhrase(question, startupConfirmHeldPhrases...) &&
+			containsAnyPhrase(question, startupConfirmSafePhrases...) {
 			return StartupDialogAction{Kind: StartupDialogConfirmContinue, Keys: startupKeysEnter}
 		}
 		// Do not guess: send nothing and let the silent-start detector
@@ -143,7 +162,7 @@ func ClassifyStartupDialog(pane string) StartupDialogAction {
 // nothing — the silent-start detector handles it) — render as "".
 func StartupDialogSendText(a StartupDialogAction) string {
 	switch a.Kind {
-	case StartupDialogNone, StartupDialogTrustFolder, StartupDialogUnknownConfirm:
+	case StartupDialogNone, StartupDialogTrustFolder, StartupDialogUnknownConfirm, StartupDialogApproval:
 		return ""
 	}
 	if len(a.Keys) == 0 || a.Keys[0] == "Esc" {

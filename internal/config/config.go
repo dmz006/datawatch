@@ -2741,6 +2741,13 @@ type SessionConfig struct {
 	// Default: 200.
 	ScheduleSettleMs int `yaml:"schedule_settle_ms"`
 
+	// InputFiltersEnabled is the daemon-wide switch for output filters
+	// that type into a session (send_input, schedule). Default false: no
+	// filter types anything. Even when on, each such filter starts
+	// disabled, its text is marked as typed by the filter, and it never
+	// answers a permission or confirmation prompt.
+	InputFiltersEnabled bool `yaml:"input_filters_enabled,omitempty"`
+
 	// StaleTimeoutSeconds (BL40) — sessions in StateRunning whose
 	// UpdatedAt is older than this are reported as stale via
 	// `GET /api/sessions/stale`. Default 1800 (30 min). 0 disables.

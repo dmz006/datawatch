@@ -6487,5 +6487,12 @@
   "finished_work_cause_code_done_rest_pending": "código listo, documentación o puertas abiertas",
   "finished_work_cause_reask_due": "dejado en paz, preguntado de nuevo",
   "finished_work_cause_branch_gone_unlanded": "rama desaparecida, aterrizaje sin registrar",
-  "finished_work_cause_stuck_no_activity": "atascado, sin actividad en una semana"
+  "finished_work_cause_stuck_no_activity": "atascado, sin actividad en una semana",
+  "settings_input_filters_enabled": "Permitir que los filtros de salida escriban en las sesiones",
+  "settings_input_filters_enabled_help": "Desactivado por defecto. Si está activado, un filtro send_input o schedule habilitado puede escribir. Su texto queda marcado como escrito por el filtro y nunca responde a una solicitud de permiso o confirmación.",
+  "filter_types_input_badge": "escribe entrada",
+  "filter_types_input_note": "Los filtros send_input y schedule escriben en las sesiones. Empiezan desactivados, necesitan el ajuste de Sesiones que permite escribir a los filtros y nunca responden a una solicitud de permiso o confirmación.",
+  "filter_types_input_confirm": "Este filtro escribirá en tus sesiones. Se guarda desactivado. ¿Crearlo?",
+  "filter_saved_off": "Filtro guardado desactivado. Habilítalo en la lista.",
+  "filter_value_placeholder": "Valor (texto de alerta o línea a escribir)"
 }

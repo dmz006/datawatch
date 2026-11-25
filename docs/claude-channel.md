@@ -230,15 +230,10 @@ Loading development channels…
 - Reply with `send <id>: ` (blank Enter) or use the `[Enter]` quick-input button.
 - After confirming once, the consent is remembered across sessions.
 
-Both prompts can be answered automatically by adding a `send_input` filter:
-
-```bash
-# Auto-approve folder trust (use with caution — only in controlled environments)
-datawatch cmd filter add "Yes, I trust|trust this folder" send_input 1
-
-# Auto-confirm dev channels consent
-datawatch cmd filter add "I am using this for local development" send_input ""
-```
+To have both startup prompts accepted automatically, turn on the launcher's
+auto-accept (`auto_accept_disclaimer` on the Claude Code LLM entry). Output
+filters cannot answer them: a filter may never answer a permission, safety or
+confirmation prompt.
 
 ---
 
@@ -334,8 +329,9 @@ Run `datawatch seed` if you haven't already.
 ### I see the trust prompt every time
 
 The trust prompt appears per directory. If your `project_dir` varies (e.g. a temp path)
-Claude will prompt for each one. Use a stable project directory path, or add an
-auto-approve filter (see "One-time prompts" above) if you're in a controlled environment.
+Claude will prompt for each one. Use a stable project directory path, or turn on the
+launcher's auto-accept (see "Development channels consent prompt" above) if you're in a
+controlled environment.
 
 ### Channel messages appear but terminal output is garbled
 

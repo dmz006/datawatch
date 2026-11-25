@@ -1378,11 +1378,27 @@ Pre-populate the command library and output filter store with useful defaults.
 Seeded commands: `approve` (yes), `reject` (no), `enter` (newline), `continue`, `skip`, `abort` (Ctrl-C)
 
 Seeded filters include common claude-code patterns:
-- `Do you want to proceed?` → schedule auto-approve
+- Prompt detection patterns (they only mark a session as waiting for input)
 - Rate limit messages → alert
 - Trust dialog → alert (no auto-approve)
 
+No seeded filter types into a session.
+
 Existing entries are never overwritten by `seed`.
+
+### `datawatch filter`
+
+```bash
+datawatch filter list
+datawatch filter add "build failed" --action alert --value "Build failed"
+# A filter that types: confirm on purpose; it is created turned off.
+datawatch filter add "waiting for the next batch" --action send_input --value "continue" --types-input
+datawatch filter toggle <id> --enable
+datawatch config set session.input_filters_enabled true
+datawatch filter delete <id>
+```
+
+In chat: `filter list` and `filter disable <id>`. Rules for filters that type: [Output filters that type into sessions](datawatch-definitions.md#output-filters-that-type-into-sessions).
 
 ### `datawatch reload`
 

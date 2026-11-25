@@ -9,7 +9,7 @@ story_preflight "surface:api feature:filters conflict:db-write" || return 0
 _story_ts_150() {
   local pat="test-filter-e2e-$$"
   local cr
-  cr=$(api POST /api/filters '{"pattern":"'"$pat"'","action":"schedule","value":"yes"}')
+  cr=$(api POST /api/filters '{"pattern":"'"$pat"'","action":"schedule","value":"smoke probe","allow_input":true}')
   save_evidence TS-150 "create.json" "$cr"
   local fid
   fid=$(echo "$cr" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")

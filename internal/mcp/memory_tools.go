@@ -1031,6 +1031,12 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 		), nil
 	}
 
+	if key == "session.input_filters_enabled" && !isFalseText(value) {
+		return mcpsdk.NewToolResultError(
+			"refused: only the operator turns on output filters that type into sessions (web, CLI or config file)",
+		), nil
+	}
+
 	// Route through the HTTP API for proper validation and persistence.
 	// /api/config accepts PUT (not POST).
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
@@ -1133,4 +1139,13 @@ func (s *Server) handleMemoryLearnings(_ context.Context, req mcpsdk.CallToolReq
 		fmt.Fprintf(&sb, "#%v: %s\n", m["id"], content)
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil
+}
+
+// isFalseText reports whether a config_set value turns a boolean off.
+func isFalseText(v string) bool {
+	switch strings.ToLower(strings.Trim(strings.TrimSpace(v), `"`)) {
+	case "false", "0", "no", "off":
+		return true
+	}
+	return false
 }

@@ -1456,6 +1456,8 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		r.handleUpdateCheck()
 	case CmdSchedule:
 		r.handleSchedule(cmd)
+	case CmdOutputFilter:
+		r.handleOutputFilter(cmd)
 	case CmdScheduleSpawn: // GH#128
 		r.handleScheduleSpawn(cmd)
 	case CmdAlerts:
@@ -2572,6 +2574,13 @@ func (r *Router) handleImplicitSend(text string) {
 		// Nothing to do — message is noise
 	case 1:
 		expanded := r.expandSavedCommand(text)
+		// The message named no session. While a prompt is on screen, only a
+		// plain answer is taken as meant for it: any other text plus Enter
+		// would approve the preselected choice.
+		if !isPlainPromptAnswer(expanded) && r.manager.ShowsConfirmationPrompt(waiting[0].FullID) {
+			r.send(fmt.Sprintf("[%s][%s] Not sent: the session shows a permission or confirmation prompt. Answer yes, no or a choice number, or use send %s: <message>.", r.hostname, waiting[0].ID, waiting[0].ID))
+			return
+		}
 		if err := r.manager.SendInput(waiting[0].FullID, expanded, r.backend.Name()); err != nil {
 			r.send(fmt.Sprintf("[%s][%s] Failed to send input: %v", r.hostname, waiting[0].ID, err))
 		} else {
@@ -2846,4 +2855,15 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// isPlainPromptAnswer reports whether text is nothing but an answer to a
+// prompt: yes, no or a single choice number.
+func isPlainPromptAnswer(text string) bool {
+	switch t := strings.ToLower(strings.TrimSpace(text)); t {
+	case "y", "n", "yes", "no", "always":
+		return true
+	default:
+		return len(t) == 1 && t[0] >= '1' && t[0] <= '9'
+	}
 }

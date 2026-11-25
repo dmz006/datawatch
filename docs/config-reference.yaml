@@ -149,6 +149,12 @@ session:
   # text is still unsent (paste_submit.go). Those timings are not config keys.
   schedule_settle_ms: 200
 
+  # Let output filters that type into a session (send_input, schedule) do so.
+  # Default false: no filter types anything. Even when true, each such filter
+  # starts turned off, its text is marked as typed by the filter, and it never
+  # answers a permission or confirmation prompt.
+  input_filters_enabled: false
+
   # UI prompt handling — every value below is read live from this config,
   # none is hard-coded, and a change applies immediately with no daemon
   # restart. Unset keys read as their commented default; an explicit value

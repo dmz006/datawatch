@@ -6487,5 +6487,12 @@
   "finished_work_cause_code_done_rest_pending": "コード完了、ドキュメントまたはゲートが未了",
   "finished_work_cause_reask_due": "保留、再質問",
   "finished_work_cause_branch_gone_unlanded": "ブランチ消失、反映の記録なし",
-  "finished_work_cause_stuck_no_activity": "停滞、1週間動きなし"
+  "finished_work_cause_stuck_no_activity": "停滞、1週間動きなし",
+  "settings_input_filters_enabled": "出力フィルターによるセッションへの入力を許可",
+  "settings_input_filters_enabled_help": "既定はオフです。オンの場合、有効な send_input または schedule フィルターが入力できます。入力した文字列にはフィルターによる入力であることが明記され、権限や確認のプロンプトに回答することはありません。",
+  "filter_types_input_badge": "入力する",
+  "filter_types_input_note": "send_input と schedule のフィルターはセッションに入力します。作成時はオフで、フィルターの入力を許可するセッション設定が必要です。権限や確認のプロンプトに回答することはありません。",
+  "filter_types_input_confirm": "このフィルターはセッションに入力します。オフの状態で保存されます。作成しますか？",
+  "filter_saved_off": "フィルターをオフの状態で保存しました。一覧で有効にしてください。",
+  "filter_value_placeholder": "値（アラート本文、または入力する行）"
 }
