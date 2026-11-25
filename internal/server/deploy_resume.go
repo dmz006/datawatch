@@ -82,6 +82,10 @@ func (s *Server) StartDeployResume(ctx context.Context) {
 		} else if res.Acted {
 			log.Printf("[deploy] resume finished: %s", res.Phase)
 		}
+		if s.deferredDeployRetryHeld(dir) {
+			log.Printf("[deploy] retry deferred: held, new work is paused; it is retried at the next daemon start after the operator resumes")
+			return
+		}
 		runner := newDeployRunner(dir, data, cfg, s.restartSource())
 		if res, err := deploy.RetryDeferred(ctx, store, deploy.SystemClock{}, runner.Retry); err != nil {
 			log.Printf("[deploy] retry deferred: %v", err)

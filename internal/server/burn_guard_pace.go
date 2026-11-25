@@ -171,6 +171,10 @@ func (g *BurnGuard) paceFill(in *burnguard.PaceInput, all []usagecalc.Reading, e
 		}
 	}
 	switch {
+	case proj.Needs == "" && proj.Estimated:
+		// No reading in the new week: the whole figure is the burn since the reset.
+		in.WeekKnown, in.WeekReset, in.WeekFromTokens = true, true, true
+		in.WeekPointsSince, in.LineNow = proj.PointsSinceReading, proj.LineNow
 	case proj.Needs == "":
 		in.WeekKnown = true
 		in.WeekReadAt, in.WeekPercent = proj.ReadAt, proj.PercentAtReading

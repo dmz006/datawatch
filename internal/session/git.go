@@ -487,7 +487,7 @@ func (g *ProjectGit) classifyCandidates(candidates []string) (kept []string, ski
 			skipped = append(skipped, StagingSkip{Path: c, Reason: "launcher"})
 			continue
 		}
-		if IsMCPFileWithDaemonEntry(filepath.Join(g.dir, filepath.FromSlash(c))) {
+		if IsMCPFileWithDaemonEntry(g.dir, c) {
 			skipped = append(skipped, StagingSkip{Path: c, Reason: "daemon-token"})
 			continue
 		}

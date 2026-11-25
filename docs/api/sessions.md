@@ -45,9 +45,10 @@ running when the daemon shuts down, and a state set through
 `POST /api/sessions/state`. Those notes read `<state> by <caller>: <reason>`.
 Restarting a session, setting it back to a live state, or the daemon bringing it
 back because its terminal is still alive clears both fields, so the next end is
-recorded. Two writes made outside the daemon's session manager do not set them
-yet: `datawatch session stop-all` run against the saved store, and the virtual
-sessions of a council run.
+recorded. The two writes made outside the daemon's session manager set them too:
+`datawatch session stop-all` run against the saved store
+(`killed by cli.session-stop-all: <reason>`) and the virtual sessions of a
+council run (`complete` or `failed by council.persona: <reason>`).
 
 ### Task delivery on launch
 
@@ -385,6 +386,7 @@ session:
   kill_sessions_on_exit: false
   stale_timeout_seconds: 1800
   finalise_interval_minutes: 10 # minutes between runs that finalise gone session records; 0 = scheduled runs off
+  finished_idle_close_minutes: 0 # end a proven-finished idle claude-code session after this long; 0 = off (default), 12 suggested
   task_delivery_window_seconds: 60 # max wait per attempt for the Claude prompt before redelivery
   task_delivery_attempts: 3    # redelivery attempts before the task fails
   schedule_settle_ms: 1500     # pause between typing the text and Enter; the paste wait and Enter retry after it use fixed timings

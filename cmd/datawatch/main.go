@@ -126,7 +126,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.16"
+var Version = "9.187.19"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2222,7 +2222,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	mgr.SetScheduleStore(schedStore)
 	wireScheduleRearm(mgr, cfg)
-	mgr.StartScheduleTimer(ctx)
 
 	// BL356 — exit hook store + config seeding.
 	exitHookStore, err := session.NewExitHookStore(exitHooksStorePath(cfg))
@@ -2290,6 +2289,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	// BL226 — register global so any package can call alerts.EmitSystem
 	alertspkg.SetGlobal(alertStore)
+	// After SetGlobal: starting the schedule timer first closes the fires a
+	// restart cut off, and alerts the operator about each one.
+	mgr.StartScheduleTimer(ctx)
 
 	// One-shot push-on-complete (session manager): ad-hoc one-shots (no
 	// PRD owner) push their finished work after their own validation is
@@ -4182,14 +4184,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						if !ok || sess == nil {
 							return
 						}
-						sess.UpdatedAt = time.Now().UTC()
-						if errMsg != "" {
-							sess.State = session.StateFailed
-							sess.LastResponse = errMsg
-						} else {
-							sess.State = session.StateComplete
-							sess.LastResponse = response
-						}
+						finishCouncilSession(sess, response, errMsg)
 						_ = mgr.SaveSession(sess)
 					}
 					fmt.Printf("[council] wired to llm/%s (MaxParallel=%d, SSE events on, per-persona virtual sessions on)\n", llmRef, maxPar)
@@ -5001,6 +4996,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// in...)` would collapse empty into nil.
 			NotifyDefaultEvents: cloneNotifyDefaultEvents(acfgIn.Notify.DefaultEvents),
 		}
+		// Every saved setting the list above leaves unset reaches the engine too
+		// (autonomous_boot_config.go).
+		if err := carryAutonomousSettings(&amgrCfg, acfgIn); err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] %v\n", err)
+		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.
 		if amgrCfg.MaxRecursionDepth == 0 && !acfgIn.AutoApproveChildren {
@@ -5629,6 +5629,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						waitTick++
 						s, ok := mgr.GetSession(task.SessionID)
 						if !ok {
+							// A verifier-only run judges a worker that already
+							// finished; its session may have been pruned since.
+							if task.VerifierFaultRetries > 0 {
+								break waitLoop
+							}
 							// Session not yet visible in the store; keep waiting.
 							continue
 						}
@@ -6217,6 +6222,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					return autonomouspkg.VerificationResult{}, autonomouspkg.LaunchFailureErrorWithReason(ls.FullID, ls.BackendFamily, string(ls.State), mgr.TaskDeliveryFailure(ls.FullID))
 				}
 			}
+			// The worker wait is over: verify time counts from here.
+			if autonomousMgrRef != nil {
+				autonomousMgrRef.NoteVerificationStarted(task.ID)
+			}
 			// BL366 — git-diff grounding: capture the worker's actual change.
 			// v8.25.9: when PreTaskSHA is set, an empty diff is a hard failure —
 			// the session made no changes, so the task cannot be verified as done.
@@ -6228,7 +6237,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// BL410 Phase 0 — the git command itself failed; no
 					// judgment ever ran on real content.
 					return autonomouspkg.VerificationResult{
-						OK: false, Severity: "medium",
+						OK: false, Severity: "medium", VerifierFault: true,
 						Summary:    fmt.Sprintf("verifier: git diff failed: %v", diffErr),
 						VerifiedAt: time.Now(),
 						Category:   "infra",
@@ -6397,6 +6406,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						Summary:    summary,
 						VerifiedAt: time.Now(),
 						Category:   category,
+						// A crashed worker harness is the worker's fault: it
+						// runs again.
+						WorkerFault: category == "infra",
 					}, nil
 				}
 				maxBytes := liveCfg.VerifierDiffMaxBytes
@@ -6697,7 +6709,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
 						return autonomouspkg.VerificationResult{
-							OK: false, Severity: "medium",
+							OK: false, Severity: "medium", VerifierFault: true,
 							Summary:    "verifier: capacity: " + aerr.Error(),
 							VerifiedAt: time.Now(),
 							Category:   "infra",
@@ -6787,18 +6799,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// A run-cap end lands here too, as infra.
 					return verifierSessionInfraResult(serr), nil
 				}
-				var parsed autonomouspkg.VerificationResult
-				if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
-					// Written but unparseable — a TERMINAL, non-retryable
-					// "invalid-response" verdict, NOT "infra": an infra block
-					// makes runGuardrailWithInfraRetry re-run the whole judge,
-					// and the retry re-delivers the same already-relocated
-					// output file, so the response is consumed twice (the same
-					// class of defect that discarded a 28KB decompose plan) or
-					// not at all. It must not be empty either — an empty
-					// category reads as a content-category block eligible for
-					// content auto-fix. Only a genuine no-output session
-					// failure (the serr branch above) is "infra".
+				parsed, uerr := parseVerifierReply(content)
+				if uerr != nil {
+					// Written but unreadable: an "invalid-response" verdict,
+					// not a finding about the work (an empty category would
+					// read as one and start content auto-fix). The executor
+					// runs only the verifier again.
 					return autonomouspkg.VerificationResult{
 						OK:         false,
 						Severity:   "medium",
@@ -6829,7 +6835,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			resp, err := http.DefaultClient.Do(httpReq)
 			if err != nil {
-				return autonomouspkg.VerificationResult{}, err
+				if ctx.Err() != nil {
+					return autonomouspkg.VerificationResult{}, err
+				}
+				// The ask never got an answer: the verifier's fault.
+				return autonomouspkg.VerificationResult{
+					OK: false, Severity: "medium", VerifierFault: true,
+					Summary:    "verifier: ask call failed: " + err.Error(),
+					VerifiedAt: time.Now(),
+					Category:   "infra",
+				}, nil
 			}
 			defer resp.Body.Close() //nolint:errcheck
 			rb, _ := io.ReadAll(resp.Body)
@@ -6837,7 +6852,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				// BL410 Phase 0 — the /api/ask call itself failed; no
 				// judgment ever ran.
 				return autonomouspkg.VerificationResult{
-					OK: false, Severity: "medium",
+					OK: false, Severity: "medium", VerifierFault: true,
 					Summary:    "verifier: ask call failed: " + reason,
 					VerifiedAt: time.Now(),
 					Category:   "infra",
@@ -6847,17 +6862,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				Answer string `json:"answer"`
 			}
 			_ = json.Unmarshal(rb, &ask)
-			// v8.25.9: unparseable LLM response is a verification failure, not a pass.
-			// OK: false triggers AutoFixRetries so the task is re-run rather than
-			// silently advancing the DAG on a verifier that couldn't respond.
-			var parsed autonomouspkg.VerificationResult
-			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &parsed); uerr != nil {
-				// Written but unparseable — a TERMINAL, non-retryable
-				// "invalid-response" verdict, for exactly the reasons the
-				// session branch above documents: never "infra" (that would
-				// auto-retry a judge whose written response we simply could
-				// not read), never empty (that would trigger content
-				// auto-fix on a failure that was never a judgment).
+			// v8.25.9: unparseable LLM response is a verification failure, not a
+			// pass: a verifier that could not respond never advances the DAG.
+			parsed, uerr := parseVerifierReply(ask.Answer)
+			if uerr != nil {
+				// "invalid-response", as on the session path above.
 				return autonomouspkg.VerificationResult{
 					OK:         false,
 					Severity:   "medium",
@@ -14716,7 +14725,9 @@ func runSessionStopAll(cfg *config.Config) error {
 			continue
 		}
 		why := cliStopAllEndReason(sess.TmuxSession, sess.State)
+		from := sess.State
 		sess.State = session.StateKilled
+		session.StampEnd(sess, from, session.EndReason{Caller: endCallerCLIStopAll, Reason: why})
 		_ = store.Save(sess)
 		fmt.Printf("Killed session %s (%s)\n", sess.ID, truncate(sess.Task, 40))
 		fmt.Printf("  ended by=%s reason=%s\n", endCallerCLIStopAll, why)
@@ -15228,31 +15239,46 @@ func newScheduleTopCmd() *cobra.Command {
 // fireInputSchedules fires any on-input-prompt scheduled commands for a session.
 // Called from the combined NeedsInputHandler in runStart.
 func fireInputSchedules(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session) {
-	pending := store.WaitingInputPending(sess.FullID)
-	if len(pending) == 0 {
-		pending = store.WaitingInputPending(sess.ID)
-	}
-	for _, sc := range pending {
+	for _, sc := range mgr.WaitingInputSchedules(store, sess) {
 		fireQueuedCommand(store, mgr, sess, sc)
 	}
 }
 
 // fireQueuedCommand types one due command and then the ones chained after it.
-// A command held back by a prompt on screen stays pending for a later pass; a
-// chained one has no later pass, so it is marked failed.
+// A command held back by a prompt on screen stays pending for a later pass. See
+// Manager.FireChained for what happens to a chained one that is not typed.
 func fireQueuedCommand(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session, sc *session.ScheduledCommand) {
 	if sent, err := mgr.FireScheduled(store, sess.FullID, sc); !sent {
-		if !errors.Is(err, session.ErrPromptOnScreen) {
+		if !errors.Is(err, session.ErrPromptOnScreen) && !errors.Is(err, session.ErrFireTaken) {
 			fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
 		}
 		return
 	}
 	fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
-	for _, next := range store.AfterDone(sc.ID) {
-		if sent, err := mgr.FireScheduled(store, sess.FullID, next); !sent {
-			fmt.Printf("[scheduler] failed to send chained input [%s]: %v\n", next.ID, err)
-			_ = store.MarkDone(next.ID, true)
+	fireChainedCommands(store, mgr, sess, sc.ID)
+}
+
+// fireChainedCommands types into sess the commands chained after doneID.
+func fireChainedCommands(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session, doneID string) {
+	mgr.FireChained(store, sess.FullID, doneID)
+}
+
+// fireDueCommands types the command schedules due at t. One created with a
+// session name and no live session to go to stays pending; one by id whose
+// session is not found is marked failed.
+func fireDueCommands(store *session.ScheduleStore, mgr *session.Manager, t time.Time) {
+	for _, sc := range store.DuePending(t) {
+		sess, ok := mgr.ScheduleTarget(sc)
+		if !ok {
+			if sc.NameTargeted() {
+				mgr.HoldNameSchedule(store, sc, t)
+				continue
+			}
+			fmt.Printf("[scheduler] session %q not found for command [%s], skipping\n", sc.SessionID, sc.ID)
+			_ = store.MarkDone(sc.ID, true)
+			continue
 		}
+		fireQueuedCommand(store, mgr, sess, sc)
 	}
 }
 
@@ -15272,22 +15298,7 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 			return
 		case t := <-ticker.C:
 			// Command schedules: send to an existing named/ID session.
-			for _, sc := range store.DuePending(t) {
-				sess, ok := mgr.GetSession(sc.SessionID)
-				if !ok && sc.SessionName != "" {
-					sess, ok = mgr.FindSessionByName(sc.SessionName)
-				}
-				if !ok {
-					// Session may use short ID
-					fmt.Printf("[scheduler] session %q (name:%q) not found for command [%s], skipping\n", sc.SessionID, sc.SessionName, sc.ID)
-					// Don't mark failed for name-targeted schedules — the session may not be started yet.
-					if sc.SessionName == "" {
-						_ = store.MarkDone(sc.ID, true)
-					}
-					continue
-				}
-				fireQueuedCommand(store, mgr, sess, sc)
-			}
+			fireDueCommands(store, mgr, t)
 			// GH#128: spawn/new_session schedules — start a fresh independent
 			// session. The same path as the manager's own schedule loop; a
 			// refused start is re-armed under the schedule re-arm policy.

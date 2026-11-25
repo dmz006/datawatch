@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.16 (2026-11-25).** 27 code scanning alerts are fixed, Accept needs a real commit and a passing check, and fixes lost from an earlier release test effort are back. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.19 (2026-11-25).** A due scheduled command is now typed at most once, and one daemon or test run can no longer remove another's commit guard. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

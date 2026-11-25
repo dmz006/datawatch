@@ -5033,6 +5033,7 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 					// BL427 — fired after the SavePRD below succeeds.
 					emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
 					t.Verification = nil
+					t.VerifierFaultRetries = 0
 					// A reset ends an uncommitted-work hold: the task runs again.
 					t.UncommittedWork = nil
 					// ...and a protected-paths hold: the task runs again.

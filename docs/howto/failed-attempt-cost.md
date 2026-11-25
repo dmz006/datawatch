@@ -189,7 +189,7 @@ that matter for cost and for the next decision are:
 | `escalated` | `true` when the attempt ran on a ladder step rather than the normal worker |
 | `outcome` | `failed`, `stalled` or `cancelled` |
 | `queue_wait_seconds` | How long the attempt's worker lease requests waited to be granted. Absent when they did not wait a full second |
-| `verify_seconds` | Time from the start of verification to the verdict; absent when the attempt ended with no verdict. In the daemon, verification is counted from the moment the task enters `verifying`, which is when its worker session has started, so the figure currently includes the time the worker runs |
+| `verify_seconds` | Time from the start of verification to the verdict; absent when the attempt ended with no verdict. In the daemon, verification is counted from the end of the wait for the worker, so the time the worker runs is not included |
 | `failure_category`, `failure_summary` | The failure class and the one-line summary the next attempt is given. Every new failed, stalled or cancelled attempt gets a category when it is recorded; see [Failure categories](#failure-categories) |
 | `verifier_summary`, `verifier_issues`, `changed_files` | What the verifier said and which files the attempt changed |
 | `resumed` | `true` when the attempt continued the previous session with the failure summary |

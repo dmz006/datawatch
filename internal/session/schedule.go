@@ -78,10 +78,14 @@ type ScheduledCommand struct {
 	// firing once Now > RecurUntil. Zero = unlimited.
 	RecurUntil time.Time `json:"recur_until,omitempty"`
 
-	// SessionName (BL353) — human-readable session name to resolve at fire time.
-	// When set, the scheduler looks up the active session by this name instead
-	// of SessionID. The schedule survives session restarts under the same name.
+	// SessionName (BL353) — human-readable session name. A command schedule
+	// with one is typed into SessionID while that session can take input, else
+	// into the live session with this name; it outlives the sessions it is
+	// typed into (see schedule_target.go).
 	SessionName string `json:"session_name,omitempty"`
+	// NameWaitAlerted is true once the operator was told that no live session
+	// has SessionName; a delivery clears it.
+	NameWaitAlerted bool `json:"name_wait_alerted,omitempty"`
 
 	// CronExpr (BL353) — 5-field cron expression for recurring schedules.
 	// When set, overrides RecurEverySeconds-based recurrence. After each fire
@@ -109,12 +113,17 @@ type ScheduledCommand struct {
 	// WaitingSince is when the current run of waits for capacity began; it
 	// bounds how long a one-time schedule waits. Cleared by a spawned fire.
 	WaitingSince time.Time `json:"waiting_since,omitempty"`
-	// RearmState is "", "retrying", "waiting_capacity" or "gave_up".
+	// RearmState is "", "retrying", "waiting_capacity", "gave_up" or
+	// "waiting_session".
 	RearmState string `json:"rearm_state,omitempty"`
 	// LastError is the reason of the last refused or failed start.
 	LastError string `json:"last_error,omitempty"`
 	// FireHistory is the newest fires and attempts, oldest first, bounded.
 	FireHistory []ScheduleFire `json:"fire_history,omitempty"`
+	// FiringSince is set, and saved, before a due command is typed, and
+	// cleared when the outcome is recorded. One found at daemon start means
+	// the daemon stopped in between (see schedule_claim.go).
+	FiringSince *time.Time `json:"firing_since,omitempty"`
 }
 
 // ScheduleFire is one fire or start attempt of a schedule.
@@ -156,6 +165,8 @@ type ScheduleStore struct {
 	path    string
 	encKey  []byte
 	entries []*ScheduledCommand
+	// typing holds the sessions a schedule is being typed into now.
+	typing map[string]bool
 }
 
 // NewScheduleStore creates or loads the schedule store at path (no encryption).
@@ -514,13 +525,14 @@ func (s *ScheduleStore) Delete(id string) error {
 }
 
 // CancelBySession cancels all pending scheduled commands for a given session ID.
-// Matches both short IDs and full IDs (hostname-id).
+// Matches both short IDs and full IDs (hostname-id). Command schedules created
+// with a session name are kept: they wait for the next session with that name.
 func (s *ScheduleStore) CancelBySession(sessionID string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cancelled := 0
 	for _, sc := range s.entries {
-		if sc.State != SchedPending {
+		if sc.State != SchedPending || sc.NameTargeted() {
 			continue
 		}
 		if sc.SessionID == sessionID || strings.HasSuffix(sc.SessionID, "-"+sessionID) || strings.HasSuffix(sessionID, "-"+sc.SessionID) {
@@ -630,6 +642,12 @@ func (s *ScheduleStore) MarkDone(id string, failed bool) error {
 			// re-arm overwrites an explicit cancel.
 			if sc.State == SchedCancelled {
 				return nil
+			}
+			// The claim goes in the same save as the outcome.
+			sc.FiringSince = nil
+			if !failed {
+				sc.endNameWait()
+				sc.endInterruptedNote()
 			}
 			// BL26 — recurring schedule: bump RunAt instead of marking done,
 			// unless the entry hit its RecurUntil deadline or the run failed.

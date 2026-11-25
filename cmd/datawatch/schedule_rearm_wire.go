@@ -23,13 +23,28 @@ func scheduleRearmPolicy(c config.ScheduleConfig) session.RearmPolicy {
 }
 
 // scheduleAlertText words the operator alert for a schedule that keeps waiting
-// for capacity or that the re-arm policy gave up on.
+// for capacity, that the re-arm policy gave up on, that has no live session
+// with its name, or whose send a restart cut off.
 func scheduleAlertText(a session.ScheduleAlert) (level alertspkg.Level, title, body string) {
 	name := a.Schedule.ScheduleName
 	if name == "" {
 		name = a.Schedule.ID
 	}
 	switch {
+	case a.Interrupted:
+		next := "It is now failed. Check the session, and create it again if the command did not arrive."
+		switch a.Schedule.State {
+		case session.SchedPending:
+			next = "It stays scheduled for its next fire. Check the session if this fire mattered."
+		case session.SchedDone:
+			next = "It has no further fire. Check the session if this fire mattered."
+		}
+		return alertspkg.LevelWarn, "Scheduled command cut off by a restart: " + name,
+			fmt.Sprintf("The daemon stopped while schedule %s was being typed. The command may or may not have arrived, so it is not typed again. %s", a.Schedule.ID, next)
+	case a.NoSession:
+		return alertspkg.LevelWarn, "Schedule is waiting for a session: " + name,
+			fmt.Sprintf("Schedule %s sends a command to the session named %q, and no live session has that name. It stays scheduled and goes to the next live session with that name: a recurring schedule skips the fires it misses, any other is sent once that session can take it. Cancel the schedule if it is no longer wanted.",
+				a.Schedule.ID, a.Schedule.SessionName)
 	case a.Outcome.WaitLimit:
 		return alertspkg.LevelError, "Scheduled spawn gave up waiting for capacity: " + name,
 			fmt.Sprintf("Schedule %s is a one-time schedule and was refused for capacity until its wait limit ran out (%v). It is now failed. Re-create it to run it again, or raise schedule.one_time_max_wait_hours.",

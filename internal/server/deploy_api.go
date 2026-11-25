@@ -213,6 +213,10 @@ func (s *Server) handleAutonomousDeployRun(w http.ResponseWriter, r *http.Reques
 		http.Error(w, autonomous.ErrMergeNoBaseRepo.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	if b, paused := s.operatorPauseBlock(repo); paused {
+		http.Error(w, b.Message(), http.StatusConflict)
+		return
+	}
 	if !mergeRunMu.TryLock() {
 		http.Error(w, "a merge or deploy is already running", http.StatusConflict)
 		return

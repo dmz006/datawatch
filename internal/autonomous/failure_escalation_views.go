@@ -93,7 +93,7 @@ func reviewNeededEntry(story *Story, t *Task) ReviewNeededEntry {
 		}
 	}
 	e.AttemptsTotal, e.AttemptCapHeld = t.AttemptsTotal, t.AttemptCapHeld
-	if fr := t.FailureReason; fr != nil && fr.Source == infraRetryHoldSource {
+	if fr := t.FailureReason; fr != nil && (fr.Source == infraRetryHoldSource || fr.Source == verifierFaultHoldSource) {
 		e.HeldCause = fr.Detail
 	}
 	if e.NoRetryReason == "" {

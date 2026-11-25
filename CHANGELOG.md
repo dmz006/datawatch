@@ -5,6 +5,49 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.19 — A schedule types once; commit guards are only removed by their owner
+
+### Fixed
+- A scheduled command is typed at most once. The two scheduler loops could type the same due command in the same second, and the two copies could join into one different command. A send interrupted by a restart is not typed again and raises one alert. Chained scheduled commands now fire from both loops.
+- One daemon or test run can no longer remove another's live commit guard. A guard is removed only when the daemon can prove it is its own and that its session has ended.
+
+### Documentation
+- How scheduled commands are claimed and how commit guard folders are cleaned up.
+
+## v9.187.18 — Name schedules outlive their session; tool config read stays in the project
+
+### Fixed
+- A command schedule created with a session name no longer stops for good when that session is killed, deleted or ends. It waits for the next live session with that name and raises one alert while it waits. Schedules created with a session id are unchanged.
+
+### Security
+- A tool configuration file is now read only through the project folder, so a linked parent folder can no longer make datawatch read a file outside the project.
+- The git reads behind Accept never run a configured signature program.
+
+### Before you upgrade
+- Killing a session no longer cancels schedules created with its name. Cancel them by schedule id or name.
+
+### Documentation
+- Schedules that wait for a session name.
+
+## v9.187.17 — Saved settings take effect; verifier faults hold; weekly estimate; session modes
+
+### Fixed
+- Every autonomous setting is now loaded when the daemon starts. Settings that were saved but ignored after a restart, such as plan review, plan coverage, drift and undeclared-edit modes and the check-script time limit, now take effect, and a later settings change no longer saves a blank over them.
+- A verifier that fails to run or returns an unreadable answer no longer runs the worker again. Only the verifier is retried; when retries run out the task is held with a question.
+- A launch or restart that names no model or permission mode no longer inherits another session's.
+- After the weekly usage reset with no new reading, the usage advice and the burn guard estimate the new week from token use, mark it as an estimate and hold when over.
+- Gate repair, merge run, deploy and event preview routes work again; merge and deploy runs are refused while paused. Restart adoption no longer adopts a verifier or judge session as the worker.
+- Two session end paths now record the end time and reason.
+
+### Added
+- A setting that closes a finished interactive session after an idle period so its capacity slot is freed. It is off by default.
+
+### Before you upgrade
+- Settings that were saved but had no effect start working. Check them before you resume automation.
+
+### Documentation
+- Verifier faults, the weekly estimate, finished session closing and the settings loaded at start.
+
 ## v9.187.16 — Security fixes; Accept needs real evidence; recovered release test fixes
 
 ### Security

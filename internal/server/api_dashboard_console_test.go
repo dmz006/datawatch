@@ -132,7 +132,7 @@ func consoleFixtureServer(t *testing.T) *Server {
 // the same recipe usagecalc's own service tests use.
 func consoleUsageService(t *testing.T) *usagecalc.Service {
 	t.Helper()
-	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 10, 25, 4, 0, 0, 0, time.UTC)
 	fixed := func() time.Time { return now }
 	store, err := usagecalc.OpenStore(t.TempDir(), fixed)
 	if err != nil {

@@ -68,9 +68,18 @@ type FakeTmux struct {
 	// swallowed.
 	NoEcho bool
 
+	// AttachedCount simulates how many tmux clients are attached to a
+	// session; AttachedErr, when set, makes that query fail.
+	AttachedCount map[string]int
+	AttachedErr   error
+
 	// ListSessionsErr, when set, is returned by ListSessions in place of the
 	// session list, so a test can make the terminal listing fail.
 	ListSessionsErr error
+
+	// Socket is what SocketPath reports. Empty means the one socket every
+	// FakeTmux shares, so a "restarted" fake reaches the same server.
+	Socket string
 }
 
 // echo appends typed text to the seeded pane unless NoEcho is set.
@@ -157,6 +166,20 @@ func (f *FakeTmux) NewSessionWithSize(name string, cols, rows int) error {
 	f.sessions[name] = true
 	f.mu.Unlock()
 	return nil
+}
+
+// SessionGone reports that the session is known not to exist: the fake always
+// has an answer.
+func (f *FakeTmux) SessionGone(name string) bool {
+	return name != "" && !f.SessionExists(name)
+}
+
+// SocketPath names the fake's tmux server socket.
+func (f *FakeTmux) SocketPath() string {
+	if f.Socket != "" {
+		return f.Socket
+	}
+	return "/fake-tmux/default"
 }
 
 func (f *FakeTmux) SessionExists(name string) bool {
@@ -270,6 +293,16 @@ func (f *FakeTmux) CapturePaneScrollback(session string, lines int) (string, err
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.Pane[session], nil
+}
+
+// AttachedClients reports the seeded number of attached tmux clients.
+func (f *FakeTmux) AttachedClients(session string) (int, error) {
+	if err := f.record("attached-clients", session); err != nil {
+		return 0, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.AttachedCount[session], f.AttachedErr
 }
 
 func (f *FakeTmux) PipeOutput(session, logFile string) error {

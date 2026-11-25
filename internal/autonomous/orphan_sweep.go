@@ -25,13 +25,23 @@ func isTaskWorkerSession(s SessionInfo) bool {
 	if s.PRDID == "" || s.TaskID == "" || !strings.HasPrefix(s.Name, workerSessionNamePrefix) {
 		return false
 	}
-	role := strings.ToLower(strings.TrimPrefix(s.Name, workerSessionNamePrefix))
+	return !isNonWorkerSessionName(s.Name)
+}
+
+// isNonWorkerSessionName reports whether name marks one of those other
+// autonomous sessions. Restart adoption never takes one as a task's worker.
+func isNonWorkerSessionName(name string) bool {
+	role, ok := strings.CutPrefix(name, workerSessionNamePrefix)
+	if !ok {
+		return false
+	}
+	role = strings.ToLower(role)
 	for _, p := range nonWorkerRolePrefixes {
 		if role == p || strings.HasPrefix(role, p+":") {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 func (m *Manager) orphanClock() time.Time {

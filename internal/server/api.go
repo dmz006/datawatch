@@ -208,7 +208,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.187.16"
+var Version = "9.187.19"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -6473,6 +6473,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"git_default":                     s.cfg.Session.GitDefault,
 				"kill_sessions_on_exit":           s.cfg.Session.KillSessionsOnExit,
 				"one_shot_sessions":               s.cfg.Session.OneShotSessions,
+				"finished_idle_close_minutes":     s.cfg.Session.FinishedIdleCloseMinutes,
 				"root_path":                       s.cfg.Session.RootPath,
 				"mcp_max_retries":                 s.cfg.Session.MCPMaxRetries,
 				"schedule_settle_ms":              s.cfg.Session.ScheduleSettleMs,
@@ -9239,6 +9240,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "session.liveness_window_seconds":
 			if n, ok := wholeNumber(v); ok {
 				cfg.Session.LivenessWindowSeconds = n
+			}
+		case "session.finished_idle_close_minutes":
+			// Read live by the sweep; zero switches it off.
+			if n, ok := wholeNumber(v); ok && n >= 0 {
+				cfg.Session.FinishedIdleCloseMinutes = n
 			}
 		case "session.finalise_interval_minutes":
 			// Read live by the finaliser each cycle; a negative value is

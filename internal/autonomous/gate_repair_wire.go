@@ -137,6 +137,9 @@ func (m *Manager) GateRepairerStatus() GateRepairStatus {
 // gate was resolved (or reported), a non-empty Err means it was refused or the
 // repair failed.
 func (m *Manager) RunGateRepair(ctx context.Context, automatonID, taskID string) GateRepairOutcome {
+	if o, held := m.gateRepairPaused(automatonID, taskID); held {
+		return o
+	}
 	if g := m.GateRepairer(); g != nil {
 		return g.Run(ctx, automatonID, taskID)
 	}
@@ -179,9 +182,35 @@ func (m *Manager) RunGateRepairPass(ctx context.Context) []GateRepairOutcome {
 		if err := ctx.Err(); err != nil {
 			break
 		}
+		if o, held := m.gateRepairPaused(t.automatonID, t.taskID); held {
+			out = append(out, o)
+			continue
+		}
 		out = append(out, g.Run(ctx, t.automatonID, t.taskID))
 	}
 	return out
+}
+
+// gateRepairPaused reports whether an asked-for gate repair waits for the
+// operator pause. In on mode a repair edits the gate, can run the docs sync
+// and resets tasks, so it is held while new work in the Automaton's project is
+// paused. Report mode changes nothing and is not held.
+func (m *Manager) gateRepairPaused(automatonID, taskID string) (GateRepairOutcome, bool) {
+	if m.GateRepairerStatus().Mode != config.GateRepairModeOn {
+		return GateRepairOutcome{}, false
+	}
+	dir := ""
+	if prd, ok := m.store.GetPRD(automatonID); ok {
+		m.store.WithLock(func() { dir = prd.ProjectDir })
+	}
+	b, blocked := m.pauseBlock(dir)
+	if !blocked {
+		return GateRepairOutcome{}, false
+	}
+	return GateRepairOutcome{
+		Mode: config.GateRepairModeOn, Subject: automatonID + " / " + taskID,
+		Err: "gate repair held: " + b.Message(),
+	}, true
 }
 
 // HousekeepingGateRepairView is the engine's group in the housekeeping

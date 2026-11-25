@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -477,4 +479,22 @@ func dedupeFiles(lists ...[]string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// parseVerifierReply reads a verifier's reply as a verdict. A reply that is not
+// JSON, or JSON with no "ok" field, carries no verdict and is an error: reading
+// it as ok=false would count it against the work and run the worker again.
+func parseVerifierReply(reply string) (autonomouspkg.VerificationResult, error) {
+	var v autonomouspkg.VerificationResult
+	raw := []byte(extractJSON(reply))
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return v, err
+	}
+	var has struct {
+		OK *bool `json:"ok"`
+	}
+	if err := json.Unmarshal(raw, &has); err != nil || has.OK == nil {
+		return v, errors.New(`the reply has no "ok" field`)
+	}
+	return v, nil
 }

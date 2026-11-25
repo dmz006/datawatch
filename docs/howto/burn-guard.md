@@ -287,6 +287,33 @@ projection with it. The status and each decision carry the target, the pace
 line, the burn per hour and the allowed burn per hour, so you can see the
 numbers the guard used.
 
+### After the weekly reset, before your next reading
+
+When a weekly reset has passed since a `flat` entry's newest reading, the guard
+does not wait for you. It projects the new week from the tokens:
+
+- the base is **0 points at the reset**, plus the tokens used since then,
+  priced with the entry's prices and scaled by the calibration ratio of the
+  earlier readings the token data reaches back to (the guard reads its usual 8
+  days of transcripts, further back only when those readings are older, and
+  never more than 15);
+- the burn is the token burn over the trailing 3 hours, scaled by the same
+  ratio; the old readings give no burn rate;
+- there is no readings-only advice for that week, so `AdviceProjected` repeats
+  `Projected` and the gap check never fires;
+- the projection carries `estimated: true`, and the ladder's alerts say the
+  figures are estimated. The ladder climbs and steps back on it as usual, and
+  the pace_line policy holds new work when the estimate is over the weekly pace
+  line plus `week_tolerance` (the decision carries `week_from_tokens`).
+
+The pace line starts at 0 at the reset, so a burst in the first hours can hold
+new work until the line catches up. **Enter a reading to correct the
+estimate**; the first reading of the new week replaces it. With no token data
+for an entry there is no estimate: the ladder keeps the rungs it has and the
+policy makes no weekly decision, as it does with no reading. An entry other than
+the first has token data only when a token source is wired for it, and a
+`metered` entry still needs a spend reading in the new period.
+
 ## The projection gap (`max_projection_gap_points`)
 
 The two projections should roughly agree. When they do not, the gap setting
@@ -399,7 +426,9 @@ projection to the reset, and it has two lines:
 - **The weekly pace line.** The week estimate is the newest weekly reading plus
   the points burned since it times `points_to_week_factor`. When it is more than
   `week_tolerance` points above the pace line now, new work is held. A newer,
-  lower reading, or the weekly reset, lifts the hold.
+  lower reading, or the weekly reset, lifts the hold. After the reset, until your
+  next reading, the week estimate is the burn since the reset, estimated from
+  tokens (see "After the weekly reset" above).
 
 The ladder and the policy work together. The ladder is graded: from the
 projection it lowers the entry's lanes (never below one lane, so with one lane

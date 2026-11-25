@@ -569,8 +569,12 @@ func describe(acts []Action, original int) string {
 // numbers is the parenthetical every alert and reason carries: both projections, the target
 // and the burn. lower is true when the tick decided on the lower of the two projections.
 func numbers(p Projection, lower bool) string {
-	return fmt.Sprintf("(%s; target %.1f%%, burning %.2f points/hour against %.2f allowed)",
-		projections(p, lower), p.Target, p.PointsPerHour, p.AllowedPerHour)
+	note := ""
+	if p.Estimated {
+		note = "; estimated from tokens since the weekly reset, enter a reading to correct it"
+	}
+	return fmt.Sprintf("(%s; target %.1f%%, burning %.2f points/hour against %.2f allowed%s)",
+		projections(p, lower), p.Target, p.PointsPerHour, p.AllowedPerHour, note)
 }
 
 // projections names the guard and advice projections and which one the tick used, for

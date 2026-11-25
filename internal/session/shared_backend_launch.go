@@ -15,12 +15,14 @@ import (
 var sharedBackendLaunch sync.Mutex
 
 // lockSharedBackend takes the launch lock for a backend whose launch reads
-// per-session settings from the shared object (the pi family, which takes a
-// node host). It returns an unlock that is safe to call more than once, so a
-// caller can release it right after the launch and still defer it for the
-// early returns. Other backends get a no-op.
+// per-session settings from the shared object (a node host or a model: the pi
+// and goose families and claude-code). It returns an unlock that is safe to
+// call more than once, so a caller can release it right after the launch and
+// still defer it for the early returns. Other backends get a no-op.
 func lockSharedBackend(b llm.Backend) (unlock func()) {
-	if _, ok := b.(interface{ SetNodeHost(string) }); !ok {
+	_, hasNode := b.(interface{ SetNodeHost(string) })
+	_, hasModel := b.(interface{ SetModel(string) })
+	if !hasNode && !hasModel {
 		return func() {}
 	}
 	sharedBackendLaunch.Lock()

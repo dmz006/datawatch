@@ -11939,7 +11939,7 @@ paths:
           description: Per-task cost override (points/week) for the finish-early estimate
       responses:
         "200":
-          description: The advice (numbers plus the selected rendering); carries X-Usage-Stale / X-Usage-Copied-At when the series is stale
+          description: "The advice (numbers plus the selected rendering); carries X-Usage-Stale / X-Usage-Copied-At when the series is stale. After a weekly reset with no new reading, stale is true with stale_reason saying a reset passed since the newest reading, and advice.estimated is true with advice.estimate_note: advice.percent is then estimated from the tokens since the reset (advice.read_at stays the last reading's time). Without token data advice.needs is reading"
           content:
             application/json:
               schema:
@@ -12093,7 +12093,7 @@ paths:
                   applied: {type: array, items: {type: string}, description: The rungs applied now}
                   line: {type: number, description: The pace line in weekly points}
                   margin: {type: number}
-                  last_projection: {type: object, description: "Projected weekly burn (projected), the pace line (line), the margin and how far it is over (over_by)"}
+                  last_projection: {type: object, description: "Projected weekly burn (projected), the pace line (line), the margin and how far it is over (over_by); estimated is true after a weekly reset with no new reading, when the base is 0 at the reset and the points come from the tokens"}
                   last_decision: {type: object, description: "The last evaluation: direction (hold, climb, step_back, disabled), rung, level, previous and reason"}
                   pace:
                     type: object
@@ -13394,6 +13394,7 @@ components:
         week_line: {type: number, description: The weekly pace line now}
         week_tolerance: {type: number}
         week_reset: {type: boolean}
+        week_from_tokens: {type: boolean, description: "No reading in the new week yet: week_points_since is the points since the reset, estimated from tokens"}
         window_read_at: {type: string, format: date-time}
         window_percent: {type: number, description: The newest session (window) reading}
         window_points_since: {type: number}
@@ -15569,6 +15570,12 @@ components:
           type: string
           description: Path to the session's output log
           example: ".datawatch/logs/hal9000-a3f2.log"
+        permission_mode:
+          type: string
+          description: "The claude permission mode the start named; a restart runs in it. Absent when none was named (the configured mode applies)."
+        awaiting_input_after_relaunch:
+          type: boolean
+          description: "True from a restart or resume until the next input; until then the session is never ended by session.finished_idle_close_minutes."
         claude_effort:
           type: string
           description: "The claude --effort level the start request named; a restart runs at it. Absent when none was named."
@@ -15951,7 +15958,7 @@ components:
           description: RFC3339 timestamp for one-shot schedules — omit for recurring
         session_name:
           type: string
-          description: "BL353: Resolve target by session name at fire time (survives session restarts)"
+          description: "Target session by name. A command schedule with a name is typed into session_id while that session can take input, else into the live session with this name. Killing, deleting or ending a session does not cancel or fail it: it stays pending (rearm_state waiting_session) until a live session has the name. A schedule with only session_id ends with its session."
         cron_expr:
           type: string
           description: "BL353: 5-field cron expression (alias for `cron`; preferred in new entries)"
@@ -15992,8 +15999,15 @@ components:
           description: When the current run of waits for capacity began. A one-time schedule gives up `schedule.one_time_max_wait_hours` after it (rearm_state `gave_up`, reason in `last_error`). Cleared by a successful start.
         rearm_state:
           type: string
-          description: "Re-arm state: empty, `retrying` (after a failed start), `waiting_capacity` (refused for capacity; retries with backoff, never later than the next scheduled time) or `gave_up` (the re-arm policy gave up; the schedule stays failed and an alert was raised)"
-          enum: ["", retrying, waiting_capacity, gave_up]
+          description: "Re-arm state: empty, `retrying` (after a failed start), `waiting_capacity` (refused for capacity; retries with backoff, never later than the next scheduled time), `gave_up` (the re-arm policy gave up; the schedule stays failed and an alert was raised) or `waiting_session` (a command schedule with a session_name and no live session of that name; it stays pending)"
+          enum: ["", retrying, waiting_capacity, gave_up, waiting_session]
+        firing_since:
+          type: string
+          format: date-time
+          description: Set while a due command is being typed, and saved before any key is sent. One still set when the daemon starts means a restart cut the send off; the command is not typed again.
+        name_wait_alerted:
+          type: boolean
+          description: True once an alert was raised that no live session has `session_name`; cleared when the command is delivered.
         last_error:
           type: string
           description: Reason of the last refused or failed start
