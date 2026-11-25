@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.17 (2026-11-25).** Saved automation settings now take effect after a restart, a verifier fault no longer reruns the worker, and the burn guard keeps working after the weekly reset. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.18 (2026-11-25).** A schedule created with a session name now waits for the next session with that name, and a tool configuration file is read only inside its project. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.18 — Name schedules outlive their session; tool config read stays in the project
+
+### Fixed
+- A command schedule created with a session name no longer stops for good when that session is killed, deleted or ends. It waits for the next live session with that name and raises one alert while it waits. Schedules created with a session id are unchanged.
+
+### Security
+- A tool configuration file is now read only through the project folder, so a linked parent folder can no longer make datawatch read a file outside the project.
+- The git reads behind Accept never run a configured signature program.
+
+### Before you upgrade
+- Killing a session no longer cancels schedules created with its name. Cancel them by schedule id or name.
+
+### Documentation
+- Schedules that wait for a session name.
+
 ## v9.187.17 — Saved settings take effect; verifier faults hold; weekly estimate; session modes
 
 ### Fixed
