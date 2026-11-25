@@ -4006,17 +4006,20 @@ growing unboundedly over time.
 The daemon maintains the `.mcp.json` files a session's MCP host reads, so every
 session sees the `datawatch` bridge (and any `session.extra_mcp_servers` entries):
 
-- **Per-session** — `<project_dir>/.mcp.json`, written (and idempotently rewritten)
-at session start, `0600`; operator-added entries are preserved, only the
-`datawatch` entry and the extras-list entries are managed. Sessions sharing a
-project dir share the file; each start rewrites the `datawatch` entry with the
-starting session's own credential.
+- **Per-session** — `<data_dir>/launch/<tmux session>/session-mcp.json`
+(folder `0700`, file `0600`), written at session start and removed when the
+session ends, for sessions that are not claude-code and for claude-code
+sessions whose profile selects `datawatch`. Sessions sharing a project dir
+share nothing here. `<project_dir>/.mcp.json` gets only the
+`session.extra_mcp_servers` entries (operator-added entries are preserved).
+A session that is not claude-code has the file's path in
+`DATAWATCH_MCP_CONFIG` in its tmux environment.
 - **Instance-level** — `<data_dir>/.mcp.json`, refreshed at each session
 launch so it tracks the current bridge and carries a current scoped
 credential; not tied to a specific session. Its `datawatch` entry is
 removed when no live session remains, or when the daemon shuts down.
 
-All files are `0600`. The **per-session** project file carries the starting session's **scoped, short-lived credential** as `DATAWATCH_TOKEN` — default grant: the `session-default` capability group ([howto/federation-cbac](howto/federation-cbac.md)) — and **never** the daemon's own `server.token`. The credential is minted at session start, persisted `0600` under the data directory (a running session's bridge keeps working across a daemon restart), and revoked when the session ends or is killed, so a leftover project file holds a dead bearer. (Edge fallbacks: if minting the credential fails the entry gets no `DATAWATCH_TOKEN` at all; if the session-token store itself cannot be wired, the per-session write falls back to the admin token — the latter should only happen in tests.)
+The daemon's files are `0600`. The **per-session** file carries the starting session's **scoped, short-lived credential** as `DATAWATCH_TOKEN` — default grant: the `session-default` capability group ([howto/federation-cbac](howto/federation-cbac.md)) — and **never** the daemon's own `server.token`. The credential is minted at session start, persisted `0600` under the data directory (a running session's bridge keeps working across a daemon restart), and revoked when the session ends or is killed. If minting fails, or no token store is wired, the entry gets no `DATAWATCH_TOKEN` at all.
 
 The **instance-level** file no longer carries the daemon's long-lived
 admin `server.token` either. Its `DATAWATCH_TOKEN` is the **instance-
@@ -4040,8 +4043,8 @@ user-scope (`~/.mcp.json`) sweep is deprecated in favour of the
 data-directory instance-level write.)
 
 **Operator review — flag for you:**
-1. neither daemon-written `.mcp.json` (per-session nor instance-level) carries the daemon's `server.token` any more: both hold scoped, short-lived `0600` credentials that die with the session (per-session) or when no live session remains (instance-level), and the instance entry is removed at daemon shutdown.
-2. anything built on reading `DATAWATCH_TOKEN` out of a daemon-written `.mcp.json` to obtain a long-lived admin bearer (helper scripts in a project, tooling that treated a session's bridge as a standing admin principal) — including the instance-level file on hosts upgraded from an earlier daemon — is **broken by design now**: the credential there is granted by the `session-default` group and is dead once the last session ends or its lifetime runs out. Give those workflows their own operator-managed credential: the daemon's bearer in your own MCP host config, or a federation peer token, with the capabilities they actually need.
+1. No daemon token is written into a project folder. A `datawatch` entry an earlier daemon left in a project's `.mcp.json` is removed at the next launch in that folder; in folders where no session starts again, delete it by hand. Automatic commits and attempt snapshots never take such a file.
+2. A helper that reads `DATAWATCH_TOKEN` out of a project's or the instance's `.mcp.json` no longer works as a way to a long-lived admin bearer: the project file has no token, and the instance token is dead once the last session ends or its lifetime runs out. Give those workflows their own operator-managed credential: the daemon's bearer in your own MCP host config, or a federation peer token, with the capabilities they need.
 
 Operator-managed configs — `~/.cursor/mcp.json`, `claude mcp add` entries, an IDE-side `mcp.json` — are unaffected and still authenticate with the daemon's bearer or a peer token.
 

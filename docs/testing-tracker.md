@@ -9,6 +9,19 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Session launch files and tokens — next patch above main
+
+A session's `datawatch` MCP entry (token and identity) moved from the shared project folder to a private per-session launch file. Every test runs on temp folders, temp git repositories and a stub `tmux`; no daemon and no real session was started.
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Two launches in one folder keep their identity | `TestLaunch_TwoProfiledSessionsInOneFolderKeepTheirOwnTokenAndWriteNoneInTheProject` | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -count=1 -run '^TestLaunch_'` | Each session loads its own token and id; no token under the project folder | Go unit | **Yes** (`cmd/datawatch/launch_mcp_test.go`) | Pass | **No** | Failed before the change. |
+| Other backends, end cleanup, old entries, idle check | `TestLaunch_OtherBackendsWriteNoTokenIntoTheProject`, `_SessionEndRemovesOnlyItsOwnLaunchFolder`, `_StaleDaemonEntryRemovedAndHandAddedEntryKept`, `_IdleCheckKnowsServersFromThePrivateLaunchFile` | same | `0700`/`0600`; the path (no token) in the tmux environment; only the ended session's folder goes; a hand-added entry stays | Go unit | **Yes** | Pass | **No** | The idle check test guards the new location; it also passed before the change. |
+| A profiled launch ignores a project daemon entry | `TestWorkerProfileLaunchFn_StaleProjectDaemonEntryIsNotThisSessionsIdentity` | `go test ./internal/server/` | Another session's token and id never reach the session's MCP file | Go unit | **Yes** | Pass | **No** | Failed before. |
+| Channel name | `TestLaunchChannelNameMatchesTheConfiguredServer` | `go test ./internal/llm/claudecode/` | A strict profile launch names `server:datawatch`; others keep the per-session name | Go unit | **Yes** | Pass | **No** | The native bridge does not declare the channel capability, so no live registration is possible yet. |
+| No token in a commit or snapshot | `TestAutomaticCommitNeverTakesMCPFileWithDaemonEntry`, `TestAutomaticCommitKeepsProjectOwnMCPFile`, `TestDefaultTaskCommitSkipsMCPFileWithDaemonEntry`, `TestSnapshotCandidatesDropMCPFileWithDaemonEntry` | `go test ./internal/session/ ./internal/autonomous/` | Untracked, subfolder, tracked-and-modified and worker-staged files; a project's own file is still committed | Go unit | **Yes** | Pass | **No** | Failed before. |
+| No token in the hook files | `TestInstallWritesNoTokenIntoTheProject` | `go test ./internal/hookinstaller/` | No installed file holds the token | Go unit | **Yes** | Pass | **No** | Failed before. |
+
 ## Attempt cap — a daemon-owned total attempt count, back-off and hold per task — next minor above main
 
 The daemon counts every attempt a task is started for (`Task.AttemptsTotal`), across failures, cancels, resets, review retries and daemon restarts. The first three attempts start at once, later ones wait 5, 15 and 45 minutes after the previous attempt ended, and at the cap of six the task is held for the operator with an alert and a question. Only the operator's force reset clears the count and the hold, and the clear is audited. Every test below runs on fakes (a fake spawn, a fake verifier, a recorded sleep, a fake alert sink and question store); no daemon was started.

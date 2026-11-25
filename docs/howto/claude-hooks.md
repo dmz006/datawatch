@@ -80,7 +80,7 @@ SID=$(datawatch sessions start --llm claude-code \
 # 2. Daemon auto-installs hooks into <project_dir>/.claude/:
 #      settings.json  — appends Stop/PostToolUse/UserPromptSubmit entries
 #      sprint/post-event.sh  — the hook script (chmod +x)
-#      sprint/.dw-env        — DAEMON_URL + SESSION_ID + TOKEN (chmod 600)
+#      sprint/.dw-env        — DAEMON_URL + SESSION_ID (chmod 600, no token)
 #    Existing settings.json hooks are preserved; daemon entry appended
 #    idempotently (detected by path, safe to re-install).
 
@@ -181,7 +181,7 @@ if [[ -f "$(dirname "$0")/state.json" ]]; then
 fi
 curl -ks -X POST "${DAEMON_URL}/api/sessions/${SESSION_ID}/hook-event" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${TOKEN}" \
+  ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} \
   -d "{\"event\":\"${EVENT}\",\"tool\":\"${TOOL}\",\"payload\":${PAYLOAD}}" \
   >/dev/null 2>&1 || true
 ```
@@ -190,7 +190,6 @@ curl -ks -X POST "${DAEMON_URL}/api/sessions/${SESSION_ID}/hook-event" \
 # <project_dir>/.claude/sprint/.dw-env  (chmod 600)
 DAEMON_URL=https://localhost:8443
 SESSION_ID=<full-session-id>
-TOKEN=<daemon-bearer-token>
 ```
 
 ## Rich payload fields
@@ -335,9 +334,10 @@ See [`howto/session-telemetry.md`](session-telemetry.md) for end-to-end usage.
 - **`.dw-env` not found.** The script sources it relative to itself
   (`$(dirname "$0")/.dw-env`). Don't move `post-event.sh` without
   also moving `.dw-env`.
-- **Token expired.** `.dw-env` is written at session spawn with the
-  current token. If you rotate the token mid-session, re-install
-  manually or restart the session.
+- **401 from the daemon.** The installed `.dw-env` holds no token: the
+  file is in the project folder, and a token is never written there. On a
+  daemon that requires a token, export `TOKEN` yourself for the hook
+  process.
 - **Opt-out globally but want it for one session.** Override per-spawn:
   `datawatch sessions start --hooks` (opposite of `--no-hooks`).
 
