@@ -240,7 +240,8 @@ The same key works on the Settings page (General, **Sessions**, *End finished
 idle sessions after*), with chat
 `configure session.finished_idle_close_minutes=12`, the `config_set` MCP tool,
 `PUT /api/config` and `finished_idle_close_minutes` under `session:` in the
-config file. A change applies at the next check, without a restart.
+config file. A change made through the first four applies at the next check,
+without a restart; after editing the file, reload the daemon's configuration.
 
 A session is ended only when it is **proven finished**. The daemon checks once a
 minute, and every one of these must hold on every check for the whole period:
