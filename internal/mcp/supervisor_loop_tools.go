@@ -49,7 +49,7 @@ func (s *Server) toolSupervisorLoopRuns() mcpsdk.Tool {
 
 func (s *Server) toolSupervisorLoopRunJob() mcpsdk.Tool {
 	return mcpsdk.NewTool("supervisor_loop_run_job",
-		mcpsdk.WithDescription(`Run one supervisor loop job now, once, and return the run's result (the run is recorded like any other loop run). job is required (a job name, e.g. "draft_spec"; an unknown job name comes back as an error). Optional: input (text handed to the job as its input), candidates (a comma-separated candidate list, for the model jobs that choose among candidates). The same request as POST /api/supervisor-loop/jobs/{job}/run.`),
+		mcpsdk.WithDescription(`Run one supervisor loop job now, once, and return the run's result (the run is recorded like any other loop run). job is required (a job name, e.g. "draft_spec"; an unknown job name comes back as an error). Optional: input (text handed to the job as its input), candidates (a comma-separated candidate list, for the model jobs that choose among candidates). The jobs run_merge_until_conflict and deploy_after_ship are refused unless the setting autonomous.merge_deploy_run_enabled is true (off by default), and while the operator pause covers the repository; the refusal is audited. The same request as POST /api/supervisor-loop/jobs/{job}/run.`),
 		mcpsdk.WithString("job",
 			mcpsdk.Description(`Required — the job to run (a job name, e.g. "draft_spec").`)),
 		mcpsdk.WithString("input",

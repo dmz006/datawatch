@@ -23,3 +23,16 @@ func TestDeployCLI_HelpNamesTheRunSwitch(t *testing.T) {
 		t.Errorf("deploy help does not name %s: %q", config.MergeDeployRunKey, long)
 	}
 }
+
+// A held supervisor loop job fails the command with the daemon's reason, and
+// the command help names the switch.
+func TestDeployCLI_HeldLoopJobShowsTheReason(t *testing.T) {
+	supervisorLoopDaemon(t, 403, config.MergeDeployRunRefusal+"\n")
+	_, err := runSupervisorLoopCmd(t, "run", "run_merge_until_conflict")
+	if err == nil || !strings.Contains(err.Error(), config.MergeDeployRunRefusal) {
+		t.Errorf("err = %v, want the refusal", err)
+	}
+	if long := newSupervisorLoopRunCmd().Long; !strings.Contains(long, config.MergeDeployRunKey) {
+		t.Errorf("run help does not name %s: %q", config.MergeDeployRunKey, long)
+	}
+}

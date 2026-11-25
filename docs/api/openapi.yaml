@@ -2066,6 +2066,10 @@ paths:
         enabled switch says. A model job takes an optional body: `input` (the operator
         answer, the CI log or the routing rule) and, for pick_backend, `candidates`.
         Needs the autonomous run capability when called by a federated peer.
+        run_merge_until_conflict and deploy_after_ship are refused, with nothing
+        run and no run record, unless autonomous.merge_deploy_run_enabled is true
+        (403) and while the operator pause covers the repository (409); each
+        refusal is audited as merge_deploy_run_refused.
       operationId: supervisorLoopRunJob
       tags: [Autonomous]
       parameters:
@@ -2093,9 +2097,10 @@ paths:
                   error: {type: string}
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403": {description: Federated peer lacks the autonomous run capability}
+        "403": {description: "Federated peer lacks the autonomous run capability, or autonomous.merge_deploy_run_enabled is off for a merge or deploy job"}
         "404": {description: Unknown job}
         "405": {description: Method not allowed}
+        "409": {description: The operator pause holds a merge or deploy job}
         "503": {description: The supervisor loop is not running}
 
   /api/supervisor-loop/eval:

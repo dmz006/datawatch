@@ -422,8 +422,11 @@ MCP, chat or web action for it). It is **off by default**: turn it on with
 setting is off the request is refused with a message naming it and is written to
 the audit log. When it is on, a run can push the release: `autonomous.push_and_tag`
 does not stop it, and the [release gate](#the-release-gate) decides from the
-release approval mode. The setting does not stop the supervisor loop's own merge
-step. See
+release approval mode. The setting also holds the supervisor loop's merge step
+(`run_merge_until_conflict`) and its deploy step (`deploy_after_ship`), as does
+the operator pause; see
+[the supervisor loop](supervisor-loop.md#the-merge-and-deploy-steps-are-held-by-default).
+See
 [the definition](../datawatch-definitions.md#autonomous-merge-deploy-run-enabled).
 
 ## The release gate

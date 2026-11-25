@@ -32,7 +32,8 @@ func newAutonomousDeployCmd() *cobra.Command {
   run  [--json]   Start the deploy sequence for the current build now
 
 run is refused unless autonomous.merge_deploy_run_enabled is true (off by
-default; show says which). Turn it on with:
+default; show says which). The same setting holds the supervisor loop's merge
+and deploy jobs and a deferred deploy retry at daemon start. Turn it on with:
 datawatch config set autonomous.merge_deploy_run_enabled true
 
 Change a setting with: datawatch config set autonomous.deploy.<key> <value>

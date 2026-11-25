@@ -160,9 +160,10 @@ Deploy, or `configure autonomous.merge_deploy_run_enabled=true`). While the
 setting is off, every deploy run and merge run request is refused with a message
 naming it and is written to the audit log as `merge_deploy_run_refused`.
 `datawatch autonomous deploy show` prints whether requests are on. The setting
-holds these requests only; see
-[the definition](../datawatch-definitions.md#autonomous-merge-deploy-run-enabled)
-for what it does not hold.
+also holds the supervisor loop's `deploy_after_ship` and
+`run_merge_until_conflict` jobs and the retry of a deferred deploy at daemon
+start. It does not hold finishing a deploy a restart interrupted. See
+[the definition](../datawatch-definitions.md#autonomous-merge-deploy-run-enabled).
 
 Use `datawatch autonomous deploy run` (or the Web UI button, the REST route or
 the chat command above) to run the sequence for the current build without a
