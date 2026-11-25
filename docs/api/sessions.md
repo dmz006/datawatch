@@ -45,9 +45,10 @@ running when the daemon shuts down, and a state set through
 `POST /api/sessions/state`. Those notes read `<state> by <caller>: <reason>`.
 Restarting a session, setting it back to a live state, or the daemon bringing it
 back because its terminal is still alive clears both fields, so the next end is
-recorded. Two writes made outside the daemon's session manager do not set them
-yet: `datawatch session stop-all` run against the saved store, and the virtual
-sessions of a council run.
+recorded. The two writes made outside the daemon's session manager set them too:
+`datawatch session stop-all` run against the saved store
+(`killed by cli.session-stop-all: <reason>`) and the virtual sessions of a
+council run (`complete` or `failed by council.persona: <reason>`).
 
 ### Task delivery on launch
 

@@ -4182,14 +4182,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						if !ok || sess == nil {
 							return
 						}
-						sess.UpdatedAt = time.Now().UTC()
-						if errMsg != "" {
-							sess.State = session.StateFailed
-							sess.LastResponse = errMsg
-						} else {
-							sess.State = session.StateComplete
-							sess.LastResponse = response
-						}
+						finishCouncilSession(sess, response, errMsg)
 						_ = mgr.SaveSession(sess)
 					}
 					fmt.Printf("[council] wired to llm/%s (MaxParallel=%d, SSE events on, per-persona virtual sessions on)\n", llmRef, maxPar)
@@ -14725,7 +14718,9 @@ func runSessionStopAll(cfg *config.Config) error {
 			continue
 		}
 		why := cliStopAllEndReason(sess.TmuxSession, sess.State)
+		from := sess.State
 		sess.State = session.StateKilled
+		session.StampEnd(sess, from, session.EndReason{Caller: endCallerCLIStopAll, Reason: why})
 		_ = store.Save(sess)
 		fmt.Printf("Killed session %s (%s)\n", sess.ID, truncate(sess.Task, 40))
 		fmt.Printf("  ended by=%s reason=%s\n", endCallerCLIStopAll, why)
