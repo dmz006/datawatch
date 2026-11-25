@@ -571,6 +571,20 @@ func (t *TmuxManager) PaneTTY(session string) string {
 	return strings.TrimSpace(lines[0])
 }
 
+// AttachedClients returns how many tmux clients are attached to the session.
+// Any failure is an error: the caller must not read it as "nobody".
+func (t *TmuxManager) AttachedClients(session string) (int, error) {
+	out, err := TmuxCommand("display-message", "-p", "-t", session, "#{session_attached}").Output()
+	if err != nil {
+		return 0, fmt.Errorf("tmux attached clients of %s: %w", session, err)
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, fmt.Errorf("tmux attached clients of %s: %w", session, err)
+	}
+	return n, nil
+}
+
 // PaneCommand returns the foreground command name of the first pane of the
 // given tmux session (e.g. "claude", "bash"). Returns "" on any error.
 func (t *TmuxManager) PaneCommand(session string) string {

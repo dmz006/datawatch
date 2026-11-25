@@ -6201,6 +6201,8 @@
   "cost_charts_col_active": "稼働時間",
   "cost_charts_not_reported_marker": "未報告(%1$s)",
   "cost_report_not_reported": "未報告(%1$s)",
+  "settings_session_finished_idle_close": "完了して待機中のセッションを終了するまで（分、0 = 無効）",
+  "settings_session_finished_idle_close_help": "画面が完了マーカーで終わっている対話型 claude-code セッションを、この分数のあいだ画面が変わらず、端末が接続されておらず、実行中の処理もない場合に終了します。これによりキャパシティの枠が空きます。0 は無効（既定値）、推奨は 12 です。",
   "settings_finalise_interval": "Session finalise interval (min)",
   "settings_finalise_interval_help": "How often the daemon marks sessions whose process is gone as finished. 0 turns the scheduled runs off; a run always happens at start-up.",
   "session_state_process_gone": "Process gone, finalised",

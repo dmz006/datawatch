@@ -329,6 +329,11 @@ type Session struct {
 	// runs in it. Empty = the mode configured when the daemon started.
 	PermissionMode string `json:"permission_mode,omitempty"`
 
+	// AwaitingInputAfterRelaunch is set by a restart or a resume and cleared by
+	// the next input. Until then a completion marker on screen may be replayed
+	// history, so it never proves this run finished (see finished_idle.go).
+	AwaitingInputAfterRelaunch bool `json:"awaiting_input_after_relaunch,omitempty"`
+
 	// ClaudeEffort is the claude --effort level the start request named,
 	// kept so a restart runs at it. Empty when the request named none.
 	ClaudeEffort string `json:"claude_effort,omitempty"`

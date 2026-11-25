@@ -453,6 +453,11 @@ type Manager struct {
 	// the one-shot reaper end a supervisor pass that has finished its turn, without
 	// relying on the model printing a completion marker. Guarded by mu.
 	hookStopAt map[string]time.Time
+	// hookTurnOpen marks a session whose hooks showed a turn running that has
+	// not stopped yet, and finishedIdle holds the screens of finished sessions
+	// being timed (see finished_idle.go). Both guarded by mu.
+	hookTurnOpen map[string]bool
+	finishedIdle map[string]finishedIdleMark
 
 	// selfUpdateNotedAt debounces handling of Claude Code's passive
 	// "Update installed · /restart to apply" footer per session (see
@@ -844,6 +849,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		restartedAt:       make(map[string]time.Time),
 		taskDeliveredAt:   make(map[string]time.Time),
 		hookStopAt:        make(map[string]time.Time),
+		hookTurnOpen:      make(map[string]bool),
 		uiPromptState:     make(map[string]*uiPromptRecord),
 		selfUpdateNotedAt: make(map[string]time.Time),
 		inputSentAt:       make(map[string]time.Time),
@@ -2894,6 +2900,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	if opt != nil && opt.EphemeralWorkspace {
 		sess.EphemeralWorkspace = true
 	}
+	sess.AwaitingInputAfterRelaunch = resumeID != "" && task == ""
 	if opt != nil {
 		// Kept so a restart runs at the level the launch named.
 		sess.ClaudeEffort = opt.ClaudeEffort
@@ -4724,6 +4731,7 @@ func (m *Manager) SendRawKeys(fullID, data string) error {
 			// Enter pressed — store accumulated input as LastInput
 			buf := m.rawInputBuf[fullID]
 			delete(m.rawInputBuf, fullID)
+			sess.AwaitingInputAfterRelaunch = false
 			if buf != "" {
 				sess.LastInput = truncateStr(buf, 100)
 			} else {
@@ -4755,7 +4763,13 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 
 // sendInput is SendInput and SendToolInput. guarded holds the input to the
 // prompt rules; tool words a refusal for the AI session that called the tool.
-func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) error {
+func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) (err error) {
+	id := fullID
+	defer func() {
+		if err == nil {
+			m.liftRelaunchHold(id)
+		}
+	}()
 	filterID, isFilter := filterSourceID(source)
 	if isFilter {
 		if err := m.checkFilterGate(filterID); err != nil {
@@ -5056,6 +5070,8 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	sess.TaskDeliveredAt = nil
 	sess.TaskDeliveryUnverified = false
 	sess.TaskVerifiedAt = nil
+	// The resumed conversation redraws its old completion marker.
+	sess.AwaitingInputAfterRelaunch = true
 	m.mu.Lock()
 	delete(m.taskDeliveredAt, sess.FullID)
 	m.mu.Unlock()
