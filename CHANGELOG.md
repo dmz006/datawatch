@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.9 — Nothing automated answers a safety prompt, and closed Automata stay closed
+
+### Security
+- Nothing the daemon sends on its own can answer a permission or safety prompt any more. Every automated sender (output filters, queued schedules, nudges, wake and lifecycle messages, question answers, task delivery and the retry keys) reads the live screen first and types nothing on a prompt or on a screen it cannot read, and audits the refusal. The built-in filter that typed yes at a permission prompt is removed, and an upgrade turns it off, refuses to turn it back on and cancels the answers it had queued. Filters that type are now off unless the new `session.input_filters_enabled` switch is on, are created disabled, cannot match a prompt or everything, and every line they type is marked as typed by a filter, not by the operator.
+
+### Fixed
+- A closed Automaton (cancelled, rejected, archived or with a recorded outcome) stays closed through restarts and every recovery and repair pass: no boot resume, protected-path release, task reset, lane fill or stale question answer reopens it. A closed record that reads running is restored to its closed status with the reason. Only the operator's own reset reopens one.
+
+### Documentation
+- Filters that type, what the daemon types on its own, and the closed work outcome how-to.
+
 ## v9.187.8 — Finished work can no longer sit unmerged unnoticed
 
 ### Added

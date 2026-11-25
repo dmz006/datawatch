@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.8 (2026-11-24).** Archive and cancel are refused without a decision while commits are not on main, and a sweep, a daily digest and a weekly audit surface finished work that never merged. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.9 (2026-11-24).** The daemon no longer types on permission or safety prompts, the built-in auto-yes filter is gone, and closed Automata stay closed through restarts. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
