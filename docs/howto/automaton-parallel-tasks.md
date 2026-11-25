@@ -97,6 +97,22 @@ an edit leaves it unchanged; `""` clears it), or in the plan JSON as
 a report writes it. (Mobile parity for the field is tracked in datawatch-app
 issue [#352](https://github.com/dmz006/datawatch-app/issues/352).)
 
+### Report files left in the old reports folder
+
+A new untracked file a read-only task leaves under `docs/plans/reports/` is
+moved into the folder of its report path under `.datawatch/reports/`, so it does
+not fail the task. No content is lost:
+
+- It keeps its name when the name is free.
+- When a file with **different content** already has the name, both are kept.
+  The moved file gets a new name, `<name>.stray-<n>.<ext>`.
+- The stray file is deleted only when a kept file has exactly the same content.
+- It never takes the name of the daemon's default gate report,
+  `final-gate.txt`.
+
+The Automaton's decision record and the audit log
+(`autonomous_read_only_report_settled`) name each file and where its content is.
+
 ## Choose a merge conflict policy
 
 - `additive_then_model` keeps both sides when the two changes only add lines, and
@@ -154,8 +170,10 @@ both before it runs the merge, and logs what it did.
   would be overwritten"). A copy identical to the branch's file is dropped. A
   different copy is moved, not deleted, to
   `.datawatch/merge-aside/<task id>/<path>` inside the Automaton's worktree, so
-  you can read it afterwards. Untracked files the merge does not touch are never
-  moved.
+  you can read it afterwards. A file moved aside earlier is never replaced: a
+  later one with different content gets the name `<name>.stray-<n>.<ext>`. The
+  audit log (`autonomous_merge_files_moved_aside`) says where each one went.
+  Untracked files the merge does not touch are never moved.
 
 There is no setting for this: both repairs run on every task merge.
 

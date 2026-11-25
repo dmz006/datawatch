@@ -160,7 +160,11 @@ report is the task's own `report_path`. For the
 template-appended gate that is `.datawatch/reports/<feature>-final-gate.txt`. A
 custom gate with no path writes `.datawatch/reports/final-gate.txt`. The
 evidence is on disk before you read the task status. A decision record is added
-either way, saying what the gate did.
+either way, saying what the gate did. A rerun replaces the gate's own earlier
+report. Any other file already at the report path is first moved to
+`<name>.stray-<n>.<ext>` beside it, and the decision record and the audit log
+(`autonomous_gate_report_kept_previous`) name it. If it cannot be moved, or the
+path is not a regular file, the report is not written and the record says so.
 
 **A gate the daemon cannot run.** If the gate has nothing runnable (no usable
 script and no gate command), the task fails with that reason named. A gate

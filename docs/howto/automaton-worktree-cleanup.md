@@ -369,6 +369,18 @@ copy what you need elsewhere and delete them.
 refusing. Completion, task worktree cleanup, the worktrees pass and the cleanup
 on reject or archive all override that setting.
 
+## Deleting an Automaton
+
+A permanent delete removes the Automaton's saved verification scripts, the
+plain files in `.verify-scripts/<id>/` under the worktree base. It does not
+remove anything else there. When a plain folder was in the way of a new
+worktree, the daemon moved the whole folder to
+`.verify-scripts/<id>/stray-<number>/`. That folder stays after the delete. The
+audit log event `autonomous_delete_kept_moved_aside` names the saved folder,
+what is left in it and the files, up to 500 names with the full count. Remove
+the folder yourself when you no longer need it. `cleanup_mode` does not change
+this.
+
 ## The three modes
 
 The mode is one key: `autonomous.automation.cleanup_mode`.
@@ -795,13 +807,13 @@ The daily pending-branch alert below uses the `pending` count.
 |---|---|---|
 | **Keep** | Records that you want the branch left alone, with an optional note, in `unlanded-keep.json` in the daemon's state directory. Keeping twice updates the note. The cleaner and the unlanded list skip a kept branch | No |
 | **Archive branch** | Moves the branch under `refs/archive/<branch>` and removes the branch name. The commits stay reachable from the archive ref | No (reversible: recreate the branch from the ref) |
-| **Delete worktree** | Writes a git bundle backup of the branch under the `backups` folder of the worktree base, then removes the worktree and the branch | Yes |
+| **Delete worktree** | Writes a git bundle backup of the branch under the `backups` folder of the worktree base, copies the worktree's reports and moved-aside files beside it, then removes the worktree and the branch | Yes |
 
 Delete is the only destructive action and it is guarded: it refuses unless the
 entry carries a recommendation from the list above, a base repository and a
 worktree base are known, and the caller passed an explicit confirm. The bundle
 is written and verified **first**; if it cannot be, nothing is removed. A delete
-returns the branch, the bundle path and the worktree path it removed. Know what the bundle covers: the branch's commits. Uncommitted or untracked work inside the worktree is not in the backup, and delete removes the worktree with the force flag, so that work is gone with the worktree. If the worktree might hold uncommitted work, decide it before deleting (the safe-to-delete report flags it as `held_dirty`).
+returns the branch, the bundle path and the worktree path it removed. Know what the backup covers. The bundle holds the branch's commits. Untracked files in the folders under [Real files in ignored folders](#real-files-in-ignored-folders), and in `docs/plans/reports/`, including every verification script and not the default gate report, are copied to a `.files` folder beside the bundle. The reply then also names that folder (`files_backup_path`) and the files (`backed_up_files`), and the audit log records them (`autonomous_unlanded_delete_files_backed_up`). If they cannot be listed and copied, nothing is removed. A nested git repository in one of those folders is such a case: move it out first. Other uncommitted or untracked work inside the worktree is not in the backup, and delete removes the worktree with the force flag, so that work is gone with the worktree. If the worktree might hold uncommitted work, decide it before deleting (the safe-to-delete report flags it as `held_dirty`).
 
 ### Where to see and act
 

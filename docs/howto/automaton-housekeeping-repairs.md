@@ -119,7 +119,11 @@ The `task_chain` group also has three repairs for stuck task chains, each run in
   in the Automaton worktree, then the gate is retried once.
 - **Leaked file.** A leaked marker or stray file that blocks a finish is
   identified. Only if it is untracked and inside the Automaton worktree is it
-  removed with `git clean -f`, and then the task is retried once.
+  removed with `git clean -f`, and then the task is retried once. A path that
+  is, lies in or contains `docs/plans/reports/` or one of the daemon's work
+  folders under `.datawatch/` (`merge-aside`, `reports`, `dependency-update`,
+  `supervisor`, `verify`) is never removed: it may be the only copy of a report
+  or a moved-aside file. It is recorded as skipped with one alert.
 
 Each refuses, records a skipped entry and raises one alert when the failure
 reason is ambiguous, a second retry would be needed, or the file is tracked.
