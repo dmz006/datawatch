@@ -183,3 +183,22 @@ func TestCompletion_AutoPRPushOfPlantedSecretIsRefused(t *testing.T) {
 		t.Errorf("a pull request was recorded for refused work: %s", saved.Git.PRURL)
 	}
 }
+
+// The pull request push never moves the remote's default branch, with the ship
+// step off so nothing else can refuse first.
+func TestCompletion_AutoPRNeverPushesTheDefaultBranch(t *testing.T) {
+	shipOn(t, "off", "off")
+	m, prd, _, remote := completionRepo(t, "main")
+	prd.Git.AutoPR = true
+	before := remoteRefs(t, remote)
+
+	m.handleWorktreeCompletion(prd)
+
+	if got := remoteRefs(t, remote); got != before {
+		t.Errorf("remote changed:\nbefore %s\nafter  %s", before, got)
+	}
+	saved, _ := m.store.GetPRD(prd.ID)
+	if saved.Git.PRURL != "" || !strings.Contains(saved.Git.PushWarning, "default branch") {
+		t.Errorf("pr %q warning %q", saved.Git.PRURL, saved.Git.PushWarning)
+	}
+}

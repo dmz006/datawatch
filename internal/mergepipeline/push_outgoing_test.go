@@ -51,3 +51,21 @@ func TestMergePushRefusesPlantedSecrets(t *testing.T) {
 		})
 	}
 }
+
+// The merge push runs the project's own check from the remote's main.
+func TestMergePushRunsTheProjectCheck(t *testing.T) {
+	f := newPushGuardFixture(t)
+	commitFile(t, f.local, "Makefile", "check-outgoing:\n\t@! grep -q FORBIDDEN \"$$OUTGOING_MANIFEST_DIR/added.txt\"\n")
+	pushGuardGit(t, f.local, "push", "origin", "main")
+	before := f.remoteMain(t)
+	commitFile(t, f.local, "b.txt", "FORBIDDEN\n")
+
+	err := (ExecShipRunner{}).Push(context.Background(), f.local, "main", "")
+
+	if err == nil || !strings.Contains(err.Error(), "check-outgoing") {
+		t.Fatalf("want a project check refusal, got %v", err)
+	}
+	if got := f.remoteMain(t); got != before {
+		t.Fatalf("remote main moved to %s", got)
+	}
+}
