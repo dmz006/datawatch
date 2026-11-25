@@ -17562,6 +17562,7 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.deploy.drain_timeout': DOCS_DEFINITIONS + '#autonomous-deploy-drain-timeout',
   'autonomous.deploy.health_timeout': DOCS_DEFINITIONS + '#autonomous-deploy-health-timeout',
   deploy_card_title: DOCS_DEFINITIONS + '#deploy-after-ship',
+  'autonomous.merge_deploy_run_enabled': DOCS_DEFINITIONS + '#autonomous-merge-deploy-run-enabled',
   // Screen headers
   view_sessions: DOCS_DEFINITIONS + '#sessions-list',
   view_session_detail: DOCS_DEFINITIONS + '#inside-a-session-terminal-area',
@@ -28004,6 +28005,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_shadow.agreement_streak', label: 'Merge shadow agreement streak threshold (whole number, minimum 1, default 5)', labelKey: 'settings_merge_shadow_agreement_streak', helpKey: 'settings_merge_shadow_agreement_streak_help', helpDocs: 'howto/merge-shadow.md', type: 'number', placeholder: '5', min: 1, step: 1 },
     // Deploy — how a shipped build becomes a running daemon: build, install, restart, health check.
     { label: 'Deploy', labelKey: 'settings_deploy_group', docsKey: 'deploy_card_title', type: 'group' },
+    { key: 'autonomous.merge_deploy_run_enabled', label: 'Allow merge run and deploy run requests', labelKey: 'settings_deploy_run_enabled', hintKey: 'settings_deploy_run_enabled_hint', docsKey: 'autonomous.merge_deploy_run_enabled', type: 'toggle' },
     { key: 'autonomous.deploy.build_command', label: 'Deploy build command', labelKey: 'settings_deploy_build_command', hintKey: 'settings_deploy_build_command_hint', docsKey: 'autonomous.deploy.build_command', type: 'text', placeholder: '' },
     { key: 'autonomous.deploy.install_command', label: 'Deploy install command', labelKey: 'settings_deploy_install_command', hintKey: 'settings_deploy_install_command_hint', docsKey: 'autonomous.deploy.install_command', type: 'text', placeholder: '' },
     { key: 'autonomous.deploy.binary_path', label: 'Deploy installed binary path', labelKey: 'settings_deploy_binary_path', hintKey: 'settings_deploy_binary_path_hint', docsKey: 'autonomous.deploy.binary_path', type: 'text', placeholder: '' },
@@ -41638,8 +41640,9 @@ window.mergePipelineCardHtml = function(view, opts) {
 // deployCardHtml(view, opts) turns the decoded GET /api/autonomous/deploy body
 // into the Automation Overview card: the settings in effect (commands as text),
 // the phase and last outcome, the deferred reason and a Run now button. The
-// button is disabled while no build, install or restart command is set, and
-// while a merge or deploy is running. opts.result is the last Run now answer.
+// button is disabled while the daemon reports run requests switched off
+// (autonomous.merge_deploy_run_enabled), while no build, install or restart
+// command is set, and while a merge or deploy is running. opts.result is the last Run now answer.
 // A missing view renders the placeholder; the loader owns the failed state.
 // Every value is escaped.
 const DEPLOY_FIELDS = [
@@ -41677,8 +41680,12 @@ window.deployCardHtml = function(view, opts) {
     ? `<div class="deploy-deferred" style="color:var(--warning,#a06b00);overflow-wrap:anywhere;">${escHtml(t('deploy_deferred_reason', [view.deferred.reason]))}</div>` : '';
   const running = view.running ? `<div class="deploy-running" style="color:var(--text2);">${escHtml(t('deploy_running'))}</div>` : '';
   const hasCommand = !!(val('build_command') || val('install_command') || val('restart_command'));
-  const disabled = !hasCommand || !!view.running;
-  const hint = hasCommand ? '' : `<div class="deploy-run-hint" style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(t('deploy_run_now_disabled_hint'))}</div>`;
+  // Only an explicit false: the daemon refuses every run request then.
+  const switchedOff = view.run_enabled === false;
+  const disabled = switchedOff || !hasCommand || !!view.running;
+  const hintHtml = (cls, key) => `<div class="${cls}" style="font-size:11px;color:var(--text2);margin-top:4px;overflow-wrap:anywhere;">${escHtml(t(key))}</div>`;
+  const hint = switchedOff ? hintHtml('deploy-run-switched-off', 'deploy_run_switched_off_hint')
+    : (hasCommand ? '' : hintHtml('deploy-run-hint', 'deploy_run_now_disabled_hint'));
   const button = `<div style="margin-top:8px;"><button type="button" class="btn-primary deploy-run" style="font-size:11px;padding:3px 10px;"${disabled ? ' disabled' : ''} onclick="window.deployRunNow()">${escHtml(t('deploy_run_now'))}</button>${hint}` +
     `<div id="deployMessage" class="deploy-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;">${escHtml(typeof opts.result === 'string' ? opts.result : '')}</div></div>`;
   return `<div class="prd-capacity-card deploy-card" style="min-width:0;">${head}${settings}<div style="margin-top:6px;">${last}${deferred}${running}</div>${button}</div>`;

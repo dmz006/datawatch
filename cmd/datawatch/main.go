@@ -12717,6 +12717,7 @@ func newConfigSetCmd() *cobra.Command {
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).\n\n" +
+			"Merge run and deploy run switch: autonomous.merge_deploy_run_enabled (true|false; default false). While false, a merge run or deploy run request is refused and audited.\n\n" +
 			"Verifier run cap key: autonomous.verifier_max_run_seconds (whole seconds >= 0; 0 = no cap; a negative or non-whole value is refused).\n\n" +
 			"Memory ceiling keys: resource_limits.memory_share_percent (1 to 100), " +
 			"resource_limits.memory_floor_mb and resource_limits.memory_cap_mb (whole MB; the floor may not be above the cap).\n\n" +
