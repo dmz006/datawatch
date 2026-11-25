@@ -76,8 +76,8 @@ func forget(dir string) {
 // earlier run that no longer exist under any live test process. For each
 // dir in the manifest it deletes dir only if every one of the following
 // holds: it still exists, it is a directory (never a symlink), it is a
-// direct child of tmpDir whose base name starts with "dw-test-home-" or
-// "dw-test-tmux-", it is owned by the current user, and its mtime is
+// direct child of tmpDir whose base name starts with "dw-test-home-",
+// "dw-test-tmux-" or "dw-test-tmp-", it is owned by the current user, and its mtime is
 // older than maxAge as of now. A dir that fails any check, or that
 // cannot be removed, is kept. Afterwards the manifest is rewritten with
 // the survivors. A missing manifest is not an error: there is simply
@@ -131,7 +131,8 @@ func sweepable(tmp, dir string, maxAge time.Duration, now time.Time) bool {
 		return false
 	}
 	base := filepath.Base(abs)
-	if !strings.HasPrefix(base, "dw-test-home-") && !strings.HasPrefix(base, "dw-test-tmux-") {
+	if !strings.HasPrefix(base, "dw-test-home-") && !strings.HasPrefix(base, "dw-test-tmux-") &&
+		!strings.HasPrefix(base, "dw-test-tmp-") {
 		return false
 	}
 	// Lstat: a symlink named appropriately is not the directory we made.

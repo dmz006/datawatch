@@ -17,6 +17,8 @@ import (
 // go toolchain as a child: it must not inherit the throwaway HOME, or its
 // module cache (read-only files) lands inside it and the cleanup cannot
 // remove it.
+//
+// TMPDIR is private too, because commit-guard reaping walks the temp directory.
 var realHome string
 
 func TestMain(m *testing.M) {
@@ -24,5 +26,5 @@ func TestMain(m *testing.M) {
 	// Most tests read sessions.json straight after a Save; run them
 	// write-through. Tests of the deferred writer pass an explicit interval.
 	DefaultFlushInterval = 0
-	os.Exit(testhome.Run(m))
+	os.Exit(testhome.RunPrivateTmp(m))
 }

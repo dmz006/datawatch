@@ -167,6 +167,17 @@ func (t *TmuxManager) SessionExists(name string) bool {
 	return err == nil
 }
 
+// SessionGone reports true only when a running tmux server answers that the
+// session does not exist. Any other failure (no server, wrong socket directory,
+// tmux not runnable) is not evidence, and reports false.
+func (t *TmuxManager) SessionGone(name string) bool {
+	if name == "" {
+		return false
+	}
+	out, err := TmuxCommand("has-session", "-t", name).CombinedOutput()
+	return err != nil && strings.Contains(string(out), "can't find session")
+}
+
 // trimTrailingNewlines strips trailing \r and \n bytes. Callers of
 // tmux send-keys that follow text with an explicit "Enter" keypress
 // must first strip any trailing newline in the payload itself,

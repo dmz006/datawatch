@@ -164,6 +164,12 @@ func (f *FakeTmux) NewSessionWithSize(name string, cols, rows int) error {
 	return nil
 }
 
+// SessionGone reports that the session is known not to exist: the fake always
+// has an answer.
+func (f *FakeTmux) SessionGone(name string) bool {
+	return name != "" && !f.SessionExists(name)
+}
+
 func (f *FakeTmux) SessionExists(name string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

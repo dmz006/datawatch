@@ -140,12 +140,12 @@ func TestCommitGuardReapStaleDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = live.Cleanup() })
-	stale, err := NewCommitGuard("stale-sess")
+	stale, err := NewOwnedCommitGuard("/data/self", "stale-sess")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stale.Cleanup() })
-	ReapStaleGuardDirs(map[string]bool{"live-sess": true})
+	ReapDeadGuardDirs("/data/self", func(id string) bool { return id != "live-sess" })
 	if _, err := os.Stat(live.Dir()); err != nil {
 		t.Fatalf("live dir reaped: %v", err)
 	}

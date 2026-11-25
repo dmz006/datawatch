@@ -33,6 +33,9 @@ var guardHooks = []string{"pre-commit", "commit-msg", "reference-transaction"}
 type CommitGuard struct {
 	dir   string
 	token string
+	// keepDir is set when nothing shows who made the directory: Cleanup then
+	// leaves it on disk.
+	keepDir bool
 
 	mu      sync.Mutex
 	cleaned bool
@@ -100,11 +103,12 @@ func (g *CommitGuard) CommitEnv() []string {
 	return append(g.Env(), CommitTokenEnv+"="+g.token)
 }
 
-// Cleanup removes the guard directory. It is safe to call repeatedly.
+// Cleanup removes the guard directory, unless it was adopted without an
+// ownership record. It is safe to call repeatedly.
 func (g *CommitGuard) Cleanup() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.cleaned {
+	if g.cleaned || g.keepDir {
 		return nil
 	}
 	if err := os.RemoveAll(g.dir); err != nil {
@@ -161,46 +165,17 @@ func ScrubHooksPath(repoDir, guardDirPrefix string) error {
 
 func guardDirPrefixName() string { return guardDirPrefix }
 
-// ReapStaleGuardDirs removes harness guard directories under the OS temp dir
-// whose session is not in live. It returns nothing; individual removal
-// failures are skipped so one bad directory cannot block adoption.
-func ReapStaleGuardDirs(sessionIDs map[string]bool) {
-	liveSet := make(map[string]bool, len(sessionIDs))
-	for id, ok := range sessionIDs {
-		if ok {
-			liveSet[sanitizeSessionID(id)] = true
-		}
-	}
-	tmp := os.TempDir()
-	entries, err := os.ReadDir(tmp)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if !e.IsDir() || !strings.HasPrefix(name, guardDirPrefix) {
-			continue
-		}
-		rest := strings.TrimPrefix(name, guardDirPrefix)
-		i := strings.LastIndex(rest, "-")
-		if i < 0 {
-			continue
-		}
-		if liveSet[rest[:i]] {
-			continue
-		}
-		_ = os.RemoveAll(filepath.Join(tmp, name))
-	}
-}
-
 // AdoptCommitGuard re-attaches to the guard directory an earlier daemon
 // generation created for sessionID, reading the token back from the hook
 // script. The worker's environment still points at that directory, so a
-// fresh directory would not guard it. When no directory exists it creates a
-// new guard.
-func AdoptCommitGuard(sessionID string) (*CommitGuard, error) {
+// fresh directory would not guard it. A directory recorded as owner's is
+// preferred. One with no ownership record (made by an earlier version) is
+// still adopted, but Cleanup leaves it on disk. Another owner's directory is
+// never adopted. When there is none to adopt it creates a new guard.
+func AdoptCommitGuard(owner, sessionID string) (*CommitGuard, error) {
 	tmp := os.TempDir()
-	prefix := guardDirPrefix + sanitizeSessionID(sessionID) + "-"
+	prefix := guardNamePrefix(sessionID)
+	var unrecordedGuard *CommitGuard
 	entries, err := os.ReadDir(tmp)
 	if err == nil {
 		for _, e := range entries {
@@ -208,16 +183,29 @@ func AdoptCommitGuard(sessionID string) (*CommitGuard, error) {
 				continue
 			}
 			dir := filepath.Join(tmp, e.Name())
+			rec, ok, unrecorded := readGuardRecord(dir)
+			owned := ok && owner != "" && rec.Owner == owner && rec.SessionID == sessionID
+			if !owned && !unrecorded {
+				continue
+			}
 			b, rerr := os.ReadFile(filepath.Join(dir, guardHooks[0])) // #nosec G304 -- path under the OS temp dir, harness-named
 			if rerr != nil {
 				continue
 			}
-			if token := tokenFromHook(string(b)); token != "" {
+			token := tokenFromHook(string(b))
+			if token == "" {
+				continue
+			}
+			if owned {
 				return &CommitGuard{dir: dir, token: token}, nil
 			}
+			unrecordedGuard = &CommitGuard{dir: dir, token: token, keepDir: true}
 		}
 	}
-	return NewCommitGuard(sessionID)
+	if unrecordedGuard != nil {
+		return unrecordedGuard, nil
+	}
+	return NewOwnedCommitGuard(owner, sessionID)
 }
 
 // tokenFromHook extracts the token written by hookScript.
