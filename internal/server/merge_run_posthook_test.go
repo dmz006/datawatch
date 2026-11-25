@@ -142,7 +142,7 @@ func postShipServer(t *testing.T, repo string, ship *postShipSpyShip, mp config.
 	s := &Server{
 		autonomousMgr: spy,
 		mergeShip:     ship,
-		cfg:           &config.Config{Autonomous: config.AutonomousConfig{MergePipeline: mp}},
+		cfg:           &config.Config{Autonomous: config.AutonomousConfig{MergePipeline: mp, MergeDeployRunEnabled: true}},
 	}
 	return spy, s
 }

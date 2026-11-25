@@ -480,3 +480,8 @@ const (
 // remote_addr, user_agent, fetch_site, client_marker (when the request carried
 // the web app marker), alert_raised, alert_id, alert_skipped.
 const ActionSafeguardAction = "safeguard_action"
+
+// ActionMergeDeployRunRefused — a merge run or deploy run request was refused
+// because autonomous.merge_deploy_run_enabled is off. Subject: merge_run or
+// deploy_run. Details: setting, route, outcome.
+const ActionMergeDeployRunRefused = "merge_deploy_run_refused"

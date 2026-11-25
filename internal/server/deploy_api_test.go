@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/deploy"
 )
 
@@ -42,7 +43,7 @@ func TestDeployAPIAutonomousDisabled(t *testing.T) {
 }
 
 func TestDeployAPIBusyIs409(t *testing.T) {
-	s := &Server{autonomousMgr: &mergeRunSpy{repo: t.TempDir()}}
+	s := &Server{cfg: &config.Config{Autonomous: config.AutonomousConfig{MergeDeployRunEnabled: true}}, autonomousMgr: &mergeRunSpy{repo: t.TempDir()}}
 	mergeRunMu.Lock()
 	defer mergeRunMu.Unlock()
 	if rec := deployReq(s, s.handleAutonomousDeployRun, http.MethodPost); rec.Code != http.StatusConflict {

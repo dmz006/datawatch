@@ -49,6 +49,7 @@ func TestLiveAPI_GateRepairReadAndRun(t *testing.T) {
 
 func TestLiveAPI_MergeAndDeployRunPassTheInterfaceGate(t *testing.T) {
 	s, _ := liveAPIServer(t, "")
+	s.cfg.Autonomous.MergeDeployRunEnabled = true
 	for name, h := range map[string]http.HandlerFunc{"merge/run": s.handleAutonomousMergeRun, "deploy/run": s.handleAutonomousDeployRun} {
 		rr := liveDo(h, http.MethodPost, "/api/autonomous/"+name, `{}`)
 		// With no base repository the route must say so, not "unavailable".
@@ -75,6 +76,7 @@ func TestLiveAPI_MergeAndDeployRunWaitForTheOperatorPause(t *testing.T) {
 			t.Fatalf("pause: %v", err)
 		}
 		s.SetPause(ps)
+		s.cfg.Autonomous.MergeDeployRunEnabled = true
 		for name, h := range map[string]http.HandlerFunc{"merge/run": s.handleAutonomousMergeRun, "deploy/run": s.handleAutonomousDeployRun} {
 			rr := liveDo(h, http.MethodPost, "/api/autonomous/"+name, `{}`)
 			if rr.Code != http.StatusConflict || !strings.Contains(rr.Body.String(), "test pause") {

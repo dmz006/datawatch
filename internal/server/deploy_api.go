@@ -121,6 +121,9 @@ type deployStatusBody struct {
 	Deferred *deployDefer   `json:"deferred,omitempty"`
 	Snapshot *deploySnap    `json:"snapshot,omitempty"`
 	Running  bool           `json:"running"`
+	// RunEnabled is autonomous.merge_deploy_run_enabled: whether a merge run
+	// or deploy run request may act.
+	RunEnabled bool `json:"run_enabled"`
 }
 
 type deployDefer struct {
@@ -168,7 +171,7 @@ func (s *Server) handleAutonomousDeploy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	data := s.statePath()
-	body := deployStatusBody{Settings: deployConfigSurface(s.deployConfig())}
+	body := deployStatusBody{Settings: deployConfigSurface(s.deployConfig()), RunEnabled: s.mergeDeployRunEnabled()}
 	if mergeRunMu.TryLock() {
 		mergeRunMu.Unlock()
 	} else {
@@ -190,6 +193,7 @@ func (s *Server) handleAutonomousDeploy(w http.ResponseWriter, r *http.Request) 
 
 // handleAutonomousDeployRun serves POST /api/autonomous/deploy/run. It shares
 // the merge run lock, so a merge or a deploy already running answers 409.
+// While autonomous.merge_deploy_run_enabled is off it answers 403.
 func (s *Server) handleAutonomousDeployRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -201,6 +205,9 @@ func (s *Server) handleAutonomousDeployRun(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	if s.refuseMergeDeployRun(w, r, deployRunSubject) {
 		return
 	}
 	mr, ok := s.autonomousMgr.(mergeRunner)

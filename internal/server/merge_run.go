@@ -227,7 +227,8 @@ func (s *Server) gitHostsOption() mergeRunnerOption {
 }
 
 // handleAutonomousMergeRun serves POST /api/autonomous/merge/run. It runs the
-// merge synchronously and answers with the recorded run. A step that fails
+// merge synchronously and answers with the recorded run. While
+// autonomous.merge_deploy_run_enabled is off it answers 403 and does nothing. A step that fails
 // answers 200 with "result":"failed" and the steps that ran, so the caller
 // sees the record; only a request that could not start is an error status.
 func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +242,9 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	if s.refuseMergeDeployRun(w, r, mergeRunSubject) {
 		return
 	}
 	mr, ok := s.autonomousMgr.(mergeRunner)
