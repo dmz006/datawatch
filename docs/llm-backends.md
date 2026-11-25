@@ -60,13 +60,13 @@ datawatch's saved command library and output filter engine work with any LLM bac
 Named commands from the library (`datawatch cmd add <name> <text>`) can be:
 - Sent via any messaging backend: `send <id>: approve` (where `approve` is a saved command)
 - Scheduled: `datawatch session schedule add <id> approve`
-- Applied automatically via output filters
+- Applied by an output filter you create (see the rules for filters that type)
 
 Seed useful defaults with `datawatch seed`:
 
 | Name | Value | Use case |
 |---|---|---|
-| `approve` | `yes` | Approve a permission or prompt |
+| `approve` | `yes` | Approve a permission or prompt (sent by a person) |
 | `reject` | `no` | Decline a prompt |
 | `enter` | `\n` | Send a blank Enter |
 | `continue` | `continue` | Resume a paused session |
@@ -75,14 +75,16 @@ Seed useful defaults with `datawatch seed`:
 
 ### Output Filters
 
-Output filters (`datawatch cmd filter add`) watch session output for regex patterns and trigger actions automatically. Useful for hands-free operation:
+Output filters (`datawatch filter add`) watch session output for regex patterns and trigger actions automatically. Useful for hands-free operation:
 
 | Filter trigger | Suggested action | Example pattern |
 |---|---|---|
 | Permission dialog | `alert` | `Do you want to proceed\?` |
 | Rate limit hit | `alert` | `rate.limit` |
 | Task complete | `alert` | `(All done|DATAWATCH_COMPLETE)` |
-| Recurring prompt | `schedule approve` | `Overwrite existing file\?` |
+| Recurring idle message | `schedule` (types a marked line) | `waiting for the next batch` |
+
+A filter that types is off by default and never answers a permission or confirmation prompt: see [Output filters that type into sessions](datawatch-definitions.md#output-filters-that-type-into-sessions).
 
 Filters are configured per backend but apply to all sessions regardless of which LLM runs them.
 

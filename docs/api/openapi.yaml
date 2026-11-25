@@ -1532,7 +1532,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
     post:
       summary: Add an output filter
-      description: Add a new regex-based output filter pattern.
+      description: >-
+        Add a new regex-based output filter pattern. send_input and schedule
+        type into sessions: they need allow_input=true, are created turned off,
+        type only while session.input_filters_enabled is on, mark every line as
+        typed by the filter, and a pattern that matches a permission or
+        confirmation prompt is refused.
       operationId: addFilter
       tags: [Filters]
       requestBody:
@@ -1549,12 +1554,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/FilterPattern"
         "400":
-          description: Invalid regex or missing fields
+          description: >-
+            Invalid regex, missing fields, a typing filter without
+            allow_input, or a refused pattern or value
         "401":
           $ref: "#/components/responses/Unauthorized"
     patch:
       summary: Enable or disable a filter
-      description: Toggle a filter pattern on or off by ID.
+      description: >-
+        Toggle a filter on or off, or edit it (send id plus pattern and/or
+        action in the body). An edit that leaves a typing filter always leaves
+        it turned off; turning a filter into a typing one needs allow_input.
+        The built-in typing filter of older versions cannot be turned on.
       operationId: patchFilter
       tags: [Filters]
       parameters:
@@ -1577,6 +1588,8 @@ paths:
       responses:
         "200":
           description: Updated
+        "400":
+          description: Refused for a filter that types into sessions
         "404":
           description: Not found
         "401":
@@ -16085,19 +16098,30 @@ components:
         pattern:
           type: string
           description: Regular expression to match against session output lines
-          example: "^\\s*$"
+          example: "quota exceeded"
         action:
           type: string
-          description: Action to take on matching lines
-          enum: [drop, highlight, alert]
-          example: "drop"
+          description: Action to take on matching lines. send_input and schedule type into the session.
+          enum: [send_input, alert, schedule, detect_prompt]
+          example: "alert"
+        value:
+          type: string
+          description: Alert body, or the one line a typing filter types
+        allow_input:
+          type: boolean
+          description: Request only. Required to create (or convert to) a filter that types into sessions.
         enabled:
           type: boolean
-          default: true
-        description:
+          description: A filter that types is created turned off
+        seeded:
+          type: boolean
+          description: Built in
+        disabled_reason:
           type: string
-          description: Human-readable description of what this filter does
-          example: "Drop blank lines"
+          description: Why the daemon turned the filter off
+        created_at:
+          type: string
+          format: date-time
 
     Alert:
       type: object
