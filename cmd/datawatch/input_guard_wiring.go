@@ -6,6 +6,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/config"
@@ -55,4 +56,22 @@ func inputAuditEntry(ev session.InputAuditEvent) auditpkg.Entry {
 		details["reason"] = ev.Reason
 	}
 	return auditpkg.Entry{Actor: actor, Action: ev.Action, SessionID: ev.SessionFullID, Details: details}
+}
+
+// wireStandaloneInputAudit gives the `datawatch mcp` process, which types
+// into sessions itself, the daemon's audit line for input it refuses to type.
+// The returned func closes the log.
+func wireStandaloneInputAudit(mgr *session.Manager, cfg *config.Config) func() {
+	log, err := auditpkg.New(expandHome(cfg.DataDir))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] audit log open failed: %v\n", err)
+		return func() {}
+	}
+	if cfg.Audit.CEFMirrorEnabled {
+		if err := log.EnableCEFMirror(); err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] audit log CEF mirror failed: %v\n", err)
+		}
+	}
+	mgr.SetInputAuditHook(func(ev session.InputAuditEvent) { _ = log.Write(inputAuditEntry(ev)) })
+	return func() { _ = log.Close() }
 }
