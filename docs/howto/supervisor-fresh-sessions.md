@@ -101,6 +101,11 @@ follow it. The file is rewritten each time the schedule fires, so a fresh
 session reads current state; a schedule created earlier with a large stored
 task is healed the same way at its next fire.
 
+A schedule name is one plain name, because it becomes part of that file name:
+a name with a path separator, `..` or a control character is refused. The file
+stays inside the project folder: if `.datawatch` or `.datawatch/supervisor` is
+a link that leaves the project (or an absolute link), the file is not written.
+
 ## The pinned state record
 
 The record is the supervisor's memory between sessions. It is pinned, so it is
