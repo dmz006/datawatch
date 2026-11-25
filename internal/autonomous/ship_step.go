@@ -1,9 +1,14 @@
-// Ship step — runs when a release is finished. Per the project's ShipPolicy:
-// push the branch to the configured remote, create an annotated tag named from
-// tag_format and the release version in cmd/datawatch/main.go, then push the
-// tag. off skips, shadow records the exact git commands without running them,
-// on runs them. Never force-pushes; refuses a dirty working tree. Outcomes and
-// failures are recorded on the Automaton's triage record.
+// Ship step — per the project's ShipPolicy: push the branch to the configured
+// remote, create an annotated tag named from tag_format and the release version
+// in cmd/datawatch/main.go, then push the tag. off skips, shadow records the
+// exact git commands without running them, on runs them. Never force-pushes;
+// refuses a dirty working tree; every push goes through the outgoing check
+// (internal/git). Outcomes and failures are recorded on the Automaton's triage
+// record.
+//
+// The run made when work finishes (AtCompletion) pushes the work branch only:
+// it never moves the remote's default branch and never creates or pushes a tag,
+// whatever the tag mode says.
 package autonomous
 
 import (
@@ -31,6 +36,8 @@ type ShipResult struct {
 	Commands []string // exact commands: planned (shadow) or run (on)
 	Notes    []string
 	Err      error
+	// Push is the outcome of the branch push, when one was attempted.
+	Push *git.PushResult
 }
 
 // RunShipStep executes the ship step for dir under policy p. branch may be ""
@@ -39,6 +46,10 @@ type ShipResult struct {
 func RunShipStep(ctx context.Context, dir, branch string, p ShipPolicy) ShipResult {
 	var r ShipResult
 	pushMode, tagMode := p.Push, p.Tag
+	if p.AtCompletion && tagMode != config.ChecksModeOff {
+		tagMode = config.ChecksModeOff
+		r.Notes = append(r.Notes, "completion never creates or pushes a tag: the tag mode is not applied here")
+	}
 	if pushMode == config.ChecksModeOff && tagMode == config.ChecksModeOff {
 		r.Notes = append(r.Notes, "push and tag are off: skipped")
 		return r
@@ -107,8 +118,14 @@ func RunShipStep(ctx context.Context, dir, branch string, p ShipPolicy) ShipResu
 		record(git.ShipPushBranchArgs(remote, branch))
 	case config.ChecksModeOn:
 		record(git.ShipPushBranchArgs(remote, branch))
-		if err := git.PushBranchRef(ctx, dir, remote, branch); err != nil {
-			r.Err = fmt.Errorf("ship: push branch: %w", err)
+		push := git.PushToBranch
+		if p.AtCompletion {
+			push = git.PushWorkBranch
+		}
+		res := push(ctx, dir, remote, branch, p.Scan)
+		r.Push = &res
+		if res.Kind != "" {
+			r.Err = fmt.Errorf("ship: push branch: %s: %s", res.Kind, res.Reason)
 			return r
 		}
 	}
@@ -142,7 +159,7 @@ func RunShipStep(ctx context.Context, dir, branch string, p ShipPolicy) ShipResu
 			}
 		}
 		record(git.PushTagArgs(remote, tag))
-		if err := git.PushTag(ctx, dir, remote, tag); err != nil {
+		if err := git.PushTag(ctx, dir, remote, tag, p.Scan); err != nil {
 			r.Err = fmt.Errorf("ship: push tag: %w", err)
 			return r
 		}
@@ -151,7 +168,8 @@ func RunShipStep(ctx context.Context, dir, branch string, p ShipPolicy) ShipResu
 }
 
 // runShipStep is the completion-path hook: read the policy for the PRD's
-// project directory, run the step, record the outcome on the triage record.
+// project directory, run the step as a completion run, record the outcome on
+// the triage record.
 func (m *Manager) runShipStep(prd *PRD) *ShipResult {
 	if prd == nil || strings.TrimSpace(prd.ProjectDir) == "" {
 		return nil
@@ -160,10 +178,17 @@ func (m *Manager) runShipStep(prd *PRD) *ShipResult {
 	if p.Push == config.ChecksModeOff && p.Tag == config.ChecksModeOff {
 		return nil
 	}
+	p.AtCompletion = true
+	p.Scan = m.effectiveSecretScan()
 	ctx, cancel := context.WithTimeout(context.Background(), shipTimeout)
 	defer cancel()
 	r := RunShipStep(ctx, prd.ProjectDir, prd.Git.Branch, p)
 	m.recordShipStep(prd, p, r)
+	// A refused push, or one that went through with findings, reaches the
+	// Automaton's push state and the operator like any other push.
+	if r.Push != nil && (r.Push.Kind != "" || len(r.Push.SecretFindings) > 0) {
+		m.recordPushOutcome(prd, *r.Push, git.PushBranch)
+	}
 	return &r
 }
 

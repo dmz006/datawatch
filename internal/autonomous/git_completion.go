@@ -53,17 +53,22 @@ func (m *Manager) handleWorktreeCompletion(prd *PRD) {
 		// handleClusterCompletion handles their PR instead.
 		return
 	}
-	// Ship step: push, tag and push the tag per the project's ship policy.
-	// Failures are recorded on the triage record and never fail the PRD.
+	// Ship step: push the work branch per the project's ship policy (never
+	// the default branch, never a tag). Failures are recorded on the triage
+	// record and never fail the PRD.
 	if ship := m.runShipStep(prd); ship != nil {
 		m.runShipCIWatch(prd, ShipPolicyFor(prd.ProjectDir), ship, nil)
 	}
 	if prd.Git.Branch == "" || !prd.Git.AutoPR {
 		return
 	}
-	if out, err := runGitIn(prd.ProjectDir, "push", "-u", "origin", prd.Git.Branch); err != nil {
-		log.Printf("[autonomous] prd=%s git push failed: %v\n%s", prd.ID, err, out)
-		m.recordGitCompletionFailure(prd, "push failed: "+err.Error())
+	res := git.PushWorkBranch(context.Background(), prd.ProjectDir, "origin", prd.Git.Branch, m.effectiveSecretScan())
+	if res.Kind != "" || len(res.SecretFindings) > 0 {
+		m.recordPushOutcome(prd, res, git.PushBranch)
+	}
+	if res.Kind != "" {
+		log.Printf("[autonomous] prd=%s git push failed (%s): %s", prd.ID, res.Kind, res.Reason)
+		m.recordGitCompletionFailure(prd, "push failed: "+res.Reason)
 		return
 	}
 
