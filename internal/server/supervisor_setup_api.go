@@ -24,8 +24,10 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/pathsafe"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
@@ -213,6 +215,10 @@ func (d *SupervisorSetupDeps) setUp(req SupervisorSetupRequest) (*SupervisorSetu
 		n := strings.TrimSpace(scheds[i].Name)
 		if n == "" {
 			return nil, badSetupInput("every schedule needs a name")
+		}
+		// The name becomes part of the handover file name under the project.
+		if err := pathsafe.ValidateRecordName(n); err != nil || strings.IndexFunc(n, unicode.IsControl) >= 0 {
+			return nil, badSetupInput("schedule name %q must be one plain name: no path separator, \"..\" or control character", n)
 		}
 		if seen[n] {
 			return nil, badSetupInput("schedule name %q is listed twice", n)

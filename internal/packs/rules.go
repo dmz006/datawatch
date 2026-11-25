@@ -3,7 +3,6 @@ package packs
 import (
 	"bufio"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -76,27 +75,37 @@ func checkVerifiedTask(pack *Pack, task PackTask) error {
 }
 
 // checkScriptFile confirms that script exists in packDir as a regular file
-// that resolves inside packDir/verify/ and starts with a shebang.
+// that resolves inside packDir/verify/, itself inside the pack, and starts with
+// a shebang.
 func checkScriptFile(packDir, script string) error {
-	root, err := filepath.EvalSymlinks(filepath.Join(packDir, "verify"))
+	pack, err := openPackFiles(packDir)
+	if err != nil {
+		return fmt.Errorf("pack folder: %v", err)
+	}
+	defer pack.close()
+	verify, err := pack.resolve("verify")
 	if err != nil {
 		return fmt.Errorf("verify folder: %v", err)
 	}
-	resolved, err := filepath.EvalSymlinks(filepath.Join(packDir, script))
+	resolved, err := filepath.EvalSymlinks(filepath.Join(pack.real, script))
 	if err != nil {
 		return fmt.Errorf("script %q: %v", script, err)
 	}
-	if !withinPackDir(root, resolved) {
+	if !withinPackDir(filepath.Join(pack.real, verify), resolved) {
 		return fmt.Errorf("script %q resolves outside verify/", script)
 	}
-	fi, err := os.Stat(resolved)
+	name, err := filepath.Rel(pack.real, resolved)
+	if err != nil {
+		return fmt.Errorf("script %q: %v", script, err)
+	}
+	fi, err := pack.root.Stat(name)
 	if err != nil {
 		return fmt.Errorf("script %q: %v", script, err)
 	}
 	if !fi.Mode().IsRegular() {
 		return fmt.Errorf("script %q is not a regular file", script)
 	}
-	f, err := os.Open(resolved)
+	f, err := pack.root.Open(name)
 	if err != nil {
 		return fmt.Errorf("script %q: %v", script, err)
 	}

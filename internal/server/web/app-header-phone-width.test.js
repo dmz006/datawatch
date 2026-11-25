@@ -198,6 +198,20 @@ function parseAttrs(src) {
   return a;
 }
 
+// withoutHtmlComments returns the markup with every comment cut out. A comment
+// that is never closed stays.
+function withoutHtmlComments(html) {
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const open = html.indexOf('<!--', from);
+    const close = open < 0 ? -1 : html.indexOf('-->', open + 4);
+    if (close < 0) return out + html.slice(from);
+    out += html.slice(from, open);
+    from = close + 3;
+  }
+}
+
 // topLevel returns the direct children of the markup: { tag, attrs, outer, inner }.
 function topLevel(html) {
   const out = [];
@@ -226,7 +240,7 @@ function topLevel(html) {
 }
 
 function headerHtml() {
-  const src = INDEX_HTML.replace(/<!--[\s\S]*?-->/g, '');
+  const src = withoutHtmlComments(INDEX_HTML);
   const a = src.indexOf('<header class="header">');
   assert.ok(a >= 0, 'index.html has the shared header');
   return src.slice(a + '<header class="header">'.length, src.indexOf('</header>', a));
@@ -344,7 +358,7 @@ test('(c) the scope button is icon-only at every width: an aria-hidden icon and 
   const b = child('headerScopeBtn');
   assert.match(b.inner, /<svg[^>]*class="header-scope-icon"[^>]*aria-hidden="true"/);
   const rest = b.inner.replace(/<svg[\s\S]*?<\/svg>/, '').replace(/<span id="headerScopeBadge"[^>]*><\/span>/, '');
-  assert.equal(rest.replace(/<[^>]*>/g, '').trim(), '', 'no label text inside the button');
+  assert.match(rest, /^(?:\s|<[^>]*>)*$/, 'no label text inside the button');
   const hasLabelSpan = /class="[^"]*header-scope-(name|label|text)[^"]*"/.test(b.inner);
   assert.ok(!hasLabelSpan, 'no scope name span');
   ['phone', 'wide'].forEach(k => {
@@ -439,7 +453,7 @@ test('(e) both icon buttons are real <button type="button"> elements with an ari
 });
 
 test('(e) the header contains the server button and the scope button exactly once each', () => {
-  const src = INDEX_HTML.replace(/<!--[\s\S]*?-->/g, '');
+  const src = withoutHtmlComments(INDEX_HTML);
   const count = (re, s) => (s.match(re) || []).length;
   ['serverPickerBtn', 'headerScopeBtn', 'headerScopeBadge', 'serverPickerDot', 'serverPickerName'].forEach(id => {
     assert.equal(count(new RegExp(`id="${id}"`, 'g'), src), 1, `${id} appears once in index.html`);

@@ -227,8 +227,8 @@ function _i18nPending() {
 // applyI18nDOM walks elements with `data-i18n="<key>"` and replaces their
 // textContent with t(key). Variants:
 //   data-i18n-attr="title"   → updates the named attribute instead of text
-//   data-i18n-html           → uses innerHTML (caller's responsibility to keep
-//                              the locale bundle XSS-safe; only use for our own keys)
+// A translation is never written as markup: the key is read back from the page
+// and t() returns it unchanged when no bundle holds it.
 function applyI18nDOM(root) {
   if (!root) return;
   const els = root.querySelectorAll('[data-i18n]');
@@ -239,8 +239,6 @@ function applyI18nDOM(root) {
     const attr = el.getAttribute('data-i18n-attr');
     if (attr) {
       el.setAttribute(attr, val);
-    } else if (el.hasAttribute('data-i18n-html')) {
-      el.innerHTML = val;
     } else {
       el.textContent = val;
     }

@@ -451,6 +451,11 @@ func RestoreRemoteReapedDetail(ctx context.Context, git MergeGitRunner, repo, br
 	if branch == "" {
 		return "", "", fmt.Errorf("restore: a branch name is required")
 	}
+	// The pattern is matched here, in front of the git calls, so that no value
+	// git could read as an option gets past this function.
+	if !branchCharsRe.MatchString(branch) || !branchShapeOK(branch) {
+		return "", "", fmt.Errorf("restore: %q: %w", branch, ErrBadRestoreBranch)
+	}
 	ref, sha, err = latestRemoteReapBackupRef(ctx, git, repo, branch)
 	if err != nil {
 		return "", "", err

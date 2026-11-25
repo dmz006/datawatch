@@ -194,11 +194,15 @@ func (v *VersionProbe) ollamaVersion(ctx context.Context, n *Node) (VersionResul
 // dockerVersion reads the Docker daemon's ServerVersion via the same
 // CLI call probeDocker already validates (`docker info`).
 func (v *VersionProbe) dockerVersion(ctx context.Context, n *Node) (VersionResult, error) {
-	args := []string{}
+	endpoint := ""
 	if n.Routing == RoutingDockerNetwork && n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.DockerEndpoint != "" {
-		args = append(args, "--host", n.RoutingDockerNetwork.DockerEndpoint)
+		endpoint = n.RoutingDockerNetwork.DockerEndpoint
 	} else if n.Docker != nil && n.Docker.Endpoint != "" {
-		args = append(args, "--host", n.Docker.Endpoint)
+		endpoint = n.Docker.Endpoint
+	}
+	args, err := dockerHostArgs(endpoint)
+	if err != nil {
+		return VersionResult{}, fmt.Errorf("docker version probe: %w", err)
 	}
 	args = append(args, "info", "--format", "{{.ServerVersion}}")
 	out, err := v.Runner.Run(ctx, "docker", args...)

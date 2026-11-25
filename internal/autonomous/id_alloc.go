@@ -22,10 +22,12 @@ package autonomous
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -123,14 +125,11 @@ func scanIDLeftovers(r idRoots) idLeftovers {
 			continue
 		}
 		seen[repo] = true
-		if st, err := os.Stat(repo); err != nil || !st.IsDir() {
-			continue
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), leftoverGitTimeout)
 		refs, err := runGitInCtx(ctx, repo, "for-each-ref", "--format=%(refname)")
 		cancel()
 		if err != nil {
-			if !strings.Contains(refs, "not a git repository") {
+			if !noWorkDir(err) && !strings.Contains(refs, "not a git repository") {
 				log.Printf("[autonomous] id check: list branches in %s: %v (branches there were not checked)", repo, err)
 			}
 			continue
@@ -145,6 +144,13 @@ func scanIDLeftovers(r idRoots) idLeftovers {
 		}
 	}
 	return out
+}
+
+// noWorkDir reports that a command did not start because its working directory
+// is missing or is not a directory.
+func noWorkDir(err error) bool {
+	var pe *fs.PathError
+	return errors.As(err, &pe) && (pe.Op == "chdir" || errors.Is(pe.Err, syscall.ENOTDIR))
 }
 
 // insideDir reports whether path is dir or lies under it.

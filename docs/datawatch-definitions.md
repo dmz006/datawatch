@@ -1493,7 +1493,7 @@ Set it with `verify_tls` in the body of `POST` and `PUT /api/compute/nodes` (RES
 | `network_name` | string | `datawatch-llm` | Docker network name |
 | `port` | int | `11434` | Container port exposed to the network |
 | `container_name` | string | *auto* | Optional explicit container name |
-| `docker_endpoint` | string | system default | Docker socket/endpoint URL |
+| `docker_endpoint` | string | system default | Docker socket/endpoint URL; one that starts with `-` or holds a control character is refused when docker is run |
 | `auto_start` | bool | `false` | Start container on first probe if not running |
 | `auto_pull` | bool | `false` | Pull image if missing before start |
 | `env` | `[]string` | — | Env vars in `KEY=VALUE` form |

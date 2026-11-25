@@ -118,9 +118,13 @@ func taskCleanupLock(prdID string) *sync.Mutex {
 }
 
 // taskGitOut runs git in dir and returns standard output only: a warning on
-// standard error must never be read as a status record or a commit id.
+// standard error must never be read as a status record or a commit id. Only the
+// commands checkTaskGitArgs lists are run.
 func taskGitOut(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed git subcommands; paths and branches come from the daemon's own task records
+	if err := checkTaskGitArgs(args); err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- the command is one checkTaskGitArgs lists; no shell
 	cmd.Dir = dir
 	cmd.WaitDelay = mergeGitWaitDelay
 	var stdout, stderr bytes.Buffer

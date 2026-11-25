@@ -97,6 +97,20 @@ async function open(sb) { click(sb); await flushAsync(); return modal(sb); }
 const press = (sb, key) => sb.__dom.fire('keydown', { key, preventDefault() {} });
 const keydowns = sb => sb.__dom.listenerCount('keydown');
 
+// withoutHtmlComments returns the markup with every comment cut out. A comment
+// that is never closed stays.
+function withoutHtmlComments(html) {
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const open = html.indexOf('<!--', from);
+    const close = open < 0 ? -1 : html.indexOf('-->', open + 4);
+    if (close < 0) return out + html.slice(from);
+    out += html.slice(from, open);
+    from = close + 3;
+  }
+}
+
 // spyOnSetScope records every setScope call a row handler makes through the
 // global the inline onclick resolves.
 function spyOnSetScope(sb) {
@@ -109,7 +123,7 @@ function spyOnSetScope(sb) {
 // ── (a) the button ─────────────────────────────────────────────────────────
 
 test('(a) #headerScopeBtn exists once, as a real button with an accessible name', () => {
-  const src = INDEX_HTML.replace(/<!--[\s\S]*?-->/g, '');
+  const src = withoutHtmlComments(INDEX_HTML);
   assert.equal((src.match(/id="headerScopeBtn"/g) || []).length, 1, 'exactly one in index.html');
   const tag = src.match(/<button\b[^>]*id="headerScopeBtn"[^>]*>/)[0];
   assert.match(tag, /type="button"/);

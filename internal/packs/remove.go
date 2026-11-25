@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 )
 
@@ -31,7 +30,18 @@ func Remove(name, version, installRoot string) error {
 		return fmt.Errorf("pack remove: %w", err)
 	}
 	dir := filepath.Join(absRoot, name, version)
-	info, err := os.Lstat(dir)
+	// The lookup and the deletion go through a root on the install folder, so
+	// neither can leave it, also not through a linked name folder.
+	root, err := openDir(absRoot)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("pack remove: %s %s is not installed", name, version)
+	}
+	if err != nil {
+		return fmt.Errorf("pack remove: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	rel := filepath.Join(name, version)
+	info, err := root.Lstat(rel)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("pack remove: %s %s is not installed", name, version)
 	}
@@ -50,12 +60,12 @@ func Remove(name, version, installRoot string) error {
 		return fmt.Errorf("pack remove: %w", err)
 	}
 
-	if err := os.RemoveAll(dir); err != nil {
+	if err := root.RemoveAll(rel); err != nil {
 		return fmt.Errorf("pack remove: %w", err)
 	}
 	// Drop the name folder when this was its last installed version. A
 	// non-empty folder is left alone, and so is any error from the attempt.
-	_ = os.Remove(filepath.Join(absRoot, name))
+	_ = root.Remove(name)
 	return nil
 }
 
