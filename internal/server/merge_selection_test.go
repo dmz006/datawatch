@@ -207,3 +207,42 @@ func TestSupervisorLoopMergeUsesTheRule(t *testing.T) {
 		t.Errorf("landing=%s shipped=%v status=%s", got.Landing.State, got.IsShipped(), got.Status)
 	}
 }
+
+// After a run whose push was held, the loop merges nothing more: the next
+// merge would sit on top of an unpushed one.
+func TestSupervisorLoopMergeStopsAfterAnUnpushedRun(t *testing.T) {
+	repo := newPostShipRepo(t)
+	_, mgr := liveAPIServer(t, repo)
+	postShipGit(t, repo, "branch", "second", "feature")
+	sel := autonomous.MergeSelection{}
+	for _, branch := range []string{"feature", "second"} {
+		p := selAutomaton(t, mgr, autonomous.PRDNeedsReview, branch)
+		selAccept(t, mgr, p, postShipGit(t, repo, "rev-parse", branch))
+		e := mgr.MergeEligibility(context.Background(), p.ID)
+		if !e.Eligible {
+			t.Fatalf("%s: %v", branch, e.Reasons)
+		}
+		sel.Eligible = append(sel.Eligible, e)
+	}
+	ship := &postShipSpyShip{}
+	out, err := supervisorLoopMergeSelected(context.Background(), mgr, t.TempDir(),
+		config.MergePipelineConfig{VersionFiles: []string{"cmd/datawatch/main.go", "internal/server/api.go"}},
+		sel, func(r *mergepipeline.Runner) {
+			r.Ship = ship
+			r.ReleaseApproval = config.ReleaseApprovalManual // holds the push
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range ship.calls {
+		if strings.HasPrefix(c, "push") {
+			t.Fatalf("fixture: the push was not held: %v", ship.calls)
+		}
+	}
+	if runs := mgr.MergeRuns(0); len(runs) != 1 {
+		t.Errorf("runs = %d, want the loop to stop after the unpushed one", len(runs))
+	}
+	if strings.Join(out.Merged, ",") != "feature" || !strings.Contains(out.Note, "its push did not happen") {
+		t.Errorf("merged = %v note = %q", out.Merged, out.Note)
+	}
+}

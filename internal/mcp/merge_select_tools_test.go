@@ -2,10 +2,13 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 func TestMergeSelectMCP_RegisteredAndProxies(t *testing.T) {
@@ -39,5 +42,29 @@ func TestMergeSelectMCP_RegisteredAndProxies(t *testing.T) {
 	}
 	if method != http.MethodGet || path != "/api/autonomous/merge" || !strings.Contains(query, "selection=true") || !strings.Contains(query, "automaton=a1") {
 		t.Errorf("selection proxied %s %s?%s", method, path, query)
+	}
+}
+
+// A tool call the daemon knows to come from a session is sent as that session,
+// whatever actor it names.
+func TestMergeSelectMCP_SessionCannotNameAnotherActor(t *testing.T) {
+	var body map[string]string
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		body = nil
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	args := map[string]any{"id": "a1", "commit": "abc", "reason": "why", "actor": "operator"}
+	for ctx, want := range map[context.Context]string{
+		context.Background(): "operator",
+		federation.WithCallerSessionID(context.Background(), "host-w1"): "session:host-w1",
+	} {
+		res, err := s.handleAutonomousPRDAcceptForMerge(ctx, callReq(args))
+		if err != nil || res.IsError {
+			t.Fatalf("accept: %v %+v", err, res)
+		}
+		if body["actor"] != want {
+			t.Errorf("actor sent = %q, want %q", body["actor"], want)
+		}
 	}
 }
