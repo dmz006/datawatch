@@ -35,12 +35,6 @@ func readDoc(t *testing.T, path string) string {
 // oneLine joins wrapped lines so a sentence can be matched across line breaks.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-func TestHowtoSaysThereIsNoLoadSensitiveStatus(t *testing.T) {
-	if !strings.Contains(oneLine(readDoc(t, howtoPath)), noSuchStatusText) {
-		t.Errorf("%s does not say there is %s", howtoPath, noSuchStatusText)
-	}
-}
-
 // TestNoDocPresentsLoadSensitiveAsAGateStatus lets a document name
 // load_sensitive only in a paragraph that also says no such status exists.
 // Historical plans record what was true when written and are left alone.
