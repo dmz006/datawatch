@@ -82,6 +82,10 @@ func (m *Manager) FailPlanningReattach(prdID string, cause error) {
 	if status != PRDPlanning {
 		return
 	}
+	if caller := operatorEndedBy(cause); caller != "" {
+		m.stopForOperatorEndedPlanner(prd, caller)
+		return
+	}
 	if cause == nil {
 		cause = errors.New("planner session ended without output")
 	}

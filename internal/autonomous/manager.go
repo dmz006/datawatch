@@ -1926,6 +1926,12 @@ type Manager struct {
 	// mergeHoldBack is the failure backoff of each Automaton's merge hold pass
 	// (merge_hold.go), keyed by Automaton id and guarded by mu.
 	mergeHoldBack map[string]*mergeHoldBackoff
+	// planOrigins records who started each planning call in flight
+	// (planning_gate.go).
+	planOrigins planOrigins
+	// attemptTimes holds the queue wait and verify time of each task's
+	// current attempt (failure_escalation_attempts.go).
+	attemptTimes attemptTimes
 
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger

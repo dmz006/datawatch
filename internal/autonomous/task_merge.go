@@ -130,6 +130,31 @@ func mergeBlocker(prd *PRD, t *Task) string {
 	return ""
 }
 
+// foldFinishedTask folds the task that just completed into the Automaton
+// branch. Folding that one task is part of finishing work already running. The
+// ordered pass over the other waiting tasks is a merge pass, so it waits while
+// the operator has paused the project; the merge hold pass and the timed retry
+// take those tasks after the resume.
+func (m *Manager) foldFinishedTask(ctx context.Context, prd *PRD, t *Task) {
+	if _, merr := m.MergeTaskBranch(ctx, prd, t); merr != nil {
+		log.Printf("[autonomous] %s/%s task merge: %v", prd.ID, t.ID, merr)
+		// Leave the task visibly waiting, not without a merge state.
+		if t.WorktreeBranch != "" && t.MergeState == "" {
+			m.setMergeState(t, MergeStatePending, "")
+		}
+	}
+	var dir string
+	m.store.WithLock(func() { dir = prd.ProjectDir })
+	if _, blocked := m.pauseBlock(dir); blocked {
+		return
+	}
+	// A task deferred behind an earlier sibling or dependency may be
+	// mergeable now: run the ordered pass over the whole PRD.
+	if _, merr := m.MergeCompletedTasks(ctx, prd); merr != nil {
+		log.Printf("[autonomous] %s task merge pass: %v", prd.ID, merr)
+	}
+}
+
 // MergeCompletedTasks merges every completed task of prd that is waiting to
 // merge, in task order, repeating while merges make progress (a dependency
 // declared after its dependent needs a second pass). Returns the merged count.

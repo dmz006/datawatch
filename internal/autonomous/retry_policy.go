@@ -381,6 +381,10 @@ func (m *Manager) noteDecomposeSessionFailure(prd *PRD, backend, model string, d
 	if m.planningRecordClosed(prd.ID, "decompose-session") {
 		return true
 	}
+	if caller := operatorEndedBy(derr); caller != "" {
+		m.stopForOperatorEndedPlanner(prd, caller)
+		return true
+	}
 	var failures int
 	m.store.WithLock(func() {
 		prd.DecomposeSessionFailures++
@@ -428,6 +432,34 @@ func (m *Manager) noteDecomposeSessionFailure(prd *PRD, backend, model string, d
 		m.finishRunArtifacts(prd.ID, prd.ProjectDir)
 	}
 	return true
+}
+
+// stopForOperatorEndedPlanner leaves an Automaton whose planner session the
+// operator ended for the operator: no retry, no failure counted, and no draft
+// status the engine would plan again.
+func (m *Manager) stopForOperatorEndedPlanner(prd *PRD, caller string) {
+	now := time.Now()
+	detail := fmt.Sprintf("the planner session was ended by the operator (%s); it was not started again — reset to draft to plan it again", caller)
+	var old PRDStatus
+	m.store.WithLock(func() {
+		prd.LastDecomposeFailure = &FailureReason{
+			Category:   "infra",
+			Source:     "decompose-session",
+			Retryable:  false,
+			Detail:     detail,
+			OccurredAt: now,
+		}
+		old = prd.Status
+		prd.Status = PRDFailed
+		prd.UpdatedAt = now
+	})
+	log.Printf("[autonomous] prd=%s %s", prd.ID, detail)
+	if m.store.SavePRD(prd) == nil {
+		m.emitPRDStatus(prd, old, nil, nil)
+	}
+	if prd.ProjectDir != "" {
+		m.finishRunArtifacts(prd.ID, prd.ProjectDir)
+	}
 }
 
 // isOneShotNoOutput reports whether a decompose error is the one-shot

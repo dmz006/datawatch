@@ -616,6 +616,7 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 		entered := rec.Now()
 		defer func() { m.addCapacityWaitSpent(t.ID, rec.Now().Sub(entered)) }()
 	}
+	requestedAt := m.attemptNow()
 	err := led.AcquireRechecking(ctx, req, bound, func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		if !waited {
 			waitStart = rec.Now()
@@ -632,6 +633,9 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 	}, recheck)
 	switch {
 	case err == nil:
+		if role == capacity.RoleWorker {
+			m.addQueueWait(t.ID, m.attemptNow().Sub(requestedAt))
+		}
 		if fell != nil {
 			m.setFallthrough(t.ID, fell)
 			note := m.fallthroughNote(prd, t, backend, model, fell)
@@ -750,6 +754,33 @@ func (m *Manager) replaceStaleLease(ctx context.Context, prd *PRD, t *Task, back
 	return m.acquireLease(ctx, prd, t, backend, model, capacity.RoleWorker, nil, "")
 }
 
+// waitPlannerUnpaused blocks while the Automaton's project is paused, showing
+// the pause as its wait reason. A cancelled Automaton ends the wait with
+// errDecomposeCancelled.
+func (m *Manager) waitPlannerUnpaused(prd *PRD) error {
+	dir := m.planDirOf(prd.ID)
+	b, blocked := m.pauseBlock(dir)
+	if !blocked {
+		return nil
+	}
+	defer m.clearPRDWaitReason(prd.ID)
+	poll := m.pauseWaitPoll()
+	clock := m.spawnWaitClock()
+	shown := ""
+	for blocked {
+		if m.plannerCancelled(prd.ID) {
+			return errDecomposeCancelled
+		}
+		if reason := b.Message(); reason != shown {
+			m.setPRDWaitReason(prd.ID, reason)
+			shown = reason
+		}
+		<-clock.After(poll)
+		b, blocked = m.pauseBlock(dir)
+	}
+	return nil
+}
+
 // decomposeAdmitted runs one decompose attempt inside a RolePlanner capacity
 // lease on the same pools a task on that backend+model would use, minus the
 // "host" pool.
@@ -786,6 +817,14 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 			m.RecordPlannerSession(prdID, sessionID, outputFile)
 		}
 	}
+	// A start the engine made waits for an operator pause before each planner
+	// session, retries included. An operator's own decompose does not.
+	engine := m.enginePlanning(prd.ID)
+	if engine {
+		if err := m.waitPlannerUnpaused(prd); err != nil {
+			return "", err
+		}
+	}
 	if !m.capacityOn() {
 		return m.decompose(req)
 	}
@@ -802,6 +841,10 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 	lreq := capacity.Request{
 		Holder: holder, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: capacity.RolePlanner, Consumer: consumerSessionSpawn,
 	}
+	// An operator-started plan skips the automatic-only blocks (usage
+	// back-off, burn guard, usage hold), as an operator session start does.
+	// Pool limits still apply.
+	lreq.Interactive = m.operatorStartedPlan(prd.ID)
 	lreq.Refresh = m.placementRefresh(lreq, backend, model, decomposePools)
 	// With autonomous.capacity_fallthrough on, a planner whose pools are full
 	// moves to an allowed alternate pool exactly as a task does, and a planner
@@ -837,6 +880,13 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 			return "", errDecomposeCancelled
 		}
 		return "", fmt.Errorf("capacity: %w", err)
+	}
+	if engine {
+		if _, blocked := m.pauseBlock(m.planDirOf(prd.ID)); blocked {
+			// Paused while queued: give the slot back and wait for the resume.
+			led.Release(holder)
+			return m.decomposeAdmitted(prd, backend, model, req)
+		}
 	}
 	defer led.Release(holder)
 	m.clearPRDWaitReason(prd.ID)

@@ -83,6 +83,14 @@ type TaskAttempt struct {
 	EndedAt   time.Time `json:"ended_at,omitempty"`
 	// DurationSeconds is the wall-clock length of the attempt.
 	DurationSeconds int `json:"duration_seconds,omitempty"`
+	// QueueWaitSeconds is the time the attempt's worker lease requests waited
+	// to be granted.
+	QueueWaitSeconds int `json:"queue_wait_seconds,omitempty"`
+	// VerifySeconds is the time from the start of verification to the
+	// verdict; zero when the attempt ended without a verdict. Verification
+	// starts when the task enters verifying, unless the verifier reports a
+	// later start (Manager.NoteVerificationStarted).
+	VerifySeconds int `json:"verify_seconds,omitempty"`
 	// Outcome is "failed", "stalled" or "cancelled".
 	Outcome         string `json:"outcome,omitempty"`
 	FailureCategory string `json:"failure_category,omitempty"`

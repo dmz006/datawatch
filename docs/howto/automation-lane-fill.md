@@ -171,6 +171,9 @@ follows the lane fill mode in effect (`on` when either lane kind is `on`, else
   over a few minutes, so a poll every minute does not run git every minute). A
   merge held for the operator (it carries a merge block, is held or needs
   review, or its Automaton is blocked) is alerted about but never retried.
+  A project the operator has [paused](pause-new-work.md) is alerted about and
+  not retried; the pause uses no retry slot, so the first poll after the resume
+  retries.
 
 The alert fires again only after the merge succeeds, or the Automaton stops
 running, and the same task stalls again. `stalled_merge_minutes: 0` turns the

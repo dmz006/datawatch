@@ -265,23 +265,37 @@ func (m *Manager) SetFixLoopRun(fn FixLoopRunFn) {
 // sub-config's retry budget (fix_loop_max_retries). See
 // RunScanFixLoop for the full behavior contract.
 func (m *Manager) RunScanFixLoop(prdID string) (*FixLoopReport, error) {
+	return m.RunScanFixLoopContext(context.Background(), prdID)
+}
+
+// RunScanFixLoopContext is RunScanFixLoop with a context that ends its waits
+// for an operator pause.
+func (m *Manager) RunScanFixLoopContext(ctx context.Context, prdID string) (*FixLoopReport, error) {
 	sc := m.ScanConfig()
-	return RunScanFixLoop(m.fixLoopDeps(), prdID, sc.FixLoopMaxRetries)
+	return RunScanFixLoop(m.fixLoopDepsIn(ctx), prdID, sc.FixLoopMaxRetries)
 }
 
 // fixLoopDeps builds the real seams over the Manager's own methods.
 func (m *Manager) fixLoopDeps() FixLoopDeps {
+	return m.fixLoopDepsIn(context.Background())
+}
+
+func (m *Manager) fixLoopDepsIn(ctx context.Context) FixLoopDeps {
 	return FixLoopDeps{
 		RunScan: func(prdID string) (*scan.Result, error) {
 			return m.RunScan(prdID)
 		},
 		OpenFix: func(parentID string, findings []scan.Finding) (string, error) {
-			return m.openScanFixTask(parentID, findings)
+			return m.openScanFixTask(ctx, parentID, findings)
 		},
 		RunFix: func(childID string) error {
-			return m.runScanFixTask(childID)
+			return m.runScanFixTask(ctx, childID)
 		},
 		Hold: func(parentID string, reason string) error {
+			// A loop stopped while it waited spent no real attempts.
+			if err := ctx.Err(); err != nil {
+				return fmt.Errorf("the scan-fix loop was stopped while waiting: %w", err)
+			}
 			return m.holdForScanFixLoop(parentID, reason)
 		},
 	}
@@ -292,13 +306,18 @@ func (m *Manager) fixLoopDeps() FixLoopDeps {
 // the scanned Automaton, decomposed and approved so the run step can
 // execute it. The child ID is returned even when a later step fails, so
 // the loop (and every surface) can point at the Automaton it created.
-func (m *Manager) openScanFixTask(parentID string, findings []scan.Finding) (string, error) {
+func (m *Manager) openScanFixTask(ctx context.Context, parentID string, findings []scan.Finding) (string, error) {
 	if len(findings) == 0 {
 		return "", fmt.Errorf("no scan findings to fix")
 	}
 	parent, ok := m.store.GetPRD(parentID)
 	if !ok {
 		return "", fmt.Errorf("prd %q not found", parentID)
+	}
+	// A paused project gets no new fix task and no planner until the resume.
+	wait := func(dir string) error { return m.waitDirUnpaused(ctx, dir) }
+	if err := wait(m.planDirOf(parentID)); err != nil {
+		return "", fmt.Errorf("open fix task: %w", err)
 	}
 	spec := scan.BuildFixSpec(findings)
 	child, err := m.store.CreatePRD(spec, parent.ProjectDir, parent.Backend, parent.Model, parent.Effort)
@@ -321,7 +340,7 @@ func (m *Manager) openScanFixTask(parentID string, findings []scan.Finding) (str
 	m.inheritFromParent(child, parent, childExplicit{})
 
 	if len(child.Story) == 0 {
-		if _, derr := m.Decompose(child.ID); derr != nil {
+		if derr := m.planEngineOpened(child.ID, wait); derr != nil {
 			return child.ID, fmt.Errorf("decompose fix task: %w", derr)
 		}
 	}
@@ -374,15 +393,18 @@ func (m *Manager) approveFixTask(childID string) error {
 // runScanFixTask executes a corrective task to a terminal outcome,
 // using the wired executor pair when one was provided (production)
 // and the manager's status-only fallback otherwise.
-func (m *Manager) runScanFixTask(childID string) error {
+func (m *Manager) runScanFixTask(waitCtx context.Context, childID string) error {
 	m.mu.Lock()
 	fn := m.fixLoopRun
 	m.mu.Unlock()
-	ctx := context.Background()
-	if fn != nil {
-		return fn(ctx, childID)
-	}
-	return m.Run(ctx, childID, nil, nil)
+	wait := func(dir string) error { return m.waitDirUnpaused(waitCtx, dir) }
+	return m.runEngineOpened(childID, wait, func() error {
+		ctx := context.Background()
+		if fn != nil {
+			return fn(ctx, childID)
+		}
+		return m.Run(ctx, childID, nil, nil)
+	})
 }
 
 // holdForScanFixLoop puts the scanned Automaton on hold with the
