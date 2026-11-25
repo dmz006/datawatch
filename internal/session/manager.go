@@ -2235,9 +2235,10 @@ type StartOptions struct {
 	// Effort (BL41) — operator-supplied thoroughness hint:
 	// "quick", "normal", "thorough". Empty falls through to
 	// session.default_effort config. Recorded on Session.Effort. For
-	// claude-code it also sets `--effort` (quick=low, normal=medium,
-	// thorough=high) when neither ClaudeEffort below nor the worker
-	// profile names a claude level.
+	// claude-code a value given here also sets `--effort` (quick=low,
+	// normal=medium, thorough=high) when neither ClaudeEffort below nor
+	// the worker profile names an effort. So does a configured default
+	// other than the built-in "normal".
 	Effort string
 
 	// v5.27.5 — claude-code per-session overrides forwarded to
@@ -2885,6 +2886,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		GroupID:        groupID,
 		BackendFamily:  backendName,
 		Effort:         m.resolveEffort(opt),
+		EffortNamed:    m.chosenEffort(opt) != "",
 	}
 	if opt != nil && opt.EphemeralWorkspace {
 		sess.EphemeralWorkspace = true
@@ -7312,36 +7314,58 @@ var claudeEffortLevels = map[string]bool{"low": true, "medium": true, "high": tr
 // thorough is high, never above it.
 var sessionToClaudeEffort = map[string]string{"quick": "low", "normal": "medium", "thorough": "high"}
 
+// builtinDefaultEffort is the session effort the daemon configures when the
+// operator chose none, so as a default it names no claude level. An operator
+// who sets session default_effort to this value cannot be told apart.
+const builtinDefaultEffort = "normal"
+
 // launchClaudeEffort is the --effort level of a claude launch. A named claude
 // level is authoritative: the launch's own (explicit), else the worker
-// profile's. Otherwise the session effort sets it; "" means no flag.
-func launchClaudeEffort(explicit string, profile *workerprofile.WorkerProfile, sessionEffort string) string {
+// profile's, which may also be a session effort word. Otherwise the chosen
+// session effort sets it; "" means no flag.
+func launchClaudeEffort(explicit string, profile *workerprofile.WorkerProfile, chosenSessionEffort string) string {
 	if explicit != "" {
 		return explicit
 	}
-	if profile != nil && profile.Name != "" && claudeEffortLevels[profile.Effort] {
-		return profile.Effort
+	if profile != nil && profile.Name != "" {
+		if claudeEffortLevels[profile.Effort] {
+			return profile.Effort
+		}
+		if level := sessionToClaudeEffort[profile.Effort]; level != "" {
+			return level
+		}
 	}
-	return sessionToClaudeEffort[sessionEffort]
+	return sessionToClaudeEffort[chosenSessionEffort]
 }
 
-// startEffort is the claude effort of a start request. The session effort
-// counts when the request or the configured default (session default_effort)
-// names it.
+// chosenEffort is the session effort somebody chose for this start: the
+// request's, else a configured default (session default_effort) other than
+// the built-in one. "" means nobody chose.
+func (m *Manager) chosenEffort(opt *StartOptions) string {
+	if opt != nil && opt.Effort != "" && IsValidEffort(opt.Effort) {
+		return opt.Effort
+	}
+	if m.defaultEffort == builtinDefaultEffort {
+		return ""
+	}
+	return m.defaultEffort
+}
+
+// startEffort is the claude effort of a start request.
 func (m *Manager) startEffort(opt *StartOptions) string {
 	if opt == nil {
-		return sessionToClaudeEffort[m.defaultEffort]
+		return sessionToClaudeEffort[m.chosenEffort(nil)]
 	}
-	named := m.defaultEffort
-	if opt.Effort != "" && IsValidEffort(opt.Effort) {
-		named = opt.Effort
-	}
-	return launchClaudeEffort(opt.ClaudeEffort, &opt.WorkerProfile, named)
+	return launchClaudeEffort(opt.ClaudeEffort, &opt.WorkerProfile, m.chosenEffort(opt))
 }
 
 // restartEffort is the claude effort of a restart of sess.
 func restartEffort(sess *Session) string {
-	return launchClaudeEffort(sess.ClaudeEffort, sess.WorkerProfile, sess.Effort)
+	chosen := ""
+	if sess.EffortNamed {
+		chosen = sess.Effort
+	}
+	return launchClaudeEffort(sess.ClaudeEffort, sess.WorkerProfile, chosen)
 }
 
 // inputRowIndex returns the index of the last input row ("❯" alone, or "❯"

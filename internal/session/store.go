@@ -315,9 +315,15 @@ type Session struct {
 	// Effort (BL41) is an operator-supplied hint about thoroughness.
 	// One of "quick", "normal", "thorough". Empty defaults to
 	// session.default_effort (config). For claude-code it sets the --effort
-	// flag (quick=low, normal=medium, thorough=high) unless a claude level
-	// was named (ClaudeEffort, or the worker profile's effort).
+	// flag (quick=low, normal=medium, thorough=high) only when EffortNamed
+	// and no other level was named (ClaudeEffort, or the worker profile's
+	// effort).
 	Effort string `json:"effort,omitempty"`
+
+	// EffortNamed says Effort was chosen, by the start request or by a
+	// configured default other than the built-in "normal", so a restart
+	// sets --effort from it. False means the built-in default filled it in.
+	EffortNamed bool `json:"effort_named,omitempty"`
 
 	// ClaudeEffort is the claude --effort level the start request named,
 	// kept so a restart runs at it. Empty when the request named none.

@@ -205,9 +205,11 @@ session:
   #                       # (e.g. "*/5 * * * *"). Alias for the `cron` field.
   #   schedule_name: ""   # Human-readable label for lookup/cancel by name.
   # BL41: per-session effort applied when caller doesn't supply one.
-  # One of: quick / normal / thorough. Default: normal. For claude-code it
-  # sets --effort low / medium / high at start and restart, unless the start
-  # (claude_effort) or its worker profile names a claude level.
+  # One of: quick / normal / thorough. Default: normal. For claude-code,
+  # quick or thorough here sets --effort low / high at start and restart.
+  # normal here sends no --effort flag. An effort named by the start
+  # (claude_effort, or effort: quick=low, normal=medium, thorough=high) or by
+  # its worker profile is used instead.
   default_effort: "normal"
   # BL40: running sessions older than this are reported as stale via
   # GET /api/sessions/stale. 0 disables. Default 1800 (30 min).

@@ -67,8 +67,10 @@ func TestSessionEffortThoroughIsClaudeHigh(t *testing.T) {
 	assertEffort(t, "effort-thorough", "", StartOptions{Effort: "thorough"}, "high")
 }
 
+// A configured default other than the built-in "normal" is the operator's
+// choice, so it is mapped. The built-in one is in launch_effort_unnamed_test.go.
 func TestConfiguredDefaultSessionEffortSetsClaudeEffort(t *testing.T) {
-	assertEffort(t, "effort-default-normal", "normal", StartOptions{}, "medium")
+	assertEffort(t, "effort-default-quick", "quick", StartOptions{}, "low")
 	assertEffort(t, "effort-default-thorough", "thorough", StartOptions{}, "high")
 }
 

@@ -16605,6 +16605,9 @@ components:
         claude_effort:
           type: string
           description: "The claude --effort level the start request named; a restart runs at it. Absent when none was named."
+        effort_named:
+          type: boolean
+          description: "True when the start request, or a configured default other than the built-in normal, chose the session effort, so a restart sets claude --effort from it. Absent when the built-in default filled it in."
         state:
           $ref: "#/components/schemas/SessionState"
         created_at:
