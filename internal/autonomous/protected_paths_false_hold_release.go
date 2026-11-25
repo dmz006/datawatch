@@ -10,7 +10,10 @@
 // ReleaseFalseProtectedPathHolds re-checks every held task once at daemon
 // start (the previous instance's question goroutine is gone, so the open
 // question will not be re-answered) and releases the ones whose held paths
-// are all daemon-only diffs.
+// are all daemon-only diffs. A release needs positive proof: an unanswered
+// hold, the tree the task worked in, and for every held path a diff that is
+// shown to hold daemon sections and nothing else (pathsNotProvenDaemonOnly).
+// Whatever cannot be shown keeps the hold.
 package autonomous
 
 import (
@@ -35,17 +38,22 @@ const protectedPathBlockedErrPrefix = "protected_path_blocked: "
 //
 // A task is a candidate when its status is TaskBlocked and it carries a
 // ProtectedPathHold, or a Task.Error starting with "protected_path_blocked:
-// ". Its held paths are re-checked with withoutDaemonOnlyChanges against the
-// task's directory and the stored base commit — the same fails-closed check
-// the commit gate uses. When every held path is a daemon-section-only diff,
-// the hold is a false positive and the task is released: the open
-// protected-paths question is withdrawn without raising a new one, the hold
+// ". It stays held when the operator already answered its question, when the
+// question is no longer open for any other reason, and when the Automaton
+// works on its own branch and the task records no directory of its own (its
+// task worktree may have been removed, and the Automaton worktree does not
+// hold the task's unmerged change). Otherwise its held paths are re-checked
+// with pathsNotProvenDaemonOnly against the task's directory and the stored
+// base commit — the commit gate's fails-closed check, which here also keeps
+// an unchanged path. When every held path is a daemon-section-only diff, the hold is a false positive and
+// the task is released: the open protected-paths question is withdrawn
+// without raising a new one, the hold
 // and the error are cleared, a protected_paths_false_positive_released
 // decision naming the task and the paths is recorded, the task is returned
 // to the queue the way reset_task does without force (nothing is wiped), and
-// the Automaton is saved. When at least one path has a real diff against the
-// base, or the stored base commit or the task's directory cannot be read,
-// the task is left alone, still held.
+// the Automaton is saved. When at least one path has any other diff, no diff,
+// or a diff that cannot be read, or the question cannot be withdrawn, the
+// task is left alone, still held.
 //
 // It is called once from the daemon startup path, after a restart: the
 // previous instance's question goroutine is gone, so no question is
@@ -101,18 +109,31 @@ func (m *Manager) releaseFalseProtectedPathHold(ctx context.Context, prd *PRD, t
 		log.Printf("[autonomous] prd=%s task=%s: protected-paths hold records no paths; leaving it held", prd.ID, t.ID)
 		return false
 	}
+	// An answer is the operator's decision, whatever it was: only a hold that
+	// still waits for one can turn out to be a false positive.
+	if hold.AwaitingSpecChange || (hold.QuestionID != "" && !m.openUncommittedQuestion(hold.QuestionID)) {
+		log.Printf("[autonomous] prd=%s task=%s: protected-paths hold question %s was answered or is no longer open; leaving it held", prd.ID, t.ID, hold.QuestionID)
+		return false
+	}
+	// On its own branch, a task with no directory of its own may have worked
+	// in a task worktree that is gone. The directory it would fall back to
+	// never received the held change, so reading it proves nothing.
+	if prd.Git.Branch != "" && t.ProjectDir == "" && t.WorktreePath == "" {
+		log.Printf("[autonomous] prd=%s task=%s: protected-paths hold: the tree the task worked in is not recorded; leaving it held", prd.ID, t.ID)
+		return false
+	}
 	dir := m.resolveTaskProjectDir(prd, t)
 	if dir == "" {
 		log.Printf("[autonomous] prd=%s task=%s: protected-paths hold has no readable task directory; leaving it held", prd.ID, t.ID)
 		return false
 	}
 	base := hold.BaseCommit
-	if remaining := m.withoutDaemonOnlyChanges(ctx, dir, base, hold.Paths); len(remaining) > 0 {
+	if remaining := m.pathsNotProvenDaemonOnly(ctx, dir, base, hold.Paths); len(remaining) > 0 {
 		log.Printf("[autonomous] prd=%s task=%s: protected-paths re-check keeps %s against base %s; staying held", prd.ID, t.ID, strings.Join(remaining, ", "), base)
 		return false
 	}
 
-	// Every held path is a daemon-section-only diff: the task did not edit
+	// Every held path is a proven daemon-section-only diff: the task did not edit
 	// the operator's rules, so the hold is a false positive. Release it.
 
 	// The Automaton may have closed since the snapshot: check the live record
@@ -121,10 +142,13 @@ func (m *Manager) releaseFalseProtectedPathHold(ctx context.Context, prd *PRD, t
 		return false
 	}
 
-	// 1. Withdraw the open hold question; no new question is raised.
+	// 1. Withdraw the open hold question; no new question is raised. A
+	//    question that cannot be withdrawn (an answer arrived meanwhile, or the
+	//    store failed) keeps the hold.
 	if hold.QuestionID != "" {
 		if err := m.dispatchWithdraw(hold.QuestionID, "autonomous", "protected-paths hold released as false positive: all held paths are daemon-section-only against the base commit"); err != nil {
-			log.Printf("[autonomous] prd=%s task=%s: withdrawing hold question %s: %v", prd.ID, t.ID, hold.QuestionID, err)
+			log.Printf("[autonomous] prd=%s task=%s: withdrawing hold question %s: %v; leaving it held", prd.ID, t.ID, hold.QuestionID, err)
+			return false
 		}
 	}
 

@@ -44,13 +44,23 @@ const (
 // it strip to identical text. The operation is idempotent: stripping an
 // already-stripped file changes nothing.
 func StripDaemonSections(content string) string {
+	return normalizeBlankLines(removeDaemonSections(content))
+}
+
+// HasDaemonSections reports whether content carries at least one section
+// StripDaemonSections removes. Equal stripped texts alone do not show that the
+// daemon wrote anything: stripping also normalises blank lines.
+func HasDaemonSections(content string) bool {
+	return removeDaemonSections(content) != content
+}
+
+func removeDaemonSections(content string) string {
 	content = RemoveSection(content)
 	content = removeMarkerBlock(content, rtkBegin, rtkEnd)
 	content = removeMarkerBlock(content, crossBegin, crossEnd)
 	content = removeMarkerBlock(content, memoryBegin, memoryEnd)
 	content = removeHeaderSection(content, memoryHeader)
-	content = removeHeaderSection(content, guardrailsHeader)
-	return normalizeBlankLines(content)
+	return removeHeaderSection(content, guardrailsHeader)
 }
 
 // removeMarkerBlock deletes the block from the begin line through the end line

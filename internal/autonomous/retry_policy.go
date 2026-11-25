@@ -238,8 +238,12 @@ func (m *Manager) recordFailureLearning(prd *PRD, unitID, category, detail strin
 // persisted immediately so a daemon restart mid-retry loses neither.
 // A false return means the caller is about to roll back to PRDDraft;
 // recordFailureLearning fires here, at that exact moment, matching
-// every other "genuinely exhausted" Learning write in this package.
+// every other "genuinely exhausted" Learning write in this package. It also
+// returns false, writing nothing, for a record closed during planning.
 func (m *Manager) retryDecomposeFailure(prd *PRD, category, source, detail string) bool {
+	if m.planningRecordClosed(prd.ID, source) {
+		return false // no retry, and nothing is saved
+	}
 	reason := &FailureReason{Category: category, Detail: detail, Source: source, OccurredAt: time.Now(),
 		Phrases: planningFailurePhrases(prd, source, detail)}
 	if m.retryBudgetRemaining(prd, category) {
@@ -260,11 +264,15 @@ func (m *Manager) retryDecomposeFailure(prd *PRD, category, source, detail strin
 // failure branch in Decompose() and decomposeStreamingCore(), called only
 // after retryDecomposeFailure has decided no retry budget remains. It logs
 // the PRD id and exact error, keeps the decompose output artifact under its
-// .failed name for post-mortem, and rolls the PRD back to PRDDraft.
+// .failed name for post-mortem, and rolls the PRD back to PRDDraft. A record
+// closed during planning is not written at all.
 func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 	log.Printf("[autonomous] decompose FAILED prd=%s source=%q: %v", prd.ID, source, cause)
 	if _, err := MarkDecomposeOutputArtifactFailed(m.dataDir, prd.ID); err != nil {
 		log.Printf("[autonomous] decompose FAILED prd=%s: keep output artifact: %v", prd.ID, err)
+	}
+	if m.planningRecordClosed(prd.ID, source) {
+		return
 	}
 	// 2026-10-19 incident — the give-up paths that went through
 	// retryDecomposeFailure already recorded a richer FailureReason; this
@@ -307,11 +315,18 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 		})
 	}
 	var old PRDStatus
+	closed := false
 	m.store.WithLock(func() {
+		if closed = closedRecordReason(m.store.prds[prd.ID]) != ""; closed {
+			return
+		}
 		old = prd.Status
 		prd.Status = PRDDraft
 		prd.UpdatedAt = time.Now()
 	})
+	if closed {
+		return
+	}
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] prd=%s: give-up rollback save failed: %v", prd.ID, err)
 		return
@@ -320,6 +335,18 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 	// A non-retryable planning failure raises its one alert and, when the
 	// spec can be reworded by the lint, its one question.
 	m.onPlanningFailureTerminal(prd)
+}
+
+// planningRecordClosed reports whether the stored record of prdID is closed
+// (closedRecordReason), for a planner that is about to write its failure. The
+// stored record is read, not the planner's own pointer: a close may have
+// replaced it, and saving the old one would undo the close.
+func (m *Manager) planningRecordClosed(prdID, source string) bool {
+	if !m.closedToRecoveryID(prdID) {
+		return false
+	}
+	log.Printf("[autonomous] prd=%s source=%q: planning failed after the record was closed; leaving it as it is", prdID, source)
+	return true
 }
 
 // checkPersistedDecompose re-reads the PRD and its stories from the store
@@ -348,8 +375,12 @@ const decomposeSessionStopThreshold = 2
 // keeps it. Below the threshold it seeds prd.LastDecomposeFailure as the
 // next attempt's hint and returns false so the caller respawns. At the
 // threshold it parks the PRD in PRDFailed and returns true: the caller
-// must return the error and must not invoke the decompose fn again.
+// must return the error and must not invoke the decompose fn again. A record
+// closed during planning also returns true, with nothing written.
 func (m *Manager) noteDecomposeSessionFailure(prd *PRD, backend, model string, derr error) bool {
+	if m.planningRecordClosed(prd.ID, "decompose-session") {
+		return true
+	}
 	var failures int
 	m.store.WithLock(func() {
 		prd.DecomposeSessionFailures++
