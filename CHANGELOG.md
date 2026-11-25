@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.10 — Closing an Automaton never deletes work, on any cleanup path
+
+### Fixed
+- Closing an Automaton no longer force-removes its task worktrees or deletes their branches. A task worktree is removed only when cleanup is on, no session is using it and it holds no file of its own, including untracked files and real files in the daemon's ignored folders; a branch is deleted only when its commits are on the default branch and a backup ref has been written first. Anything that cannot be checked is kept. `cleanup_mode` off and report remove nothing, on every path: task worktrees, the Automaton worktree after a completion pull request, reject and archive cleanup, and the release step. The cancel and archive replies say how many task worktrees were kept and why, and every removal and refusal is audited with the branch tip.
+- A removal could silently delete untracked files when git was configured to hide them (`status.showUntrackedFiles=no`); every removal path now overrides that setting.
+- Leftover merge trial folders from a daemon that died mid-trial are removed at start, and the daemon's own unedited generated documents no longer hold a merged worktree.
+- Three web app end-to-end stories follow the current interface.
+
+### Documentation
+- Worktree cleanup how-to, operations, definitions and configuration reference.
+
 ## v9.187.9 — Nothing automated answers a safety prompt, and closed Automata stay closed
 
 ### Security

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.9 (2026-11-24).** The daemon no longer types on permission or safety prompts, the built-in auto-yes filter is gone, and closed Automata stay closed through restarts. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.10 (2026-11-24).** Closing an Automaton keeps any worktree or branch that holds work, report and off remove nothing, and a git setting can no longer make a removal delete untracked files. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
