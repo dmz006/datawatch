@@ -35786,7 +35786,22 @@ window.toggleAutomataSelectAll = toggleAutomataSelectAll;
 function _automataKeptNotice(res) {
   const c = res && res.task_worktree_cleanup;
   if (!c || !((c.worktrees_kept || 0) + (c.branches_kept || 0))) return res;
-  const why = Object.keys(c.reasons || {}).sort().map(k => tOr('task_keep_reason_' + k, k) + ' (' + c.reasons[k] + ')').join(', ');
+  const keys = {
+    cleanup_off: 'task_keep_reason_cleanup_off',
+    report_mode: 'task_keep_reason_report_mode',
+    not_removed_by_archive: 'task_keep_reason_not_removed_by_archive',
+    no_base_repo: 'task_keep_reason_no_base_repo',
+    live_session: 'task_keep_reason_live_session',
+    uncommitted_work: 'task_keep_reason_uncommitted_work',
+    detached_commits: 'task_keep_reason_detached_commits',
+    unverified: 'task_keep_reason_unverified',
+    remove_failed: 'task_keep_reason_remove_failed',
+    unmerged_branch: 'task_keep_reason_unmerged_branch',
+    no_default_branch: 'task_keep_reason_no_default_branch',
+    backup_failed: 'task_keep_reason_backup_failed',
+    branch_delete_failed: 'task_keep_reason_branch_delete_failed',
+  };
+  const why = Object.keys(c.reasons || {}).sort().map(k => (keys[k] ? tOr(keys[k], k) : k) + ' (' + c.reasons[k] + ')').join(', ');
   showToast(t('automata_task_worktrees_kept', [c.worktrees_kept || 0, c.branches_kept || 0, why]), 'warning', 8000);
   return res;
 }

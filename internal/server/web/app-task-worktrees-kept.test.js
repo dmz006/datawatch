@@ -31,6 +31,12 @@ function notice(reply) {
   return shown;
 }
 
+test('every kept reason has its own locale key in app.js, and an unknown one shows its code', () => {
+  for (const r of REASONS) assert.ok(APP.includes(r + ": 'task_keep_reason_" + r + "'"), r + ' not mapped');
+  assert.deepEqual(notice({ task_worktree_cleanup: { worktrees_kept: 1, reasons: { something_new: 1 } } }),
+    ['automata_task_worktrees_kept|1|0|something_new (1)']);
+});
+
 test('the notice names the counts and the reasons, and is silent when nothing was kept', () => {
   assert.deepEqual(notice({ task_worktree_cleanup: { worktrees_kept: 2, branches_kept: 3, reasons: { unmerged_branch: 1, uncommitted_work: 2 } } }),
     ['automata_task_worktrees_kept|2|3|task_keep_reason_uncommitted_work (2), task_keep_reason_unmerged_branch (1)']);
