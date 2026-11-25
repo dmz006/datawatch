@@ -28,7 +28,7 @@ func reapOwnerSession(t *testing.T, mgr *Manager, id string, state State) (*Sess
 	if err := mgr.SaveSession(sess); err != nil {
 		t.Fatal(err)
 	}
-	mgr.armCommitGuard(sess, "")
+	mgr.armCommitGuard(sess, sess.TmuxSession)
 	g := mgr.commitGuardFor(sess.FullID)
 	if g == nil {
 		t.Fatal("no guard armed")
@@ -93,7 +93,7 @@ func TestGuardReapKeepsOwnGuardWithoutSessionRecord(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	mgr, _ := reapOwnerManager(t)
 	sess := &Session{ID: "cccc", FullID: "testhost-cccc", Hostname: "testhost", PRDID: "p"}
-	mgr.armCommitGuard(sess, "") // never saved: the daemon cannot tell
+	mgr.armCommitGuard(sess, "cs-cccc") // never saved: the daemon cannot tell
 	g := mgr.commitGuardFor(sess.FullID)
 	if g == nil {
 		t.Fatal("no guard armed")

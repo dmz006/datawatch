@@ -18,6 +18,9 @@ const guardOwnerFile = "datawatch-owner.json"
 type guardRecord struct {
 	Owner     string `json:"owner"`
 	SessionID string `json:"session_id"`
+	// TmuxSocket is the socket of the tmux server holding the session. Empty
+	// means unknown.
+	TmuxSocket string `json:"tmux_socket,omitempty"`
 }
 
 // NewOwnedCommitGuard is NewCommitGuard for a daemon: it also records owner
@@ -32,6 +35,32 @@ func NewOwnedCommitGuard(owner, sessionID string) (*CommitGuard, error) {
 		_ = os.WriteFile(filepath.Join(g.dir, guardOwnerFile), b, 0o600)
 	}
 	return g, nil
+}
+
+// RecordTmuxSocket adds to the ownership record the socket of the tmux server
+// holding the session. The first socket recorded stays. A guard with no
+// readable record gets none: this must not claim ownership. The record is
+// replaced atomically, because a damaged one would stop a later adoption.
+func (g *CommitGuard) RecordTmuxSocket(socket string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if socket == "" || g.cleaned {
+		return nil
+	}
+	rec, ok, _ := readGuardRecord(g.dir)
+	if !ok || rec.TmuxSocket != "" {
+		return nil
+	}
+	rec.TmuxSocket = socket
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(g.dir, guardOwnerFile)
+	if err := os.WriteFile(path+".new", b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(path+".new", path)
 }
 
 // readGuardRecord returns the ownership record of a guard directory.
@@ -59,12 +88,13 @@ func guardNamePrefix(sessionID string) string {
 }
 
 // ReapDeadGuardDirs removes guard directories under the OS temp dir that
-// owner made and whose session dead proves is over. Everything else is kept:
+// owner made and whose session dead proves is over; dead also gets the tmux
+// socket in the record ("" when unknown). Everything else is kept:
 // another owner's directory, one with no readable record, one whose name does
 // not match its record, and any session dead cannot vouch for. An empty owner
 // or a nil dead removes nothing. Individual removal failures are skipped so
 // one bad directory cannot block adoption.
-func ReapDeadGuardDirs(owner string, dead func(sessionID string) bool) {
+func ReapDeadGuardDirs(owner string, dead func(sessionID, tmuxSocket string) bool) {
 	if owner == "" || dead == nil {
 		return
 	}
@@ -82,7 +112,7 @@ func ReapDeadGuardDirs(owner string, dead func(sessionID string) bool) {
 		if !ok || rec.Owner != owner || !strings.HasPrefix(e.Name(), guardNamePrefix(rec.SessionID)) {
 			continue
 		}
-		if dead(rec.SessionID) {
+		if dead(rec.SessionID, rec.TmuxSocket) {
 			_ = os.RemoveAll(dir)
 		}
 	}

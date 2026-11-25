@@ -145,7 +145,7 @@ func TestCommitGuardReapStaleDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stale.Cleanup() })
-	ReapDeadGuardDirs("/data/self", func(id string) bool { return id != "live-sess" })
+	ReapDeadGuardDirs("/data/self", func(id, _ string) bool { return id != "live-sess" })
 	if _, err := os.Stat(live.Dir()); err != nil {
 		t.Fatalf("live dir reaped: %v", err)
 	}

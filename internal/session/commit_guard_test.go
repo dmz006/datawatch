@@ -125,6 +125,9 @@ func TestAdoptCommitGuardsKeepsLiveRemovesStale(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = live.Cleanup(); _ = stale.Cleanup() }()
+	if err := stale.RecordTmuxSocket(NewFakeTmux().SocketPath()); err != nil {
+		t.Fatal(err)
+	}
 	st, err := NewStore(filepath.Join(t.TempDir(), "sessions.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -364,6 +367,9 @@ func TestCommitGuardAdoptResumeMonitorsReapsStaleKeepsLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = deadGuard.Cleanup(); _ = liveGuard.Cleanup() }()
+	if err := deadGuard.RecordTmuxSocket(fake.SocketPath()); err != nil {
+		t.Fatal(err)
+	}
 	commitGuardSetHooksPath(t, deadDir, deadGuard.Dir())
 
 	_ = mgr.SaveSession(&Session{

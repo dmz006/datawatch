@@ -36,6 +36,9 @@ type CommitGuard struct {
 	// keepDir is set when nothing shows who made the directory: Cleanup then
 	// leaves it on disk.
 	keepDir bool
+	// adopted is set when the directory already existed, so a worker may be
+	// pointing at it.
+	adopted bool
 
 	mu      sync.Mutex
 	cleaned bool
@@ -80,6 +83,10 @@ fi
 exit 0
 `
 }
+
+// Adopted reports whether the guard directory existed before this CommitGuard,
+// as opposed to one just made that no worker has been given.
+func (g *CommitGuard) Adopted() bool { return g.adopted }
 
 // Dir returns the hooks directory.
 func (g *CommitGuard) Dir() string { return g.dir }
@@ -197,9 +204,9 @@ func AdoptCommitGuard(owner, sessionID string) (*CommitGuard, error) {
 				continue
 			}
 			if owned {
-				return &CommitGuard{dir: dir, token: token}, nil
+				return &CommitGuard{dir: dir, token: token, adopted: true}, nil
 			}
-			unrecordedGuard = &CommitGuard{dir: dir, token: token, keepDir: true}
+			unrecordedGuard = &CommitGuard{dir: dir, token: token, keepDir: true, adopted: true}
 		}
 	}
 	if unrecordedGuard != nil {
