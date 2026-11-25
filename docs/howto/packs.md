@@ -160,7 +160,10 @@ that fails refuses the whole install, naming the rule. Nothing is copied in that
   that.
 - **Links stay inside the pack.** A symbolic link is followed only when it resolves to
   a regular file inside the pack folder; any other link refuses the install, so the
-  copy can never pull in content from outside the pack.
+  copy can never pull in content from outside the pack. The same holds when a pack
+  is read: `pack.yaml`, a prompt file or the `verify/` folder cannot be a link
+  that leaves the pack. Removing an installed pack never follows a link out of the
+  install folder.
 
 ### Declaring inputs
 

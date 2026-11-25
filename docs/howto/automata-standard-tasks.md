@@ -451,7 +451,9 @@ confirm that the project list belongs on the project entry in config.
 - **A version is never overwritten.** Installing a name and version that already exists
   is refused. Install a new version under a new `version` in `pack.yaml`.
 - **Links stay inside the pack.** A symbolic link is followed only when it resolves to a
-  regular file inside the pack folder. Any other link refuses the install.
+  regular file inside the pack folder. Any other link refuses the install, and a
+  `pack.yaml`, prompt file or `verify/` folder that links out of the pack is refused
+  when the pack is read.
 
 An installed pack is copied to `<install root>/<name>/<version>/`.
 

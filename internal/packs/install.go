@@ -92,12 +92,19 @@ func copyPackFolder(src, dest string) error {
 
 // copyTree copies every file and directory under src into dst, which must
 // already exist. Regular files keep their permission bits, so verification
-// scripts stay executable.
+// scripts stay executable. Reads go through a root on src and writes through a
+// root on dst, so neither side can be led outside its folder.
 func copyTree(src, dst string) error {
-	resolvedRoot, err := filepath.EvalSymlinks(src)
+	from, err := openPackFiles(src)
 	if err != nil {
 		return fmt.Errorf("pack install: %w", err)
 	}
+	defer from.close()
+	to, err := openDir(dst)
+	if err != nil {
+		return fmt.Errorf("pack install: %w", err)
+	}
+	defer func() { _ = to.Close() }()
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return fmt.Errorf("pack install: %w", walkErr)
@@ -106,41 +113,39 @@ func copyTree(src, dst string) error {
 		if err != nil {
 			return fmt.Errorf("pack install: %w", err)
 		}
-		target := filepath.Join(dst, rel)
 
 		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
+			return to.MkdirAll(rel, 0o755)
 		}
 
-		info, err := os.Stat(path)
+		// resolve refuses a link that leaves the pack folder.
+		name := rel
+		if d.Type()&fs.ModeSymlink != 0 {
+			if name, err = from.resolve(rel); err != nil {
+				return fmt.Errorf("pack install: %w", err)
+			}
+		}
+		info, err := from.root.Stat(name)
 		if err != nil {
 			return fmt.Errorf("pack install: %s: %w", rel, err)
-		}
-		if d.Type()&fs.ModeSymlink != 0 {
-			resolved, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return fmt.Errorf("pack install: %s: %w", rel, err)
-			}
-			if !withinPackDir(resolvedRoot, resolved) {
-				return fmt.Errorf("pack install: %s is a link that leaves the pack folder", rel)
-			}
 		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("pack install: %s is not a regular file or folder", rel)
 		}
-		return copyFile(path, target, info.Mode().Perm())
+		return copyFile(from.root, name, to, rel, info.Mode().Perm())
 	})
 }
 
-// copyFile copies one regular file from src to dst with the given permission bits.
-func copyFile(src, dst string, perm fs.FileMode) error {
-	in, err := os.Open(src)
+// copyFile copies the regular file src under from to dst under to with the
+// given permission bits.
+func copyFile(from *os.Root, src string, to *os.Root, dst string, perm fs.FileMode) error {
+	in, err := from.Open(src)
 	if err != nil {
 		return fmt.Errorf("pack install: %w", err)
 	}
 	defer func() { _ = in.Close() }()
 
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	out, err := to.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		return fmt.Errorf("pack install: %w", err)
 	}
