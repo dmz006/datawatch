@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.16 — Security fixes; Accept needs real evidence; recovered release test fixes
+
+### Security
+- Fixed the open code scanning alerts. A supervisor schedule name containing a path could write a large handover file outside the project; such names are now refused. Pack folders that link outside themselves are refused, pack removal stays inside the install root, and a branch restore name is checked before any git call.
+
+### Fixed
+- Accepting a held task now needs a real task commit, the files the task names and a passing task check. A completion marker with only a snapshot commit is refused. There is no override.
+- A verifier or judge session no longer overwrites the task's worker session id, and a restart no longer rewrites a live worker's recorded id.
+- The branch refresh routes work. A profile assigned by name is now used. Command-line config get and set work against the daemon's secure port. Task routing profiles save without the default backends.
+- Several release test faults that came from the product or the test scripts.
+
+### Before you upgrade
+- An Automaton that already names a guardrail or retry profile by name starts using it.
+
+### Documentation
+- What Accept checks, task routing and the input checks.
+
 ## v9.187.15 — No tokens in project folders; pause holds merges and planning; delivery is verified
 
 ### Security
