@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/gitguard"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // snapshotAddChunk caps how many paths one git add invocation receives, so a
@@ -23,7 +24,8 @@ const snapshotAddChunk = 1000
 // names with spaces, quotes or non-ASCII bytes arrive unquoted. The session
 // launcher's two root tooling files (isLauncherToolingFile) are never
 // candidates: they are artifacts the session launcher drops into the working
-// directory at session start, not the worker's output.
+// directory at session start, not the worker's output. Neither is an
+// .mcp.json holding a daemon entry, which carries a session token.
 func snapshotCandidates(ctx context.Context, top string) ([]string, error) {
 	queries := [][]string{
 		{"diff", "--name-only", "-z", "--no-renames", "HEAD"},
@@ -38,7 +40,8 @@ func snapshotCandidates(ctx context.Context, top string) ([]string, error) {
 			return nil, err
 		}
 		for _, f := range splitNUL(out) {
-			if !seen[f] && !isLauncherToolingFile(f) {
+			if !seen[f] && !isLauncherToolingFile(f) &&
+				!session.IsMCPFileWithDaemonEntry(filepath.Join(top, f)) {
 				seen[f] = true
 				candidates = append(candidates, f)
 			}

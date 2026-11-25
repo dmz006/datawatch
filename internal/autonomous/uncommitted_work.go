@@ -13,6 +13,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/gitguard"
+	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/tooling"
 )
 
@@ -557,6 +558,12 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 		if !filepath.IsLocal(rel) {
 			add = append(add, p)
 			pathspec = append(pathspec, p)
+			continue
+		}
+		// An .mcp.json holding a daemon entry carries a session token: never
+		// added, never part of the commit.
+		if session.IsMCPFileWithDaemonEntry(filepath.Join(dir, rel)) {
+			skipped = append(skipped, p)
 			continue
 		}
 		if _, ierr := repoFileInside(dir, rel); ierr == nil {

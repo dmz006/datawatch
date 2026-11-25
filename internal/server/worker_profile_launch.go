@@ -2,9 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/channel"
@@ -29,7 +26,7 @@ func (s *Server) workerProfileLaunchFn(p *workerprofile.WorkerProfile, backendNa
 	return func(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 		w := claudecode.WorkerProfileLaunch{
 			Profile:    profile,
-			MCPServers: sessionMCPServers(projectDir),
+			MCPServers: channel.LaunchMCPServers(tmuxSession, projectDir),
 			Starting:   autonomous.StartingContextInput{Role: "worker", TaskSpec: task},
 		}
 		reason, err := cc.LaunchWithProfileFallback(ctx, w, task, tmuxSession, projectDir, logFile)
@@ -72,7 +69,7 @@ func (s *Server) workerProfileResumeLaunchFn(p *workerprofile.WorkerProfile, bac
 	return func(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
 		w := claudecode.WorkerProfileLaunch{
 			Profile:    profile,
-			MCPServers: sessionMCPServers(projectDir),
+			MCPServers: channel.LaunchMCPServers(tmuxSession, projectDir),
 			Starting:   autonomous.StartingContextInput{Role: "worker", TaskSpec: task},
 		}
 		reason, err := cc.LaunchResumeWithProfileFallback(ctx, w, task, tmuxSession, projectDir, logFile, resumeID)
@@ -117,22 +114,6 @@ func (s *Server) profileLaunchBackend(p *workerprofile.WorkerProfile, backendNam
 		return nil, workerprofile.WorkerProfile{}, false
 	}
 	return cc, *p, true
-}
-
-// sessionMCPServers reads the MCP servers the session already has in its
-// project .mcp.json (the per-session datawatch bridge plus configured extras)
-// — the set a worker profile's MCP selection picks from. Best effort: an
-// unreadable file yields an empty set.
-func sessionMCPServers(projectDir string) map[string]channel.MCPServerSpec {
-	raw, err := os.ReadFile(filepath.Join(projectDir, ".mcp.json"))
-	if err != nil {
-		return nil
-	}
-	var cfg channel.MCPProjectConfig
-	if json.Unmarshal(raw, &cfg) != nil {
-		return nil
-	}
-	return cfg.MCPServers
 }
 
 // startWorkerProfileValue returns the profile for StartOptions.WorkerProfile

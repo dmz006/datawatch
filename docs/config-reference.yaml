@@ -109,7 +109,7 @@ session:
   alert_context_lines: 10
   # Default working directory for new sessions started without a project_dir,
   # on every surface (REST, MCP, comm channel, CLI). Sessions write CLAUDE.md
-  # and, for non-claude-code backends, .mcp.json into this directory.
+  # and, when extra MCP servers are configured, .mcp.json into this directory.
   default_project_dir: ~
   # Restrict file browser to this directory tree (empty = no restriction)
   root_path: ""
@@ -176,9 +176,9 @@ session:
   ui_prompt_max_attempts: 2
 
   # Inject additional MCP servers into every spawned session's .mcp.json.
-  # Each entry is merged alongside the built-in datawatch MCP bridge entry.
-  # For non-claude-code backends, extras go via WriteProjectMCPConfig.
-  # For claude-code sessions, extras go via InjectExtrasIntoMCPConfig.
+  # The datawatch bridge entry is not written there: it holds the session's
+  # token and goes to <data_dir>/launch/<tmux session>/session-mcp.json.
+  # Do not put secrets in an extra's env: it is written into the project file.
   # ${ENV_VAR} references in env values are expanded at spawn time.
   extra_mcp_servers:
     - name: imap-mcp           # Key name in .mcp.json mcpServers block
@@ -458,10 +458,12 @@ server:
 #                            (default http://localhost:8080). Wrong value → bridge starts but
 #                            tool discovery fails; sessions show "reply-only" mode.
 #   DATAWATCH_TOKEN          Bearer token the bridge authenticates with against the parent daemon
-#                            API. In the per-session .mcp.json the daemon writes this is the
-#                            session's scoped, short-lived credential (default session-default
-#                            grant) — minted at session start, revoked when the session ends or
-#                            is killed (a leftover project file therefore holds a dead bearer).
+#                            API. In a session's private launch file
+#                            (<data_dir>/launch/<tmux session>/session-mcp.json, 0600) or its
+#                            per-session registration this is the session's scoped,
+#                            short-lived credential (default session-default grant), minted at
+#                            session start and revoked when the session ends or is killed. No
+#                            daemon token is written into a project folder.
 #                            In the instance-level .mcp.json in the data directory the
 #                            credential is the instance-scoped, EXPIRING one: same default
 #                            session-default grant, valid about an hour, refreshed at each
@@ -475,6 +477,8 @@ server:
 #                            work.
 #   CLAUDE_SESSION_ID        Session ID injected so the bridge can tag replies correctly.
 #                            Auto-set by the daemon; do not override unless testing.
+#   DATAWATCH_MCP_CONFIG     Set in the tmux environment of a session that is not
+#                            claude-code: the path (never a token) of its private MCP file.
 #
 # Run `datawatch channel diagnostics` or check GET /api/channel/diagnostics to see
 # per-session port registrations and live bridge /health probe results.

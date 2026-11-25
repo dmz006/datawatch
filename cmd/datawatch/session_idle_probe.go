@@ -43,7 +43,7 @@ func hasLiveChildProcess(tmuxSession, projectDir string) bool {
 	if !ok {
 		return false
 	}
-	return len(workChildPIDs(roots, tree, resolveRunnerName, readProcessCmdline, sessionOwnMCPServers(projectDir))) > 0
+	return len(workChildPIDs(roots, tree, resolveRunnerName, readProcessCmdline, sessionLaunchMCPSpecs(tmuxSession, projectDir))) > 0
 }
 
 // hasLiveRunnerProcess reports whether a runner process (claude, pi or opencode)

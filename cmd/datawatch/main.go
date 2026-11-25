@@ -1594,6 +1594,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			Caps:          instanceSessionGrantCaps(cfg.Session.Capabilities, cfg.MCP.SelfConfigEnabled()),
 		}
 
+		channel.SetLaunchRoot(expandHome(cfg.DataDir))
+
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
 			// Design A3 — mint this session's own scoped credential and
 			// build a PER-SESSION channelEnv carrying it, instead of the
@@ -1623,12 +1625,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				} else {
 					sessionChannelEnv["DATAWATCH_TOKEN"] = tok
 				}
-			} else if cfg.Server.Token != "" {
-				// No session token store wired (shouldn't happen outside
-				// tests) — fall back to the old admin-token behavior
-				// rather than leaving the bridge unable to authenticate.
-				sessionChannelEnv["DATAWATCH_TOKEN"] = cfg.Server.Token
 			}
+			// With no token store the session gets no token: the daemon's
+			// own admin token is never handed to a session.
 
 			// BL218 — log the active bridge kind before any wiring so operators
 			// can confirm go vs js without grepping boot logs.
@@ -1700,13 +1699,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 			}
 
-			// BL109 — write a per-session .mcp.json into the project
-			// dir for non-claude-code backends (the standard discovery
-			// file those backends honour). claude-code gets its bridge
-			// registered via RegisterSessionMCP below (with CHANNEL_PORT=0
-			// and CLAUDE_SESSION_ID), so writing a static "datawatch" entry
-			// here would spawn a second bridge on the default port 7433,
-			// breaking multi-session setups when that port is already taken.
 			// BL344 / GH#118 — convert extra_mcp_servers config to the channel type.
 			extraMCPSpecs := make(map[string]channel.MCPServerSpec, len(cfg.Session.ExtraMCPServers))
 			for _, e := range cfg.Session.ExtraMCPServers {
@@ -1731,51 +1723,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 			}
 
-			if sess.BackendFamily != "claude-code" {
-				if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, sessionChannelEnv, extraMCPSpecs); err != nil {
-					debugf("BL109 .mcp.json: %v", err)
-				} else {
-					debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
-				}
-			} else if profileSaysDatawatch := sess.WorkerProfile != nil &&
-				sess.ProfileFallbackReason == "" &&
-				sess.WorkerProfile.MCP.Includes(channel.ProjectMCPEntryName); profileSaysDatawatch {
-				// A profiled claude-code launch (e.g. a lean one selecting the
-				// datawatch MCP server) starts with --strict-mcp-config pinned
-				// to the profile's MCP selection, read from this project's
-				// .mcp.json — so this session's per-session bridge must be
-				// available there. A session whose profile already fell back
-				// (ProfileFallbackReason set) launches profile-less; it must
-				// not carry the entry, since without --strict-mcp-config that
-				// entry would be loaded. Write the datawatch entry with THIS
-				// session's scoped token env plus any profile-selected extras;
-				// the profile launch flags themselves are applied in the
-				// backend's own launch path.
-				dwEnv := make(map[string]string, len(sessionChannelEnv)+2)
-				for k, v := range sessionChannelEnv {
-					dwEnv[k] = v
-				}
-				dwEnv["CLAUDE_SESSION_ID"] = sess.FullID
-				dwEnv["DATAWATCH_CHANNEL_PORT"] = "0"
-				if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, dwEnv, extraMCPSpecs); err != nil {
-					debugf("profile .mcp.json datawatch entry: %v", err)
-				} else {
-					fmt.Printf("[channel] session %s: profile MCP=%q — wrote %s entry to %s/.mcp.json\n",
-						sess.FullID, sess.WorkerProfile.MCP.Mode, channel.ProjectMCPEntryName, sess.ProjectDir)
-				}
-			} else {
-				// Remove any legacy "datawatch" global entry left by older daemon
-				// versions — it would otherwise spawn a second bridge on port 7433.
-				if sess.ProjectDir != "" {
-					if err := channel.RemoveProjectMCPEntry(sess.ProjectDir, "datawatch"); err != nil {
-						debugf("BL109 remove stale .mcp.json datawatch entry: %v", err)
-					}
-				}
-				// Inject extra MCP servers (without the datawatch entry) for claude-code.
-				if err := channel.InjectExtrasIntoMCPConfig(sess.ProjectDir, extraMCPSpecs); err != nil {
-					debugf("BL344 inject extras .mcp.json: %v", err)
-				}
-			}
+			wireSessionMCPFiles(sess, launchMCPInput{
+				DataDir:       expandHome(cfg.DataDir),
+				ChannelJSPath: channelJSPath,
+				Env:           sessionChannelEnv,
+				Extras:        extraMCPSpecs,
+				SetSessionEnv: func(tmuxSession, key, value string) error {
+					return session.TmuxCommand("set-environment", "-t", tmuxSession, key, value).Run()
+				},
+			})
 
 			// v8.7.0 — write per-session opencode.json for OpenCode backends.
 			// Always written (not conditional) so the default model is always set.
@@ -1951,17 +1907,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					_ = mgr.EndSession(sess.FullID, session.EndReason{Caller: endCallerKillOnExit, Reason: killOnExitEndReason(exitState)})
 				}()
 			}
+			endSessionMCPFiles(sess, expandHome(cfg.DataDir))
 			if sess.BackendFamily == "claude-code" {
-				// A profile owned this session's .mcp.json datawatch entry
-				// (written by the pre-launch hook above) — remove it so a
-				// later profile-less session that starts in this project dir
-				// does not inherit a dead session's bridge config. Best
-				// effort; the running bridge process is unaffected.
-				if sess.WorkerProfile != nil && sess.WorkerProfile.MCP.Includes(channel.ProjectMCPEntryName) && sess.ProjectDir != "" {
-					if err := channel.RemoveProjectMCPEntry(sess.ProjectDir, channel.ProjectMCPEntryName); err != nil {
-						debugf("profile .mcp.json datawatch cleanup: %v", err)
-					}
-				}
 				go func() {
 					defer func() {
 						if p := recover(); p != nil {
@@ -2784,7 +2731,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					scheme = "https"
 				}
 				url := fmt.Sprintf("%s://%s:%d", scheme, "localhost", cfg.Server.Port)
-				if err := hookinstaller.Install(sess.ProjectDir, sess.FullID, url, cfg.Server.Token); err != nil {
+				if err := hookinstaller.Install(sess.ProjectDir, sess.FullID, url, ""); err != nil {
 					fmt.Printf("[hookinstall] %s: %v\n", sess.FullID, err)
 				}
 			}

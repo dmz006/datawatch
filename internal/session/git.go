@@ -70,6 +70,7 @@ func (g *ProjectGit) LastStagingSkipped() []StagingSkip {
 //	"never-stage"     the path matches an autonomous.snapshot_never_stage pattern
 //	"ignored"         the path matches .gitignore (git check-ignore)
 //	"launcher"        the path is one of the session launcher's two root tooling files
+//	"daemon-token"    the path is an .mcp.json holding a daemon MCP entry with a token
 //	"daemon-sections" the path is the root rules file (AGENT.md or CLAUDE.md) and its
 //	                  only difference from HEAD is the daemon's own sections
 //
@@ -296,6 +297,9 @@ func (g *ProjectGit) stageChanges(scope []string) ([]StagingSkip, error) {
 	if err := gitguard.RefuseNonProject(g.dir); err != nil {
 		return nil, err
 	}
+	if err := g.unstageDaemonMCPFiles(); err != nil {
+		return nil, err
+	}
 	skipped := []StagingSkip{}
 	var candidates []string
 	if len(scope) > 0 {
@@ -466,7 +470,9 @@ func (g *ProjectGit) scopedCandidates(absDir string, inside []string) (insideCan
 //     index, which is what we want: a tracked file the task modified is
 //     the task's own work, while a path git reports as ignored must never
 //     be newly added;
-//  4. the root rules file (AGENT.md or CLAUDE.md) whose only difference
+//  4. an .mcp.json holding a daemon MCP entry (reason "daemon-token"),
+//     tracked or not, so a session token never enters a commit;
+//  5. the root rules file (AGENT.md or CLAUDE.md) whose only difference
 //     from HEAD is the daemon's own appended sections (reason
 //     "daemon-sections") — the launcher rewrites it at session start, so
 //     it is not the worker's work; any real edit keeps it (fail-closed,
@@ -479,6 +485,10 @@ func (g *ProjectGit) classifyCandidates(candidates []string) (kept []string, ski
 	for _, c := range candidates {
 		if isLauncherToolingFile(c) {
 			skipped = append(skipped, StagingSkip{Path: c, Reason: "launcher"})
+			continue
+		}
+		if IsMCPFileWithDaemonEntry(filepath.Join(g.dir, filepath.FromSlash(c))) {
+			skipped = append(skipped, StagingSkip{Path: c, Reason: "daemon-token"})
 			continue
 		}
 		if g.matchesNeverStage(c) {
