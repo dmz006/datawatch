@@ -15,12 +15,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
-const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
+const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('./testutil_browser_stub');
 const LOCALE_LIST = ['en', 'de', 'es', 'fr', 'ja'];
 const LOCALE_DIR = path.join(__dirname, 'locales');
 
-function loadApp() {
-  const sandbox = buildSandbox();
+function loadApp(byId) {
+  const sandbox = buildSandbox({ byId: byId || {} });
   vm.createContext(sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
   sandbox._i18n.bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
@@ -194,4 +194,50 @@ test('the english badge template carries both placeholders', () => {
   const en = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
   assert.match(en.priority_source_badge, /%1\$[sd]/);
   assert.match(en.priority_source_badge, /%2\$[sd]/);
+});
+
+// The autonomous card must draw both rows, each carrying its config key in
+// data-cfg-key so the browser story (TS-841) can find the input without
+// depending on its class or value.
+async function renderAutonomousCard(cfg) {
+  const el = makeStubElement();
+  const sb = loadApp({ gcfg_autonomous: el });
+  sb.apiFetch = p => Promise.resolve(p === '/api/config' ? cfg : (p === '/api/interfaces' ? [] : { llms: [] }));
+  sb.loadGeneralConfig();
+  await flushAsync();
+  return el.innerHTML;
+}
+
+test('the autonomous settings card renders the priority_by_kind and defect intake rows with a data-cfg-key hook', async () => {
+  const html = await renderAutonomousCard({ autonomous: {
+    priority_by_kind: { bug: 80, maintenance: 70, feature: 20, other: 0 },
+    defect_intake_automation: 'triage',
+  } });
+  const pbk = html.match(/<input[^>]*data-cfg-key="autonomous\.priority_by_kind"[^>]*>/);
+  assert.ok(pbk, 'priority_by_kind input missing or has no data-cfg-key');
+  assert.match(pbk[0], /value="bug=80, feature=20, maintenance=70, other=0"/);
+  assert.match(pbk[0], /saveGeneralField\('autonomous\.priority_by_kind', this\.value\)/);
+  assert.match(html, /Capacity priority by kind/);
+  const dia = html.match(/<input[^>]*data-cfg-key="autonomous\.defect_intake_automation"[^>]*>/);
+  assert.ok(dia, 'defect_intake_automation input missing or has no data-cfg-key');
+  assert.match(dia[0], /value="triage"/);
+});
+
+test('the priority_by_kind row still renders when the config reports no table', async () => {
+  const html = await renderAutonomousCard({ autonomous: {} });
+  assert.match(html, /<input[^>]*data-cfg-key="autonomous\.priority_by_kind"[^>]*placeholder="bug=80, maintenance=70, feature=20, other=0"/);
+});
+
+test('a plain Comms settings input carries its config key in data-cfg-key', async () => {
+  const sb = loadApp();
+  const secs = vm.runInContext('COMMS_CONFIG_FIELDS.map(s => ({ id: s.id, fields: s.fields.map(f => ({ key: f.key, type: f.type })) }))', sb);
+  const sec = secs.find(s => s.fields.some(f => f.type === 'number'));
+  assert.ok(sec, 'no Comms section with a number field');
+  const key = sec.fields.find(f => f.type === 'number').key;
+  const el = makeStubElement();
+  const render = loadApp({ ['ccfg_' + sec.id]: el });
+  render.apiFetch = p => Promise.resolve(p === '/api/interfaces' ? [] : (p === '/api/config' ? {} : { llms: [] }));
+  render.loadCommsConfig();
+  await flushAsync();
+  assert.ok(el.innerHTML.includes(`data-cfg-key="${key}"`), `input for ${key} has no data-cfg-key`);
 });

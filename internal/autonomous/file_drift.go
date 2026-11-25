@@ -408,10 +408,8 @@ func (m *Manager) driftBlockExplicitlyOff(prd *PRD) bool {
 	if prd.BlockOnFileDrift != nil && !*prd.BlockOnFileDrift {
 		return true
 	}
-	if prd.GuardrailProfile != "" {
-		if p, ok := m.store.GetGuardrailProfile(prd.GuardrailProfile); ok && p.BlockOnFileDrift != nil && !*p.BlockOnFileDrift {
-			return true
-		}
+	if p, ok := m.prdGuardrailProfile(prd.GuardrailProfile); ok && p.BlockOnFileDrift != nil && !*p.BlockOnFileDrift {
+		return true
 	}
 	return false
 }
@@ -425,10 +423,8 @@ func (m *Manager) resolveBlockOnFileDrift(prd *PRD) bool {
 	if prd.BlockOnFileDrift != nil {
 		return *prd.BlockOnFileDrift
 	}
-	if prd.GuardrailProfile != "" {
-		if p, ok := m.store.GetGuardrailProfile(prd.GuardrailProfile); ok && p.BlockOnFileDrift != nil {
-			return *p.BlockOnFileDrift
-		}
+	if p, ok := m.prdGuardrailProfile(prd.GuardrailProfile); ok && p.BlockOnFileDrift != nil {
+		return *p.BlockOnFileDrift
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

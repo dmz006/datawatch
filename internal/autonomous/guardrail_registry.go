@@ -133,10 +133,8 @@ func (m *Manager) resolveGuardrails(prd *PRD, level string) []string {
 	if level == "prd" && len(prd.PerPRDGuardrails) > 0 {
 		return append([]string{}, prd.PerPRDGuardrails...)
 	}
-	if prd.GuardrailProfile != "" {
-		if p, ok := m.store.GetGuardrailProfile(prd.GuardrailProfile); ok {
-			return append([]string{}, p.Guardrails...)
-		}
+	if p, ok := m.prdGuardrailProfile(prd.GuardrailProfile); ok {
+		return append([]string{}, p.Guardrails...)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

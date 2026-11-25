@@ -91,10 +91,12 @@ func (m *Manager) adoptLiveWorkerBeforeSpawn(prd *PRD, t *Task, attempt int, dir
 		s := *s
 		now := time.Now()
 		m.store.WithLock(func() {
+			// The same session under its full id keeps the id the task already
+			// records, and its node: it is the worker the task started.
 			if !sameSessionID(t.SessionID, s.ID) {
 				t.ComputeNode = ""
+				t.SessionID = s.ID
 			}
-			t.SessionID = s.ID
 			t.AdoptedSession = true
 			t.Status = TaskInProgress
 			t.UpdatedAt = now

@@ -84,12 +84,10 @@ func (m *Manager) resolveNotifyTier(prd *PRD, global []string) NotifyEventSet {
 		// Tier 2 — the assigned guardrail profile. A profile that no longer
 		// exists, or a profile with an empty list, falls through to the
 		// global tier (empty at this tier means inherit, same rule).
-		if prd.GuardrailProfile != "" {
-			if p, ok := m.store.GetGuardrailProfile(prd.GuardrailProfile); ok && p != nil && len(p.NotifyEvents) > 0 {
-				return NotifyEventSet{
-					Events: copyStrings(p.NotifyEvents),
-					Source: NotifySourceProfile,
-				}
+		if p, ok := m.prdGuardrailProfile(prd.GuardrailProfile); ok && p != nil && len(p.NotifyEvents) > 0 {
+			return NotifyEventSet{
+				Events: copyStrings(p.NotifyEvents),
+				Source: NotifySourceProfile,
 			}
 		}
 	}

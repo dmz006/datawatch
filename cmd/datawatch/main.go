@@ -8018,9 +8018,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				return ids
 			})
 			// Make the task->session link durable before the task text is delivered.
-			mgr.SetOnSessionCreated(func(s *session.Session) {
-				amgr.LinkTaskSession(s.PRDID, s.TaskID, s.FullID)
-			})
+			mgr.SetOnSessionCreated(taskSessionCreatedHook(amgr))
 			// Retry resume reads the previous session's context size. TokensIn is the
 			// session's running input total: it overstates the live context, so the
 			// limit errs toward a fresh session rather than an oversized resume.
@@ -12905,7 +12903,7 @@ func runConfigGet(cfg *config.Config, key string) error {
 	if cfg.Server.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient().Do(req) // trusts the daemon's own TLS certificate
 	if err != nil {
 		return fmt.Errorf("daemon not reachable on port %d: %w", cfg.Server.Port, err)
 	}
@@ -12979,7 +12977,7 @@ func putConfigNote(url, token, body string) (string, error) {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient().Do(req) // trusts the daemon's own TLS certificate
 	if err != nil {
 		return "", fmt.Errorf("daemon not reachable: %w", err)
 	}
