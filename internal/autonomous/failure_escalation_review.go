@@ -170,8 +170,8 @@ func (r *reviewRequeue) decisionNote(taskID, actor string) string {
 // the change, which must also end with no planned files). Every change is checked before
 // anything is written, so a refused change leaves the task held. Action
 // "cancel" cancels the task through CancelTask. Action "accept" completes a
-// task whose last worker session has a completion marker (see acceptHeldTask).
-// Every action reopens a blocked
+// task whose last worker session has a completion marker and whose commit,
+// named files and own check hold up (see acceptHeldTask). Every action reopens a blocked
 // Automaton so the next Run rolls it up.
 //
 // It returns ErrTaskNotInReview, wrapped, unless the task is held in
@@ -334,7 +334,9 @@ func (m *Manager) heldTaskHasCompletionMarker(t *Task) bool {
 }
 
 // acceptHeldTask completes a held task with its stored result or commit. It
-// refuses a task whose last worker session has no completion marker. It reuses
+// refuses a task whose last worker session has no completion marker, or whose
+// evidence does not hold up (checkAcceptEvidence): the marker alone never
+// completes a task. There is no override. It reuses
 // the verified-completion path (completeVerifyingTaskFromVerdict), withdraws
 // the held question as retry does, records a decision and an audit record
 // naming the actor, and reopens a blocked Automaton as cancel does.
@@ -350,14 +352,39 @@ func (m *Manager) acceptHeldTask(prdID, taskID, actor, note string) (*PRD, error
 	if !m.heldTaskHasCompletionMarker(t) {
 		return nil, fmt.Errorf("task %q cannot be accepted: its last worker session has no completion marker; retry or cancel it instead", taskID)
 	}
+	var session string
+	var attempts int
+	m.store.WithLock(func() { session, attempts = t.SessionID, len(t.Attempts) })
+	proof, err := m.checkAcceptEvidence(prd, t)
+	if err != nil {
+		return nil, fmt.Errorf("task %q cannot be accepted: %w; retry or cancel it instead", taskID, err)
+	}
+	// The task's check can run for minutes, so the task is read again. It is
+	// claimed in the same lock, so a decision taken meanwhile is not undone.
+	if prd, ok = m.store.GetPRD(prdID); !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if t, _ = findTaskInPRD(prd, taskID); t == nil {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
 	var prev TaskStatus
 	var sha string
+	var changed bool
 	m.store.WithLock(func() {
-		prev = t.Status
+		if changed = t.Status != TaskReviewNeeded || t.SessionID != session || len(t.Attempts) != attempts; changed {
+			return
+		}
+		prev, t.Status = t.Status, TaskCompleted
 		if n := len(t.AttemptCommitSHAs); n > 0 {
 			sha = t.AttemptCommitSHAs[n-1]
 		}
 	})
+	if changed {
+		return nil, fmt.Errorf("task %q changed while it was being checked: %w", taskID, ErrTaskNotInReview)
+	}
+	if proof.commit != "" {
+		sha = proof.commit
+	}
 	ev := m.completeVerifyingTaskFromVerdict(nil, "accepted by "+actor, prev, t, nil)
 	m.store.WithLock(func() {
 		t.ReviewSummary = nil
@@ -374,6 +401,9 @@ func (m *Manager) acceptHeldTask(prdID, taskID, actor, note string) (*PRD, error
 		return nil, err
 	}
 	dnote := fmt.Sprintf("task=%s result accepted by %s after operator review", taskID, actor)
+	if proof.warning != "" {
+		dnote += " (warning: " + proof.warning + ")"
+	}
 	if note != "" {
 		dnote += ": " + note
 	}
@@ -396,6 +426,7 @@ func (m *Manager) acceptHeldTask(prdID, taskID, actor, note string) (*PRD, error
 	if auditFn != nil {
 		auditFn("autonomous_review_accept", map[string]any{
 			"prd_id": prdID, "task_id": taskID, "actor": actor, "commit": sha, "note": note,
+			"warning": proof.warning,
 		})
 	}
 	m.reopenBlockedPRDWithNote(prdID, dnote)

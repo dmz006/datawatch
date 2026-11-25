@@ -23,9 +23,12 @@ func setHeldSession(t *testing.T, m *Manager, prdID, taskID, sid string) {
 }
 
 func TestFailureEscalation_AcceptCompletesTask(t *testing.T) {
+	repo := snapTestRepo(t)
 	m, api := newFailureEscalationFixture(t, t.TempDir())
-	prd := newFailureEscalationPRD(t, m, t.TempDir(), nil)
+	prd := newFailureEscalationPRD(t, m, repo, nil)
 	task, _ := heldTaskOf(t, m, api, prd)
+	// Accept needs the task's own commit as well as the marker.
+	snapTestGit(t, repo, "commit", "-q", "--allow-empty", "-m", "task("+prd.ID[:min(8, len(prd.ID))]+"): "+task.Title)
 	setHeldSession(t, m, prd.ID, task.ID, "sess-done")
 	m.SetSessionOutputFn(func(string) (string, bool) { return "work\nDATAWATCH_COMPLETE: all good\n", true })
 	var audited string

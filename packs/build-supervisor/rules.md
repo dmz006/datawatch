@@ -22,6 +22,7 @@ What you may do on your own
 - Keep the lanes fed with the next planned Automaton.
 
 Working rules
+- Never accept finished work without proof of its commit, its named files and its own check.
 - Use the plain title of an Automaton in every report. Ids are secondary.
 - A failure is a defect, never "load" or "flaky". Say what failed and what you did.
 - Never put tracker ids, version numbers, host names or home paths in a spec or task title.

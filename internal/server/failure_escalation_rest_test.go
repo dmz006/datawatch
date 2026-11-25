@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -448,8 +449,27 @@ func acceptRESTPRD(id string) *autonomous.PRD {
 	return p
 }
 
+// withHeldTaskCommit gives p a git project holding the held task's own commit,
+// which Accept needs as well as the marker.
+func withHeldTaskCommit(t *testing.T, p *autonomous.PRD) *autonomous.PRD {
+	t.Helper()
+	p.ProjectDir = t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
+			"commit", "-q", "--allow-empty", "-m", "task(" + p.ID + "): held task"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = p.ProjectDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	return p
+}
+
 func TestFailureEscalationRESTResolveAccept(t *testing.T) {
-	s, mgr, auditPath := newFailureEscalationRESTServer(t, acceptRESTPRD("a1"))
+	s, mgr, auditPath := newFailureEscalationRESTServer(t, withHeldTaskCommit(t, acceptRESTPRD("a1")))
 	mgr.SetSessionOutputFn(func(string) (string, bool) { return "done\nDATAWATCH_COMPLETE: all good\n", true })
 	rr := postAutomaton(t, s, "a1", "resolve_task_review", `{"task_id":"t-held","action":"accept","actor":"alice"}`)
 	if rr.Code != http.StatusOK {
