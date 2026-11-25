@@ -286,15 +286,18 @@ func (s *ScheduleStore) RecordStartFailure(id string, cause error, now time.Time
 }
 
 // ScheduleAlert is what the alert hook receives when a schedule needs the
-// operator: it waited for capacity many times in a row, or the policy gave up.
+// operator: it waited for capacity many times in a row, the policy gave up, or
+// (NoSession) no live session has the name a command schedule is for.
 type ScheduleAlert struct {
-	Schedule ScheduledCommand
-	Outcome  StartFailure
-	Err      error
+	Schedule  ScheduledCommand
+	Outcome   StartFailure
+	Err       error
+	NoSession bool
 }
 
 // SetScheduleAlertHook sets the function that raises the operator alert for a
-// schedule that keeps waiting or that the policy gave up on.
+// schedule that keeps waiting, that the policy gave up on, or whose session
+// name has no live session.
 func (m *Manager) SetScheduleAlertHook(fn func(ScheduleAlert)) {
 	m.mu.Lock()
 	m.schedAlertHook = fn
@@ -494,6 +497,8 @@ func (sc *ScheduledCommand) RearmText() string {
 		parts = append(parts, last)
 	}
 	switch sc.RearmState {
+	case RearmStateWaitingSession:
+		parts = append(parts, fmt.Sprintf("%s (name:%s)", sc.RearmState, sc.SessionName))
 	case RearmStateWaiting:
 		parts = append(parts, fmt.Sprintf("%s x%d", sc.RearmState, sc.ConsecutiveWaits))
 	case RearmStateGaveUp:

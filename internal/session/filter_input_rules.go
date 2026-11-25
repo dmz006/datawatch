@@ -219,8 +219,9 @@ func (sc *ScheduledCommand) InputSource() string {
 
 // FireScheduled types a due queued command into fullID and records the
 // outcome. A command held back by a prompt on screen stays pending; one whose
-// filter may no longer type is cancelled; any other failure marks it failed.
-// It reports whether the command was typed.
+// filter may no longer type is cancelled; a name schedule whose session can no
+// longer take input stays pending (ErrScheduleTargetGone); any other failure
+// marks it failed. It reports whether the command was typed.
 func (m *Manager) FireScheduled(store *ScheduleStore, fullID string, sc *ScheduledCommand) (bool, error) {
 	err := m.SendInput(fullID, sc.Command, sc.InputSource())
 	switch {
@@ -231,6 +232,8 @@ func (m *Manager) FireScheduled(store *ScheduleStore, fullID string, sc *Schedul
 	case errors.Is(err, ErrFilterInputNotAllowed):
 		_ = store.Cancel(sc.ID)
 		return false, err
+	case sc.NameTargeted() && m.targetGone(fullID):
+		return false, fmt.Errorf("%w: %w", ErrScheduleTargetGone, err)
 	default:
 		_ = store.MarkDone(sc.ID, true)
 		return false, err

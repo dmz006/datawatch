@@ -7701,19 +7701,13 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 	// Process due timed commands (send to existing sessions)
 	dueCmds := m.schedStore.DuePending(now)
 	for _, sc := range dueCmds {
-		sess, ok := m.store.Get(sc.SessionID)
+		sess, ok := m.ScheduleTarget(sc)
 		if !ok {
-			// Try short ID match
-			for _, s := range m.store.List() {
-				if s.ID == sc.SessionID {
-					sess = s
-					ok = true
-					break
-				}
+			if sc.NameTargeted() {
+				m.HoldNameSchedule(m.schedStore, sc, now)
+			} else {
+				_ = m.schedStore.MarkDone(sc.ID, true) // session not found
 			}
-		}
-		if !ok {
-			_ = m.schedStore.MarkDone(sc.ID, true) // session not found
 			continue
 		}
 		if sent, err := m.FireScheduled(m.schedStore, sess.FullID, sc); !sent {
@@ -7735,15 +7729,12 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 	m.FireDueSessions(ctx, now)
 
 	// Process waiting_input triggers for active sessions
+	m.holdUnreachableOnInput(now)
 	for _, sess := range m.store.List() {
 		if sess.State != StateWaitingInput {
 			continue
 		}
-		pending := m.schedStore.WaitingInputPending(sess.FullID)
-		if len(pending) == 0 {
-			pending = m.schedStore.WaitingInputPending(sess.ID) // try short ID
-		}
-		for _, sc := range pending {
+		for _, sc := range m.WaitingInputSchedules(m.schedStore, sess) {
 			if sent, _ := m.FireScheduled(m.schedStore, sess.FullID, sc); sent {
 				fmt.Printf("[schedule] sent waiting_input command to %s: %s\n", sess.FullID, sc.Command)
 			}

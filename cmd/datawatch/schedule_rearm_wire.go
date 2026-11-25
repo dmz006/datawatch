@@ -23,13 +23,18 @@ func scheduleRearmPolicy(c config.ScheduleConfig) session.RearmPolicy {
 }
 
 // scheduleAlertText words the operator alert for a schedule that keeps waiting
-// for capacity or that the re-arm policy gave up on.
+// for capacity, that the re-arm policy gave up on, or that has no live session
+// with its name.
 func scheduleAlertText(a session.ScheduleAlert) (level alertspkg.Level, title, body string) {
 	name := a.Schedule.ScheduleName
 	if name == "" {
 		name = a.Schedule.ID
 	}
 	switch {
+	case a.NoSession:
+		return alertspkg.LevelWarn, "Schedule is waiting for a session: " + name,
+			fmt.Sprintf("Schedule %s sends a command to the session named %q, and no live session has that name. It stays scheduled and goes to the next live session with that name: a recurring schedule skips the fires it misses, any other is sent once that session can take it. Cancel the schedule if it is no longer wanted.",
+				a.Schedule.ID, a.Schedule.SessionName)
 	case a.Outcome.WaitLimit:
 		return alertspkg.LevelError, "Scheduled spawn gave up waiting for capacity: " + name,
 			fmt.Sprintf("Schedule %s is a one-time schedule and was refused for capacity until its wait limit ran out (%v). It is now failed. Re-create it to run it again, or raise schedule.one_time_max_wait_hours.",
