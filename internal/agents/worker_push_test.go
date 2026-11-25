@@ -124,7 +124,7 @@ func TestWorkerPush_ObeysTheParentPushSettings(t *testing.T) {
 			bare, clone := workerRepo(t, "main", "automaton/x", "")
 			resp := workerResp(bare, "automaton/x", "develop")
 			resp.Git.Push = tc.push
-			refusedWorkerPush(t, bare, clone, resp, tc.why)
+			_ = refusedWorkerPush(t, bare, clone, resp, tc.why)
 		})
 	}
 }
@@ -134,34 +134,34 @@ func TestWorkerPush_NeverMovesADefaultOrBaseBranch(t *testing.T) {
 		bare, clone := workerRepo(t, "main", "main", "")
 		resp := workerResp(bare, "", "")
 		resp.Git.CreateBranch = false
-		refusedWorkerPush(t, bare, clone, resp, "default branch")
+		_ = refusedWorkerPush(t, bare, clone, resp, "default branch")
 	})
 	t.Run("a default branch with another name", func(t *testing.T) {
 		bare, clone := workerRepo(t, "trunk", "trunk", "")
 		resp := workerResp(bare, "", "")
 		resp.Git.CreateBranch = false
-		refusedWorkerPush(t, bare, clone, resp, "default branch")
+		_ = refusedWorkerPush(t, bare, clone, resp, "default branch")
 	})
 	t.Run("the profile base branch", func(t *testing.T) {
 		bare, clone := workerRepo(t, "main", "develop", "")
 		resp := workerResp(bare, "develop", "develop")
 		resp.Git.CreateBranch = false
-		refusedWorkerPush(t, bare, clone, resp, "base branch")
+		_ = refusedWorkerPush(t, bare, clone, resp, "base branch")
 	})
 	t.Run("the task switched to the base branch", func(t *testing.T) {
 		bare, clone := workerRepo(t, "main", "develop", "")
-		refusedWorkerPush(t, bare, clone, workerResp(bare, "automaton/x", "develop"), "base branch")
+		_ = refusedWorkerPush(t, bare, clone, workerResp(bare, "automaton/x", "develop"), "base branch")
 	})
 	t.Run("an existing branch named by an older parent", func(t *testing.T) {
 		bare, clone := workerRepo(t, "main", "develop", "")
 		resp := workerResp(bare, "develop", "")
 		resp.Git.CreateBranch = false
-		refusedWorkerPush(t, bare, clone, resp, "base branch")
+		_ = refusedWorkerPush(t, bare, clone, resp, "base branch")
 	})
 	t.Run("detached head", func(t *testing.T) {
 		bare, clone := workerRepo(t, "main", "automaton/x", "")
 		wgit(t, clone, "checkout", "-q", "--detach")
-		refusedWorkerPush(t, bare, clone, workerResp(bare, "automaton/x", ""), "detached")
+		_ = refusedWorkerPush(t, bare, clone, workerResp(bare, "automaton/x", ""), "detached")
 	})
 }
 
