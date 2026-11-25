@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.14 — Supervisor wake targets one session; named effort reaches Claude
+
+### Fixed
+- The supervisor wake now types only into the session set as its target (`wake.session`). It no longer types into any session that carries the supervisor role, such as a finished build. With no target set it types nothing.
+- A session effort of quick, normal or thorough that the request or worker profile names is now passed to Claude Code as low, medium or high, and an explicit effort survives a restart. A launch that names no effort sends no effort flag, as before.
+- Three lines in two test files that failed the CI lint check. No test assertion changed.
+
+### Documentation
+- How session effort is chosen, and the supervisor wake target.
+
 ## v9.187.13 — MCP tools cannot answer a waiting prompt
 
 ### Fixed
