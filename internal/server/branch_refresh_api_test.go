@@ -279,3 +279,31 @@ func TestBranchRefreshStats_Route(t *testing.T) {
 		t.Fatalf("no manager: want 503, got %d", rec.Code)
 	}
 }
+
+// The daemon wires *autonomous.API (not *Manager) into the server. Both
+// branch refresh routes must work through that object; when it lacked either
+// method the route answered 501 "not supported by this manager".
+func TestBranchRefresh_LiveWrapperPassesRouteGates(t *testing.T) {
+	mgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	api := autonomous.NewAPI(mgr)
+	s := &Server{autonomousMgr: api, cfg: &config.Config{}}
+
+	rec := getBranchRefreshStats(s, http.MethodGet)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stats through the live wrapper: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var stats autonomous.BranchRefreshStats
+	if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+	if stats != mgr.BranchRefreshStats() {
+		t.Fatalf("stats = %+v, want the manager's %+v", stats, mgr.BranchRefreshStats())
+	}
+	// 404 for an unknown Automaton means the request passed the gate.
+	if rec = postBranchRefresh(s, "no-such-automaton", `{"enabled": true}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("override through the live wrapper: want 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
