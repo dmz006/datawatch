@@ -54,7 +54,7 @@ func TrialMergeWith(ctx context.Context, repoPath, defaultBranch, workBranch, sc
 	if err := os.MkdirAll(absScratch, 0o750); err != nil {
 		return nil, err
 	}
-	holder, err := os.MkdirTemp(absScratch, "trial-merge-")
+	holder, err := os.MkdirTemp(absScratch, holderPrefix)
 	if err != nil {
 		return nil, err
 	}

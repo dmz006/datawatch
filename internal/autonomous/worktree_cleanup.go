@@ -16,7 +16,9 @@
 //     itself;
 //   - the work tree must be clean (re-verifying with `git status
 //     --porcelain` at removal time, not trusting the earlier report), so
-//     uncommitted work is never destroyed;
+//     uncommitted work is never destroyed. The daemon's own unedited
+//     generated documents do not count and are deleted with the tree
+//     (generated_artefact_exempt.go);
 //   - the branch must be at least as old as the retention window, so
 //     freshly finished work stays reachable while an operator still
 //     looks at it;
@@ -206,7 +208,8 @@ type WorktreeCleanupRemoval struct {
 	// uncommitted (.mcp.json, .aider.conf.yml, .goose/, .gemini/, ...)
 	// that this pass resolved by cleaning the tree: they are rewritten
 	// when the next session starts in the tree, so cleaning it lost
-	// nothing. Empty when the tree was already clean.
+	// nothing. It also lists the unedited generated documents deleted with
+	// the tree. Empty when the tree was already clean.
 	ResolvedFiles []string `json:"resolved_files,omitempty"`
 }
 
@@ -336,6 +339,7 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			continue
 		}
 		resolvedGenerated := []string(nil)
+		artefacts := []string(nil)
 		if e.Worktree != "" {
 			if !primaryKnown {
 				skip(cleanupSkipPrimary, "the main checkout could not be identified from the work tree list; the entry may be it, so it is left")
@@ -359,6 +363,11 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			// still skipped as dirty.
 			status = filterDaemonOnlyPorcelain(ctx, e.Worktree, status, func(ctx context.Context, dir string, args ...string) (string, error) {
 				return opts.Git.Run(ctx, dir, args...)
+			})
+			// The daemon's own unedited generated documents are not
+			// uncommitted work either; they are deleted with the tree.
+			status, artefacts = splitGeneratedArtefactDirt(ctx, e.Worktree, status, func(ctx context.Context, args ...string) (string, error) {
+				return opts.Git.Run(ctx, e.Worktree, args...)
 			})
 			// What remains is either harness files the daemon and the
 			// launchers generate (.mcp.json, .aider.conf.yml, .goose/,
@@ -428,8 +437,12 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			continue
 		}
 
+		// resolved is everything uncommitted that goes with the tree: the
+		// harness files and the generated documents.
+		resolved := append(append([]string(nil), resolvedGenerated...), artefacts...)
+
 		if opts.Mode == config.CleanupModeReport {
-			w := WorktreeCleanupRemoval{Branch: e.Branch, Worktree: e.Worktree, Reason: e.Reason, ResolvedFiles: resolvedGenerated}
+			w := WorktreeCleanupRemoval{Branch: e.Branch, Worktree: e.Worktree, Reason: e.Reason, ResolvedFiles: resolved}
 			if e.Worktree != "" {
 				if size, serr := opts.Probe.WorktreeSize(e.Worktree); serr == nil {
 					w.BytesFreed = size
@@ -474,11 +487,11 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			"age_seconds": int64(age / time.Second),
 			"at":          opts.Now().Format(time.RFC3339),
 		}
-		if len(resolvedGenerated) > 0 {
-			// The tree carried only generated harness files; the audit
-			// record names them so the cleaned-up work tree is accounted
-			// for, not opaque.
-			details["resolved_files"] = resolvedGenerated
+		if len(resolved) > 0 {
+			// The tree carried only generated files; the audit record
+			// names them so the cleaned-up work tree is accounted for,
+			// not opaque.
+			details["resolved_files"] = resolved
 		}
 		if backupRef != "" {
 			details["backup_ref"], details["branch_tip"] = backupRef, backupTip
@@ -486,6 +499,15 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 		if err := opts.Audit(worktreeCleanupAuditAction, details); err != nil {
 			failed(cleanupStageAudit, "audit log write: %v", err)
 			continue
+		}
+
+		if len(artefacts) > 0 {
+			// Deleted here, each verified again, so that the removal below
+			// stays strict and refuses anything that appeared meanwhile.
+			if err := removeGeneratedArtefacts(e.Worktree, artefacts); err != nil {
+				failed(cleanupStageRemove, "%v", err)
+				continue
+			}
 		}
 
 		if e.Worktree != "" {
@@ -535,7 +557,7 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 				res.Failed = append(res.Failed, WorktreeCleanupFailed{Branch: e.Branch, Worktree: e.Worktree, Stage: cleanupStageRecord, Error: err.Error()})
 			}
 		}
-		res.Removed = append(res.Removed, WorktreeCleanupRemoval{Branch: e.Branch, Worktree: e.Worktree, BytesFreed: size, Reason: e.Reason, ResolvedFiles: resolvedGenerated})
+		res.Removed = append(res.Removed, WorktreeCleanupRemoval{Branch: e.Branch, Worktree: e.Worktree, BytesFreed: size, Reason: e.Reason, ResolvedFiles: resolved})
 	}
 
 	// The held entries are reported as skips so the pass's own record

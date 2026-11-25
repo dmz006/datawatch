@@ -118,6 +118,19 @@ one does not, the entry is left exactly as it is and the reason is recorded.
   the cleanup does not recognize is your work, so it stays.
 - The worktree holds **no real files in an ignored folder** (see **Real files in
   ignored folders** below).
+- The daemon's **own generated documents** do not count either: the gate report
+  under `docs/plans/reports/`, the parity issue draft under
+  `docs/plans/parity-issues/`, the drafts under `docs/plans/drafts/`, and the
+  hash file kept beside each. The name alone is never enough. The document must
+  be untracked, still carry the generated marker on its first line, carry no
+  edited line and still match its recorded hash. A file you wrote in one of
+  those folders, a generated document you changed, a hash file without its
+  document and a link all hold the work tree. The cleanup checks each document
+  again just before it deletes it, then removes the tree without force; the
+  deleted files are listed on the removal in `resolved_files`. The
+  safe-to-delete report applies the same rule, so these documents no longer
+  count under `held_dirty`. If a work tree also holds harness files that git
+  does not ignore, the safe-to-delete report still holds it.
 - Every commit on the branch is **already on the project's default branch**.
   This is also checked again at removal time. A branch with work that exists
   nowhere else is never removed. If the default branch cannot be worked out, the

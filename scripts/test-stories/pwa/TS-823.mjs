@@ -19,6 +19,18 @@ async function clickDom(page, selector) {
   await page.evaluate((sel) => document.querySelector(sel).click(), selector);
 }
 
+// openSessionTagEditor goes the operator's way to the open session's tag editor:
+// the header Tags menu, "Edit tags of this session". The detail row itself only
+// shows chips.
+async function openSessionTagEditor(page) {
+  const edit = '#headerTagsMenu .tags-menu-btn[onclick*="openSessionTagsModal"]';
+  await page.waitForSelector('#headerTagsBtn', { state: 'visible', timeout: 20000 });
+  await clickDom(page, '#headerTagsBtn');
+  await page.waitForSelector(edit, { state: 'visible', timeout: 10000 });
+  await clickDom(page, edit);
+  await page.waitForSelector('#sessionTagsModalPicker', { state: 'visible', timeout: 10000 });
+}
+
 const TAG = (n) => `TS823 ${n} ${Date.now().toString(36)}`;
 
 // api(method, path, body) calls the sandbox over plain HTTP with the bearer
@@ -133,9 +145,7 @@ await runStory(async (page) => {
     await connectToPWA(page);
     await navigateTo(page, 'sessions');
     await page.evaluate((id) => window.navigate('session-detail', id), idA);
-    await page.waitForSelector('#sessionDetailTagRow button', { state: 'visible', timeout: 20000 });
-    await clickDom(page, '#sessionDetailTagRow button');
-    await page.waitForSelector('#sessionTagsModalPicker', { state: 'visible', timeout: 10000 });
+    await openSessionTagEditor(page);
     await page.evaluate((v) => { const cb = document.querySelector(`#sessionTagsModalPicker .tag-picker-cb[value="${v}"]`); cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }, extra.id);
     await clickDom(page, '#genericModalConfirmBtn');
     await waitFor('session A to carry the extra tag', async () => {
@@ -155,8 +165,7 @@ await runStory(async (page) => {
     if (!/inherited/i.test(inheritedLabel)) throw new Error(`inherited chip has no inherited label: ${inheritedLabel}`);
     await screenshot(page, '02-session-b-inherited');
 
-    await clickDom(page, '#sessionDetailTagRow button');
-    await page.waitForSelector('#sessionTagsModalPicker', { state: 'visible', timeout: 10000 });
+    await openSessionTagEditor(page);
     const autoChecked = await page.isChecked(`#sessionTagsModalPicker .tag-picker-cb[value="${auto.id}"]`);
     if (autoChecked) throw new Error('the picker on session B pre-checks the inherited Automaton tag; inherited tags must not be editable on the session');
     const note = await page.innerText('#genericModal');

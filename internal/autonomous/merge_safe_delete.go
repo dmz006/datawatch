@@ -9,8 +9,9 @@
 // worktree list, and — only when at least one branch is ahead — one base
 // subject log. Per branch it then makes at most two calls (cherry, branch
 // subject log) plus — unless the branch's Automaton is running — a status
-// check for safe branches that own a worktree, running the per-branch work
-// through a bounded worker pool.
+// check for safe branches that own a worktree (and a file listing when that
+// status shows a wholly new folder that may hold generated documents),
+// running the per-branch work through a bounded worker pool.
 package autonomous
 
 import (
@@ -323,6 +324,10 @@ func sdBranchWork(ctx context.Context, git MergeGitRunner, repo, base string, p 
 			status = filterDaemonOnlyPorcelain(ctx, p.wt, status, func(ctx context.Context, dir string, args ...string) (string, error) {
 				runnerArgs := append([]string{"-C", dir}, args...)
 				return git.Run(ctx, repo, runnerArgs...)
+			})
+			// Nor do the daemon's own unedited generated documents.
+			status, _ = splitGeneratedArtefactDirt(ctx, p.wt, status, func(ctx context.Context, args ...string) (string, error) {
+				return git.Run(ctx, repo, append([]string{"-C", p.wt}, args...)...)
 			})
 			r.dirty = strings.TrimSpace(status) != ""
 		}

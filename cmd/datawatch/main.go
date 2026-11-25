@@ -7344,6 +7344,15 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				amgr.SetAuditFn(lifecycleAuditFn)
 			}
+			// Remove merge trial worktrees a previous daemon left behind. It
+			// runs here, before the coordinator and the executors exist, so no
+			// trial of this daemon can be running; after the audit hook, so the
+			// removal is recorded.
+			func() {
+				sweepCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				amgr.SweepStaleMergeTrials(sweepCtx)
+			}()
 			// Push-on-complete settings (git.push_on_complete /
 			// git.push_remote): the closure is stored, not its result —
 			// it is read on every push attempt, so a runtime configure
