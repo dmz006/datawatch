@@ -21,13 +21,56 @@ var sessionEndReapRecorder atomic.Pointer[func(sessionID string, count int, comm
 // session id in the process environment (every process the daemon starts for a
 // session carries it) and the folders made for this one session alone. A
 // shared project folder is never evidence: other sessions and the operator's
-// own scripts live there too.
-func sessionEndReapEvidence(sess *session.Session) autonomouspkg.OrphanEvidence {
-	return autonomouspkg.OrphanEvidence{
+// own scripts live there too. peers lists the daemon's sessions (nil when none
+// are known): a linked worktree another live session also works in counts as
+// shared, and a process naming another live session is never matched.
+func sessionEndReapEvidence(sess *session.Session, peers func() []*session.Session) autonomouspkg.OrphanEvidence {
+	ev := autonomouspkg.OrphanEvidence{
 		SessionID: sess.FullID,
 		AdoptedBy: []int{os.Getppid()},
 		Dirs:      sessionOwnedDirs(sess),
 	}
+	if peers == nil {
+		return ev
+	}
+	var inUse []string
+	for _, p := range peers() {
+		if otherLiveSession(p, sess) && p.ProjectDir != "" {
+			inUse = append(inUse, p.ProjectDir)
+		}
+	}
+	kept := ev.Dirs[:0]
+	for _, d := range ev.Dirs {
+		if d == sess.TrackingDir || !autonomouspkg.DirInUse(d, inUse) {
+			kept = append(kept, d)
+		}
+	}
+	ev.Dirs = kept
+	ev.OtherLiveSession = func(id string) bool {
+		for _, p := range peers() { // read again: a session may have started since
+			if otherLiveSession(p, sess) && (p.FullID == id || p.ID == id) {
+				return true
+			}
+		}
+		return false
+	}
+	return ev
+}
+
+// otherLiveSession reports whether p is a session other than sess that has not
+// finished.
+func otherLiveSession(p, sess *session.Session) bool {
+	return p != nil && p.FullID != sess.FullID && !p.State.IsTerminal()
+}
+
+// isLinkedWorktree reports whether dir is a linked git worktree: its .git is a
+// file pointing at the repository, not the repository itself.
+func isLinkedWorktree(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	fi, err := os.Lstat(filepath.Join(dir, ".git"))
+	return err == nil && fi.Mode().IsRegular()
 }
 
 // sessionOwnedDirs returns the folders that exist for sess alone: its
@@ -36,10 +79,8 @@ func sessionEndReapEvidence(sess *session.Session) autonomouspkg.OrphanEvidence 
 // repository checkout is shared, so it is not listed.
 func sessionOwnedDirs(sess *session.Session) []string {
 	var dirs []string
-	if sess.ProjectDir != "" {
-		if fi, err := os.Lstat(filepath.Join(sess.ProjectDir, ".git")); err == nil && fi.Mode().IsRegular() {
-			dirs = append(dirs, sess.ProjectDir)
-		}
+	if isLinkedWorktree(sess.ProjectDir) {
+		dirs = append(dirs, sess.ProjectDir)
 	}
 	if sess.TrackingDir != "" {
 		dirs = append(dirs, sess.TrackingDir)
@@ -54,11 +95,15 @@ func sessionOwnedDirs(sess *session.Session) []string {
 // Nothing is looked up by name.
 func reapSessionEnd(sess *session.Session, reaper *autonomouspkg.OrphanReaper,
 	record func(sessionID string, count int, commands []string) bool,
-	audit func(auditpkg.Entry)) autonomouspkg.OrphanReapResult {
+	audit func(auditpkg.Entry), peers ...func() []*session.Session) autonomouspkg.OrphanReapResult {
 	if sess == nil || sess.FullID == "" {
 		return autonomouspkg.OrphanReapResult{}
 	}
-	ev := sessionEndReapEvidence(sess)
+	var list func() []*session.Session
+	if len(peers) > 0 {
+		list = peers[0]
+	}
+	ev := sessionEndReapEvidence(sess, list)
 	res := reaper.EndOrphans(ev)
 	if res.Count == 0 && len(res.Survivors) == 0 {
 		return res
@@ -99,6 +144,20 @@ func wireSessionEndReap(mgr *session.Manager) {
 		if fn := auditEntrySink.Load(); fn != nil {
 			audit = *fn
 		}
-		reapSessionEnd(sess, &autonomouspkg.OrphanReaper{}, record, audit)
+		reapSessionEnd(sess, &autonomouspkg.OrphanReaper{}, record, audit, sessionSnapshots(mgr))
 	})
+}
+
+// sessionSnapshots lists copies of the daemon's sessions, taken under the
+// store lock: the reap runs while other goroutines update the records.
+func sessionSnapshots(mgr *session.Manager) func() []*session.Session {
+	return func() []*session.Session {
+		list := mgr.ListSessions()
+		out := make([]*session.Session, 0, len(list))
+		for _, s := range list {
+			cp := mgr.Store().Snapshot(s)
+			out = append(out, &cp)
+		}
+		return out
+	}
 }

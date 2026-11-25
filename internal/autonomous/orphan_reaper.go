@@ -5,9 +5,10 @@
 // working directory, executable or script path lies inside the session
 // worktree or scratch folder, its ancestry reaches a known session root pid,
 // or its environment carries the session id. A process is never matched by
-// name. Each match is ended by exact pid, and the evidence plus the process
-// start time are re-verified immediately before every signal so a reused pid
-// can never hit an unrelated process.
+// name. A process whose environment names another live session is that
+// session's own and is never matched. Each match is ended by exact pid, and
+// the evidence plus the process start time are re-verified immediately before
+// every signal so a reused pid can never hit an unrelated process.
 package autonomous
 
 import (
@@ -36,6 +37,26 @@ type OrphanEvidence struct {
 	// of these, so an operator's live shell or editor that merely sits in a
 	// session folder is never touched.
 	AdoptedBy []int
+	// OtherLiveSession reports whether id, the session id a process names in
+	// its environment, belongs to a live session other than the one being
+	// reaped. A process that names one is never matched, whatever else points
+	// to it: a folder can be shared, and its own session ends it. Nil means no
+	// other session is known.
+	OtherLiveSession func(id string) bool
+}
+
+// orphanSessionEnv is the variable every process started for a session
+// carries its session id in (the full id, or the short one for a helper the
+// daemon starts).
+const orphanSessionEnv = "DATAWATCH_SESSION_ID"
+
+// sameSessionRef reports whether ref names the session fullID, as the full id
+// or as the short id that ends it.
+func sameSessionRef(ref, fullID string) bool {
+	if ref == "" || fullID == "" {
+		return false
+	}
+	return ref == fullID || (len(ref) >= orphanMinIDLen && strings.HasSuffix(fullID, "-"+ref))
 }
 
 // OrphanProc is one process proven to belong to a session.
@@ -368,11 +389,47 @@ func (r *OrphanReaper) scriptInside(pid int, dirs []string) bool {
 }
 
 // evidenceFor returns the kind of evidence proving pid belongs to the
-// session, or "" when there is none. It reads only /proc state. Only processes
-// owned by the reaper's user qualify. Path evidence additionally requires the
-// process to be orphaned; ancestry and environment evidence tie the process to
-// the session directly.
+// session, or "" when there is none or the process belongs to another live
+// session.
 func (r *OrphanReaper) evidenceFor(pid int, ev OrphanEvidence, dirs []string) string {
+	kind := r.tieFor(pid, ev, dirs)
+	if kind != "" && r.ofOtherLiveSession(pid, ev) {
+		return ""
+	}
+	return kind
+}
+
+// ofOtherLiveSession reports whether pid's environment names a live session
+// other than the one ev describes.
+func (r *OrphanReaper) ofOtherLiveSession(pid int, ev OrphanEvidence) bool {
+	if ev.OtherLiveSession == nil {
+		return false
+	}
+	id := r.envValue(pid, orphanSessionEnv)
+	return id != "" && !sameSessionRef(id, ev.SessionID) && ev.OtherLiveSession(id)
+}
+
+// envValue returns one variable of pid's environment, or "". The value is
+// only compared, never returned to a caller outside the reaper or logged.
+func (r *OrphanReaper) envValue(pid int, name string) string {
+	b, err := os.ReadFile(filepath.Join(r.procRoot(), strconv.Itoa(pid), "environ"))
+	if err != nil {
+		return ""
+	}
+	for _, kv := range strings.Split(string(b), "\x00") {
+		if v, ok := strings.CutPrefix(kv, name+"="); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// tieFor returns the kind of evidence tying pid to the session, or "" when
+// there is none. It reads only /proc state. Only processes owned by the
+// reaper's user qualify. Path evidence additionally requires the process to be
+// orphaned; ancestry and environment evidence tie the process to the session
+// directly.
+func (r *OrphanReaper) tieFor(pid int, ev OrphanEvidence, dirs []string) string {
 	if !r.ownedByUs(pid) {
 		return ""
 	}

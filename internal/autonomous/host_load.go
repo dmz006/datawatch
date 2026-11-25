@@ -76,6 +76,10 @@ type HostLoadSession struct {
 	Running      bool
 	WorktreeDirs []string
 	ScratchDirs  []string
+	// SharedWorktree marks WorktreeDirs as a folder other work uses too (a
+	// plain folder or a repository checkout). The alert still names it, but
+	// the reap never treats it as proof that a process is this session's.
+	SharedWorktree bool
 }
 
 // HostLoadGroup is one process group in an alert.
@@ -418,22 +422,58 @@ func (h *HostLoadCheck) topGroups(sessions []HostLoadSession) []HostLoadGroup {
 }
 
 // reapEnded ends only processes of ended sessions that the reaper's evidence
-// rule proves, by exact pid. Running sessions are never touched.
+// rule proves, by exact pid. Running sessions are never touched: a worktree one
+// of them works in is no evidence, and neither is any folder for a process whose
+// environment names one of them.
 func (h *HostLoadCheck) reapEnded(sessions []HostLoadSession) OrphanReapResult {
 	var total OrphanReapResult
 	r := h.reaper()
+	var runningIDs, inUse []string
+	for _, s := range sessions {
+		if s.Running {
+			runningIDs = append(runningIDs, s.ID)
+			inUse = append(inUse, orphanDirs(s.WorktreeDirs)...)
+		}
+	}
+	ofRunning := func(ref string) bool {
+		for _, id := range runningIDs {
+			if sameSessionRef(ref, id) {
+				return true
+			}
+		}
+		return false
+	}
 	for _, s := range sessions {
 		if s.Running {
 			continue
 		}
-		dirs := append(append([]string{}, s.WorktreeDirs...), s.ScratchDirs...)
+		dirs := append([]string{}, s.ScratchDirs...)
+		if !s.SharedWorktree {
+			for _, d := range s.WorktreeDirs {
+				if !DirInUse(d, inUse) {
+					dirs = append(dirs, d)
+				}
+			}
+		}
 		if len(dirs) == 0 {
 			continue
 		}
-		res := r.EndOrphans(OrphanEvidence{Dirs: dirs})
+		res := r.EndOrphans(OrphanEvidence{Dirs: dirs, OtherLiveSession: ofRunning})
 		total.Ended = append(total.Ended, res.Ended...)
 		total.Survivors = append(total.Survivors, res.Survivors...)
 	}
 	total.Count = len(total.Ended)
 	return total
+}
+
+// DirInUse reports whether any of the folders in use is dir or lies inside it,
+// comparing both the written and the symlink-resolved paths.
+func DirInUse(dir string, inUse []string) bool {
+	own := orphanDirs([]string{dir})
+	for _, u := range orphanDirs(inUse) {
+		if orphanInside(u, own) {
+			return true
+		}
+	}
+	return false
 }
