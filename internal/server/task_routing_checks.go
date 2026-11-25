@@ -22,6 +22,15 @@ func (s *Server) taskRoutingChecks() config.TaskRoutingChecks {
 	})
 }
 
+// taskRoutingSaveChecks is taskRoutingChecks for a change being saved over
+// inForce: rows that stay as they are are not looked up again.
+func (s *Server) taskRoutingSaveChecks(inForce config.TaskRoutingConfig) config.TaskRoutingChecks {
+	chk := s.taskRoutingChecks()
+	base := config.TaskRoutingWithDefaults(inForce).Clone()
+	chk.InForce = &base
+	return chk
+}
+
 // allTaskRoutingKeys reports whether every skipped key is a task routing key,
 // so the PUT /api/config reply explains the skip in routing terms rather than
 // with the token-rotation note.
