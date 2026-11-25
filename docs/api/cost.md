@@ -191,6 +191,12 @@ level) carries a `cost` object: the same row the `group_by=automaton` report
 gives that Automaton, over the whole ledger, with a zero row when it has no
 spend.
 
+Each failed, stalled or cancelled entry in a task's `attempts` list (same
+response, `detail=full`) also carries `queue_wait_seconds` (lease request to
+grant) and `verify_seconds` (the task entering `verifying` to the verdict, so it
+currently includes the worker's run). See
+[howto/failed-attempt-cost.md](../howto/failed-attempt-cost.md#reading-the-attempt-record).
+
 Errors: `400` for a bad `group_by`, a bad date, or a `since` after `until`
 (the message names the problem); `503` when autonomous mode is disabled.
 

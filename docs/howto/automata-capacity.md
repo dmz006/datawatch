@@ -566,6 +566,23 @@ worker, so the Automaton's priority decides between it and the workers
 instead of workers always going first; this keeps planning, which feeds the
 lanes, from starving. Verifiers still go first.
 
+### A plan you start, and a planner you end
+
+A decompose **you** start (web app, CLI, chat, MCP or REST) skips the blocks
+that apply only to automatic work: a [usage back-off](#reactive-usage-backoff),
+the burn guard and a usage hold, as a session you start yourself does. Pool
+limits still apply, so on a full pool it queues like any other planner. A plan
+the engine starts (lane fill, the restart after a daemon restart, the re-plan
+after a reworded spec, a child or scan-fix task) is still held by them. The
+daemon cannot tell who is behind a REST or MCP call, so a decompose asked for
+that way counts as yours.
+
+If you end a planner session yourself (`datawatch session kill`, the web app,
+chat, MCP or REST), datawatch does not start it again. The Automaton goes to
+`failed` with "the planner session was ended by the operator"; reset it to
+draft when you want it planned. A planner that ends for any other reason (the
+daemon's own watchdogs, a shutdown, a vanished process) is retried as before.
+
 ### Retargeting while queued
 
 Changing the Automaton's decomposition pair (profile or model) with
