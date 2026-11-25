@@ -39,6 +39,42 @@ They are written on every end path, and the first end wins:
 Both fields are omitted while the session runs, and on a record that ended
 before the fields were written.
 
+"Every end path" includes the ends the daemon writes without a kill: a finished
+one-shot it closes, a terminal found gone after a daemon restart, a launch still
+running when the daemon shuts down, and a state set through
+`POST /api/sessions/state`. Those notes read `<state> by <caller>: <reason>`.
+Restarting a session, setting it back to a live state, or the daemon bringing it
+back because its terminal is still alive clears both fields, so the next end is
+recorded. Two writes made outside the daemon's session manager do not set them
+yet: `datawatch session stop-all` run against the saved store, and the virtual
+sessions of a council run.
+
+### Task delivery on launch
+
+For a session whose task the daemon types itself (the channel-enabled
+claude-code launch), the record carries:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `task_delivered_at` | RFC 3339 time | When delivery was claimed. It is saved before anything is typed, so on its own it proves nothing about arrival. |
+| `task_delivery_unverified` | bool | True until the task is seen to have reached the session. |
+| `task_verified_at` | RFC 3339 time | When it was seen to have arrived. |
+
+The launch counts as started only once delivery is verified, or the recorded
+output holds an answer. If the daemon restarts while a claim is unverified, it
+reads the screen before doing anything:
+
+| What the screen or output shows | What the daemon does |
+|---|---|
+| An answer in the recorded output, a working agent, or the task above the input box | Marks delivery verified. Nothing is typed. |
+| The task, or a paste chip, still sitting unsent in the input box | Types nothing and leaves the session as it is. The launch does not count as started. |
+| An empty input box that stays unchanged for 3 seconds | Types the task again under the same claim, with the normal attempts and window. The launch reads as started while this runs; if it fails, the session ends with the usual delivery failure reason. |
+| No input box within the delivery window | Types nothing and leaves the session as it is. |
+
+Each outcome is written to the daemon log as `task delivery for <id> ...`. A
+record saved before these two fields existed reads as verified, so an upgrade
+never retypes a task.
+
 A record whose process is gone is finalised as `complete` (its output
 ends with a `DATAWATCH_COMPLETE:` line) or `killed` (anything else).
 Such a record carries `ended_at` and the `end_note` `process gone, finalised`
