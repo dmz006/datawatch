@@ -10,6 +10,7 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/pause"
@@ -96,7 +97,11 @@ func (m *Manager) pausedReasonFor(dir string) string {
 // capacity wait. It returns errCancelledWhileWaiting when the task is
 // cancelled and the context error when ctx ends.
 func (m *Manager) waitOperatorPause(ctx context.Context, prd *PRD, t *Task) error {
-	dir := m.resolveTaskProjectDir(prd, t)
+	return m.waitOperatorPauseIn(ctx, t, m.resolveTaskProjectDir(prd, t))
+}
+
+// waitOperatorPauseIn is waitOperatorPause for work in dir.
+func (m *Manager) waitOperatorPauseIn(ctx context.Context, t *Task, dir string) error {
 	b, blocked := m.pauseBlock(dir)
 	if !blocked {
 		return nil
@@ -123,5 +128,26 @@ func (m *Manager) waitOperatorPause(ctx context.Context, prd *PRD, t *Task) erro
 		b, blocked = m.pauseBlock(dir)
 	}
 	m.clearWaiting(t)
+	return nil
+}
+
+// waitDirUnpaused blocks while dir is paused, for engine work that has no task
+// to show the wait on. It returns the context error when ctx ends.
+func (m *Manager) waitDirUnpaused(ctx context.Context, dir string) error {
+	b, blocked := m.pauseBlock(dir)
+	if !blocked {
+		return nil
+	}
+	log.Printf("[autonomous] engine work in %q waits: %s", dir, b.Message())
+	poll := m.pauseWaitPoll()
+	clock := m.spawnWaitClock()
+	for blocked {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-clock.After(poll):
+		}
+		_, blocked = m.pauseBlock(dir)
+	}
 	return nil
 }

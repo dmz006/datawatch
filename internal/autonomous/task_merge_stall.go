@@ -19,7 +19,8 @@
 //   - on: one alert per episode, through the same path the idle lane alert
 //     uses, and a retry of the Automaton's merges. A merge held for the
 //     operator (it carries a merge block, is held or needs review, or its
-//     Automaton is blocked) is alerted about but never retried.
+//     Automaton is blocked) is alerted about but never retried. A project
+//     the operator paused is alerted about and not retried until the resume.
 //
 // An episode ends when the merge succeeds or the Automaton stops running; the
 // next stall of the same task alerts again. Nothing here is persisted.
@@ -212,7 +213,11 @@ func (c *Coordinator) taskMergeStallPass(ctx context.Context, kinds LaneFillKind
 			s.mu.Lock()
 			last, retried := s.retryAt[prdID]
 			s.mu.Unlock()
-			if retried && now.Sub(last) < taskMergeStallRetryEvery {
+			if b, blocked := c.m.pauseBlock(group[0].prd.ProjectDir); blocked {
+				// A paused project is not merged, and no retry slot is used:
+				// the first poll after the resume retries.
+				result = "retry not attempted: " + b.Message()
+			} else if retried && now.Sub(last) < taskMergeStallRetryEvery {
 				result = "retry not attempted yet: the last retry was less than " + taskMergeStallRetryEvery.String() + " ago"
 			} else {
 				result = c.taskMergeStallRetry(ctx, prdID)

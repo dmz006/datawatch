@@ -258,6 +258,7 @@ func (m *Manager) requeuePlanningRun(prdID, actor, oldBackend, oldModel string) 
 		Holder: plannerHolder(prdID), PRDID: prdID, Priority: priority,
 		Pools: pools, Node: node, NodeChoices: choices,
 		Model: newModel, Role: capacity.RolePlanner, Consumer: consumerSessionSpawn,
+		Interactive: m.operatorStartedPlan(prdID),
 	}
 	req.Refresh = m.placementRefresh(req, newBackend, newModel, decomposePools)
 

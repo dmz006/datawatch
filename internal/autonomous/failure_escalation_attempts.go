@@ -14,6 +14,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -169,6 +170,81 @@ func (m *Manager) attemptNow() time.Time {
 	return time.Now()
 }
 
+// attemptTiming is the measured time of a task's current attempt.
+type attemptTiming struct {
+	queueWait   time.Duration
+	verifyStart time.Time
+	verify      time.Duration
+}
+
+// attemptTimes holds the attemptTiming of each task being executed. The zero
+// value is ready to use. Nothing in it is persisted: an attempt cut short by a
+// restart records no times.
+type attemptTimes struct {
+	mu     sync.Mutex
+	byTask map[string]*attemptTiming
+}
+
+func (m *Manager) withAttemptTiming(taskID string, fn func(*attemptTiming)) {
+	m.attemptTimes.mu.Lock()
+	defer m.attemptTimes.mu.Unlock()
+	if m.attemptTimes.byTask == nil {
+		m.attemptTimes.byTask = map[string]*attemptTiming{}
+	}
+	at := m.attemptTimes.byTask[taskID]
+	if at == nil {
+		at = &attemptTiming{}
+		m.attemptTimes.byTask[taskID] = at
+	}
+	fn(at)
+}
+
+// resetAttemptTiming forgets the task's times: a new attempt begins, or the
+// executor is done with the task.
+func (m *Manager) resetAttemptTiming(taskID string) {
+	m.attemptTimes.mu.Lock()
+	defer m.attemptTimes.mu.Unlock()
+	delete(m.attemptTimes.byTask, taskID)
+}
+
+func (m *Manager) addQueueWait(taskID string, d time.Duration) {
+	m.withAttemptTiming(taskID, func(at *attemptTiming) { at.queueWait += d })
+}
+
+func (m *Manager) noteVerifyStart(taskID string) {
+	now := m.attemptNow()
+	m.withAttemptTiming(taskID, func(at *attemptTiming) { at.verifyStart, at.verify = now, 0 })
+}
+
+// NoteVerificationStarted moves the start of the task's verify time to now. A
+// verifier that first waits for the worker to finish calls it once the wait is
+// over. It does nothing when the task is not in verification.
+func (m *Manager) NoteVerificationStarted(taskID string) {
+	now := m.attemptNow()
+	m.withAttemptTiming(taskID, func(at *attemptTiming) {
+		if !at.verifyStart.IsZero() {
+			at.verifyStart = now
+		}
+	})
+}
+
+func (m *Manager) noteVerdict(taskID string) {
+	now := m.attemptNow()
+	m.withAttemptTiming(taskID, func(at *attemptTiming) {
+		if !at.verifyStart.IsZero() {
+			at.verify = now.Sub(at.verifyStart)
+		}
+	})
+}
+
+// attemptSeconds returns the task's queue wait and verify time in whole seconds.
+func (m *Manager) attemptSeconds(taskID string) (queueWait, verify int) {
+	m.withAttemptTiming(taskID, func(at *attemptTiming) {
+		queueWait, verify = int(at.queueWait/time.Second), int(at.verify/time.Second)
+	})
+	return queueWait, verify
+}
+
 // recordFailedAttempt appends a TaskAttempt for the attempt that just failed
 // and persists the task. The worker falls back to the task's resolved worker
 // when the attempt did not spawn one (a resumed session). Changed files come
@@ -236,6 +312,7 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		EndReason:             endReason,
 		EndDetail:             f.EndDetail,
 	}
+	rec.QueueWaitSeconds, rec.VerifySeconds = m.attemptSeconds(t.ID)
 	if run.LaunchContext != "" {
 		rec.StartupTokenSource = StartupTokenSourceEstimated
 	}

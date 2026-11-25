@@ -901,6 +901,7 @@ func (a *API) ListPRDs() []any {
 }
 
 func (a *API) Decompose(id string) (any, error) {
+	defer a.M.noteOperatorPlan(id)()
 	out, err := a.M.Decompose(id)
 	if err == nil {
 		a.M.EmitPRDUpdate(id)
@@ -912,6 +913,7 @@ func (a *API) Decompose(id string) (any, error) {
 // Calls Manager.DecomposeStreaming with an any-typed callback wrapper.
 // After completion, emits a PRD update broadcast.
 func (a *API) DecomposeStreaming(id string, cb func(index, total int, story any)) (any, error) {
+	defer a.M.noteOperatorPlan(id)()
 	out, err := a.M.DecomposeStreaming(id, cb)
 	if err == nil {
 		a.M.EmitPRDUpdate(id)
@@ -959,8 +961,26 @@ func (a *API) RunForced(id, actor, reason string) error {
 // hold and the reason names the findings that remain. The report is
 // always returned with an outcome (clean, fixed, held or error).
 func (a *API) ScanFixLoop(id string) (any, error) {
-	return a.M.RunScanFixLoop(id)
+	// The loop may wait for an operator pause to end; WaitIdle ends the wait.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	key := fmt.Sprintf("%s%s:%d", scanFixKeyPrefix, id, time.Now().UnixNano())
+	a.runMu.Lock()
+	if a.runCancels == nil {
+		a.runCancels = map[string]context.CancelFunc{}
+	}
+	a.runCancels[key] = cancel
+	a.runMu.Unlock()
+	defer func() {
+		a.runMu.Lock()
+		delete(a.runCancels, key)
+		a.runMu.Unlock()
+	}()
+	return a.M.RunScanFixLoopContext(ctx, id)
 }
+
+// scanFixKeyPrefix names the cancel slot of a running scan-fix loop.
+const scanFixKeyPrefix = "scan-fix:"
 
 // prdStatus reads a PRD's status under the Manager mutex, the lock executor
 // status writes hold; the shared *PRD from the store must not be read bare.

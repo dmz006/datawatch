@@ -1106,6 +1106,7 @@ func (c *Coordinator) laneFillDecompose(rec *laneFillRecords, e *laneFillEntry, 
 		}
 		if err == nil {
 			_, err = ls.Decompose(d.PRDID)
+			c.m.endEnginePlan(d.PRDID)
 		}
 		c.lf.mu.Lock()
 		delete(c.lf.decomposing, d.PRDID)

@@ -1499,6 +1499,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		budget = esc.MaxFailures - m.escalationFailureCount(t)
 	}
 	var run attemptRun
+	// Registered first so it runs last, after an interrupted attempt is recorded.
+	defer m.resetAttemptTiming(t.ID)
 	// An executor cancelled mid-attempt (operator cancel or daemon restart)
 	// still closes the attempt it left open.
 	defer func() {
@@ -1530,6 +1532,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 		var err error
 		run = attemptRun{RefsBefore: len(t.AttemptRefs), AttemptsBefore: len(t.Attempts)}
+		m.resetAttemptTiming(t.ID)
 		inheritedSession := inherited
 		inherited = false
 		resumeCandidate := verifierRetryPending
@@ -2160,6 +2163,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// and this task (same holder ID) re-claims its own record via the
 		// idempotent-path. No-op on the normal path, which already
 		// acquired the lock after m.admit above.
+		m.noteVerifyStart(t.ID)
 		if terr := holdTree(); terr != nil {
 			if errors.Is(terr, errCancelledWhileWaiting) {
 				return nil
@@ -2171,6 +2175,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if verify != nil {
 			var idleHeld bool
 			vr, idleHeld, err = m.verifyRetryingIdle(ctx, prd, t, verify)
+			if err == nil {
+				m.noteVerdict(t.ID)
+			}
 			if idleHeld {
 				return err
 			}
@@ -2481,18 +2488,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				return err
 			}
 			// Fold the task branch into the PRD branch (no-op without one).
-			if _, merr := m.MergeTaskBranch(ctx, prd, t); merr != nil {
-				log.Printf("[autonomous] %s/%s task merge: %v", prd.ID, t.ID, merr)
-				// Leave the task visibly waiting, not without a merge state.
-				if t.WorktreeBranch != "" && t.MergeState == "" {
-					m.setMergeState(t, MergeStatePending, "")
-				}
-			}
-			// A task deferred behind an earlier sibling or dependency may be
-			// mergeable now: run the ordered pass over the whole PRD.
-			if _, merr := m.MergeCompletedTasks(ctx, prd); merr != nil {
-				log.Printf("[autonomous] %s task merge pass: %v", prd.ID, merr)
-			}
+			m.foldFinishedTask(ctx, prd, t)
 			// v9.2.1 — passing-script retry: verification passed via the
 			// unmodified-retry escape hatch (the retry itself produced no diff;
 			// already-committed work passed the verification script). Append the
@@ -2965,6 +2961,15 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		return emitSaved(old)
 	}
 
+	// An operator pause holds the engine: no child Automaton is opened, planned
+	// or run while the project is paused. The task waits; it does not fail.
+	if err := m.waitOperatorPause(ctx, parent, t); err != nil {
+		if errors.Is(err, errCancelledWhileWaiting) {
+			return nil
+		}
+		return err
+	}
+
 	now := time.Now()
 	m.store.WithLock(func() { t.StartedAt = &now })
 	old = t.Status
@@ -3033,7 +3038,14 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	// goes through. AutoApproveChildren defaults true because every level
 	// otherwise hangs on operator review and recursion becomes useless;
 	// operators can flip it off for high-stakes pipelines.
-	if _, err := m.Decompose(child.ID); err != nil {
+	waitChild := func(dir string) error { return m.waitOperatorPauseIn(ctx, t, dir) }
+	if err := m.planEngineOpened(child.ID, waitChild); err != nil {
+		if errors.Is(err, errCancelledWhileWaiting) {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		old = t.Status
 		m.store.WithLock(func() {
 			t.Status = TaskFailed
@@ -3066,7 +3078,11 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		})
 		return emitSaved(old)
 	}
-	if err := m.Run(ctx, child.ID, spawn, verify); err != nil {
+	runChild := func() error { return m.Run(ctx, child.ID, spawn, verify) }
+	if err := m.runEngineOpened(child.ID, waitChild, runChild); err != nil {
+		if errors.Is(err, errCancelledWhileWaiting) {
+			return nil
+		}
 		old = t.Status
 		m.store.WithLock(func() {
 			t.Status = TaskFailed

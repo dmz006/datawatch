@@ -690,6 +690,7 @@ func waitOneShotJSONSession(ctx context.Context, cfg *config.Config, prdID, sess
 				State       string `json:"state"`
 				TmuxSession string `json:"tmux_session"`
 				ProjectDir  string `json:"project_dir"`
+				EndNote     string `json:"end_note"`
 			}
 			if err := json.Unmarshal(pollBody, &s); err != nil {
 				continue
@@ -829,7 +830,14 @@ func waitOneShotJSONSession(ctx context.Context, cfg *config.Config, prdID, sess
 					fmt.Printf("[%s] %s state=%q, output file appeared after kill (%d bytes)\n", sessionName, startOut.ID, s.State, len(content))
 					return content, sessionID, nil
 				}
-				return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state %s without producing output (backend=%s, model=%q)", role, startOut.ID, s.State, backend, model)}
+				msg := fmt.Sprintf("one-shot %s session %s ended with state %s without producing output (backend=%s, model=%q)", role, startOut.ID, s.State, backend, model)
+				// The session record says who ended it. A planner the operator
+				// ended is not started again.
+				operator := autonomouspkg.OperatorEndCaller(s.EndNote)
+				if operator != "" {
+					msg += ", ended by the operator (" + operator + ")"
+				}
+				return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: msg, OperatorEndedBy: operator}
 			}
 		}
 	}
