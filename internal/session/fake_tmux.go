@@ -76,6 +76,10 @@ type FakeTmux struct {
 	// ListSessionsErr, when set, is returned by ListSessions in place of the
 	// session list, so a test can make the terminal listing fail.
 	ListSessionsErr error
+
+	// Socket is what SocketPath reports. Empty means the one socket every
+	// FakeTmux shares, so a "restarted" fake reaches the same server.
+	Socket string
 }
 
 // echo appends typed text to the seeded pane unless NoEcho is set.
@@ -162,6 +166,20 @@ func (f *FakeTmux) NewSessionWithSize(name string, cols, rows int) error {
 	f.sessions[name] = true
 	f.mu.Unlock()
 	return nil
+}
+
+// SessionGone reports that the session is known not to exist: the fake always
+// has an answer.
+func (f *FakeTmux) SessionGone(name string) bool {
+	return name != "" && !f.SessionExists(name)
+}
+
+// SocketPath names the fake's tmux server socket.
+func (f *FakeTmux) SocketPath() string {
+	if f.Socket != "" {
+		return f.Socket
+	}
+	return "/fake-tmux/default"
 }
 
 func (f *FakeTmux) SessionExists(name string) bool {
