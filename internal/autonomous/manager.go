@@ -2090,6 +2090,11 @@ type Manager struct {
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
 
+	// daemonRulesTextFn — the daemon's session- and config-dependent
+	// rules-file blocks for a directory (SetDaemonRulesTextFn). Guarded
+	// by mu. Nil = none known.
+	daemonRulesTextFn func(dir string) []string
+
 	// nodeUnresponsive counts consecutive model-unresponsive failures per node.
 	nodeUnresponsive *nodeUnresponsiveCounter
 

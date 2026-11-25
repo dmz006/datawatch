@@ -56,6 +56,7 @@ func dsmFixture(t *testing.T, baseRules string) *dsm {
 		gitRun(t, p0, "commit", "-q", "-m", "base rules")
 	}
 	m := newTaskWorktreeManager(t, repo, wtDir, true)
+	m.SetDaemonRulesTextFn(standInDaemonText(dsmStandIns))
 	task := Task{ID: "t1", PRDID: prd.ID, Title: "rules work", Status: TaskCompleted}
 	p1, b1, err := EnsureTaskWorktree(prd, &task, repo, wtDir)
 	if err != nil {

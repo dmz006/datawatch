@@ -27,6 +27,7 @@ func dsmLauncherFixture(t *testing.T) *dsm {
 	gitRun(t, p0, "add", DefaultRulesFile, launcherMCPConfigFileName)
 	gitRun(t, p0, "commit", "-q", "-m", "base rules + operator mcp config")
 	m := newTaskWorktreeManager(t, repo, wtDir, true)
+	m.SetDaemonRulesTextFn(standInDaemonText(dsmStandIns))
 	task := Task{ID: "t1", PRDID: prd.ID, Title: "launcher cleanup", Status: TaskCompleted}
 	p1, b1, err := EnsureTaskWorktree(prd, &task, repo, wtDir)
 	if err != nil {

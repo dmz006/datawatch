@@ -75,7 +75,10 @@ func (m *Manager) checkProtectedPaths(ctx context.Context, prd *PRD, t *Task) (h
 			return false, nil
 		}
 		m.recordProtectedPathsCheckSkipped(prd, t, "the changed files could not be read: "+protectedPathsCause(cerr))
-		return false, nil
+		// Paths that were listed before the failure are still judged.
+		if len(changed) == 0 {
+			return false, nil
+		}
 	}
 
 	hits := MatchProtectedPaths(changed, patterns)
@@ -137,9 +140,12 @@ func (m *Manager) checkProtectedPaths(ctx context.Context, prd *PRD, t *Task) (h
 }
 
 // protectedPathsChangedSet returns the sorted paths the task changed since
-// base in dir: the union of the working tree against base (committed changes
-// and uncommitted edits to tracked files, a rename or delete counting for both
-// paths) and the new untracked files. A path that was already dirty or
+// base in dir: the union of the working tree, the index and HEAD against base
+// (committed, staged and unstaged changes to tracked files, a rename or delete
+// counting for both paths; a change restored only in the working tree is still
+// listed by the other two) and the new untracked files. When the index or HEAD
+// cannot be listed, the paths read from the rest are returned with the error.
+// A path that was already dirty or
 // untracked before the task started is the operator's own work and is left
 // out unless a commit made since base touched it.
 func (m *Manager) protectedPathsChangedSet(ctx context.Context, dir, base string, t *Task) ([]string, error) {
@@ -153,6 +159,18 @@ func (m *Manager) protectedPathsChangedSet(ctx context.Context, dir, base string
 		return nil, fmt.Errorf("git ls-files: %w", err)
 	}
 	changed := sortedUnion(gitPathLines(diffOut), gitPathLines(untrackedOut))
+	var partial error
+	for _, args := range [][]string{
+		{"diff", "--name-only", "--no-renames", "--cached", base},
+		{"diff", "--name-only", "--no-renames", base, "HEAD"},
+	} {
+		out, rerr := run(ctx, dir, args...)
+		if rerr != nil {
+			partial = fmt.Errorf("git %s: %w", strings.Join(args, " "), rerr)
+			continue
+		}
+		changed = sortedUnion(changed, gitPathLines(out))
+	}
 
 	var preDirty, preUntracked []string
 	m.store.WithLock(func() {
@@ -173,7 +191,7 @@ func (m *Manager) protectedPathsChangedSet(ctx context.Context, dir, base string
 		}
 	}
 	if !touchesPre {
-		return changed, nil
+		return changed, partial
 	}
 
 	committed, err := CommittedFilesSince(ctx, dir, base, run)
@@ -192,7 +210,7 @@ func (m *Manager) protectedPathsChangedSet(ctx context.Context, dir, base string
 		}
 		out = append(out, c)
 	}
-	return out, nil
+	return out, partial
 }
 
 // gitPathLines splits git's newline-separated path output, undoing git's

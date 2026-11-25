@@ -594,19 +594,18 @@ func TestCheckpointRevertStripPerservesDaemonSectionsByteForByte(t *testing.T) {
 	}
 }
 
-// TestCheckpointRevertEntryUnderDaemonSectionsNeedsNoRevert: an entry
-// appended after the daemon's own header sections is inside the region the
-// daemon rewrites on every session start, so the daemon-filter pass — not the
-// checkpoint revert — already drops the hit and nothing is written.
-func TestCheckpointRevertEntryUnderDaemonSectionsNeedsNoRevert(t *testing.T) {
+// TestCheckpointRevertEntryUnderDaemonSectionsIsHeld: an entry appended after
+// the daemon's own header sections is not text the daemon writes, so the task
+// is held. The checkpoint revert does not remove it and nothing is written.
+func TestCheckpointRevertEntryUnderDaemonSectionsIsHeld(t *testing.T) {
 	r := newGateRig(t)
 	writeRulesFile(t, r.prd.ProjectDir, baseRulesContent+daemonSectionsBlock+workerEntryBody)
 	r.git.diff = "AGENT.md\n"
 	r.git.show = map[string]string{gateBaseSHA + ":AGENT.md": baseRulesContent}
 
 	held, err := r.check(t)
-	if err != nil || held {
-		t.Fatalf("held=%v err=%v; an entry under the daemon sections is not a hit against the base", held, err)
+	if err != nil || !held {
+		t.Fatalf("held=%v err=%v; an entry under the daemon sections is not daemon text, so the task must be held", held, err)
 	}
 	if n := len(r.decisions(checkpointEntryRevertedDecisionKind)); n != 0 {
 		t.Errorf("revert decisions = %d; want none (the daemon-filter path handles it)", n)

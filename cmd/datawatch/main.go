@@ -7129,6 +7129,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// The protected-paths check clears only what the daemon itself
+			// writes into a rules file; the session manager knows the parts
+			// that depend on a session or the configuration. Wired before
+			// the API starts, which runs the hold release.
+			amgr.SetDaemonRulesTextFn(mgr.RulesFileTextFor)
 			// BL24 — warn-only pre-commit security scan over the task's
 			// worktree, fired by the session manager exactly once, after
 			// every commit guard, immediately before the completion commit

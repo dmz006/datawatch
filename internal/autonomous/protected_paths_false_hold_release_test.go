@@ -16,6 +16,7 @@ func fpfRig(t *testing.T) (*Manager, *PRD, *Task, *QuestionStore, string) {
 	t.Helper()
 	repo := uwRepo(t)
 	m, _ := newFailureEscalationFixture(t, t.TempDir())
+	m.SetDaemonRulesTextFn(standInDaemonText(dscStandIns))
 	prd, err := m.CreatePRD("test spec", repo, "opencode", "", EffortNormal)
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)

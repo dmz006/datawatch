@@ -91,13 +91,15 @@ func (m *Manager) recordCheckpointEntryReverted(prd *PRD, t *Task, path string) 
 // additions: the worker-added entry lines, the blank lines separating them,
 // and at most one added `## Checkpoints` heading when the base had none.
 // The file is written back with its original bytes minus those added lines
-// — the daemon's own sections are never touched — and the stripped result
-// must equal the stripped base version; on any failure the original working
-// copy is restored and the hit is kept. No git write command is issued.
+// — the daemon's own sections are never touched — and the result must equal
+// the base version besides the daemon's exact text, as the index and HEAD
+// versions must already; on any failure the original working copy is restored
+// (or left alone) and the hit is kept. No git write command is issued.
 func (m *Manager) revertCheckpointOnlyHits(ctx context.Context, prd *PRD, t *Task, dir, base string, hits []string) []string {
 	rulesFile, _ := m.rulesAndContextFiles(dir)
 	candidates := checkpointCandidates(rulesFile)
 	run := m.baseCommitRunner()
+	written := m.daemonRulesText(dir)
 	var remaining []string
 	for _, p := range hits {
 		rel := normalizeDriftPath(p)
@@ -123,6 +125,13 @@ func (m *Manager) revertCheckpointOnlyHits(ctx context.Context, prd *PRD, t *Tas
 			remaining = append(remaining, p)
 			continue
 		}
+		// Rewriting the working copy cannot take an entry out of the index
+		// or out of a commit: such a hit is kept.
+		recorded, ok := recordedVersions(ctx, run, dir, rel)
+		if !ok || !sameBesidesDaemonText(recorded, baseContent, written) {
+			remaining = append(remaining, p)
+			continue
+		}
 		cleaned, ok := stripWorkerCheckpointEntries(baseContent, string(cur))
 		if !ok {
 			// The worker changed base lines too: indistinguishable from a
@@ -137,8 +146,7 @@ func (m *Manager) revertCheckpointOnlyHits(ctx context.Context, prd *PRD, t *Tas
 			continue
 		}
 		got, verr := os.ReadFile(full)
-		if verr != nil ||
-			platformcontext.StripDaemonSections(string(got)) != platformcontext.StripDaemonSections(baseContent) {
+		if verr != nil || !platformcontext.SameBesidesDaemonText(string(got), baseContent, written) {
 			// Verification failed: restore the working copy as found and
 			// keep the hit.
 			if werr := os.WriteFile(full, cur, mode); werr != nil {
