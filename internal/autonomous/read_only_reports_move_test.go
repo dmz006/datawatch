@@ -55,7 +55,7 @@ func TestReadOnlyReportsFolderFilesMoved(t *testing.T) {
 	}
 
 	// Same name already present: the new copy is deleted, the old kept.
-	write("docs/plans/reports/extra.md", "dup")
+	write("docs/plans/reports/extra.md", "new")
 	mgr.settleReadOnlyReportFiles(ctx, prd, tk, base)
 	if _, err := os.Stat(filepath.Join(repo, "docs/plans/reports/extra.md")); err == nil {
 		t.Fatal("duplicate not deleted")

@@ -4681,7 +4681,7 @@ paths:
   /api/autonomous/unlanded-work/delete-worktree:
     post:
       summary: Delete an unlanded worktree and branch
-      description: Writes and verifies a git bundle backup of the branch, then removes its worktree and branch. Nothing is removed if the backup fails. `confirm` must be true. The branch must be on the unlanded list.
+      description: Writes and verifies a git bundle backup of the branch, copies the untracked reports, moved-aside files and other files in the worktree's work folders under .datawatch/ and in docs/plans/reports/ beside it, then removes its worktree and branch. Nothing is removed if either backup fails. `confirm` must be true. The branch must be on the unlanded list.
       operationId: autonomousUnlandedDeleteWorktree
       tags: [Autonomous]
       requestBody:
@@ -4695,7 +4695,7 @@ paths:
                 branch: {type: string}
                 confirm: {type: boolean}
       responses:
-        "200": {description: "Deleted: {branch, bundle_path, worktree_path}"}
+        "200": {description: "Deleted: {branch, bundle_path, worktree_path}, plus files_backup_path and backed_up_files when files were copied"}
         "400": {description: Branch missing, confirm not true, or no base repository configured}
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -7743,7 +7743,10 @@ paths:
       summary: Cancel + archive a PRD
       description: |
         Bare DELETE cancels the PRD; `?hard=true` permanently deletes it
-        (plus spawned child PRDs). Either way the PRD's worker sessions are
+        (plus spawned child PRDs). A permanent delete removes the
+        Automaton's saved verification scripts. A folder that was moved aside
+        from its worktree path stays on disk, and the audit log lists it
+        (autonomous_delete_kept_moved_aside). Either way the PRD's worker sessions are
         killed (best-effort) and the response names them so an operator can
         verify no unrelated session was stopped.
       operationId: autonomousPRDCancel

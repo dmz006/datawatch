@@ -148,14 +148,21 @@ type DeleteWorktreeResult struct {
 	Branch       string `json:"branch"`
 	BundlePath   string `json:"bundle_path"`
 	WorktreePath string `json:"worktree_path,omitempty"`
+	// FilesBackupPath holds copies of the reports, moved-aside files and
+	// other untracked files in the folders the daemon keeps work in
+	// (parkedWorkDirs, and docs/plans/reports/), which the bundle does not carry. BackedUpFiles lists
+	// them, relative to the removed worktree.
+	FilesBackupPath string   `json:"files_backup_path,omitempty"`
+	BackedUpFiles   []string `json:"backed_up_files,omitempty"`
 }
 
 var unlandedUnsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
-// DeleteWorktree backs up the branch as a git bundle, then removes its
+// DeleteWorktree backs up the branch as a git bundle, and the worktree's
+// reports and moved-aside files as copies beside it, then removes its
 // worktree and branch. It refuses unless the branch is classified and Confirm
 // is set, and aborts without removing anything if the bundle cannot be
-// written and verified.
+// written and verified or those files cannot be listed and copied.
 func DeleteWorktree(ctx context.Context, git MergeGitRunner, opts DeleteWorktreeOptions) (DeleteWorktreeResult, error) {
 	b := opts.Branch
 	res := DeleteWorktreeResult{Branch: b.Branch}
@@ -197,6 +204,11 @@ func DeleteWorktree(ctx context.Context, git MergeGitRunner, opts DeleteWorktree
 	if out, err := git.Run(ctx, opts.BaseRepo, "worktree", "list", "--porcelain"); err == nil {
 		byBranch, _ := parseWorktreeList(out)
 		if wt, ok := byBranch[b.Branch]; ok {
+			files, at, berr := backupParkedWork(ctx, wt, strings.TrimSuffix(bundle, ".bundle")+".files")
+			if berr != nil {
+				return res, fmt.Errorf("delete aborted: backup of the reports and moved-aside files in %s failed (nothing was removed): %w", wt, berr)
+			}
+			res.BackedUpFiles, res.FilesBackupPath = files, at
 			if _, err := git.Run(ctx, opts.BaseRepo, "worktree", "remove", "--force", wt); err != nil {
 				return res, fmt.Errorf("remove worktree %s (backup kept at %s): %w", wt, bundle, err)
 			}
@@ -207,4 +219,46 @@ func DeleteWorktree(ctx context.Context, git MergeGitRunner, opts DeleteWorktree
 		return res, fmt.Errorf("remove branch %s (backup kept at %s): %w", b.Branch, bundle, err)
 	}
 	return res, nil
+}
+
+// backupParkedWork copies the files parkedWork lists in the worktree wt, and
+// the untracked reports under docs/plans/reports/, which removing it would
+// lose, into the new folder dest. It returns them with dest, or nothing when there are none or the worktree folder is gone. No
+// verification script is taken to be saved elsewhere, so all are copied.
+func backupParkedWork(ctx context.Context, wt, dest string) ([]string, string, error) {
+	if _, err := os.Stat(wt); errors.Is(err, os.ErrNotExist) {
+		return nil, "", nil
+	}
+	files, err := parkedWork(ctx, wt, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("list the files: %w", err)
+	}
+	strays, err := taskGitOut(ctx, wt, "ls-files", "--others", "-z", "--", strayReportsDir)
+	if err != nil {
+		return nil, "", fmt.Errorf("list the reports: %w", err)
+	}
+	files = append(files, splitNul(strays)...)
+	if len(files) == 0 {
+		return nil, "", nil
+	}
+	if err := os.Mkdir(dest, 0o700); err != nil {
+		return nil, "", err
+	}
+	for _, rel := range files {
+		src, err := safeJoin(wt, rel)
+		if err != nil {
+			return nil, "", err
+		}
+		dst, err := safeJoin(dest, rel)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+			return nil, "", err
+		}
+		if err := copyNoReplace(src, dst); err != nil {
+			return nil, "", fmt.Errorf("copy %s: %w", rel, err)
+		}
+	}
+	return files, dest, nil
 }

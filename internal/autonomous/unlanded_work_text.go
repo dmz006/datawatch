@@ -101,6 +101,7 @@ func RenderUnlandedActionResult(route string, body []byte) string {
 		ArchiveRef string `json:"archive_ref"`
 		BundlePath string `json:"bundle_path"`
 		Worktree   string `json:"worktree_path"`
+		FilesAt    string `json:"files_backup_path"`
 	}
 	if err := json.Unmarshal(body, &r); err != nil || r.Branch == "" {
 		return strings.TrimSpace(string(body))
@@ -114,6 +115,9 @@ func RenderUnlandedActionResult(route string, body []byte) string {
 		s := "Deleted the worktree and branch " + r.Branch + "; backup bundle: " + r.BundlePath
 		if r.Worktree != "" {
 			s += " (worktree " + r.Worktree + ")"
+		}
+		if r.FilesAt != "" {
+			s += "; its reports and moved-aside files are copied to " + r.FilesAt
 		}
 		return s + "."
 	}

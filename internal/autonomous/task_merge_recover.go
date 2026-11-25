@@ -106,8 +106,10 @@ func pathExists(p string) bool {
 
 // clearOverwritableUntracked removes or moves aside every untracked file of dir
 // that the merge of branch would overwrite. It returns the paths dropped
-// because they were identical to the branch's file and the paths moved aside.
-func clearOverwritableUntracked(ctx context.Context, dir, branch, taskID string) (dropped, movedAside []string, err error) {
+// because they were identical to the branch's file, and for each path moved
+// aside where its content is now. A file moved aside earlier is never
+// replaced (moveKeepingBoth).
+func clearOverwritableUntracked(ctx context.Context, dir, branch, taskID string) (dropped []string, movedAside []movedFile, err error) {
 	untracked := splitNul(gitText(ctx, dir, "ls-files", "--others", "--exclude-standard", "-z"))
 	if len(untracked) == 0 {
 		return nil, nil, nil
@@ -143,10 +145,14 @@ func clearOverwritableUntracked(ctx context.Context, dir, branch, taskID string)
 		if merr := os.MkdirAll(filepath.Dir(aside), 0o755); merr != nil {
 			return dropped, movedAside, fmt.Errorf("make the aside folder for %s: %w", p, merr)
 		}
-		if rerr := os.Rename(full, aside); rerr != nil {
+		to, identical, rerr := moveKeepingBoth(full, aside, nil)
+		if rerr != nil {
 			return dropped, movedAside, fmt.Errorf("move %s aside: %w", p, rerr)
 		}
-		movedAside = append(movedAside, p)
+		if rel, relErr := filepath.Rel(dir, to); relErr == nil {
+			to = filepath.ToSlash(rel)
+		}
+		movedAside = append(movedAside, movedFile{From: p, To: to, Identical: identical})
 	}
 	return dropped, movedAside, nil
 }

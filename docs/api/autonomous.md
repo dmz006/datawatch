@@ -34,7 +34,7 @@ GET    /api/autonomous/prds                summary list, newest-updated first, p
 GET    /api/autonomous/prds/{id}           one PRD with story+task tree
 PATCH  /api/autonomous/prds/{id}           edit PRD title + spec (non-running only); body: {title, spec, actor}     [v5.19.0]
 DELETE /api/autonomous/prds/{id}           cancel + archive (status → cancelled)
-DELETE /api/autonomous/prds/{id}?hard=true permanently delete the PRD + descendants spawned via SpawnPRD             [v5.19.0]
+DELETE /api/autonomous/prds/{id}?hard=true permanently delete the PRD + descendants spawned via SpawnPRD; saved verification scripts go, a folder moved aside from the worktree path stays and is listed in the audit log  [v5.19.0]
 POST   /api/autonomous/prds/{id}/plan      run LLM planning phase (creates stories+tasks) [BL304 canonical]
 POST   /api/autonomous/prds/{id}/decompose run LLM planning phase (back-compat alias for /plan)
 POST   /api/autonomous/prds/{id}/approve   review/approve gate                                                       [v5.2.0  / BL191 Q1]

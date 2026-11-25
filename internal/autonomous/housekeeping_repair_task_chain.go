@@ -318,6 +318,21 @@ func leakedPath(text string) (rel string, ok bool) {
 	return ms[0][1], true
 }
 
+// holdsReportsOrAside reports whether removing the worktree path rel could
+// remove a report or a moved-aside file: rel is one of those folders, lies in
+// one, or contains one.
+func holdsReportsOrAside(rel string) bool {
+	sep := string(filepath.Separator)
+	rel = filepath.Clean(rel)
+	for _, d := range append([]string{strayReportsDir}, parkedWorkDirs...) {
+		d = filepath.Clean(filepath.FromSlash(d))
+		if rel == d || strings.HasPrefix(rel, d+sep) || strings.HasPrefix(d, rel+sep) {
+			return true
+		}
+	}
+	return false
+}
+
 // cleanRelPath returns rel as a clean path strictly inside the worktree, or
 // false when it is absolute, empty or climbs out.
 func cleanRelPath(rel string) (string, bool) {
@@ -369,6 +384,10 @@ func (r *leakedFileRepair) judge(ctx context.Context, t ChainTask, text string, 
 		return
 	}
 	f.Summary += ": " + rel
+	if holdsReportsOrAside(rel) {
+		unsafe(rel + " is, or holds, a report or a moved-aside file, which may be the only copy")
+		return
+	}
 	if t.Worktree == "" {
 		unsafe("the Automaton worktree is unknown")
 		return
