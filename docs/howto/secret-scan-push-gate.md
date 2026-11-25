@@ -21,8 +21,9 @@ exec_steps:
 
 The **secret scan push gate** is the daemon's pre-push check for secret
 material. Before datawatch pushes anything — an Automaton's push-on-complete,
-the ship step, the pull-request push, a one-shot session's completion push, the
-pre-teardown save push, the worker pull-request hook or a merge run's push — it
+the ship step, the pull-request push, a one-shot session's completion push, a
+killed session's save push, a container worker's push, the worker pull-request
+hook or a merge run's push — it
 scans what the push would send and, per the configured **mode**, either records
 the findings (shadow) or refuses the push (enforce). It is part of
 [the outgoing check](#the-outgoing-check).
@@ -96,6 +97,14 @@ Variables naming a token, secret or password, and the terminal-server, make and
 shell option variables, are removed. When the target fails, the end of its
 output is shown in the push warning and the alert, so **a check must not print
 what it matched**: print the place and the kind of finding only.
+
+**Container workers.** A worker runs the check for its one push inside the
+container, with the parent's push and secret scan settings. The target gets an
+empty `OUTGOING_PROJECT_DIR` there: files that are never committed stay on the
+project owner's machine, and a file the task writes into its own clone does not
+stand in for one. The worker image needs `git`, and `make` and whatever the
+target uses; if the target cannot run, nothing is pushed and the worker's
+result says why. Nothing is pushed from a container at teardown.
 
 A refused push has `push_state: not_pushed` and a `push_warning` with the
 reason. The failure kinds are `check_failed`, `secret_found` and

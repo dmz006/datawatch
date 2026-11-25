@@ -13,7 +13,13 @@ Status: draft only; no issue filed.
   reasons exist beside the earlier ones: the project check (or a check that
   could not run), and a refused default-branch push.
 
-No endpoint, field or setting was added or removed.
+- Container workers push only work branches, under the parent's settings and
+  through the outgoing check. Nothing is pushed from a container at teardown:
+  an agent's `teardown_push` report now says whether commits are left behind
+  (`pushed` is true only when none are) and `attempted` is false.
+
+`POST /api/agents` takes an optional `push_on_complete`. No setting was added
+or removed.
 
 ## Client work
 

@@ -2231,7 +2231,9 @@ is `on` and it holds no work of its own (v9.0.20). A
 worktree at all — the dispatched worker commits and pushes its own
 branch itself (using its bootstrap-minted git token), reports it back
 on completion, and the parent opens the PR from that branch directly
-(v9.0.21). As of v9.0.22, that worker
+(v9.0.21). The worker's push follows the parent's push settings, pushes
+a work branch only and goes through the [outgoing check](#outgoing-check);
+when it cannot, it pushes nothing and says why. As of v9.0.22, that worker
 creates and checks out the PRD's own dedicated `automaton/<prd-id>-<slug>`
 branch fresh (instead of landing on whatever branch the dispatching
 Project Profile names), closing the one gap between cluster mode and
@@ -2637,7 +2639,7 @@ The ship steps run when an Automaton finishes, in this order: **push** the work 
 
 ### Outgoing check
 
-The check every datawatch push goes through before anything leaves the machine. It takes **exactly what the push would send**, compared with the remote's own list of refs: every new commit with its message, author and committer, every added line (for a merge, the lines that are in no parent, which is where conflict resolutions are), every new file name, every new annotated tag with its message, and the destination ref names. Local replace refs, tracking refs and git attributes cannot hide anything from it. It runs the [secret scan](howto/secret-scan-push-gate.md) over that, and the project's own **`check-outgoing`** make target when the project declares one. The target is read and run from the **base commit** (the head of the remote's default branch), so a branch cannot weaken the check that judges it. A check that cannot run refuses the push, and the push sends the checked commit id, not whatever the branch points at later. A refused push shows `push_state: not_pushed` with the reason (`check_failed`, `secret_found` or `default_branch_refused`). See [howto/secret-scan-push-gate.md](howto/secret-scan-push-gate.md#the-outgoing-check).
+The check every datawatch push goes through before anything leaves the machine. It takes **exactly what the push would send**, compared with the remote's own list of refs: every new commit with its message, author and committer, every added line (for a merge, the lines that are in no parent, which is where conflict resolutions are), every new file name, every new annotated tag with its message, and the destination ref names. Local replace refs, tracking refs and git attributes cannot hide anything from it. It runs the [secret scan](howto/secret-scan-push-gate.md) over that, and the project's own **`check-outgoing`** make target when the project declares one. The target is read and run from the **base commit** (the head of the remote's default branch), so a branch cannot weaken the check that judges it. A check that cannot run refuses the push, and the push sends the checked commit id, not whatever the branch points at later. A refused push shows `push_state: not_pushed` with the reason (`check_failed`, `secret_found` or `default_branch_refused`). A container worker runs the same check for its one push, with no project working tree; nothing is pushed from a container at teardown. See [howto/secret-scan-push-gate.md](howto/secret-scan-push-gate.md#the-outgoing-check).
 
 ### CI watch
 
