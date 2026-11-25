@@ -390,6 +390,43 @@ the worker or by hand — and it is answered exactly like any other protected
 path: **Approve this change** if you want it, or authorise the rules file for
 the Automaton so its tasks pass.
 
+A change counts as the daemon's own only when the daemon can show it. All of
+these must be true:
+
+- the file is a rules file the daemon writes into: `AGENT.md`, `CLAUDE.md` or
+  your configured rules file. No other protected file qualifies. A CI workflow
+  has no daemon-written sections, even if it contains a line that looks like
+  one of their headings;
+- it is a regular file, and both it and its version at the base commit can be
+  read;
+- the two versions are equal once the daemon's sections are stripped.
+
+If any of this cannot be shown, the path counts as changed. So a protected
+file that is not a rules file is also held when only its permissions or its
+blank lines changed. The start-up check below asks for more.
+
+### The check at daemon start
+
+When the daemon starts, it looks once at the tasks still held on a protected
+path. A held path is cleared only if it passes the test above and also shows a
+real daemon change: the two versions differ, and at least one of them carries a
+daemon section. An empty diff proves nothing, and neither does a change to
+blank lines alone in a file the daemon never wrote into. If every held path is
+cleared, the hold was a false positive: the daemon withdraws its question, records a
+**`protected_paths_false_positive_released`** decision and puts the task back
+in the queue. The hold always stays when:
+
+- you already answered its question, with any answer, or the question is no
+  longer open;
+- the Automaton works on its own branch and the task records no working
+  directory of its own, for example because its task worktree was removed.
+  The Automaton's worktree does not hold the task's unmerged change, so
+  reading it would show nothing. An Automaton on its own branch that does not
+  use one worktree per task is treated the same way: answer its question
+  yourself;
+- the question cannot be withdrawn;
+- the hold came from the `block` action, which stores no base commit.
+
 ## Checkpoint entries in the rules file
 
 The rules file is protected, and the workers are told to keep it that way. A
