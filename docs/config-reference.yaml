@@ -1580,7 +1580,9 @@ autonomous:
   # cancelled Automaton: `off` and `report` remove none of them. In every
   # mode, a task worktree with uncommitted or untracked files is never
   # removed and a task branch with commits that are not on the default branch
-  # is never deleted. Unlike
+  # is never deleted. It also covers the Automaton worktree after a
+  # completion pull request: only `on` removes it, and never while it holds
+  # uncommitted or untracked files. Unlike
   # the other enum keys here, an absent key, an empty value and any
   # unrecognized word all read as `report` — they are not refused on config
   # load or on the write paths (only a non-string type is). Settable via PUT

@@ -6113,8 +6113,10 @@ across a daemon restart mid-run. Setting `PRD.Git.AutoPR` to `true` (per-PRD, de
 already on; see `docs/config-reference.yaml`) makes a
 successfully-completed worktree-mode
 PRD push its branch and open a real PR automatically — one PR per PRD,
-not one per task — then remove the local worktree directory (the
-branch + PR are the durable record now, not the local checkout). A
+not one per task — then release the local worktree directory. The
+worktree is removed only when `autonomous.automation.cleanup_mode` is `on`
+and nothing in it would be lost; the work branch stays. See
+[The Automaton worktree after the pull request](howto/automaton-worktree-cleanup.md#the-automaton-worktree-after-the-pull-request). A
 push or PR failure is logged and recorded on the PRD (check its
 Decisions) but never fails the run; the worktree is left in place for
 inspection whenever that happens, and whenever `AutoPR` is left false.

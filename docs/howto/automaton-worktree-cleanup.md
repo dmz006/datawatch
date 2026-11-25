@@ -293,6 +293,31 @@ The audit log records every removal (`autonomous_task_worktree_remove`,
 tip. A refusal that has not changed since the last pass is not written again.
 In `off` mode nothing is written to the audit log.
 
+## The Automaton worktree after the pull request
+
+With auto-PR on, completion pushes the work branch, opens the pull request and
+then releases the Automaton's own worktree. The push covers only what was
+committed, so the release follows the same rules as for task worktrees:
+
+- `off` removes nothing and runs no git command; `report` removes nothing and
+  records what it would remove; only `on` removes.
+- A worktree with uncommitted or untracked files, other than the daemon's own
+  generated and tooling files, is kept. So is one with a live session, a
+  detached HEAD with commits of its own, or anything that cannot be checked, and
+  one git refuses to remove. As above, files hidden by the ignore rules are not
+  counted.
+- No branch is deleted at this step.
+
+The audit log records `autonomous_completion_worktree_remove`,
+`autonomous_completion_worktree_kept` (with the reason and the files) or
+`autonomous_completion_worktree_would_remove`, with the branch tip. In `off`
+mode the kept record has no tip, because git is not run.
+
+**A git setting to know about.** With `status.showUntrackedFiles=no`, git's own
+`git worktree remove`, even without `--force`, deletes untracked files without
+refusing. Completion, task worktree cleanup, the worktrees pass and the cleanup
+on reject or archive all override that setting.
+
 ## The three modes
 
 The mode is one key: `autonomous.automation.cleanup_mode`.
