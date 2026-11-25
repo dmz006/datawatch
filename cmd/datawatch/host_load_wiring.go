@@ -34,7 +34,8 @@ func hostLoadConfigFrom(cfg autonomouspkg.Config) autonomouspkg.HostLoadConfig {
 
 // hostLoadSessionsFrom names each session's folders for the check: the project
 // folder is the worktree, the tracking folder the scratch folder. A session in
-// a finished state is reported as not running.
+// a finished state is reported as not running. A project folder that is not a
+// linked git worktree is marked shared, so the reap never ends by it.
 func hostLoadSessionsFrom(list []*session.Session) []autonomouspkg.HostLoadSession {
 	out := make([]autonomouspkg.HostLoadSession, 0, len(list))
 	for _, s := range list {
@@ -48,6 +49,7 @@ func hostLoadSessionsFrom(list []*session.Session) []autonomouspkg.HostLoadSessi
 		}
 		if s.ProjectDir != "" {
 			hs.WorktreeDirs = []string{s.ProjectDir}
+			hs.SharedWorktree = !isLinkedWorktree(s.ProjectDir)
 		}
 		if s.TrackingDir != "" {
 			hs.ScratchDirs = []string{s.TrackingDir}

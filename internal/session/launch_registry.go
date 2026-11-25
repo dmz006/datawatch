@@ -92,13 +92,11 @@ func (m *Manager) DrainLaunches(grace time.Duration) []string {
 	ids := make([]string, 0, len(stuck))
 	for _, s := range stuck {
 		ids = append(ids, s.fullID)
-		m.killPane(s.fullID, s.sess.TmuxSession, "daemon drain: launch still running at the grace deadline")
-		m.store.Mutate(func() {
-			if !s.sess.State.IsTerminal() {
-				s.sess.State = StateKilled
-				s.sess.UpdatedAt = time.Now()
-			}
-		})
+		const why = "daemon drain: launch still running at the grace deadline"
+		m.killPane(s.fullID, s.sess.TmuxSession, why)
+		if !m.store.Snapshot(s.sess).State.IsTerminal() {
+			m.markEnded(s.sess, StateKilled, EndReason{Caller: callerAt(0), Reason: why})
+		}
 		_ = m.store.Save(s.sess)
 	}
 	sort.Strings(ids)

@@ -136,6 +136,13 @@ func (m *Manager) ReapFinishedOneShots() []string {
 	var reaped []string
 	for _, sess := range m.FinishedOneShots() {
 		oldState := sess.State
+		// Read the reason while the session still reads live: a finished
+		// state has no finish reason.
+		reason := m.oneShotFinishReason(sess)
+		if reason == "" {
+			reason = "one-shot completion marker found in the pane"
+		}
+		why := EndReason{Caller: callerAt(0), Reason: reason}
 		m.commitOnCompletion(sess, NewProjectGit(sess.ProjectDir))
 		// If completion left work unpushed (no commit made, or its push
 		// failed / was refused), save it now — a reaped one-shot never
@@ -143,15 +150,10 @@ func (m *Manager) ReapFinishedOneShots() []string {
 		// already ran, so work it pushed is not pushed twice (the helper
 		// sees zero unpushed commits and does nothing).
 		m.pushUnpushedBeforeTeardown(sess)
-		sess.State = StateComplete
-		sess.UpdatedAt = time.Now()
+		m.markEnded(sess, StateComplete, why)
 		_ = m.store.Save(sess)
 		m.releaseCommitGuard(sess.FullID, sess.ProjectDir)
-		reason := m.oneShotFinishReason(sess)
-		if reason == "" {
-			reason = "one-shot completion marker found in the pane"
-		}
-		m.recordEnd(sess, m.getTracker(sess.FullID), oldState, StateComplete, EndReason{Caller: callerAt(0), Reason: reason})
+		m.recordEnd(sess, m.getTracker(sess.FullID), oldState, StateComplete, why)
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
@@ -166,7 +168,12 @@ func (m *Manager) ReapFinishedOneShots() []string {
 // oneShotReapInterval until ctx is done. This is the prevention half of the
 // zombie fix: a one-shot whose work has ended is closed even if its completion
 // watcher missed the marker.
+//
+// Only the daemon calls it, right after ResumeMonitors, so it is also where
+// delivery claims the last daemon never verified are taken over. A second
+// process that only resumes monitors must never type a task.
 func (m *Manager) StartOneShotReaper(ctx context.Context) {
+	m.recoverUnverifiedDeliveries(ctx)
 	go func() {
 		// The startup pass runs here, not inline: a reaped one-shot can run
 		// validation commands for minutes, and daemon boot must not wait on that.

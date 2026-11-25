@@ -6324,3 +6324,13 @@ An Automation's limit on members running at once, its stage gate and its decisio
 | Comm `autonomous finished-work`, `run`, `cancel <id> keep <reason>` | **Yes** (`internal/router/finished_work_comm_test.go`) | **No** | Fake REST loopback |
 | PWA settings row, finished-work section of the Housekeeping repairs card, decision prompt, locales en de es fr ja | **Yes** (`internal/server/web/app-finished-work.test.js`) | **No** | Stubbed browser; a live look is still to do |
 | Config mode parsing | **Yes** (`internal/config/finished_work_test.go`) | **No** | Unit |
+
+## Task delivery proof, end record on every path, kill scope in shared folders
+
+| Interface | Tested | Validated | Test conditions and notes |
+|---|---|---|---|
+| A delivery claim is not proof: after a store reload the launch is not started and the task is typed once; a submitted task, an answered one and unsent text in the box are not retyped; only the daemon boot takes claims over | **Yes** (`TestRestartDuringDelivery_*` in `internal/session`) | **No** | Fake terminal, store reloaded from disk. One live launch as proof is still to do, as an unpause step |
+| End time and exit note on the reaper, gone-at-boot, reconnect, shutdown drain and state override paths; cleared on state override back to live, boot recovery and restart | **Yes** (`internal/session/end_record_every_path_test.go`) | **No** | Fake terminal. All eight failed before the change |
+| A session end does not reach another session in a shared linked worktree, by full or short session id; its own processes are still ended | **Yes** (`TestSessionEndReap_SharedLinkedWorktreeOtherSessionScriptSurvives`, `TestSessionEndReap_LiveSessionProcessInEndedWorktreeSurvives`) | **No** | Real sleeping scripts in temp folders, real `/proc`, real signals, through the daemon's reap wiring |
+| Host load reap: shared project folders and worktrees a running session uses are not evidence; an ended session's own worktree is still reaped, a running session's process in it is not | **Yes** (`TestHostLoadReap_*` in `cmd/datawatch/session_end_reap_shared_test.go`) | **No** | Same fixtures; load and clock faked |
+

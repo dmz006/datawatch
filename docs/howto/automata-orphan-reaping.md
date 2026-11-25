@@ -90,6 +90,15 @@ that other sessions and your own scripts use) is never evidence, so ending one
 session never ends another session's script, watcher or commit hook that
 happens to sit in the same folder.
 
+Two more limits apply when sessions share a folder. A linked worktree that
+another unfinished session also works in (in it or below it) counts as shared,
+so its paths prove nothing. And a process whose `DATAWATCH_SESSION_ID` names
+another unfinished session is that session's own: no evidence of any kind ends
+it. The other session's own end reaps it.
+
+This changes which processes a kill reaches. It does not give each session its
+own folder: sessions still work where they were started.
+
 **How a process is matched.** A process is attributed to a session only by
 evidence read from `/proc` — never by command name. A process of another
 user is never a candidate, and the daemon never signals itself. The kinds
@@ -97,7 +106,7 @@ of evidence are:
 
 | Evidence | What proves it | Strong or weak |
 |----------|---------------|----------------|
-| `exe` | The executable lives inside a folder made for this session alone (its worktree or scratch folder) | strong — counts whatever the parent is |
+| `exe` | The executable lives inside a folder made for this session alone (its worktree or scratch folder) | strong — counts whatever the parent is, unless the process names another unfinished session |
 | `script` | A script run directly, or through a known interpreter (`sh`, `bash`, `python3`, `node`, …), lives inside the session folders | strong |
 | `cwd` | The working directory is inside the session folders **and** the process was orphaned (its parent is `init` or a service that adopts orphans) | weak — an operator's live shell or editor sitting in the folder is never touched |
 | `ancestry` | The process's parent chain reaches one of the session's known root pids | direct |
@@ -179,8 +188,11 @@ Load average 7.50 is above 6.00 (1.5 x cores) for 10 minute(s). Mode: reap.
 
 What `reap` may and may not end — the load check never touches a process of
 a **running** session, and it never signals by name: it applies the
-reaper's evidence rule to each ended session's folders, exactly like the
-session-end step. A process that ignores its end signal survives: this path
+reaper's evidence rule to each ended session's own folders. An ended
+session's project folder is its own only when it is a linked git worktree that
+no running session works in; a plain folder or a repository checkout is named
+in the alert but never used to end anything. A process whose
+`DATAWATCH_SESSION_ID` names a running session is never ended. A process that ignores its end signal survives: this path
 does not re-signal it and keeps no record of it either — it is *not* counted
 as a survivor in the `session_end_reap` audit (that audit trail belongs to
 the session-end pass only), so after a load-check reap you confirm the room

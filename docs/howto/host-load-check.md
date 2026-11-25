@@ -113,8 +113,8 @@ To read the effective settings without curl: the chat command `autonomous host-l
 ## Choosing `reap`
 
 `reap` reuses the session-end reaper's evidence rule: a process is ended only
-when its file evidence (the handles it holds) point inside a **worktree or
-scratch folder of a session that has already ended**, matched by exact PID —
+when its file evidence (the handles it holds) point inside a **linked worktree
+or scratch folder of a session that has already ended**, matched by exact PID —
 never by process name or command line. Consequences to plan for:
 
 - It reaps **only at the moment the alert fires**, i.e. once per sustained
@@ -122,7 +122,12 @@ never by process name or command line. Consequences to plan for:
   does not sweep what has already leaked; a leak only gets reaped by this
   path when a sustained breach happens while the setting is `reap`.
 - It never touches a running session's processes, no matter how long the host
-  stays overloaded.
+  stays overloaded. A process whose `DATAWATCH_SESSION_ID` names a running
+  session is never ended, wherever it runs.
+- A shared project folder is never evidence. An ended session's project folder
+  counts only when it is a linked git worktree that no running session works
+  in. For any other session only its scratch folder counts. The alert still
+  names the shared folder.
 - A process that ignores the end signal survives — and this reap keeps
   **no record** of it: there is no `session_end_reap` audit entry and no
   *survivors* count for the load check's reap (that audit trail belongs

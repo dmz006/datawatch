@@ -444,6 +444,9 @@ type Manager struct {
 	// deliveryFailure holds the last reason a task delivery gave up, per
 	// session. Guarded by mu; created on first use.
 	deliveryFailure map[string]string
+	// redelivering holds the sessions whose unverified delivery claim this
+	// daemon took over at boot and is typing again.
+	redelivering map[string]bool
 
 	// hookStopAt records when the Claude Code Stop hook last fired for a session
 	// and no later turn activity (a prompt or a tool call) has been seen. It lets
@@ -4116,8 +4119,16 @@ func (m *Manager) SetState(fullID string, newState State) error {
 		}
 	}
 	oldState := sess.State
-	sess.State = newState
-	sess.UpdatedAt = time.Now()
+	switch {
+	case newState.IsTerminal() && !oldState.IsTerminal():
+		m.markEnded(sess, newState, EndReason{Caller: callerAt(0), Reason: "state set by an override"})
+	default:
+		sess.State = newState
+		sess.UpdatedAt = time.Now()
+		if !newState.IsTerminal() {
+			clearEndStamp(sess)
+		}
+	}
 	if newState == StateRateLimited {
 		// Clear rate limit reset time
 		sess.RateLimitResetAt = nil
@@ -4348,20 +4359,22 @@ func (m *Manager) MarkChannelActivity(fullID string) {
 }
 
 // MarkTaskDelivered records the moment a task was delivered to a OneShot
-// session via send_input. processOutputLine suppresses DATAWATCH_COMPLETE:
-// detection for 5 min after this timestamp so the TUI's re-render of the task
+// session via send_input, and marks a pending delivery claim as verified.
+// processOutputLine suppresses DATAWATCH_COMPLETE: detection for 5 min after this timestamp so the TUI's re-render of the task
 // text (which may contain the pattern as a verbatim instruction) does not
 // produce a false-positive completion before the LLM has had time to respond.
 func (m *Manager) MarkTaskDelivered(fullID string) {
 	m.mu.Lock()
 	m.taskDeliveredAt[fullID] = m.now()
+	m.verifyTaskClaimLocked(fullID)
 	m.mu.Unlock()
 }
 
-// TaskDelivered reports whether fullID's task has already been typed into
-// the session — either recorded on the persisted session (TaskDeliveredAt)
-// or, for sessions created before that field existed, in this process's
-// taskDeliveredAt map.
+// TaskDelivered reports whether fullID's task has been claimed for typing or
+// typed into the session, either recorded on the persisted session
+// (TaskDeliveredAt) or, for sessions created before that field existed, in
+// this process's taskDeliveredAt map. It is not proof of arrival: see
+// TaskDeliveryUnverified.
 func (m *Manager) TaskDelivered(fullID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -4372,7 +4385,7 @@ func (m *Manager) TaskDelivered(fullID string) bool {
 	return ok
 }
 
-// ClaimTaskDelivery atomically marks fullID's task as delivered and
+// ClaimTaskDelivery atomically claims fullID's task delivery and
 // reports whether this caller won the claim. Only the winner may type the
 // task; every later caller (e.g. the channel bridge's ready heartbeat, also
 // after a daemon restart since the mark is persisted) gets false. A caller
@@ -4389,6 +4402,8 @@ func (m *Manager) ClaimTaskDelivery(fullID string) bool {
 	}
 	now := m.now()
 	sess.TaskDeliveredAt = &now
+	sess.TaskDeliveryUnverified = true
+	sess.TaskVerifiedAt = nil
 	// Arm the task-echo suppression from the moment the claim is won, so the
 	// echo of the task while it is being typed cannot read as a completion.
 	m.taskDeliveredAt[fullID] = now
@@ -4478,6 +4493,8 @@ func (m *Manager) ReleaseTaskDelivery(fullID string) {
 	delete(m.taskDeliveredAt, fullID)
 	if sess, ok := m.store.Get(fullID); ok && sess.TaskDeliveredAt != nil {
 		sess.TaskDeliveredAt = nil
+		sess.TaskDeliveryUnverified = false
+		sess.TaskVerifiedAt = nil
 		_ = m.store.Save(sess)
 	}
 }
@@ -5036,6 +5053,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	oldState := sess.State
 	sess.State = StateRunning
 	sess.UpdatedAt = time.Now()
+	clearEndStamp(sess)
 	sess.PendingInput = ""
 	sess.LastPrompt = ""
 	sess.PromptContext = ""
@@ -5043,6 +5061,8 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	// A relaunched process starts with an empty input box, so its (possibly
 	// overridden) task must be deliverable again by the next channel ready.
 	sess.TaskDeliveredAt = nil
+	sess.TaskDeliveryUnverified = false
+	sess.TaskVerifiedAt = nil
 	m.mu.Lock()
 	delete(m.taskDeliveredAt, sess.FullID)
 	m.mu.Unlock()
@@ -5316,12 +5336,12 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 	// Temporarily set state to a terminal state so Restart's guard passes, then
 	// let Restart do the full relaunch sequence.
 	from := sess.State
-	sess.State = StateKilled
+	why := EndReason{Caller: callerAt(0), Reason: "restart requested: state set to killed before relaunch"}
+	m.markEnded(sess, StateKilled, why)
 	if err := m.store.Save(sess); err != nil {
 		return nil, fmt.Errorf("save before restart: %w", err)
 	}
-	m.recordEnd(sess, m.getTracker(sess.FullID), from, StateKilled,
-		EndReason{Caller: callerAt(0), Reason: "restart requested: state set to killed before relaunch"})
+	m.recordEnd(sess, m.getTracker(sess.FullID), from, StateKilled, why)
 
 	return m.Restart(ctx, sess.FullID)
 }
@@ -6601,8 +6621,7 @@ func (m *Manager) ReconnectBackends(reconnectFn func(sess *Session, bs *BackendS
 			// Commit the worker's work BEFORE the state is saved as Complete so
 			// no poller can observe Complete while changes are still uncommitted.
 			m.commitOnCompletion(sess, NewProjectGit(sess.ProjectDir))
-			sess.State = StateComplete
-			sess.UpdatedAt = time.Now()
+			m.markEnded(sess, StateComplete, EndReason{Caller: callerAt(0), Reason: "terminal gone when the daemon reconnected after a restart"})
 			_ = m.store.Save(sess)
 			continue
 		}
@@ -7009,8 +7028,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			}
 			// Mark as failed — tmux session is confirmed gone
 			oldState := sess.State
-			sess.State = StateFailed
-			sess.UpdatedAt = time.Now()
+			m.markEnded(sess, StateFailed, EndReason{Caller: callerAt(0), Reason: "terminal gone after a daemon restart"})
 			_ = m.store.Save(sess)
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
@@ -7023,6 +7041,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		if recovering {
 			oldState := sess.State
 			sess.State = StateRunning
+			clearEndStamp(sess)
 			fmt.Printf("[resume] recovered session %s: %s -> running — tmux pane %q is still alive after boot\n", sess.FullID, oldState, sess.TmuxSession)
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
@@ -7829,6 +7848,7 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 				oldState := sess.State
 				sess.State = StateRunning
 				sess.UpdatedAt = time.Now()
+				clearEndStamp(sess)
 				_ = m.store.Save(sess)
 				if m.onStateChange != nil {
 					m.onStateChange(sess, oldState)

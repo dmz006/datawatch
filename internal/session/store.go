@@ -396,6 +396,17 @@ type Session struct {
 	// 2026-10-14). Nil = not delivered yet.
 	TaskDeliveredAt *time.Time `json:"task_delivered_at,omitempty"`
 
+	// TaskDeliveryUnverified is true from the delivery claim (TaskDeliveredAt,
+	// saved before anything is typed) until the task is seen to have reached
+	// the session. A record still carrying it after a restart proves nothing
+	// about delivery; the boot resume checks the screen. Records written before
+	// this field read as verified, so an upgrade never retypes a task.
+	TaskDeliveryUnverified bool `json:"task_delivery_unverified,omitempty"`
+
+	// TaskVerifiedAt is when a claimed delivery was seen to have reached the
+	// session. Nil while no claim has been verified.
+	TaskVerifiedAt *time.Time `json:"task_verified_at,omitempty"`
+
 	// DaemonDeliversTask — true when the launch left the task off the command
 	// line, so the daemon itself types it once the input box is ready (the
 	// channel-enabled claude-code launch). For such a session a ready channel

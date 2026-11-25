@@ -16638,8 +16638,20 @@ components:
           description: When the session ended. Written on every end path (a kill, a natural complete or fail, a record finalised because its process was gone); the first end wins. Omitted while the session runs, and on a record that ended before this field was written.
         end_note:
           type: string
-          description: How the session ended, in one short note. `killed by <caller>: <reason>` for a kill, `session process exited: complete` or `session process exited: failed` for a session that ended on its own, `process gone, finalised` for a record finalised because its process was gone. Omitted while the session runs.
+          description: >-
+            How the session ended, in one short note. `killed by <caller>: <reason>` for a kill, `session process exited: complete` or `session process exited: failed` for a session that ended on its own, `process gone, finalised` for a record finalised because its process was gone, `<state> by <caller>: <reason>` for another end the daemon writes (a finished one-shot, a terminal gone after a restart, a shutdown drain, a state override). Cleared when the session is restarted or brought back. Omitted while the session runs.
           example: "killed by task-respawn: task respawned"
+        task_delivered_at:
+          type: string
+          format: date-time
+          description: When delivery of the session's task was claimed. Saved before anything is typed, so on its own it does not prove the task arrived.
+        task_delivery_unverified:
+          type: boolean
+          description: True while a delivery claim has not been seen to reach the session. Omitted otherwise.
+        task_verified_at:
+          type: string
+          format: date-time
+          description: When a claimed task delivery was seen to have reached the session.
 
     SessionState:
       type: string
