@@ -115,6 +115,7 @@ autonomous_pending_item_add
 autonomous_pending_item_attach
 autonomous_pending_items
 autonomous_pending_items_refresh
+autonomous_prd_accept_for_merge
 autonomous_prd_add_story
 autonomous_prd_add_task
 autonomous_prd_approve
@@ -135,6 +136,7 @@ autonomous_prd_get
 autonomous_prd_hold
 autonomous_prd_instantiate
 autonomous_prd_list
+autonomous_prd_merge_selection
 autonomous_prd_plan_coverage_acknowledge
 autonomous_prd_plan_coverage_get
 autonomous_prd_plan_review
