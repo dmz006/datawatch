@@ -17,11 +17,15 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // ── detection filters ─────────────────────────────────────────────────────────
@@ -41,10 +45,10 @@ func (s *Server) handleFilterList(_ context.Context, _ mcpsdk.CallToolRequest) (
 
 func (s *Server) toolFilterAdd() mcpsdk.Tool {
 	return mcpsdk.NewTool("filter_add",
-		mcpsdk.WithDescription("Create a detection filter. Pattern is a regex; action is one of: alert, kill, redact, tag."),
+		mcpsdk.WithDescription("Create an output filter. Pattern is a regex; action is alert or detect_prompt. Filters that type into a session (send_input, schedule) cannot be created here: only the operator makes those."),
 		mcpsdk.WithString("pattern", mcpsdk.Required(), mcpsdk.Description("Regex pattern to match in session output")),
-		mcpsdk.WithString("action", mcpsdk.Required(), mcpsdk.Description("Action: alert | kill | redact | tag")),
-		mcpsdk.WithString("value", mcpsdk.Description("Optional value for the action (e.g. tag name)")),
+		mcpsdk.WithString("action", mcpsdk.Required(), mcpsdk.Description("Action: alert | detect_prompt")),
+		mcpsdk.WithString("value", mcpsdk.Description("Alert body for the alert action")),
 	)
 }
 func (s *Server) handleFilterAdd(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -52,6 +56,9 @@ func (s *Server) handleFilterAdd(_ context.Context, req mcpsdk.CallToolRequest) 
 		"pattern": req.GetString("pattern", ""),
 		"action":  req.GetString("action", ""),
 		"value":   req.GetString("value", ""),
+	}
+	if session.FilterAction(body["action"]).TypesInput() {
+		return toolErrorf("filter_add", "%s", mcpInputFilterRefusal), nil
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/filters", body)
 	if err != nil {
@@ -80,13 +87,18 @@ func (s *Server) handleFilterDelete(_ context.Context, req mcpsdk.CallToolReques
 
 func (s *Server) toolFilterToggle() mcpsdk.Tool {
 	return mcpsdk.NewTool("filter_toggle",
-		mcpsdk.WithDescription("Enable or disable a detection filter by ID without deleting it."),
+		mcpsdk.WithDescription("Enable or disable an output filter by ID without deleting it. A filter that types into a session can be disabled here but only the operator can enable it."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Filter ID (from filter_list)")),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Required(), mcpsdk.Description("true to enable, false to disable")),
 	)
 }
 func (s *Server) handleFilterToggle(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	enabled := req.GetBool("enabled", true)
+	if enabled {
+		if err := s.refuseEnablingInputFilter(req.GetString("id", "")); err != nil {
+			return toolError("filter_toggle", err), nil
+		}
+	}
 	body := map[string]interface{}{
 		"id":      req.GetString("id", ""),
 		"enabled": enabled,
@@ -96,6 +108,27 @@ func (s *Server) handleFilterToggle(_ context.Context, req mcpsdk.CallToolReques
 		return toolError("filter_toggle", err), nil
 	}
 	return textOK(string(out)), nil
+}
+
+const mcpInputFilterRefusal = "a filter that types into a session is made and enabled by the operator (web, CLI or REST), not over MCP"
+
+// refuseEnablingInputFilter fails closed: a list that cannot be read enables
+// nothing.
+func (s *Server) refuseEnablingInputFilter(id string) error {
+	out, err := s.proxyJSON(http.MethodGet, "/api/filters", nil)
+	if err != nil {
+		return fmt.Errorf("cannot check the filter before enabling it: %w", err)
+	}
+	var list []session.FilterPattern
+	if err := json.Unmarshal(out, &list); err != nil {
+		return fmt.Errorf("cannot check the filter before enabling it: %w", err)
+	}
+	for _, f := range list {
+		if f.ID == id && f.Action.TypesInput() {
+			return errors.New(mcpInputFilterRefusal)
+		}
+	}
+	return nil
 }
 
 // ── backends ──────────────────────────────────────────────────────────────────

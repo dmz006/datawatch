@@ -21,23 +21,35 @@ func newFilterCmd() *cobra.Command {
 	})
 	addCmd := &cobra.Command{
 		Use:   "add <pattern>",
-		Short: "Add a filter (action: redact|block|tag)",
-		Args:  cobra.ExactArgs(1),
+		Short: "Add an output filter (action: alert|detect_prompt|send_input|schedule)",
+		Long: `Add an output filter.
+
+send_input and schedule type into sessions. They need --types-input, start
+disabled, and type only while session.input_filters_enabled is on. Every line
+they type is marked as typed by the filter, and they never answer a permission
+or confirmation prompt: such patterns are refused.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			action, _ := cmd.Flags().GetString("action")
 			value, _ := cmd.Flags().GetString("value")
 			if action == "" {
-				action = "redact"
+				action = "alert"
 			}
-			return daemonJSON(http.MethodPost, "/api/filters", map[string]any{
+			typesInput, _ := cmd.Flags().GetBool("types-input")
+			body := map[string]any{
 				"pattern": args[0],
 				"action":  action,
 				"value":   value,
-			})
+			}
+			if typesInput {
+				body["allow_input"] = true
+			}
+			return daemonJSON(http.MethodPost, "/api/filters", body)
 		},
 	}
-	addCmd.Flags().String("action", "redact", "Filter action: redact | block | tag")
-	addCmd.Flags().String("value", "", "Replacement value (for redact/tag)")
+	addCmd.Flags().String("action", "alert", "Filter action: alert | detect_prompt | send_input | schedule")
+	addCmd.Flags().String("value", "", "Alert body, or the line a send_input or schedule filter types")
+	addCmd.Flags().Bool("types-input", false, "Confirm on purpose that this filter types into sessions (send_input, schedule)")
 	cmd.AddCommand(addCmd)
 
 	cmd.AddCommand(&cobra.Command{

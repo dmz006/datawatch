@@ -6473,6 +6473,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"root_path":                       s.cfg.Session.RootPath,
 				"mcp_max_retries":                 s.cfg.Session.MCPMaxRetries,
 				"schedule_settle_ms":              s.cfg.Session.ScheduleSettleMs,
+				"input_filters_enabled":           s.cfg.Session.InputFiltersEnabled,
 				"console_cols":                    s.cfg.Session.ConsoleCols,
 				"console_rows":                    s.cfg.Session.ConsoleRows,
 				"log_level":                       s.cfg.Session.LogLevel,
@@ -9341,6 +9342,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Session.ScheduleSettleMs = n
 			}
+		case "session.input_filters_enabled":
+			cfg.Session.InputFiltersEnabled = toBool(v)
 		case "session.default_effort":
 			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		case "session.console_cols":
@@ -14729,6 +14732,26 @@ func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
 
 // ---- /api/filters --------------------------------------------------------
 
+// inputFilterNeedsConsent is the refusal for creating a typing filter without
+// saying so on purpose.
+const inputFilterNeedsConsent = "this filter would type into sessions: send allow_input=true to create it on purpose (it starts disabled)"
+
+func (s *Server) filterByID(id string) (session.FilterPattern, bool) {
+	for _, f := range s.filterStore.List() {
+		if f.ID == id {
+			return f, true
+		}
+	}
+	return session.FilterPattern{}, false
+}
+
+// auditInputFilter records a change to a filter that types into sessions.
+func (s *Server) auditInputFilter(r *http.Request, verb, id string) {
+	if f, ok := s.filterByID(id); ok && f.Action.TypesInput() {
+		s.audit(r.Context(), verb, "input_filter", id, map[string]any{"action": string(f.Action), "pattern": f.Pattern, "value": f.Value, "enabled": f.Enabled})
+	}
+}
+
 func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		if !s.fedCap(w, r, federation.CapConfigRead) {
@@ -14747,9 +14770,10 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(s.filterStore.List()) //nolint:errcheck
 	case http.MethodPost:
 		var body struct {
-			Pattern string `json:"pattern"`
-			Action  string `json:"action"`
-			Value   string `json:"value"`
+			Pattern    string `json:"pattern"`
+			Action     string `json:"action"`
+			Value      string `json:"value"`
+			AllowInput bool   `json:"allow_input"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -14759,11 +14783,16 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "pattern and action required", http.StatusBadRequest)
 			return
 		}
+		if session.FilterAction(body.Action).TypesInput() && !body.AllowInput {
+			http.Error(w, inputFilterNeedsConsent, http.StatusBadRequest)
+			return
+		}
 		fp, err := s.filterStore.Add(body.Pattern, session.FilterAction(body.Action), body.Value)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		s.auditInputFilter(r, "create", fp.ID)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(fp) //nolint:errcheck
@@ -14781,11 +14810,12 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"}) //nolint:errcheck
 	case http.MethodPatch:
 		var body struct {
-			ID      string `json:"id"`
-			Enabled *bool  `json:"enabled"`
-			Pattern string `json:"pattern"`
-			Action  string `json:"action"`
-			Value   string `json:"value"`
+			ID         string `json:"id"`
+			Enabled    *bool  `json:"enabled"`
+			Pattern    string `json:"pattern"`
+			Action     string `json:"action"`
+			Value      string `json:"value"`
+			AllowInput bool   `json:"allow_input"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -14794,6 +14824,14 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 		if body.ID == "" {
 			http.Error(w, "id required", http.StatusBadRequest)
 			return
+		}
+		// Turning a filter into one that types needs the same consent as
+		// creating one.
+		if session.FilterAction(body.Action).TypesInput() && !body.AllowInput {
+			if f, ok := s.filterByID(body.ID); ok && !f.Action.TypesInput() {
+				http.Error(w, inputFilterNeedsConsent, http.StatusBadRequest)
+				return
+			}
 		}
 		var err error
 		// Full update when pattern or action provided
@@ -14810,11 +14848,20 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			status := http.StatusNotFound
+			if errors.Is(err, session.ErrInputFilterRefused) {
+				status = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
+		s.auditInputFilter(r, "update", body.ID)
+		resp := map[string]any{"status": "updated"}
+		if f, ok := s.filterByID(body.ID); ok {
+			resp["enabled"] = f.Enabled
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "updated"}) //nolint:errcheck
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

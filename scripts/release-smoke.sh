@@ -933,7 +933,7 @@ H "7e. Filter store CRUD"
 # alert stores have more complex bodies and stay deferred.
 FILTER_PAT="smoke-probe-$(date +%s)"
 FC=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-  -d "$(printf '{"pattern":"%s","action":"schedule","value":"yes"}' "$FILTER_PAT")" \
+  -d "$(printf '{"pattern":"%s","action":"schedule","value":"smoke probe","allow_input":true}' "$FILTER_PAT")" \
   "$BASE/api/filters")
 FC_ID=$(echo "$FC" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null)
 if [[ -n "$FC_ID" ]]; then
