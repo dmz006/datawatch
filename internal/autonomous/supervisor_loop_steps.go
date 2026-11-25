@@ -87,6 +87,9 @@ type SupervisorMergeResult struct {
 	Conflict string
 	// Note is the pipeline's plain-language account.
 	Note string
+	// Excluded has one line per candidate the merge selection rule left out,
+	// naming it and saying why.
+	Excluded []string
 }
 
 // SupervisorLoopHooks are the pieces the daemon wiring supplies. A nil field
@@ -807,12 +810,25 @@ func (s *SupervisorLoopSteps) runMergeUntilConflict(ctx context.Context) (string
 		if res.Note != "" {
 			detail += ": " + res.Note
 		}
+		detail += excludedDetail(res.Excluded)
 		s.mu.Lock()
 		s.lastConflict = detail
 		s.mu.Unlock()
 		return detail, nil
 	}
-	return fmt.Sprintf("merged %d branches, no conflict", len(res.Merged)), nil
+	detail := fmt.Sprintf("merged %d branches, no conflict", len(res.Merged))
+	if res.Note != "" && len(res.Excluded) > 0 {
+		detail += ": " + res.Note
+	}
+	return detail + excludedDetail(res.Excluded), nil
+}
+
+// excludedDetail lists what the merge selection rule left out, and why.
+func excludedDetail(excluded []string) string {
+	if len(excluded) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("; excluded %d: %s", len(excluded), strings.Join(excluded, " | "))
 }
 
 // supervisorLoopEscalator raises an escalation as a question in the operator

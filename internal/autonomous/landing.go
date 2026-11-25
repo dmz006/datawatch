@@ -366,6 +366,10 @@ func (m *Manager) CheckLandingAncestor(ctx context.Context, id string) bool {
 			return false
 		}
 	}
+	// A merge that exists only on the local default branch has not landed.
+	if !onTrackedRemote(ctx, git, repo, base, commit) {
+		return false
+	}
 	now := time.Now()
 	changed := false
 	m.store.WithLock(func() {
