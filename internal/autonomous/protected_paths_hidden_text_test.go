@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -207,14 +208,22 @@ func TestDaemonSectionsMergeKeepsTextTheDaemonDidNotWrite(t *testing.T) {
 	}
 }
 
-// When HEAD cannot be listed (an orphan branch with no commit), a change the
-// working tree shows is still judged, not skipped.
+// When HEAD cannot be listed, a change the other listings show is still
+// judged, not skipped with them.
 func TestProtectedPathsUnlistableHeadStillHolds(t *testing.T) {
 	r, repo := gateRepoRig(t)
-	gitRun(t, repo, "checkout", "-q", "--orphan", "empty")
+	r.m.driftGit = func(ctx context.Context, dir string, args ...string) (string, error) {
+		if args[0] == "diff" && args[len(args)-1] == "HEAD" {
+			return "", errors.New("HEAD cannot be listed")
+		}
+		return defaultDriftGitRunner(ctx, dir, args...)
+	}
 	dsmWrite(t, repo, "AGENT.md", baseRulesContent+"\n"+hiddenRule+"\n")
 	held, err := r.check(t)
 	if err != nil || !held {
 		t.Fatalf("held=%v err=%v; the listed change must be held", held, err)
+	}
+	if len(r.decisions(protectedPathsCheckSkippedDecisionKind)) != 1 {
+		t.Error("the incomplete listing must be recorded")
 	}
 }
