@@ -155,7 +155,9 @@ test('row never exposes the token source, vault secret or base URL', () => {
   const { result } = withT(() => renderHostRow(HOST, [READY]));
   const dump = JSON.stringify(result);
   assert.ok(!dump.includes('GH_TOKEN_OPERATOR'), 'vault secret leaked');
-  assert.ok(!dump.includes('https://github.com'), 'base URL leaked');
+  // No URL of any kind, so also not the host's base URL.
+  assert.ok(HOST.base_url.includes('://'), 'the fixture has a base URL');
+  assert.ok(!dump.includes('://'), 'base URL leaked');
   assert.ok(!('vault_secret' in result));
   assert.ok(!('base_url' in result));
   assert.ok(!('credential_source' in result));

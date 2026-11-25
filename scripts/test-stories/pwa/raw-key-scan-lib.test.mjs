@@ -75,7 +75,7 @@ test('formatFindings caps the list and says how many more there are', () => {
 });
 
 test('the in-page collector source is one self-contained expression', () => {
-  assert.doesNotThrow(() => new Function(`return ${COLLECT_SRC.replace(/^\(\(\) => \{/, '(() => {')}`));
+  assert.doesNotThrow(() => new Function(`return ${COLLECT_SRC}`));
   assert.match(COLLECT_SRC, /aria-label/);
   assert.match(COLLECT_SRC, /placeholder/);
   assert.match(COLLECT_SRC, /document\.title/);

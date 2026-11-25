@@ -133,10 +133,24 @@ const NOWRAP = /flex-wrap:\s*nowrap/;
 
 const DIV_TAG = /<div\b(?:[^>"']|"[^"]*"|'[^']*')*>|<\/div\s*>/g;
 
+// withoutHtmlComments returns the markup with every comment cut out. A comment
+// that is never closed stays.
+function withoutHtmlComments(html) {
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const open = html.indexOf('<!--', from);
+    const close = open < 0 ? -1 : html.indexOf('-->', open + 4);
+    if (close < 0) return out + html.slice(from);
+    out += html.slice(from, open);
+    from = close + 3;
+  }
+}
+
 // topLevelDivs returns the outermost <div> elements of rendered markup as
 // { openTag, classes, inner }. HTML comments are dropped first.
 function topLevelDivs(html) {
-  const src = html.replace(/<!--[\s\S]*?-->/g, '');
+  const src = withoutHtmlComments(html);
   const out = [];
   let depth = 0, start = -1, openTag = '';
   const push = (end) => {
