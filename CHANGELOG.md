@@ -13,11 +13,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A selected merge run gives git the recorded branch name, not the request's text.
 
 ### Before you upgrade
-- A merge-step record is refused when its value is not a commit id of at least 7 characters, is not a commit, is not on the remote, or does not hold the branch. Record squashed or hand-ported work as a backfill record.
+- For an Automaton whose branch is in the merge repository, a merge-step record is refused when its value is not a commit id of at least 7 characters, is not a commit, is not on the remote (when there is one), or does not hold the branch. Record squashed or hand-ported work as a backfill record.
+- Every new record refuses a value starting with `-`.
 
 ### Not covered
-- A merge-step record is still stored, as shipped but not landed, when the Automaton's branch is missing from the merge repository or cannot be read.
-- Backfill records are still taken as given.
+- Automation records, Automatons with no branch, and setups with no merge repository get no commit check on new records beyond refusing a leading `-`.
+- A merge-step record is still stored when the Automaton's branch is missing from the merge repository or cannot be read. It is not marked landed, but it is stored as shipped, and a finished Automaton can be marked delivered.
+- Backfill records are still taken as given, apart from a leading `-`.
 
 ## v9.187.22 — datawatch stops rewriting settings files it cannot read
 
