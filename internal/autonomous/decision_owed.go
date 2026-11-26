@@ -154,10 +154,10 @@ func parkedQuestionID(t Task) string {
 	return AwaitDecisionQuestionID(t.WaitReason)
 }
 
-// parkedDecisionUntyped reports whether the task is parked with a decision
-// that is still to be typed: the question it is parked on is answered or
-// withdrawn with no line recorded beyond waiting, or a recorded resume is
-// still waiting for capacity. Parking on another question would drop it.
+// parkedDecisionUntyped reports whether the task is parked with a line that
+// is still to be typed: the question it is parked on is answered, withdrawn or
+// expired with no line recorded beyond waiting, or a recorded resume is still
+// waiting for capacity. Parking on another question would drop it.
 func (m *Manager) parkedDecisionUntyped(t Task) bool {
 	qid := parkedQuestionID(t)
 	if qid == "" {
@@ -174,7 +174,8 @@ func (m *Manager) parkedDecisionUntyped(t Task) bool {
 		return false
 	}
 	q, ok := store.Get(qid)
-	return ok && (q.State == QuestionAnswered || q.State == QuestionWithdrawn) && (dr == nil || dr.QuestionID != qid)
+	return ok && (q.State == QuestionAnswered || q.State == QuestionWithdrawn || q.State == QuestionExpired) &&
+		(dr == nil || dr.QuestionID != qid)
 }
 
 // decidedOwed returns the task's owed questions that are answered or
@@ -328,6 +329,9 @@ func (m *Manager) noticeOwedOnce(snap Task, e OwedDecision, reason, why string) 
 	if e.WaitingNoticed {
 		return
 	}
+	notice := m.prepareNotice("warn", "Automaton decision not delivered yet", fmt.Sprintf(
+		"automaton=%s task=%s question=%s session=%s reason=%s. %s",
+		snap.PRDID, snap.ID, e.QuestionID, e.SessionID, reason, why))
 	noted, err := m.store.mutateTaskSaved(snap.ID, func(c *Task) bool {
 		at := owedIndex(c.OwedDecisions, e.QuestionID)
 		if at < 0 || c.OwedDecisions[at].WaitingNoticed {
@@ -338,12 +342,7 @@ func (m *Manager) noticeOwedOnce(snap Task, e OwedDecision, reason, why string) 
 		c.OwedDecisions = next
 		return true
 	})
-	if err != nil || !noted {
-		return
-	}
-	m.deliveryAlert("warn", "Automaton decision not delivered yet", fmt.Sprintf(
-		"automaton=%s task=%s question=%s session=%s reason=%s. %s",
-		snap.PRDID, snap.ID, e.QuestionID, e.SessionID, reason, why))
+	notice(err == nil && noted)
 }
 
 // listOwedDecision gives up on typing an owed decision and lists it for the
@@ -354,6 +353,10 @@ func (m *Manager) listOwedDecision(prdID, taskID string, e OwedDecision, q Quest
 		return // a resume or a send is running; look again next tick
 	}
 	defer m.questionTick.end(taskID)
+	notice := func(bool) {}
+	if q.State != QuestionWithdrawn {
+		notice = m.prepareDeliveryReview(prdID, taskID, e.QuestionID, e.SessionID, reason)
+	}
 	removed, err := m.store.mutateTaskSaved(taskID, func(c *Task) bool {
 		if owedIndex(c.OwedDecisions, e.QuestionID) < 0 {
 			return false
@@ -362,14 +365,15 @@ func (m *Manager) listOwedDecision(prdID, taskID string, e OwedDecision, q Quest
 		return true
 	})
 	if err != nil {
+		notice(false)
 		log.Printf("[autonomous] %s: decision %s: review state could not be saved: %v", taskID, e.QuestionID, err)
 		return
 	}
+	notice(removed)
 	if !removed || q.State == QuestionWithdrawn {
 		return
 	}
 	log.Printf("[autonomous] %s: decision %s needs review (%s); it was not typed", taskID, e.QuestionID, reason)
-	m.alertDeliveryReview(prdID, taskID, e.QuestionID, e.SessionID, reason)
 	if prd, ok := m.store.GetPRD(prdID); ok {
 		m.emitDecisionResumeAudit(prd, taskID, &DecisionResume{QuestionID: e.QuestionID, Delivery: DecisionReviewNeeded})
 	}

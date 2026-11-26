@@ -2089,6 +2089,9 @@ type Manager struct {
 	// the alert it recorded ("" when it cannot name one) so an emitter
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
+	// notices are the delivery notices the sink has not taken yet
+	// (delivery_notices.go). It has its own lock.
+	notices noticeBox
 
 	// daemonRulesTextFn — the daemon's session- and config-dependent
 	// rules-file blocks for a directory (SetDaemonRulesTextFn). Guarded
@@ -2781,11 +2784,14 @@ func (m *Manager) budgetsSummary() []BudgetStatus {
 
 // SetAlertSink wires the operator-facing alert callback. Nil disables.
 // The sink returns the id of the alert it recorded ("" when it cannot
-// name one).
+// name one). Delivery notices raised before it are handed to it here.
 func (m *Manager) SetAlertSink(fn func(level, title, body string) (id string)) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.alertSink = fn
+	m.mu.Unlock()
+	if fn != nil {
+		m.flushNotices()
+	}
 }
 
 // AlertSink returns the configured alert callback, or nil when unset.

@@ -81,6 +81,9 @@ func (s *Store) mutateTaskSaved(id string, f func(*Task) bool) (bool, error) {
 	if !f(t) {
 		return false, nil
 	}
+	if s.taskSaveHook != nil {
+		s.taskSaveHook(t)
+	}
 	if err := s.persistPRD(t.PRDID); err != nil {
 		*t = before
 		return false, err
@@ -291,6 +294,16 @@ func (m *Manager) sendDecisionLine(prdID, taskID string, q Question, ans *Answer
 	if sendErr != nil && (first || !refused) {
 		log.Printf("[autonomous] %s: decision resume prompt to session %s failed: %v", taskID, sessionID, sendErr)
 	}
+	// The notice of a failed send is saved before the result is.
+	notice := func(bool) {}
+	switch {
+	case refused && first:
+		notice = m.prepareNotice("warn", "Automaton decision not delivered yet", fmt.Sprintf(
+			"automaton=%s task=%s question=%s session=%s reason=%s. Nothing was typed because the session shows a prompt or its screen cannot be read. datawatch tries again while the task stays with this worker session and no later question takes over; retries pause while the Automaton is held or the autonomous loop is off. If it stops trying, you get a 'review needed' alert for this question.",
+			prd.ID, taskID, q.ID, sessionID, deliveryPromptOnScreen))
+	case sendErr != nil && !refused:
+		notice = m.prepareDeliveryReview(prd.ID, taskID, q.ID, sessionID, deliverySendError)
+	}
 	done, changed, err := m.setDelivery(taskID, q.ID, func(n *DecisionResume) {
 		switch {
 		case sendErr == nil:
@@ -304,22 +317,13 @@ func (m *Manager) sendDecisionLine(prdID, taskID string, q Question, ans *Answer
 	})
 	if err != nil {
 		// The saved state stays "sending", which a later tick reads as unsure.
+		notice(false)
 		log.Printf("[autonomous] %s: decision %s: the send result could not be saved: %v", taskID, q.ID, err)
 		return
 	}
-	if !changed {
+	notice(changed)
+	if !changed || refused {
 		return
-	}
-	if refused {
-		if first {
-			m.deliveryAlert("warn", "Automaton decision not delivered yet", fmt.Sprintf(
-				"automaton=%s task=%s question=%s session=%s reason=%s. Nothing was typed because the session shows a prompt or its screen cannot be read. datawatch tries again while the task stays with this worker session and no later question takes over; retries pause while the Automaton is held or the autonomous loop is off. If it stops trying, you get a 'review needed' alert for this question.",
-				prd.ID, taskID, q.ID, sessionID, deliveryPromptOnScreen))
-		}
-		return
-	}
-	if done.Delivery == DecisionReviewNeeded {
-		m.alertDeliveryReview(prd.ID, taskID, q.ID, sessionID, deliverySendError)
 	}
 	m.emitDecisionResumeAudit(prd, taskID, done)
 	recordWorkerQuestion(WorkerQuestionOutcomeResumed)
@@ -329,29 +333,32 @@ func (m *Manager) sendDecisionLine(prdID, taskID string, q Question, ans *Answer
 
 // deliveryNeedsReview ends an open delivery as one the operator must look at.
 func (m *Manager) deliveryNeedsReview(prd *PRD, taskID, questionID, reason string) {
+	notice := func(bool) {}
+	if snap, ok := m.store.TaskSnapshot(taskID); ok {
+		if dr := snap.DecisionResume; dr != nil && dr.QuestionID == questionID && dr.deliveryOpen() {
+			notice = m.prepareDeliveryReview(prd.ID, taskID, questionID, dr.DeliverySessionID, reason)
+		}
+	}
 	done, changed, err := m.setDelivery(taskID, questionID, func(n *DecisionResume) {
 		n.Delivery, n.DeliveryReason = DecisionReviewNeeded, reason
 	})
 	if err != nil {
+		notice(false)
 		log.Printf("[autonomous] %s: decision %s: review state could not be saved: %v", taskID, questionID, err)
 		return
 	}
+	notice(changed)
 	if !changed {
 		return
 	}
 	log.Printf("[autonomous] %s: decision %s needs review (%s); it will not be typed again", taskID, questionID, reason)
-	m.alertDeliveryReview(prd.ID, taskID, questionID, done.DeliverySessionID, reason)
 	m.emitDecisionResumeAudit(prd, taskID, done)
 }
 
-func (m *Manager) alertDeliveryReview(prdID, taskID, questionID, sessionID, reason string) {
-	m.deliveryAlert("error", "Automaton decision: review needed", fmt.Sprintf(
+// prepareDeliveryReview saves the review notice of one decision
+// (prepareNotice).
+func (m *Manager) prepareDeliveryReview(prdID, taskID, questionID, sessionID, reason string) func(bool) {
+	return m.prepareNotice("error", "Automaton decision: review needed", fmt.Sprintf(
 		"review needed: automaton=%s task=%s question=%s session=%s reason=%s. datawatch cannot tell that this worker got the decision, or must not type it now, and will not type it again. Check the session and send the decision yourself if it is missing.",
 		prdID, taskID, questionID, sessionID, reason))
-}
-
-func (m *Manager) deliveryAlert(level, title, body string) {
-	if sink := m.AlertSink(); sink != nil {
-		sink(level, title, body)
-	}
 }

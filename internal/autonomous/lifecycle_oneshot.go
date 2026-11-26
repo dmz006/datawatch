@@ -267,18 +267,23 @@ func (e *LifecycleSubscriptionEngine) finishOneShot(id string) {
 	}
 }
 
-// reviewOneShot ends a message that may or may not have arrived.
+// reviewOneShot ends a message that may or may not have arrived. The notice
+// is saved before the state is: the daemon reviews what a stop left behind
+// before it has an alert sink.
 func (e *LifecycleSubscriptionEngine) reviewOneShot(id, target, reason string) {
+	notice := e.prepareOneShotNotice("error", oneShotReviewTitle, fmt.Sprintf(
+		"review needed: subscription=%s session=%s reason=%s. datawatch cannot tell that the session got this one-time message and does not send it again. Check the session; delete the subscription when done.", id, target, reason))
 	_, ok, err := e.moveOneShot(id, []string{DecisionSending}, func(d *OneTimeDelivery) {
 		d.State, d.Reason = DecisionReviewNeeded, reason
 	})
 	if err != nil {
 		log.Printf("[autonomous] lifecycle sub %s: review state could not be saved: %v", id, err)
 	} else if !ok {
+		notice(false)
 		return
 	}
-	e.oneShotAlert("error", oneShotReviewTitle, fmt.Sprintf(
-		"review needed: subscription=%s session=%s reason=%s. datawatch cannot tell that the session got this one-time message and does not send it again. Check the session; delete the subscription when done.", id, target, reason))
+	log.Printf("[autonomous] lifecycle sub %s: one-time message needs review (%s); it will not be sent again", id, reason)
+	notice(true)
 }
 
 // announceOneShot tells the operator, once, that a message waits. It is
@@ -300,6 +305,12 @@ func (e *LifecycleSubscriptionEngine) announceOneShot(id string) {
 		return
 	}
 	msg := *cur.Delivery
+	reason := msg.Reason
+	if reason == "" {
+		reason = deliveryNotSaved
+	}
+	notice := e.prepareOneShotNotice("warn", oneShotWaitingTitle, fmt.Sprintf(
+		"subscription=%s session=%s reason=%s. Nothing was typed. datawatch keeps the message and tries again until it can type it into this session. Delete the subscription to cancel it.", id, msg.Target, reason))
 	if _, err := e.store.setDelivery(id, func(c Subscription) (*OneTimeDelivery, bool) {
 		if c.Delivery == nil {
 			return nil, false
@@ -310,18 +321,18 @@ func (e *LifecycleSubscriptionEngine) announceOneShot(id string) {
 	}); err != nil {
 		log.Printf("[autonomous] lifecycle sub %s: the waiting notice could not be saved: %v", id, err)
 	}
-	reason := msg.Reason
-	if reason == "" {
-		reason = deliveryNotSaved
-	}
-	e.oneShotAlert("warn", oneShotWaitingTitle, fmt.Sprintf(
-		"subscription=%s session=%s reason=%s. Nothing was typed. datawatch keeps the message and tries again until it can type it into this session. Delete the subscription to cancel it.", id, msg.Target, reason))
+	notice(true)
 }
 
 func (e *LifecycleSubscriptionEngine) oneShotAlert(level, title, body string) {
-	if e.m != nil {
-		e.m.deliveryAlert(level, title, body)
+	e.prepareOneShotNotice(level, title, body)(true)
+}
+
+func (e *LifecycleSubscriptionEngine) prepareOneShotNotice(level, title, body string) func(bool) {
+	if e.m == nil {
+		return func(bool) {}
 	}
+	return e.m.prepareNotice(level, title, body)
 }
 
 // typeIntoSession types text into the session, never over its channel bridge.

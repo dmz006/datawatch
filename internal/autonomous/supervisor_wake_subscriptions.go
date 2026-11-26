@@ -74,13 +74,23 @@ type alertSource interface {
 	AlertSink() func(level, title, body string) (id string)
 }
 
+// noticeRaiser is a subscriber that holds a notice until it has an alert sink
+// (delivery_notices.go).
+type noticeRaiser interface {
+	deliveryAlert(level, title, body string)
+}
+
 // The daemon's subscriber is the Manager: its wake alerts depend on this.
-var _ alertSource = (*Manager)(nil)
+var _ noticeRaiser = (*Manager)(nil)
 
 // alert raises an operator alert, resolving the sink at the time of the alert.
 func (c SupervisorWakeConfig) alert(level, title, body string) {
 	if c.Alert != nil {
 		c.Alert(level, title, body)
+		return
+	}
+	if held, ok := c.Subscriber.(noticeRaiser); ok {
+		held.deliveryAlert(level, title, body)
 		return
 	}
 	if src, ok := c.Subscriber.(alertSource); ok {

@@ -31,6 +31,9 @@ type SubscriptionStore struct {
 	changed       func() // resync hook (engine re-attaches sinks after mutations)
 	tester        func(id string) (TestResult, error)
 	sinkValidator func(Subscription) error
+	// deliverySaveHook is test-only: it runs before setDelivery saves, with
+	// the new message state.
+	deliverySaveHook func(next *OneTimeDelivery)
 }
 
 // ErrSubscriptionNotFound is returned (wrapped) when an operation names
@@ -231,6 +234,9 @@ func (s *SubscriptionStore) setDelivery(id string, f func(cur Subscription) (*On
 	prev := cur
 	cur.Delivery = next
 	s.subs[id] = cur
+	if s.deliverySaveHook != nil {
+		s.deliverySaveHook(next)
+	}
 	if err := s.saveLocked(); err != nil {
 		s.subs[id] = prev
 		return false, err

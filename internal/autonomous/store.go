@@ -64,6 +64,10 @@ type Store struct {
 	// is unchanged when unset.
 	SavePRDFailHook func(prd *PRD) bool
 
+	// taskSaveHook is test-only: it runs before mutateTaskSaved saves, with
+	// the changed task.
+	taskSaveHook func(t *Task)
+
 	// objectTagDeriver, when wired (NewManager does), re-derives the
 	// object system tags under the live tags.placement block and replaces
 	// the record's SystemTags on SavePRD/SaveTask (see ObjectTagDeriver).
