@@ -470,6 +470,21 @@ func (s *runState) beforePush(ctx context.Context) error {
 	return nil
 }
 
+// releaseCommit is the commit of branch this run releases: the selected one,
+// else the branch's head.
+func (s *runState) releaseCommit(branch string) string {
+	if pin, ok := s.pins[branch]; ok {
+		return pin
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	at, err := s.iso.git.revParse(ctx, s.iso.git.Dir, "refs/heads/"+branch)
+	if err != nil {
+		return ""
+	}
+	return at
+}
+
 // pushCandidate sends the candidate's exact commit, or in a shadow run records
 // what it would send.
 func (s *runState) pushCandidate(ctx context.Context, tag string) (string, error) {
