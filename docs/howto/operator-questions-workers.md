@@ -221,7 +221,9 @@ second question; the alert and the audit log keep the first.
 Every blocking question the task's worker asks is owed one line, from the
 moment it is raised. The task's `owed_decisions` lists the ones whose line is
 not yet sent or listed for review. The daemon's own questions about a task, such
-as held or retry questions, are not part of this.
+as held or retry questions, are not part of this. A question another session
+asked about the task, such as its verifier, is never typed into the worker
+unless the task is parked on it; otherwise its answer is listed.
 
 - The task is not re-parked while the question it is parked on has a decision
   that is not typed yet.

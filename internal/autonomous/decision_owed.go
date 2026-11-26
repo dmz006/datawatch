@@ -84,7 +84,8 @@ func (m *Manager) noteRaisedQuestion(q Question) {
 // noteOwedDecisions adds the task's open questions to what it owes, for the
 // worker session it has now. parkedOn is the question the task is, or is
 // about to be, parked on. Any other question asked by a different session (a
-// verifier, or an earlier attempt's worker) is not added or moved to this one.
+// verifier, or an earlier attempt's worker) is owed to the session that asked
+// and never moved to this one, so its decision is listed, not typed.
 func (m *Manager) noteOwedDecisions(taskID, parkedOn string, open []Question) {
 	if len(open) == 0 {
 		return
@@ -96,19 +97,22 @@ func (m *Manager) noteOwedDecisions(taskID, parkedOn string, open []Question) {
 		next, changed := c.OwedDecisions, false
 		for i := range open {
 			q := &open[i]
-			if q.TaskID != c.ID || !owedQuestion(q) ||
-				(q.ID != parkedOn && q.SessionID != "" && !sameSessionID(q.SessionID, c.SessionID)) {
+			if q.TaskID != c.ID || !owedQuestion(q) {
 				continue
 			}
+			to, foreign := c.SessionID, q.ID != parkedOn && q.SessionID != "" && !sameSessionID(q.SessionID, c.SessionID)
+			if foreign {
+				to = q.SessionID
+			}
 			at := owedIndex(next, q.ID)
-			if at >= 0 && next[at].SessionID == c.SessionID {
+			if at >= 0 && (foreign || next[at].SessionID == to) {
 				continue
 			}
 			next, changed = append([]OwedDecision(nil), next...), true
 			if at < 0 {
-				next = append(next, OwedDecision{QuestionID: q.ID, SessionID: c.SessionID})
+				next = append(next, OwedDecision{QuestionID: q.ID, SessionID: to})
 			} else {
-				next[at].SessionID = c.SessionID
+				next[at].SessionID = to
 			}
 		}
 		if changed {
