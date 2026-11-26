@@ -119,10 +119,10 @@ nothing is reserved, and other work on the machine can take the memory later.
 A hand-merge shadow that could not run is run again when you record the same
 commit again.
 
-The 16 GiB is set to hold this project's own whole `go test`: one run of it,
-four packages at once under exactly this limit, peaked at about 4.3 GB with no
-process stopped. Its lint and release smoke steps were not measured, and a host
-with more cores may use more.
+The 16 GiB is set to hold this project's own whole `go test`: in three runs of
+it, four packages at once under exactly this limit, the peak was between about
+4.2 and 5.5 GB with no process stopped. Its lint and release smoke steps were
+not measured, and a host with more cores may use more.
 
 **It needs Linux with systemd 254 or newer** and a systemd user manager (the
 system manager when datawatch runs as root). Where the limit cannot be put in
