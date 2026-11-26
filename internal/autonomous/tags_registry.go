@@ -30,6 +30,25 @@ func (m *Manager) SaveTagRecords(tags []*Tag) error {
 	return nil
 }
 
+// UpdateTagRecords saves the tags in save and removes the ids in remove. Every
+// other record is left as it is. An id with no record is passed over.
+func (m *Manager) UpdateTagRecords(save []*Tag, remove []string) error {
+	for _, t := range save {
+		if err := m.store.SaveTag(t); err != nil {
+			return err
+		}
+	}
+	for _, id := range remove {
+		if _, ok := m.store.GetTag(id); !ok {
+			continue
+		}
+		if err := m.store.DeleteTag(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // TagAssignmentCount returns how many Automata and sessions carry a tag, counting
 // a session's inherited tags.
 func (m *Manager) TagAssignmentCount(tagID string) int {

@@ -158,6 +158,12 @@ func RenderAutoTag(resolved ResolvedAutoTags, what string, vars map[string]strin
 // operator-owned and the engine never rewrites it.
 const autoTagMarkerPrefix = "datawatch:auto-tag:"
 
+// IsAutoTagRecord reports whether a tag with this description is one of the
+// daemon's auto tags.
+func IsAutoTagRecord(description string) bool {
+	return strings.HasPrefix(description, autoTagMarkerPrefix)
+}
+
 func autoTagMarkerAutomation(automationID string) string {
 	return autoTagMarkerPrefix + "automation " + automationID
 }

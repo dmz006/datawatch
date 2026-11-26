@@ -456,5 +456,6 @@ func (m *Manager) SetTagDescription(id, description string) (*Tag, error) {
 	if err := m.store.SaveTag(t); err != nil {
 		return nil, err
 	}
+	m.tagRecordsChanged()
 	return t, nil
 }
