@@ -406,7 +406,7 @@ func (m *Merger) applyStoredProposal(ctx context.Context, req MergeRequest, msg 
 		m.abortQuietly(m.Dir)
 		return ModelAttempt{Result: result, Detail: detail, Hunks: p.Hunks}
 	}
-	r, err := m.git(ctx, m.Dir, "merge", "--no-ff", "--no-commit", req.Branch)
+	r, err := m.git(ctx, m.Dir, "merge", "--no-ff", "--no-commit", req.ref())
 	if err != nil {
 		return fail(AttemptInfrastructure, err.Error())
 	}

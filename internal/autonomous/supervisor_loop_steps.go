@@ -82,6 +82,9 @@ type SupervisorLaneControl interface {
 type SupervisorMergeResult struct {
 	// Merged names the branches merged and left in place.
 	Merged []string
+	// NotMerged names those of Merged whose run delivered nothing: the push
+	// was held, skipped or not confirmed. They are never reported as merged.
+	NotMerged []string
 	// Conflict names the branch whose conflict was not settled; empty when
 	// the run reached no conflict.
 	Conflict string
@@ -805,22 +808,29 @@ func (s *SupervisorLoopSteps) runMergeUntilConflict(ctx context.Context) (string
 	if err != nil && res.Conflict == "" {
 		return "", fmt.Errorf("merge pipeline: %w", err)
 	}
+	// A run whose push was held, skipped or not confirmed delivered nothing
+	// and is never counted as merged.
+	delivered := len(res.Merged) - len(res.NotMerged)
+	undelivered := ""
+	if len(res.NotMerged) > 0 {
+		undelivered = "; not merged (held or not pushed): " + strings.Join(res.NotMerged, ", ")
+	}
 	if res.Conflict != "" {
-		detail := fmt.Sprintf("conflict on %s, stopped after merging %d", res.Conflict, len(res.Merged))
+		detail := fmt.Sprintf("conflict on %s, stopped after merging %d", res.Conflict, delivered)
 		if res.Note != "" {
 			detail += ": " + res.Note
 		}
-		detail += excludedDetail(res.Excluded)
+		detail += undelivered + excludedDetail(res.Excluded)
 		s.mu.Lock()
 		s.lastConflict = detail
 		s.mu.Unlock()
 		return detail, nil
 	}
-	detail := fmt.Sprintf("merged %d branches, no conflict", len(res.Merged))
-	if res.Note != "" && len(res.Excluded) > 0 {
+	detail := fmt.Sprintf("merged %d branches, no conflict", delivered)
+	if res.Note != "" && (len(res.Excluded) > 0 || undelivered != "") {
 		detail += ": " + res.Note
 	}
-	return detail + excludedDetail(res.Excluded), nil
+	return detail + undelivered + excludedDetail(res.Excluded), nil
 }
 
 // excludedDetail lists what the merge selection rule left out, and why.

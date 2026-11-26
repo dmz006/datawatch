@@ -197,7 +197,7 @@ func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req
 	if msg == "" {
 		msg = "Merge branch '" + req.Branch + "'"
 	}
-	r, err := m.git(ctx, scratch, "merge", "--no-ff", "--no-commit", req.Branch)
+	r, err := m.git(ctx, scratch, "merge", "--no-ff", "--no-commit", req.ref())
 	if err != nil {
 		return fail(AttemptInfrastructure, err.Error(), 0)
 	}
@@ -220,6 +220,14 @@ func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req
 		data, rerr := os.ReadFile(p) // #nosec G304 -- path checked to lie inside the scratch tree
 		if rerr != nil || strings.IndexByte(string(data), 0) >= 0 {
 			return fail(AttemptNotApplicable, f+" cannot be proposed for as text", 0)
+		}
+		if rule := m.Pipeline.conflictRule(f); rule != "" {
+			text, _, rerr := resolveByRule(rule, f, string(data))
+			if rerr != nil {
+				return fail(AttemptNotApplicable, f+": "+rerr.Error(), 0)
+			}
+			texts[f] = text
+			continue
 		}
 		text, _, rest, perr := ResolveAdditive(f, string(data))
 		if perr != nil {

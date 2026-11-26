@@ -5,6 +5,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.29 — A safer merge run, with merging still off
+
+### Changed
+- A datawatch-run merge now works in a separate scratch folder, based on the remote's `main`. Local `main` and the real branch move only after the remote confirms the exact commit that was pushed. A failed check, a held release or a refused push leaves local `main` where it was, and a later run does not carry that work.
+- Deploy, ship hooks (including the release notice and marking done) and tag or deploy command steps wait for that confirmation. The built-in tag step does not: it makes the tag locally before the push and sends it with the commit.
+- After a lost confirmation or a killed run, a later daemon start, merge run or loop check asks the remote and, if the merged branches have not changed, records what landed. The repair itself never pushes or deploys. A later run with nothing new can run the deploy again.
+- On Linux, a killed run's merge lock is taken over once its process and everything it started have ended. On macOS it can stay held, as can a lock left by an earlier version. A tree changed by a check, tracked or untracked, stops the push. A held or unpushed run is no longer reported as merged.
+
+### Before you upgrade
+- Merging stays off by default and this release does not turn it on. Before you ever turn it on: replace the recorded pipeline first, because a record without the new check steps would release with few checks.
+- Once merging is on, features release as a minor version, an unset kind is guessed from the title and the start of the spec, and a run may take up to 3 hours.
+- Under the `mechanical_and_model` conflict policy, a `conflict_model` naming an enabled model entry is now really called.
+
+### Not covered
+- Checks are not sandboxed and come from the work being merged: a check can itself push to the remote, move local branches or leave a tag, and it can read or change any file the daemon's user can.
+- A check can pass on content that is not pushed: through ignored files that it or an earlier step writes, or by hiding changes with `assume-unchanged`, `skip-worktree` or `.git/info/exclude`.
+- If a push arrives but is not confirmed and a merged branch gets new commits before the repair, the repair never finishes. Runs for that work are refused ("not released again", although the new commits never were), and the loop can stop there, until that run's file in `datawatch-merge-pushes/` in the git directory is removed by hand.
+- A landing recorded by repair runs no deploy and sends no notice.
+- A tag step written as a command, or the post-ship "tag" hook, can still make a tag; the hook can tag the old version when nothing was released.
+- The new conflict rules do nothing while the conflict policy is `stop_and_ask`.
+- No merge run was tried with a full release smoke, a real conflict model or a live daemon's merge loop.
+- Under the `mechanical` conflict policy, the new `keep_main` rules drop the branch's side of a conflicting hunk without asking, including its CHANGELOG line.
+- If only the daemon process is killed, a running check or push can carry on, and that push can still land.
+
 ## v9.187.28 — Start-up dialogs are answered only when shown, and not too soon
 
 ### Fixed

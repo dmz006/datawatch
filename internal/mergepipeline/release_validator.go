@@ -24,6 +24,7 @@ const (
 	checkVersionVariables = "version_variables_equal"
 	checkChangelogHeading = "changelog_heading_matches"
 	checkOneStepAboveTag  = "one_step_above_last_tag"
+	checkOneStepAboveBase = "one_step_above_base"
 	checkTagNotTaken      = "tag_not_taken"
 	checkReadmeLine       = "readme_line_matches"
 )
@@ -53,6 +54,9 @@ const currentReleasePrefix = "Current release:"
 // VersionFiles has no default: a release with no version files fails the
 // version check rather than guessing.
 //
+// BaseVersion, when set, is the version of the commit the release is built
+// on: the release must be one step above it, whatever tags exist.
+//
 // ExcludeTag names a tag the validator must not count as the previous
 // release: the tag the run has just made for the version being released.
 // Empty means no tag is excluded.
@@ -63,6 +67,7 @@ type ValidateInput struct {
 	ReadmeFile    string
 	Remote        string
 	ExcludeTag    string
+	BaseVersion   string
 }
 
 // ValidateReleaseBump runs all five release-bump checks against the
@@ -216,6 +221,15 @@ func checkChangelogMatches(in ValidateInput, version string) autonomous.MergeVal
 // checkOneStepAbove passes when version is exactly one patch, minor or major
 // step above the newest v-tag in the repository.
 func checkOneStepAbove(ctx context.Context, in ValidateInput, version string) autonomous.MergeValidatorCheck {
+	if in.BaseVersion != "" {
+		if version == "" {
+			return failCheck(checkOneStepAboveBase, "no version was read to compare with")
+		}
+		if err := requireOneStep(in.BaseVersion, version); err != nil {
+			return failCheck(checkOneStepAboveBase, err.Error())
+		}
+		return passCheck(checkOneStepAboveBase, fmt.Sprintf("v%s is one step above v%s, the version the release is built on", version, in.BaseVersion))
+	}
 	if version == "" {
 		return failCheck(checkOneStepAboveTag, "no version was read to compare with")
 	}
