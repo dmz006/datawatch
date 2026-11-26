@@ -13,8 +13,11 @@ const checkOutputBytes = 1 << 20
 // runContained runs cmd so that nothing it starts outlives it. Its output
 // goes to a file, not a pipe, so the run never waits on a process the command
 // left behind; that process is stopped when the command ends.
-func runContained(cmd *exec.Cmd, out *bytes.Buffer) error {
-	f, err := os.CreateTemp("", "dw-merge-check-*.log")
+// The file is made in dir (the system temporary folder when empty): a run
+// killed during the command cannot remove it, so an isolated run keeps it in
+// its scratch folder, which the next run clears.
+func runContained(cmd *exec.Cmd, out *bytes.Buffer, dir string) error {
+	f, err := os.CreateTemp(dir, "dw-merge-check-*.log")
 	if err != nil {
 		return err
 	}

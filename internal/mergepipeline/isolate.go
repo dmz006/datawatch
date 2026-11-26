@@ -29,6 +29,10 @@ const (
 	// its push can be removed.
 	scratchTagMarks = "refs/datawatch-merge-tags/"
 	scratchDirName  = "dw-merge-"
+	// scratchTmuxNote is the file in a run's scratch folder that names its
+	// tmux folder, which lies elsewhere.
+	scratchTmuxNote = "tmux-dir"
+	scratchTmuxName = scratchDirName + "tmux-"
 	// localMainStepName is the step that moves the project's main branch.
 	localMainStepName = "update-local-main"
 )
@@ -197,7 +201,10 @@ func (s *runState) openIsolation(ctx context.Context) error {
 	}
 	// Directly under the system temporary folder: a tmux socket path has a
 	// short length limit.
-	if i.tmux, err = os.MkdirTemp("", scratchDirName+"tmux-"); err != nil {
+	if i.tmux, err = os.MkdirTemp("", scratchTmuxName); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(i.root, scratchTmuxNote), []byte(i.tmux), 0o600); err != nil {
 		return err
 	}
 	if _, err := i.git.gitOK(ctx, project.Dir, "worktree", "add", "--quiet", "-b", i.branch, i.tree, base); err != nil {
@@ -218,7 +225,7 @@ func (s *runState) openIsolation(ctx context.Context) error {
 	s.r = &inner
 	s.m.Dir, s.m.Project = i.tree, inner.Project
 	s.m.Model, s.m.Questions, s.m.Counter, s.m.Pending = inner.Model, inner.Questions, inner.Counter, inner.Pending
-	s.m.CheckEnv = s.checkEnvironment
+	s.m.CheckEnv, s.m.checkLogDir = s.checkEnvironment, i.root
 	return nil
 }
 
@@ -255,12 +262,26 @@ func (i *isolation) sweep(ctx context.Context, remoteHead string) {
 			}
 			_, _ = i.git.git(ctx, repo, "worktree", "remove", "--force", path)
 			if root := filepath.Dir(path); strings.HasPrefix(filepath.Base(root), scratchDirName) {
+				removeNotedTmuxDir(root)
 				_ = os.RemoveAll(root)
 			}
 		}
 	}
 	_, _ = i.git.git(ctx, repo, "worktree", "prune")
 	i.deleteBranches(ctx, scratchBranchPrefix)
+}
+
+// removeNotedTmuxDir removes the tmux folder a killed run noted in its
+// scratch folder. Only a folder with the name this package gives them goes.
+func removeNotedTmuxDir(root string) {
+	data, err := os.ReadFile(filepath.Join(root, scratchTmuxNote)) // #nosec G304 -- a fixed name in the run's own folder
+	if err != nil {
+		return
+	}
+	dir := strings.TrimSpace(string(data))
+	if filepath.IsAbs(dir) && strings.HasPrefix(filepath.Base(dir), scratchTmuxName) {
+		_ = os.RemoveAll(dir)
+	}
 }
 
 // deleteTag removes the local tag only while it still names commit.
@@ -597,7 +618,7 @@ func (s *runState) promote(ctx context.Context) (confirmed, failed bool) {
 			problems = append(problems, "local "+main+" was not moved and is only behind the remote: "+err.Error())
 		} else {
 			i.promoted = true
-			s.r, s.m.Dir, s.m.CheckEnv = i.project, i.project.Dir, nil
+			s.r, s.m.Dir, s.m.CheckEnv, s.m.checkLogDir = i.project, i.project.Dir, nil, ""
 			s.observedMain = head
 		}
 		if len(problems) > 0 {

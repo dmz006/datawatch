@@ -524,7 +524,8 @@ func TestIsolatedKilledRunLeavesMainAndTheNextRunWorks(t *testing.T) {
 
 	scratch, mark := t.TempDir(), s.note("mark")
 	child := exec.Command(os.Args[0], "-test.run=^TestIsolatedKilledRunLeavesMainAndTheNextRunWorks$", "-test.timeout=60s")
-	child.Env = append(os.Environ(), "DW_KILL_REPO="+s.dir, "DW_KILL_SCRATCH="+scratch, "DW_KILL_MARK="+mark, "TMPDIR="+t.TempDir())
+	childTmp := t.TempDir()
+	child.Env = append(os.Environ(), "DW_KILL_REPO="+s.dir, "DW_KILL_SCRATCH="+scratch, "DW_KILL_MARK="+mark, "TMPDIR="+childTmp)
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
@@ -551,6 +552,13 @@ func TestIsolatedKilledRunLeavesMainAndTheNextRunWorks(t *testing.T) {
 		t.Fatal("fixture: the killed run should have left its tag behind")
 	}
 
+	if logs, _ := filepath.Glob(filepath.Join(childTmp, "dw-merge-check-*")); len(logs) != 0 {
+		t.Errorf("the check's output is outside the run's scratch folder, where nothing would clear it: %v", logs)
+	}
+	if left, _ := filepath.Glob(filepath.Join(childTmp, "dw-merge-tmux-*")); len(left) != 1 {
+		t.Fatalf("fixture: the killed run should have left its tmux folder: %v", left)
+	}
+
 	r := s.runner(t, DefaultDefinition())
 	r.ScratchRoot = scratch
 	res, err := mergeFeature(t, r)
@@ -565,5 +573,8 @@ func TestIsolatedKilledRunLeavesMainAndTheNextRunWorks(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(scratch); len(entries) != 0 {
 		t.Errorf("scratch folders left: %v", entries)
+	}
+	if left, _ := filepath.Glob(filepath.Join(childTmp, "dw-merge-tmux-*")); len(left) != 0 {
+		t.Errorf("the killed run's tmux folder is still there: %v", left)
 	}
 }

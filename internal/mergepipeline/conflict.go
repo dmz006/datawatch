@@ -265,6 +265,8 @@ type Merger struct {
 	// build, lint and test of a proposal and the docs index rebuild); nil
 	// means the daemon's own, without the terminal server variables.
 	CheckEnv func() []string
+	// checkLogDir holds the output of those commands while they run.
+	checkLogDir string
 	// Project names the project in the conflict counter and the pending
 	// confirmations. Empty means the base name of Dir.
 	Project string
@@ -351,7 +353,7 @@ func (m *Merger) runEnv(ctx context.Context, env []string, contained bool, dir s
 	cmd.Stdout, cmd.Stderr = &out, &out
 	var err error
 	if contained {
-		err = runContained(cmd, &out)
+		err = runContained(cmd, &out, m.checkLogDir)
 	} else {
 		err = cmd.Run()
 	}
