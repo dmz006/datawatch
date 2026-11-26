@@ -54,8 +54,9 @@ func (m *Manager) OpenBlockingQuestionForTask(taskID string) (Question, bool) {
 //
 // It is idempotent: a task already parked on the same question is left as it
 // is, with no second audit event. A task parked with a decision that is not
-// typed yet is left as it is too (decision_owed.go). It reports whether this
-// call parked the task.
+// typed yet is left as it is too (decision_owed.go), as is one whose decision
+// line is unfinished and which questionID may not take over
+// (takeOverUnfinishedLine). It reports whether this call parked the task.
 func (m *Manager) ParkForDecision(prd *PRD, t *Task, questionID string) bool {
 	if prd == nil || t == nil || questionID == "" {
 		return false
@@ -68,12 +69,20 @@ func (m *Manager) ParkForDecision(prd *PRD, t *Task, questionID string) bool {
 		if cur.Status == TaskWaitingCapacity && cur.WaitReason == AwaitDecisionWaitReasonFor(questionID) {
 			return false
 		}
-		if m.parkedDecisionUntyped(cur) {
+		if m.parkedDecisionUntyped(cur) || !m.takeOverUnfinishedLine(prd, cur, questionID) {
 			return false
 		}
 	}
 	m.parkOnDecision(prd, t, questionID)
 	return true
+}
+
+// ParkedOnDecision reports whether the task is parked on the question now. A
+// wait loop uses it, with ParkForDecision, to tell a park that already stands
+// from one that was refused and must be tried again.
+func (m *Manager) ParkedOnDecision(taskID, questionID string) bool {
+	cur, ok := m.store.TaskSnapshot(taskID)
+	return ok && questionID != "" && parkedQuestionID(cur) == questionID
 }
 
 // parkOnDecision makes the park ParkForDecision describes.

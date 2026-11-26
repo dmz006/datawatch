@@ -48,6 +48,7 @@ const (
 	deliverySessionChanged = "session_changed"
 	deliveryTaskMovedOn    = "task_moved_on"
 	deliveryReplaced       = "replaced"
+	deliveryQuestionGone   = "question_missing"
 )
 
 // open marks a new resume record as not yet typed, for the worker session the
@@ -137,19 +138,75 @@ func (m *Manager) closeReplacedDelivery(prd *PRD, tk Task, next string) bool {
 	return ok && (cur.DecisionResume == nil || cur.DecisionResume.QuestionID != old.QuestionID || !cur.DecisionResume.deliveryOpen())
 }
 
+// takeOverUnfinishedLine is asked before the task is parked on next while a
+// decision line is not finished (waiting, sending or not typed). The line
+// keeps the task when next was already open when it was recorded, while it is
+// being sent, and while any resume or send of the task is at work. Otherwise
+// next was asked later and takes over: the old line is listed first. It
+// reports whether the park may go on.
+func (m *Manager) takeOverUnfinishedLine(prd *PRD, cur Task, next string) bool {
+	dr := cur.DecisionResume
+	if dr == nil || !dr.deliveryOpen() {
+		return true
+	}
+	if next == dr.QuestionID || dr.Delivery == DecisionSending {
+		return false
+	}
+	for _, id := range dr.OpenAtResume {
+		if id == next {
+			return false
+		}
+	}
+	return m.listUnfinishedLine(prd, cur.ID, dr.QuestionID, deliveryReplaced)
+}
+
+// listUnfinishedLine ends the task's open delivery for the question as review
+// needed, unless a resume or send of the task is at work. It reports whether
+// that delivery is no longer open.
+func (m *Manager) listUnfinishedLine(prd *PRD, taskID, questionID, reason string) bool {
+	if !m.questionTick.begin(taskID) {
+		return false
+	}
+	defer m.questionTick.end(taskID)
+	m.deliveryNeedsReview(prd, taskID, questionID, reason)
+	cur, ok := m.store.TaskSnapshot(taskID)
+	return ok && (cur.DecisionResume == nil || cur.DecisionResume.QuestionID != questionID || !cur.DecisionResume.deliveryOpen())
+}
+
+// otherOpenQuestionIDs lists the task's open blocking questions other than
+// the one being resumed.
+func (m *Manager) otherOpenQuestionIDs(taskID, resumed string) []string {
+	var ids []string
+	for _, q := range m.openBlockingQuestionsForTask(taskID) {
+		if q.ID != resumed {
+			ids = append(ids, q.ID)
+		}
+	}
+	return ids
+}
+
 // continueDelivery picks up an unfinished delivery on a tick. It starts at
-// most one goroutine per task and does nothing while one is running.
-func (m *Manager) continueDelivery(ctx context.Context, store *QuestionStore, tk Task, answered, withdrawn map[string]Question) {
+// most one goroutine per task and does nothing while one is running. The
+// question is read by id: it need not be among the newest decided ones.
+func (m *Manager) continueDelivery(ctx context.Context, store *QuestionStore, tk Task) {
 	dr := tk.DecisionResume
 	var ans *Answer
-	q, ok := answered[dr.QuestionID]
-	if ok {
+	q, ok := store.Get(dr.QuestionID)
+	if ok && q.State == QuestionAnswered {
 		cur, found := store.CurrentAnswer(dr.QuestionID)
-		if !found {
-			return
+		if found {
+			ans = &cur
 		}
-		ans = &cur
-	} else if q, ok = withdrawn[dr.QuestionID]; !ok {
+		ok = found
+	}
+	if !ok {
+		// There is no decision left to type: say so instead of waiting.
+		if prd, found := m.store.GetPRD(tk.PRDID); found {
+			m.listUnfinishedLine(prd, tk.ID, dr.QuestionID, deliveryQuestionGone)
+		}
+		return
+	}
+	if q.State == QuestionOpen {
 		return
 	}
 	// The daemon stopped while the task was still queued to resume: run the
@@ -256,7 +313,7 @@ func (m *Manager) sendDecisionLine(prdID, taskID string, q Question, ans *Answer
 	if refused {
 		if first {
 			m.deliveryAlert("warn", "Automaton decision not delivered yet", fmt.Sprintf(
-				"automaton=%s task=%s question=%s session=%s reason=%s. Nothing was typed because the session shows a prompt or its screen cannot be read. datawatch tries again until it can type.",
+				"automaton=%s task=%s question=%s session=%s reason=%s. Nothing was typed because the session shows a prompt or its screen cannot be read. datawatch tries again while the task stays with this worker session and no later question takes over; retries pause while the Automaton is held or the autonomous loop is off. If it stops trying, you get a 'review needed' alert for this question.",
 				prd.ID, taskID, q.ID, sessionID, deliveryPromptOnScreen))
 		}
 		return

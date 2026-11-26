@@ -656,6 +656,7 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 		return fmt.Errorf("task %s: the unsent decision before this one could not be saved for review", t.ID)
 	}
 	rec := &DecisionResume{QuestionID: q.ID, AnswerID: ans.ID, CurrentAnswerID: ans.ID, ResumedAt: time.Now().UTC()}
+	others := m.otherOpenQuestionIDs(t.ID, q.ID)
 	var claimed bool
 	var prev *DecisionResume
 	m.store.MutateTask(t.ID, func(c *Task) {
@@ -669,6 +670,7 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 		}
 		prev = c.DecisionResume
 		rec.open(c.SessionID)
+		rec.OpenAtResume = others
 		c.DecisionResume = rec
 		claimed = true
 	})

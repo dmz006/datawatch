@@ -35,9 +35,12 @@ type OwedDecision struct {
 	WaitingNoticed bool `json:"waiting_noticed,omitempty"`
 }
 
-// deliveryOtherQuestionOpen is the reason code of the notice that a decision
-// waits while the task is parked on another open question.
-const deliveryOtherQuestionOpen = "other_question_open"
+// Reason codes of the notice that a decision waits: the task is parked on
+// another open question, or an earlier decision line is not typed yet.
+const (
+	deliveryOtherQuestionOpen = "other_question_open"
+	deliveryEarlierUnfinished = "earlier_line_unfinished"
+)
 
 // owedQuestion reports whether the question is one a task's worker waits for.
 func owedQuestion(q *Question) bool {
@@ -279,7 +282,8 @@ func (m *Manager) resumeOwedDecision(ctx context.Context, store *QuestionStore, 
 	t, okTask := m.store.GetTask(snap.ID)
 	m.questionTick.parkMu.Lock()
 	if now, ok := m.store.TaskSnapshot(snap.ID); okPRD && okTask && ok && now.Status == snap.Status &&
-		now.SessionID == snap.SessionID && now.WaitReason == snap.WaitReason {
+		now.SessionID == snap.SessionID && now.WaitReason == snap.WaitReason &&
+		(now.DecisionResume == nil || !now.DecisionResume.deliveryOpen()) {
 		m.parkOnDecision(prd, t, q.ID)
 	}
 	m.questionTick.parkMu.Unlock()
@@ -294,10 +298,34 @@ func (m *Manager) resumeOwedDecision(ctx context.Context, store *QuestionStore, 
 // the task is parked on another question that is still open.
 func (m *Manager) noticeOwedWaiting(store *QuestionStore, snap Task, e OwedDecision) {
 	parkedOn := AwaitDecisionQuestionID(snap.WaitReason)
-	if parkedOn == "" || parkedOn == e.QuestionID || e.WaitingNoticed {
+	if parkedOn == "" || parkedOn == e.QuestionID {
 		return
 	}
 	if q, ok := store.Get(parkedOn); !ok || q.State != QuestionOpen {
+		return
+	}
+	m.noticeOwedOnce(snap, e, deliveryOtherQuestionOpen, fmt.Sprintf(
+		"The task also waits for question %s, which is still open. This decision is typed after that one is decided or expires, or listed as 'review needed' if the worker can no longer get it. Answer or withdraw that question.", parkedOn))
+}
+
+// noticeOwedBehindLine tells the operator, once for each, which other
+// decisions wait behind the task's line that could not be typed.
+func (m *Manager) noticeOwedBehindLine(store *QuestionStore, taskID, earlier string) {
+	snap, ok := m.store.TaskSnapshot(taskID)
+	if !ok {
+		return
+	}
+	owed, _ := m.decidedOwed(store, snap)
+	for _, e := range owed {
+		if e.QuestionID != earlier {
+			m.noticeOwedOnce(snap, e, deliveryEarlierUnfinished, fmt.Sprintf(
+				"The line for question %s is not typed yet. This decision is typed after it, or listed as 'review needed' if the worker can no longer get it.", earlier))
+		}
+	}
+}
+
+func (m *Manager) noticeOwedOnce(snap Task, e OwedDecision, reason, why string) {
+	if e.WaitingNoticed {
 		return
 	}
 	noted, err := m.store.mutateTaskSaved(snap.ID, func(c *Task) bool {
@@ -314,8 +342,8 @@ func (m *Manager) noticeOwedWaiting(store *QuestionStore, snap Task, e OwedDecis
 		return
 	}
 	m.deliveryAlert("warn", "Automaton decision not delivered yet", fmt.Sprintf(
-		"automaton=%s task=%s question=%s session=%s reason=%s. The task also waits for question %s, which is still open. This decision is typed after that one is decided; answer or withdraw it.",
-		snap.PRDID, snap.ID, e.QuestionID, e.SessionID, deliveryOtherQuestionOpen, parkedOn))
+		"automaton=%s task=%s question=%s session=%s reason=%s. %s",
+		snap.PRDID, snap.ID, e.QuestionID, e.SessionID, reason, why))
 }
 
 // listOwedDecision gives up on typing an owed decision and lists it for the

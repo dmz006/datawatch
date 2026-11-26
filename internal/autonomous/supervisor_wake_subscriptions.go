@@ -236,7 +236,7 @@ func (s *SupervisorWakeSet) count() {
 func (s *SupervisorWakeSet) wait(pending []supervisorloop.WakeEvent, why string) {
 	if s.memory.FirstNotice() {
 		s.cfg.alert("warn", "Supervisor wake not delivered yet", fmt.Sprintf(
-			"%s. Nothing was typed; %d wake(s) wait and datawatch keeps trying, into the designated supervisor session only. First: %s. See datawatch supervisor-loop wake.",
+			"%s. Nothing was typed; %d wake(s) wait. datawatch keeps trying, into the designated supervisor session only, while the daemon runs with the wake on: a restart drops waiting wakes without another alert, the oldest are dropped beyond 200, and nothing is tried while the wake is turned off. First: %s. See datawatch supervisor-loop wake.",
 			why, len(pending), pending[0].Line()))
 	}
 	if n := s.memory.Dropped(); n > 0 {

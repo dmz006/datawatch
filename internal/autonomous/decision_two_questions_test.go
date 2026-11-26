@@ -31,13 +31,16 @@ var waitLoops = map[string]func(t *testing.T, f *deliveryFixture) waitLoopPoll{
 			}
 		}
 	},
-	// The change the report proposes for main.go.
+	// The change the report proposes for main.go: a question is done with once
+	// its park stands; a refused park is tried again.
 	"fresh worker loop (proposed change)": func(t *testing.T, f *deliveryFixture) waitLoopPoll {
 		handled := f.qid
 		return func(f *deliveryFixture) {
 			prd, task := f.live(t)
-			if q, ok := f.m.OpenBlockingQuestionForTask(task.ID); ok && q.ID != handled && f.m.ParkForDecision(prd, task, q.ID) {
-				handled = q.ID
+			if q, ok := f.m.OpenBlockingQuestionForTask(task.ID); ok && q.ID != handled {
+				if f.m.ParkForDecision(prd, task, q.ID) || f.m.ParkedOnDecision(task.ID, q.ID) {
+					handled = q.ID
+				}
 			}
 		}
 	},
