@@ -241,10 +241,14 @@ unless the task is parked on it; otherwise its answer is listed.
   waits for that one. You get one warning alert (`other_question_open`) naming
   both. Answer or withdraw the open one. If it expires instead, the waiting
   decision is typed.
-- A question that **expires** releases the task parked on it. If another
-  decision is waiting, that one is typed. If not, the worker gets one line
-  saying the question expired, that no default was applied and that no decision
-  was made.
+- Nothing in datawatch expires a question today: no screen, command, API call
+  or timer does it. What follows is how a task behaves if a question is expired.
+- A question that **expires** releases the task parked on it, also while another
+  question is still open: the task is parked on that one only after the line
+  below is typed. If another decision is already waiting, that one is typed
+  instead, and the expired question gets no line and no alert. If none is
+  waiting, the worker gets one line saying the question expired, that no default
+  was applied and that no decision was made.
 - If the worker can no longer get a decision (the task ended or was queued
   again, it has another worker session, the session ended, or verification has
   started), an answer is listed with a `review_needed` alert and not typed.

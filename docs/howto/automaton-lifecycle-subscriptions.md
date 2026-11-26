@@ -511,6 +511,24 @@ the saved message and its session. Alerts and logs never carry the text.
   and it is held in memory until a save works. Only then would a restart lose
   it.
 
+### Alerts raised while the daemon starts
+
+The daemon reviews what a stop left behind before its alerting is up. So every
+delivery alert about a subscription, an Automaton decision or a supervisor wake
+is saved first (`autonomous/delivery_notices.json` in the data folder) and
+removed once the alert is stored.
+
+- One raised during start appears in the alert list when alerting is up. If the
+  daemon stops before that, it appears after the next start and ends with
+  *(Raised before a daemon restart.)*
+- It appears in the alert list. A web or phone push may not be sent for an
+  alert stored during start.
+- After a crash you may see the same alert twice, or one for a change that was
+  not saved. A saved alert is not lost. At most 500 wait; the oldest are
+  dropped and logged.
+- If the file cannot be written, the daemon log says so and the alert is held
+  in memory only.
+
 ## One-shot, expiry, coalesce, and how delivery works
 
 - **`one_shot`** — deleted only after *successful* delivery. For a session

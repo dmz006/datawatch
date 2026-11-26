@@ -29,6 +29,10 @@ Draft for the datawatch-app mobile client. File only; no issue has been filed.
 - A command forwarded to another server now reports a refused or unreadable
   reply as an error.
 
+Delivery alerts raised while the daemon starts are saved and appear in the
+alert list once alerting is up, also after another restart. A push may not be
+sent for them.
+
 ## Surfaces
 | Surface | State |
 |---|---|
