@@ -91,19 +91,18 @@ func (m *Manager) oneShotFinishReason(sess *Session) string {
 	if err != nil {
 		return ""
 	}
+	if paneShowsAgentExit(strings.Split(StripANSI(out), "\n")) && m.EndedBeforeTask(sess.FullID) {
+		return "" // the agent exited without its task: not finished work
+	}
 	// BL468 — note the state guard above already leaves sessions in a
 	// terminal state (complete/failed/killed) alone, so a StateFailed
 	// record is never reaped or re-transitioned here.
-	paneLines := strings.Split(StripANSI(out), "\n")
-	if paneShowsAgentExit(paneLines) && m.EndedBeforeTask(sess.FullID) {
-		return "" // the agent exited without its task: not finished work
-	}
 	// The same real-completion rules as the pane scanners: the wrapped tail of
 	// the typed launch command ("...echo 'DATAWATCH_COMPLETE: claude done'")
 	// and an instruction placeholder are not the worker's own completion.
 	// BL468 — the pi non-zero-exit failure marker is a failure signal, not a
 	// completion: even a malformed marker line must never satisfy this check.
-	for _, line := range paneLines {
+	for _, line := range strings.Split(StripANSI(out), "\n") {
 		l := strings.TrimSpace(line)
 		if strings.HasPrefix(l, piFailureMarker) {
 			continue
@@ -137,7 +136,6 @@ func (m *Manager) FinishedOneShots() []*Session {
 // recorded failure is left alone — its pane and scratch are the failure
 // path's problem, not the completion reaper's.
 func (m *Manager) ReapFinishedOneShots() []string {
-	m.failMissedEarlyExits()
 	var reaped []string
 	for _, sess := range m.FinishedOneShots() {
 		oldState := sess.State
@@ -166,6 +164,9 @@ func (m *Manager) ReapFinishedOneShots() []string {
 		removeOneShotScratch(sess.TmuxSession)
 		reaped = append(reaped, sess.FullID)
 	}
+	// An agent that exited without its task is never listed above as
+	// finished. Where no watcher saw it exit, end it as failed here.
+	m.failMissedEarlyExits()
 	return reaped
 }
 
