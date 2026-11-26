@@ -433,6 +433,22 @@ func TestShadowCatchesAProcessLeftRunning(t *testing.T) {
 	wantMiss(t, r, mergeshadow.RowSideEffects, "process")
 }
 
+// A command that reaches the project and pushes work the copy does not hold is
+// still reported: the project held that work before the shadow ran.
+func TestShadowSeesOtherProjectWorkPushedToTheRealRemote(t *testing.T) {
+	g := newReplayRig(t)
+	runGit(t, g.dir, "checkout", "-q", "-b", "unrelated")
+	putFile(t, g.dir, "unrelated.txt", "x\n")
+	runGit(t, g.dir, "add", "-A")
+	runGit(t, g.dir, "commit", "-q", "-m", "unrelated work")
+	runGit(t, g.dir, "checkout", "-q", "main")
+	g.addCheck("reach-out", "git -C '"+g.dir+"' push -q origin unrelated:refs/heads/escaped")
+	hand := g.handMerge(handOptions{})
+	r := ShadowHandMerge(context.Background(), g.input(hand))
+	r.HandChecks = map[string]string{"lint": "pass", "go-test": "pass", "reach-out": "pass"}
+	wantMiss(t, r, mergeshadow.RowSideEffects, "refs/heads/escaped")
+}
+
 // Someone else's push while the shadow runs is listed apart.
 func TestShadowListsOthersChangesApart(t *testing.T) {
 	g := newReplayRig(t)

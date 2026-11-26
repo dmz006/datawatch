@@ -790,8 +790,9 @@ func readReal(ctx context.Context, src *Merger) (realState, error) {
 // realSideEffects tells a change the shadow run made to the project or its
 // remote from one somebody else made meanwhile. A commit the copy holds that
 // no ref of the project held before was made by the run; on the remote, any
-// move to a commit the copy holds cannot be told apart from one the run made,
-// and nor can a change to a tag or a removed branch.
+// move to a commit the copy holds, or one the project already had, cannot be
+// told apart from one a command of the run made, and nor can a change to a
+// tag or a removed branch.
 func realSideEffects(ctx context.Context, src *Merger, rec *mergeshadow.Replay, c *shadowCopy, work string, before realState, beforeErr error) {
 	add := func(format string, a ...any) {
 		rec.SideEffects.Found = append(rec.SideEffects.Found, fmt.Sprintf(format, a...))
@@ -829,6 +830,23 @@ func realSideEffects(ctx context.Context, src *Merger, rec *mergeshadow.Replay, 
 		}
 		return true
 	}
+	// projectHad reports whether the refs read before the run already reached
+	// id: such a commit may not be in the copy, yet a command could send it.
+	projectHad := func(id string) bool {
+		r, err := src.git(ctx, src.Dir, "cat-file", "-e", id+"^{commit}")
+		if err != nil || r.Code != 0 {
+			return false
+		}
+		var in strings.Builder
+		in.WriteString(id + "\n")
+		for _, k := range known {
+			in.WriteString("^" + k + "\n")
+		}
+		var out bytes.Buffer
+		// Nothing is listed when what is known already reaches id.
+		err = src.gitStream(ctx, src.Dir, strings.NewReader(in.String()), &out, "rev-list", "--max-count=1", "--ignore-missing", "--stdin")
+		return err == nil && out.Len() == 0
+	}
 	classify := func(where string, remote bool, changes []refChange) {
 		for _, ch := range changes {
 			tag := strings.HasPrefix(ch.ref, "refs/tags/") || strings.HasPrefix(ch.ref, "refs/datawatch-merge-tags/")
@@ -837,8 +855,8 @@ func realSideEffects(ctx context.Context, src *Merger, rec *mergeshadow.Replay, 
 				add("a tag changed %s while the shadow ran: %s", where, ch)
 			case remote && ch.new == "":
 				add("a ref was removed %s while the shadow ran: %s", where, ch)
-			case ch.new != "" && ((remote && has(ch.new)) || madeByRun(ch.new)):
-				add("changed %s to a commit the shadow held: %s", where, ch)
+			case ch.new != "" && ((remote && (has(ch.new) || projectHad(ch.new))) || madeByRun(ch.new)):
+				add("changed %s to a commit the shadow held or the project already had: %s", where, ch)
 			default:
 				rec.SideEffects.Elsewhere = append(rec.SideEffects.Elsewhere, where+": "+ch.String())
 			}
