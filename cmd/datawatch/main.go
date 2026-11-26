@@ -245,21 +245,31 @@ func claudeDisclaimerResponse(line string) string {
 //     start-failure budget owns the re-try.
 //   - none / unknown  → sends nothing (session stays in waiting_input)
 //
-// It reports whether a keystroke was answered. A "no keystroke" outcome
-// returns false so caller loops may re-capture later within their window.
+// It reports whether it sent a keystroke. A "no keystroke" outcome, a screen
+// already answered included, returns false so caller loops may re-capture
+// later within their window.
 func respondStartupDialog(m *session.Manager, sessID string) bool {
 	a := m.ActiveStartupDialog(sessID)
+	// Every answer goes through the manager, which sends one per screen
+	// whichever responder asks.
+	answer := func(send func() error) (answered bool, err error) {
+		err = m.AnswerStartupScreen(sessID, a.Kind, send)
+		if errors.Is(err, session.ErrStartupScreenAnswered) {
+			return false, nil
+		}
+		return err == nil, err
+	}
 	switch a.Kind {
 	case session.StartupDialogNone:
 		return false
 	case session.StartupDialogTrustFolder:
 		// Arrow-key TUI ("❯ No, exit" pre-selected): Down moves the selector
 		// onto the accept option, Enter confirms.
-		if err := m.SendTrustDialogAccept(sessID); err != nil {
+		sent, err := answer(func() error { return m.SendTrustDialogAccept(sessID) })
+		if err != nil {
 			fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
-			return false
 		}
-		return true
+		return sent
 	case session.StartupDialogUnknownConfirm:
 		// The classifier declined to guess: send nothing and let the
 		// silent-start detector flag the session as a start failure.
@@ -269,22 +279,23 @@ func respondStartupDialog(m *session.Manager, sessID string) bool {
 	if a.Retry {
 		// Unsafe dialog (confirm-unsafe / update-prompt): decline with
 		// exactly one Esc; the start-failure budget owns any re-try.
-		if err := m.DeclineStartupDialog(sessID); err != nil {
+		sent, err := answer(func() error { return m.DeclineStartupDialog(sessID) })
+		if err != nil {
 			fmt.Printf("[claude] decline %q dialog send failed %s: %v\n", a.Kind, sessID, err)
-			return false
+		} else if sent {
+			fmt.Printf("[claude] declined %q startup dialog on %s (sent esc)\n", a.Kind, sessID)
 		}
-		fmt.Printf("[claude] declined %q startup dialog on %s (sent esc)\n", a.Kind, sessID)
-		return true
+		return sent
 	}
 	text := session.StartupDialogSendText(a)
 	if text == "" {
 		return false
 	}
-	if err := m.SendInput(sessID, text, "auto-accept-disclaimer"); err != nil {
+	sent, err := answer(func() error { return m.SendInput(sessID, text, "auto-accept-disclaimer") })
+	if err != nil {
 		fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
-		return false
 	}
-	return true
+	return sent
 }
 
 // claudeStartupAccepted tracks sessions whose startup auto-accept goroutine

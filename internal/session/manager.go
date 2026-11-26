@@ -544,6 +544,9 @@ type Manager struct {
 
 	// onSessionStart is called immediately after a session is successfully started.
 	onSessionStart []func(sess *Session)
+	// startupAnswers is when each session's start-up screens were answered.
+	startupMu      sync.Mutex
+	startupAnswers map[string]time.Time
 	// sessionNotice raises one operator notice about sessions; endedAtStart
 	// and silentNoticed hold what it still has to say or has said.
 	sessionNotice func(title, body string)
@@ -6481,6 +6484,7 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 
 	specs := []struct {
 		name       string
+		kind       StartupKind
 		visible    bool
 		sendAccept func() error
 	}{
@@ -6491,6 +6495,7 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			// (it reads the pane to pick between plain Enter and
 			// Down+Enter — see TmuxManager.SendTrustPromptAccept).
 			name:    claudeDialogTrust,
+			kind:    StartupDialogTrustFolder,
 			visible: strings.Contains(lower, "yes, i trust this folder") || strings.Contains(lower, "quick safety check"),
 			sendAccept: func() error {
 				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
@@ -6505,6 +6510,7 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			// (not the "loading development channels" warning) so a stray
 			// Enter never races ahead of a still-pending trust dialog.
 			name:    claudeDialogChannels,
+			kind:    StartupDialogDevChannels,
 			visible: strings.Contains(lower, "i am using this for local development"),
 			sendAccept: func() error {
 				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
@@ -6518,11 +6524,17 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 	acted := false
 	for _, d := range specs {
 		if d.visible {
-			if m.trySendDialogAccept(sess, d.name, d.sendAccept) {
+			// Another responder may have answered this screen already: that
+			// is not an attempt of this one.
+			if m.startupScreenHeld(sess.FullID, d.kind) {
+				continue
+			}
+			answer := func() error { return m.AnswerStartupScreen(sess.FullID, d.kind, d.sendAccept) }
+			if m.trySendDialogAccept(sess, d.name, answer) {
 				acted = true
 			}
-		} else {
-			m.markDialogConfirmedIfGone(sess, d.name)
+		} else if m.markDialogConfirmedIfGone(sess, d.name) {
+			m.startupScreenLeft(sess, d.kind)
 		}
 	}
 	return acted
@@ -6580,6 +6592,10 @@ func (m *Manager) trySendDialogAccept(sess *Session, dialog string, sendAccept f
 	err := sendAccept()
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	if errors.Is(err, ErrStartupScreenAnswered) {
+		st.attempts--
+		return false
+	}
 	st.lastAttempt = time.Now()
 	if err != nil {
 		st.inFlight = false
@@ -6599,10 +6615,11 @@ func (m *Manager) trySendDialogAccept(sess *Session, dialog string, sendAccept f
 // dialog vanished without our send confirming it (e.g. an operator
 // accepted it), clear the failed-attempt record so a fresh appearance
 // later in the session's life gets a full retry budget again.
-func (m *Manager) markDialogConfirmedIfGone(sess *Session, dialog string) {
+// It reports whether the dialog is, as far as this record goes, gone.
+func (m *Manager) markDialogConfirmedIfGone(sess *Session, dialog string) (gone bool) {
 	v, ok := m.claudeDialogDismiss.Load(sess.FullID + ":" + dialog)
 	if !ok {
-		return
+		return false
 	}
 	st := v.(*claudeDialogState)
 	st.mu.Lock()
@@ -6611,10 +6628,10 @@ func (m *Manager) markDialogConfirmedIfGone(sess *Session, dialog string) {
 		if st.absentSince.IsZero() {
 			st.absentSince = time.Now()
 			m.debugf("dismissClaudeStartupDialog: %s (%s): absence observed — starting the dismiss confirm window", dialog, sess.FullID)
-			return
+			return false
 		}
 		if time.Since(st.absentSince) < claudeDialogConfirmWindow {
-			return // keep the send confirmed-pending; absence may be a fleeting frame
+			return false // keep the send confirmed-pending; absence may be a fleeting frame
 		}
 		st.inFlight = false
 		st.dismissed = true
@@ -6624,6 +6641,7 @@ func (m *Manager) markDialogConfirmedIfGone(sess *Session, dialog string) {
 	} else if st.attempts > 0 && !st.dismissed {
 		st.attempts = 0
 	}
+	return st.dismissed
 }
 
 // KillAll terminates all running and waiting sessions on this host.
