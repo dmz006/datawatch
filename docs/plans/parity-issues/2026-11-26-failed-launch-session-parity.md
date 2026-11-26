@@ -8,7 +8,7 @@ The session list, session detail and alerts in every client of the daemon: the P
 
 ## What changed in the daemon
 
-A claude-code session whose agent exits before it was given its task (for example after datawatch declines a start-up dialog with Esc) now ends `failed`. Before, it could be reported `complete`, or switch between `complete`, `running` and `waiting_input`. The daemon closes the leftover terminal and does not bring the session back. No setting, endpoint or key changed, and the keys datawatch sends to dialogs are unchanged.
+A claude-code session now ends `failed` in two cases: its agent exits soon after datawatch declined a start-up dialog with Esc, or the agent of a new channel session exits before datawatch has typed its first task. Before, such a session could be reported `complete`, or switch between `complete`, `running` and `waiting_input`. Restarted sessions and sessions someone has used are not failed for the task. The daemon closes the leftover terminal and does not bring the session back. No setting, endpoint or key changed, and the keys datawatch sends to dialogs are unchanged.
 
 ## Data a client sees
 

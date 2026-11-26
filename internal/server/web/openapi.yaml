@@ -16748,10 +16748,10 @@ components:
         launch_failure:
           type: string
           description: >-
-            Why a claude-code session ended as a failed launch: its agent exited before it was given its task. Names the start-up dialog datawatch declined and any settings files the dialog listed. A session carrying it is `failed` and is not completed or brought back; a restart clears it. Omitted otherwise.
+            Why a claude-code session ended as a failed launch: its agent exited at a start-up dialog datawatch declined, or before datawatch had typed the first task of a new channel session. Names a declined dialog and any settings files it listed. A session carrying it is `failed` and is not completed or brought back; a restart clears it. Omitted otherwise.
         startup_decline:
           type: object
-          description: The start-up dialog datawatch declined (Esc) on this launch. Omitted when none, once Claude Code is seen past it before its task is proven delivered, and after a restart.
+          description: A start-up dialog datawatch declined (Esc) on this launch, recorded only when the visible screen ended with its footer and numbered choices. Omitted when none, after a restart, and once the screen shows Claude Code past it before a task delivery is proven.
           properties:
             dialog: {type: string}
             files:
