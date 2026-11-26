@@ -3,6 +3,7 @@ package council
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -187,12 +188,18 @@ func TestSynthesisProducesConsensus(t *testing.T) {
 // attempt must be rejected before os.WriteFile ever sees it.
 func TestAddPersona_RejectsPathTraversalName(t *testing.T) {
 	o := NewOrchestrator(t.TempDir())
-	err := o.AddPersona(Persona{Name: "../../../../tmp/evil", SystemPrompt: "x"})
+	// The name climbs out of the personas folder into another folder of this
+	// test's own: where an accepted traversal would have written.
+	target := filepath.Join(t.TempDir(), "evil")
+	name, err := filepath.Rel(o.PersonasDir(), target)
+	if err != nil || !strings.HasPrefix(name, "..") {
+		t.Fatalf("test setup: %q is not a traversal name (%v)", name, err)
+	}
+	err = o.AddPersona(Persona{Name: name, SystemPrompt: "x"})
 	if err == nil {
 		t.Fatal("expected a traversal persona name to be rejected")
 	}
-	if _, statErr := os.Stat("/tmp/evil.yaml"); statErr == nil {
-		os.Remove("/tmp/evil.yaml") //nolint:errcheck
+	if _, statErr := os.Stat(target + ".yaml"); statErr == nil {
 		t.Fatal("traversal name must not have reached the filesystem")
 	}
 }

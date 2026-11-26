@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -41,18 +42,24 @@ func newTestManagerWithRegistry(t *testing.T, registryName, skillPath string) *M
 func TestSync_RejectsPathTraversalSkillName(t *testing.T) {
 	registryName := "evil-registry"
 	m := newTestManagerWithRegistry(t, registryName, "skills/x")
+	// The name climbs out of the synced folder into another folder of this
+	// test's own: where an accepted traversal would have written.
+	target := filepath.Join(t.TempDir(), "pwned")
+	name, err := filepath.Rel(filepath.Join(m.SyncedRoot, registryName), target)
+	if err != nil || !strings.HasPrefix(name, "..") {
+		t.Fatalf("test setup: %q is not a traversal name (%v)", name, err)
+	}
 	if err := m.Store.SetAvailable(registryName, []*AvailableSkill{
-		{Registry: registryName, Name: "../../../../tmp/pwned", Path: "skills/x"},
+		{Registry: registryName, Name: name, Path: "skills/x"},
 	}); err != nil {
 		t.Fatalf("SetAvailable: %v", err)
 	}
 
-	_, err := m.Sync(registryName, []string{"*"})
+	_, err = m.Sync(registryName, []string{"*"})
 	if err == nil {
 		t.Fatal("expected Sync to reject a traversal skill name")
 	}
-	if _, statErr := os.Stat("/tmp/pwned"); statErr == nil {
-		os.RemoveAll("/tmp/pwned") //nolint:errcheck
+	if _, statErr := os.Stat(target); statErr == nil {
 		t.Fatal("traversal name must not have reached the filesystem")
 	}
 }

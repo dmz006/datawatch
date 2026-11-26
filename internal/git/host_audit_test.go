@@ -111,6 +111,10 @@ func TestHostAuditRecordsTag(t *testing.T) {
 	ctx := context.Background()
 	for _, args := range [][]string{
 		{"init", "-q"},
+		// The tag below needs an identity; without a repository one it would
+		// come from the real ~/.gitconfig.
+		{"config", "user.name", "test"},
+		{"config", "user.email", "test@example.test"},
 		{"-c", "user.name=test", "-c", "user.email=test@example.test", "commit", "-q", "--allow-empty", "-m", "init"},
 	} {
 		if _, err := Run(ctx, dir, args...); err != nil {

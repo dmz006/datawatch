@@ -72,6 +72,7 @@ func TestOrphanFinderMatchesByEvidenceNotName(t *testing.T) {
 	if err := os.Unsetenv("TMUX"); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("TMUX_TMPDIR", "") // restores the package's private folder afterwards
 	if err := os.Unsetenv("TMUX_TMPDIR"); err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +104,7 @@ func TestOrphanReapEndsFixtureAndLeavesBystander(t *testing.T) {
 	if err := os.Unsetenv("TMUX"); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("TMUX_TMPDIR", "") // restores the package's private folder afterwards
 	if err := os.Unsetenv("TMUX_TMPDIR"); err != nil {
 		t.Fatal(err)
 	}
@@ -142,6 +144,7 @@ func TestOrphanFinderEnvEvidence(t *testing.T) {
 	if err := os.Unsetenv("TMUX"); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("TMUX_TMPDIR", "") // restores the package's private folder afterwards
 	if err := os.Unsetenv("TMUX_TMPDIR"); err != nil {
 		t.Fatal(err)
 	}
@@ -452,6 +455,7 @@ func TestOrphanRealPidfdSignalPathHonoursVerify(t *testing.T) {
 	if err := os.Unsetenv("TMUX"); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("TMUX_TMPDIR", "") // restores the package's private folder afterwards
 	if err := os.Unsetenv("TMUX_TMPDIR"); err != nil {
 		t.Fatal(err)
 	}

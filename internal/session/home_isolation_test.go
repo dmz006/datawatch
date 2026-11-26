@@ -26,5 +26,7 @@ func TestMain(m *testing.M) {
 	// Most tests read sessions.json straight after a Save; run them
 	// write-through. Tests of the deferred writer pass an explicit interval.
 	DefaultFlushInterval = 0
+	// A relative path that does not exist, so no test reads the shared file.
+	claudeCopyResponsePath = "testdata/no-claude-copy-response.md"
 	os.Exit(testhome.RunPrivateTmp(m))
 }

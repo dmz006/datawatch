@@ -13,7 +13,7 @@ import (
 func TestNewRunnerEvidenceFallsBackToLog(t *testing.T) {
 	t.Setenv("TMUX", "")
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TMUX_TMPDIR", "")
+	t.Setenv("TMUX_TMPDIR", t.TempDir()) // empty would mean the real default tmux server
 	logPath := filepath.Join(t.TempDir(), "output.log")
 	if err := os.WriteFile(logPath, []byte("working\n\x1b[31mfailed\x1b[0m\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestNewRunnerEvidenceFallsBackToLog(t *testing.T) {
 func TestNewRunnerEvidencePrefersPane(t *testing.T) {
 	t.Setenv("TMUX", "")
 	t.Setenv("TMUX_PANE", "")
-	t.Setenv("TMUX_TMPDIR", "")
+	t.Setenv("TMUX_TMPDIR", t.TempDir()) // empty would mean the real default tmux server
 	logPath := filepath.Join(t.TempDir(), "output.log")
 	if err := os.WriteFile(logPath, []byte("from log\n"), 0o600); err != nil {
 		t.Fatal(err)

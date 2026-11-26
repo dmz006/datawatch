@@ -109,7 +109,9 @@ func (h *secPassHarness) addRecord(workflow string) *RepoCIWatchRecord {
 // carries secPassSHA as its post-verify SHA.
 func (h *secPassHarness) addLinkedPRD() *PRD {
 	h.t.Helper()
-	prd, err := h.m.CreatePRD("spec", "/tmp", "", "", "")
+	// Its own empty folder: stopping the Automaton walks the project folder
+	// to clean up run files (it was "/tmp", the whole shared temp folder).
+	prd, err := h.m.CreatePRD("spec", h.t.TempDir(), "", "", "")
 	if err != nil {
 		h.t.Fatalf("CreatePRD: %v", err)
 	}

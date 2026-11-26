@@ -1,6 +1,9 @@
 package autonomous
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestEffectivePlanningAutomationTier(t *testing.T) {
 	cfg := DefaultConfig()
@@ -92,7 +95,7 @@ func TestDecomposeUsesAutomationPlanning(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewManager: %v", err)
 		}
-		prd, err := m.CreatePRD("spec", "/tmp/auto-planning", "ollama", "", "")
+		prd, err := m.CreatePRD("spec", filepath.Join(t.TempDir(), "auto-planning"), "ollama", "", "")
 		if err != nil {
 			t.Fatalf("CreatePRD: %v", err)
 		}

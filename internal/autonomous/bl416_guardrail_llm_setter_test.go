@@ -10,6 +10,7 @@
 package autonomous
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ func newBL416Manager(t *testing.T) (*Manager, *PRD) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	prd, err := m.CreatePRD("test spec", "/tmp/ts-bl416", "ollama", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "ts-bl416"), "ollama", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
