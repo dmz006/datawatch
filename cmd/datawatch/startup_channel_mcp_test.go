@@ -175,3 +175,28 @@ func TestDaemonStart_DoesNotWaitForClaudeMCPList(t *testing.T) {
 		return strings.Contains(d.callLog(), "mcp list")
 	})
 }
+
+// claude's MCP list is shared by every daemon that runs as this user. A daemon
+// knows only its own sessions, so it may remove only registrations named for
+// them: another daemon's registration belongs to a session it cannot see.
+func TestDaemonStart_LeavesOtherDaemonsMCPRegistrations(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a real daemon")
+	}
+	other := "datawatch-otherhost-ab12"
+	// Same leading text as this daemon's hostname, still another host's.
+	longer := "datawatch-" + startupHostname + "-second-cd34"
+	ownGone := "datawatch-" + startupHostname + "-ef56"
+	d := startStartupDaemon(t, other+": x - ok\n"+longer+": x - ok\n"+ownGone+": x - ok\n")
+	d.release()
+	// The own registration is listed last, so once it is removed the other two
+	// have been judged.
+	d.waitFor("the removal of this daemon's own stale registration", func() bool {
+		return strings.Contains(d.callLog(), "mcp remove "+ownGone+" -s user")
+	})
+	for _, name := range []string{other, longer} {
+		if strings.Contains(d.callLog(), "mcp remove "+name+" ") {
+			t.Errorf("the daemon removed %s, which is not its own\nclaude calls:\n%s", name, d.callLog())
+		}
+	}
+}
