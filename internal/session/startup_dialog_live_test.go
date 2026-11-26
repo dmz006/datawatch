@@ -47,6 +47,10 @@ func realDialogs(t testing.TB) map[string]struct {
 		"confirm to be refused": {read("startup", "confirm-unsafe.txt"), StartupDialogConfirmUnsafe, []string{"Esc"}},
 		"settings error": {rule + "\n Settings Error\n\n /made-up/project/.claude/settings.json\n  └ Invalid or malformed JSON\n\n ❯ 1. Fix with Claude\n   2. Exit and fix manually\n   3. Continue without these settings" + liveFooter,
 			StartupDialogConfirmUnsafe, []string{"Esc"}},
+		// Notes from a live run of Claude Code 2.1.306 write the trust
+		// options without numbers, with either one preselected.
+		"trust folder, no numbers":          {rule + "\n Quick safety check: Is this a project you trust?\n\n ❯ Yes, I trust this folder\n   No, exit" + liveFooter, StartupDialogTrustFolder, []string{"Down", "Enter"}},
+		"trust folder, no numbers, on exit": {rule + "\n Quick safety check: Is this a project you trust?\n\n ❯ No, exit\n   Yes, I trust this folder" + liveFooter, StartupDialogTrustFolder, []string{"Down", "Enter"}},
 		// Output above a dialog that names another dialog does not change
 		// which one is at the bottom.
 		"words of another above": {"the task mentions trust this folder and a new version\n" + both[1], StartupDialogDevChannels, []string{"Enter"}},
@@ -82,8 +86,14 @@ func ordinaryScreens(text string) map[string]string {
 		"working above the box":   "● " + quoted + "\n✻ Cascading… (8m 10s)" + inputBox,
 		"a sent task":             "> " + quoted + "\n● reading" + inputBox,
 		"a task still in the box": rule + "\n❯ " + quoted + "\n" + rule + "\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n",
-		"the typed launch line":   "user@host:~$ cd '/p' && claude 'do this: " + text + "'; echo 'DATAWATCH_COMPLETE: claude done'\n",
-		"output at the very end":  "● " + quoted + "\n",
+		// The input box's own closing rule is the last thing drawn.
+		"a task in the box, nothing below it": rule + "\n❯ " + quoted + "\n" + rule + "\n",
+		"output above the box, nothing below": "● " + quoted + "\n" + rule + "\n❯ \n" + rule + "\n",
+		// An input box drawn as a rounded box, with nothing below it.
+		"a task in a rounded box":    "╭" + rule + "╮\n│ > " + strings.ReplaceAll(text, "\n", "\n│   ") + "\n╰" + rule + "╯\n",
+		"a task in a rounded box, ❯": "╭" + rule + "╮\n│ ❯ please read this\n│   " + strings.ReplaceAll(text, "\n", "\n│   ") + "\n╰" + rule + "╯\n",
+		"the typed launch line":      "user@host:~$ cd '/p' && claude 'do this: " + text + "'; echo 'DATAWATCH_COMPLETE: claude done'\n",
+		"output at the very end":     "● " + quoted + "\n",
 	}
 }
 

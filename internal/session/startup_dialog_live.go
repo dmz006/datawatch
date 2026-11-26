@@ -17,16 +17,21 @@ var (
 	// dialogFooterLine is the whole last line of a Claude Code dialog, with an
 	// optional key hint on either side and nothing else.
 	dialogFooterLine = regexp.MustCompile(`^[\s│┃|]*(?:[↑↓←→][^·•|]{0,30}[·•|]\s*)?\(?(?:press )?enter to confirm\)?\s*(?:[·•|,]|or)?\s*\(?(?:esc to (?:cancel|exit|reject all|reject|go back|quit|skip|dismiss)|esc not now)\)?(?:\s*[·•|]\s*[↑↓←→a-z+ -]{0,30})*[\s│┃|]*$`)
-	// dialogChoiceRow is one numbered choice; group 1 is the selector.
-	dialogChoiceRow = regexp.MustCompile(`^[\s│┃|]*(❯[\s\x{00a0}]*)?\d+[.)][\s\x{00a0}]+(\S.*?)[\s│┃|]*$`)
+	// dialogOptionLine splits one line of a dialog: group 1 is the selector,
+	// group 2 the option's number, group 3 its text.
+	dialogOptionLine = regexp.MustCompile(`^[\s│┃|]*(❯[\s\x{00a0}]*)?(\d+[.)][\s\x{00a0}]+)?(.*?)[\s│┃|]*$`)
+	// boxPromptLine is the older input prompt, drawn inside a box.
+	boxPromptLine = regexp.MustCompile(`^\s*[│┃|]\s*>(\s|$)`)
 	// sessionMarks are drawn by a running session, never inside a dialog.
 	sessionMarks = []string{"⏵⏵", "? for shortcuts", "esc to interrupt"}
 )
 
-// isBorderLine reports a line made only of box border characters.
-func isBorderLine(l string) bool {
+// isBoxBottom reports the lower edge of a drawn box. A plain rule is not one:
+// the input box ends with a rule, so a rule below a footer means the footer is
+// text in that box.
+func isBoxBottom(l string) bool {
 	l = strings.TrimSpace(l)
-	return l != "" && strings.Trim(l, " ─━│┃╭╮╰╯└┘┌┐├┤") == ""
+	return (strings.HasPrefix(l, "╰") || strings.HasPrefix(l, "└")) && strings.Trim(l, " ─━╰╯└┘┴") == ""
 }
 
 // liveDialogBlock returns the dialog that ends the screen: the lines from its
@@ -35,7 +40,7 @@ func isBorderLine(l string) bool {
 func liveDialogBlock(pane string) (block []string, opened, ok bool) {
 	lines := strings.Split(strings.ReplaceAll(StripANSI(pane), "\r", ""), "\n")
 	end := len(lines) - 1
-	for end >= 0 && (strings.TrimSpace(lines[end]) == "" || isBorderLine(lines[end])) {
+	for end >= 0 && (strings.TrimSpace(lines[end]) == "" || isBoxBottom(lines[end])) {
 		end--
 	}
 	if end < 0 || !dialogFooterLine.MatchString(strings.ToLower(lines[end])) {
@@ -75,42 +80,70 @@ func liveStartupDialog(pane string) (StartupDialogAction, bool) {
 	if containsAnyPhrase(strings.ToLower(text), sessionMarks...) {
 		return none, false
 	}
-	var choices []string
-	selected := false
+	// Options may be numbered or not. numbered counts the numbered ones;
+	// selected is the text under the cursor, and cursors counts the cursors
+	// that are not on a numbered option, as an input prompt's is not.
+	var options []string
+	selected, numbered, cursors, bare := "", 0, 0, 0
 	for _, l := range block {
-		if row := dialogChoiceRow.FindStringSubmatch(l); row != nil {
-			choices = append(choices, strings.ToLower(row[2]))
-			selected = selected || row[1] != ""
+		if boxPromptLine.MatchString(l) {
+			return none, false
+		}
+		part := dialogOptionLine.FindStringSubmatch(l)
+		if part == nil {
+			continue
+		}
+		option := strings.ToLower(strings.Trim(part[3], " \t\u00a0"))
+		if option == "" {
+			continue
+		}
+		options = append(options, option)
+		if part[2] != "" {
+			numbered++
+		}
+		if part[1] != "" {
+			selected = option
+			cursors++
+			if part[2] == "" {
+				bare++
+			}
 		}
 	}
-	menu := selected && len(choices) >= 2
-	choice := func(has func(string) bool) bool {
-		for _, c := range choices {
-			if has(c) {
+	has := func(prefix string) bool {
+		for _, o := range options {
+			if strings.HasPrefix(o, prefix) {
 				return true
 			}
 		}
 		return false
 	}
-	starts := func(p string) bool { return choice(func(c string) bool { return strings.HasPrefix(c, p) }) }
-	holds := func(p string) bool { return choice(func(c string) bool { return strings.Contains(c, p) }) }
+	// on reports one cursor, on an option that starts with one of prefixes.
+	on := func(prefixes ...string) bool {
+		for _, p := range prefixes {
+			if cursors == 1 && strings.HasPrefix(selected, p) {
+				return true
+			}
+		}
+		return false
+	}
+	menu := cursors == 1 && bare == 0 && numbered >= 2
 
 	a := classifyStartupDialog(text)
 	shaped := false
 	switch a.Kind {
 	case StartupDialogTrustFolder:
-		shaped = menu && starts("yes") && starts("no")
+		shaped = has("yes") && has("no") && on("yes", "no")
 	case StartupDialogBypassAccept:
-		shaped = menu && holds("yes, i accept") && holds("no, exit")
+		shaped = has("yes, i accept") && has("no, exit") && on("yes, i accept", "no, exit")
 	case StartupDialogDevChannels:
-		shaped = menu && holds("local development")
+		shaped = has("i am using this for local development") && on("i am using this for local development", "exit", "no, exit")
 	case StartupDialogMCPTrust:
 		shaped = menu
 	case StartupDialogConfirmContinue, StartupDialogConfirmUnsafe,
 		StartupDialogUnknownConfirm, StartupDialogUpdatePrompt:
 		// A plain confirmation's choices are in its footer; its start is
-		// marked instead.
-		shaped = menu || opened
+		// marked instead. A cursor on unnumbered text is an input prompt.
+		shaped = menu || (opened && bare == 0)
 	}
 	if !shaped {
 		return none, false
