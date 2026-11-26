@@ -312,10 +312,16 @@ func TestCapacityCross_NewAttemptKeepsItsSlotWhenAnOldResumeWasQueued(t *testing
 		return n
 	}
 	var oldGone bool
+	oldEnded := func(err error) {
+		if err != nil {
+			t.Fatalf("the old resume: %v", err)
+		}
+		oldGone = true
+	}
 	pollUntil(t, 3*time.Second, "new attempt queued", func() bool {
 		select {
-		case <-resumed:
-			oldGone = true
+		case err := <-resumed:
+			oldEnded(err)
 		default:
 		}
 		return (oldGone && queuedForTask() == 1) || queuedForTask() == 2
@@ -331,7 +337,8 @@ func TestCapacityCross_NewAttemptKeepsItsSlotWhenAnOldResumeWasQueued(t *testing
 	}
 	if !oldGone {
 		select {
-		case <-resumed:
+		case err := <-resumed:
+			oldEnded(err)
 		case <-time.After(3 * time.Second):
 			t.Fatal("the old resume is still waiting")
 		}
