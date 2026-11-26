@@ -5,6 +5,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.29 — A safer merge run, with merging still off
+
+### Changed
+- A datawatch-run merge now works in a separate scratch folder, based on the remote's default branch. Local `main` and the real branch move only after the remote confirms the exact commit that was pushed. A failed check, a held release or a refused push leaves local `main` where it was, and a later run does not carry that work.
+- Release actions (tag, deploy, notices, ship hooks, marking done) wait for that confirmation. After a lost confirmation or a killed run, datawatch asks the remote and records what landed, without releasing twice.
+- A killed run no longer keeps the merge lock. A tree changed by a check, tracked or untracked, stops the push. A held or unpushed run is no longer reported as merged.
+
+### Before you upgrade
+- Merging stays off by default and this release does not turn it on. Before you ever turn it on: replace the recorded pipeline first, because a record without the new check steps would release with few checks.
+- Once merging is on, features release as a minor version, an unset kind is guessed from the title and the start of the spec, and a run may take up to 3 hours.
+
+### Not covered
+- Checks are not sandboxed and come from the work being merged: a check can itself push to the remote, move local branches or leave a tag, and it can read any file the daemon's user can.
+- A check that hides changes with `assume-unchanged`, `skip-worktree` or `.git/info/exclude` can pass on content that is not pushed.
+- If new commits are added to a branch after a lost push, the repair never finishes and runs for that work are refused until its entry in the push journal is removed by hand.
+- A landing recorded by repair runs no deploy and sends no notice.
+- A tag step written as a command, or the post-ship "tag" hook, can still make a tag; the hook can tag the old version when nothing was released.
+- The new conflict rules do nothing while the conflict policy is `stop_and_ask`.
+- A full release smoke, a real conflict model and a live daemon merge loop were not run.
+
 ## v9.187.28 — Start-up dialogs are answered only when shown, and not too soon
 
 ### Fixed
