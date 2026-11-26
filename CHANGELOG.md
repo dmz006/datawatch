@@ -5,14 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.24 — Tests keep to their own folders
+## v9.187.24 — Tests stop scanning the shared temporary folder
 
 ### Changed
-- Tests now keep to their own temporary folders. Before, some tests could scan the whole shared temporary folder, use the real terminal multiplexer, or write into the home folder. This is developer tooling: how datawatch behaves does not change.
-- Added `make check-test-isolation`, which runs the tests in a sandbox and fails when one reaches outside its own folders (Linux only).
+- Tests no longer scan the shared temporary folder or write into the home folder; some home lookups and leftover files remain. Before, some tests could scan the whole shared temporary folder, use the real terminal multiplexer, or write into the home folder. This is developer tooling: how datawatch behaves does not change.
+- Added `make check-test-isolation`, which runs the tests in a sandbox and fails on the outside access it can detect (Linux with bubblewrap only).
 
 ### Not covered
-- `make check-test-isolation` does not pass yet: two test packages still look up files in the home folder, and one older test fails now and then. It is not a release check.
+- `make check-test-isolation` does not pass yet: two test packages still look up files in the home folder, and one older test often fails under it. It is not a release check.
+- It misses some outside access, such as a started program writing below an existing home subfolder, or writes to `/var/tmp`.
 - Tests can still leave their own files in the shared temporary folder.
 
 ## v9.187.23 — A commit value in a shipped record is checked before git sees it
