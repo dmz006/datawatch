@@ -331,7 +331,7 @@ func RunMarkCompleted(ctx context.Context, c Completer, automatonID, release, co
 // runMarkCompleted supplies the run's own facts: the Automaton it belongs
 // to, the merge commit (main's head after the push) and the merge time.
 func (s *runState) runMarkCompleted(ctx context.Context, version string) (string, error) {
-	commit, _ := s.mainHead(ctx)
+	commit, _ := s.releasedCommit(ctx)
 	at := s.r.now()
 	return RunMarkCompleted(ctx, s.r.Completer, s.req.AutomatonID, version, commit, at)
 }

@@ -176,8 +176,8 @@ func TestNotifyGateEngineOneShotStaysArmed(t *testing.T) {
 	// Gated event: no delivery, and the one-shot must NOT be consumed.
 	m.emit(LifecycleEvent{Kind: KindTaskSessionStarted, Level: LevelTask, PRDID: "prd-gated", TaskID: "task-1", SessionID: "worker-1"})
 	time.Sleep(100 * time.Millisecond) // let the dispatcher drain before asserting
-	if got := rec.bridgeCount(); got != 0 {
-		t.Errorf("bridge deliveries = %d for a gated one-shot, want 0", got)
+	if got := rec.inputCount() + rec.bridgeCount(); got != 0 {
+		t.Errorf("deliveries = %d for a gated one-shot, want 0", got)
 	}
 	if subs := store.List(""); len(subs) != 1 {
 		t.Fatalf("one-shot was consumed by a gated event: %d records left (want 1 armed)", len(subs))
@@ -185,7 +185,7 @@ func TestNotifyGateEngineOneShotStaysArmed(t *testing.T) {
 
 	// A resolved event delivers AND consumes the now-still-armed one-shot.
 	m.emit(startedEvent())
-	waitFor(t, "one-shot delivery for a resolved Automaton", func() bool { return rec.bridgeCount() == 1 })
+	waitFor(t, "one-shot delivery for a resolved Automaton", func() bool { return rec.inputCount() == 1 })
 	// The one-shot is removed just after the delivery is recorded, so wait for it
 	// instead of reading the store at the instant of delivery.
 	waitFor(t, "one-shot consumed after a delivered event", func() bool { return len(store.List("")) == 0 })

@@ -54,10 +54,13 @@ type Tag struct {
 	// System marks a tag the registry created itself, such as a placement tag.
 	// A system tag is not renamed, re-parented or deleted by an operator, and
 	// creating a tag with its name returns the tag instead of changing it.
-	System      bool      `json:"system,omitempty"`
-	PendingSync bool      `json:"pending_sync,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	System      bool `json:"system,omitempty"`
+	PendingSync bool `json:"pending_sync,omitempty"`
+	// Local marks a tag this daemon wrote to its records without the registry,
+	// such as an auto tag. A sync from a keeper keeps it and its assignments.
+	Local     bool      `json:"local,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Note kinds.

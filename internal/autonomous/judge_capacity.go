@@ -45,9 +45,8 @@ type JudgeAdmit struct {
 // AdmitJudge takes the capacity lease a judge runs under and returns the node
 // the judge holds, with the release func that frees the lease.
 //
-// The worker's lease is never handed over: the task releases it when it enters
-// verifying (see releaseWorkerLeaseForVerify), and a WorkerHolder lease still
-// present is released here. The judge then waits for and acquires its own
+// The worker's lease is never handed over: it is freed when the worker session
+// ends, and a WorkerHolder lease still present is released here. The judge then waits for and acquires its own
 // lease on its pools, holding no worker slot while it waits. On a node with
 // verifier slots the ledger places it on node-verify:<node>; the entry's
 // candidate nodes let the ledger pick one. The node is returned only for an entry with

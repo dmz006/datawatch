@@ -291,10 +291,23 @@ YAML
 
   # Find the datawatch binary (prefer freshly built binary in repo root).
   _DW_BIN="${DATAWATCH_BIN:-}"
-  if [[ -z "$_DW_BIN" ]]; then
-    [[ -x "$REPO_DIR/datawatch" ]] && _DW_BIN="$REPO_DIR/datawatch" || _DW_BIN="$(command -v datawatch)"
+  if [[ -z "$_DW_BIN" && ! -x "$REPO_DIR/datawatch" ]]; then
+    # No binary in the tree: build the daemon from this tree rather than fall
+    # back to whatever datawatch is on PATH (an older build, or the operator's
+    # own). "make build", not a bare "go build": it also generates the embedded
+    # docs index, without which the daemon lists no how-tos.
+    echo "Building datawatch from this tree for the smoke daemon (make build)..."
+    if ! (cd "$REPO_DIR" && make build); then
+      echo "ERROR: make build failed and the tree has no datawatch binary; not using one from PATH." >&2
+      echo "       Set DATAWATCH_BIN=<path> to name a binary." >&2
+      exit 1
+    fi
+    [[ -x "$REPO_DIR/bin/datawatch" ]] || { echo "ERROR: make build produced no bin/datawatch" >&2; exit 1; }
+    _DW_BIN="$REPO_DIR/bin/datawatch"
   fi
-  [[ -z "$_DW_BIN" ]] && { echo "ERROR: datawatch binary not found. Build first or set DATAWATCH_BIN=<path>" >&2; exit 1; }
+  if [[ -z "$_DW_BIN" ]]; then
+    _DW_BIN="$REPO_DIR/datawatch"
+  fi
 
   echo "Smoke run ID : $RUN_ID"
   echo "Test data dir: $TEST_DATA_DIR"
@@ -311,8 +324,15 @@ YAML
   SMOKE_TMUX_DIR="${TEST_DATA_DIR}/dw-tmux-scratch"
   mkdir -p "$SMOKE_TMUX_DIR"
 
+  # The test daemon, and what it starts, gets its own empty Claude config
+  # folder: the daemon runs `claude mcp` at startup and for sessions, and must
+  # not read or change the MCP list of the user who runs this script.
+  SMOKE_CLAUDE_CONFIG_DIR="${TEST_DATA_DIR}/claude-config"
+  mkdir -p "$SMOKE_CLAUDE_CONFIG_DIR"
+
   # Start the test daemon in the background.
   env TMUX_TMPDIR="${TEST_DATA_DIR}/dw-tmux-scratch" \
+    CLAUDE_CONFIG_DIR="$SMOKE_CLAUDE_CONFIG_DIR" \
     "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!

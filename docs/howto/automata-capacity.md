@@ -52,8 +52,9 @@ Automata share the hardware fairly.
 - **Your sessions come first.** `session.reserved_interactive` slots
   (default 1 when `max_sessions` is 3 or more) are never used by
   Automata, and sessions you start are never queued.
-- **A verifying task holds no worker slot.** When the worker session ends and
-  the task moves to verification, its worker slot is released at once. The
+- **Verification holds no worker slot.** A task shows `verifying` from the
+  moment its worker has started, and keeps its worker slot while that session
+  runs. When the session ends, the worker slot is released. The
   verifier then waits for a slot of its own: on the node's verifier pool where
   the node has one, otherwise on the pools its backend uses. While it waits,
   the freed worker slot goes to the next waiting task, so a slow verification
@@ -337,15 +338,16 @@ not a rate limit.
 ## The worker slot at verification
 
 A task holds at most one capacity lease at a time. While its worker runs, that
-is the worker's lease. When the worker session ends and the task enters
-`verifying`, the worker's lease is released at once, so its slot is free for
-other work while the verification runs or waits. The verifier then takes its
+is the worker's lease. A task shows `verifying` from the moment its worker has
+started, and the lease stays held while that session runs. When the session
+ends, the lease is released, so its slot is free for other work while the
+verification runs or waits. The verifier then takes its
 own lease, holder `verify:<task>`, on the pools it needs: the node's verifier
 pool where the node has one, otherwise the pools its backend and model map to.
 The verifier never stacks on a worker lease that is still held.
 
-The worker's lease is not handed over to the verifier. A task in `verifying`
-holds no worker slot, so a verifier waiting for its slot does not keep a lane
+The worker's lease is not handed over to the verifier. A task whose worker
+session has ended holds no worker slot, so a verifier waiting for its slot does not keep a lane
 shut. The verifier still follows the worker's node when
 `autonomous.model_routing.verifier_follows_worker_node` applies, because the
 task keeps the node its worker ran on.
@@ -353,6 +355,9 @@ task keeps the node its worker ran on.
 The guardrail judge works the same way. Its lease is `judge:<task>`. A worker
 lease still present when the judge starts is released, not handed over, and the
 judge then waits for its own slot like the verifier does.
+
+**Exceptions and known limits.** A task parked for a question releases its slot while it waits. A worker resumed after a question or an outside wait can lose its slot after about 10 minutes while still running. A resume still queued when its session ends can hold a slot for about 10 minutes. Resuming or adopting a session can put a pool over its limit.
+
 
 ## Verifying tasks in the capacity view
 
@@ -687,7 +692,9 @@ restarts.
    force is needed — the reset keeps its place in the capacity queue,
    retargeting its target pool if the worker resolution changed, with
    a fresh wait budget); cancelling removes it from the queue outright.
-5. After a daemon restart, waiting tasks are put back in the queue.
+5. After a daemon restart, waiting tasks are put back in the queue. A task
+   parked on a worker question is different: it keeps its live worker. See
+   [questions from workers](operator-questions-workers.md#how-the-coordinator-tick-reads-and-resumes).
 
 An alert is raised when a task has waited 30 minutes.
 

@@ -82,6 +82,9 @@ type SupervisorLaneControl interface {
 type SupervisorMergeResult struct {
 	// Merged names the branches merged and left in place.
 	Merged []string
+	// NotMerged names those of Merged whose run delivered nothing: the push
+	// was held, skipped or not confirmed. They are never reported as merged.
+	NotMerged []string
 	// Conflict names the branch whose conflict was not settled; empty when
 	// the run reached no conflict.
 	Conflict string
@@ -118,6 +121,10 @@ type SupervisorLoopHooks struct {
 	// RunRefused records a refusal of one of those jobs (the daemon writes
 	// the audit entry). Nil records nothing.
 	RunRefused supervisorRunRefusedFunc
+	// ResolveTaskReview retries a held task the way the operator's retry does:
+	// the task is requeued and the run is woken or started. Nil only requeues
+	// it (no executors are configured).
+	ResolveTaskReview func(prdID, taskID string, req ReviewResolution, actor string) error
 }
 
 // SupervisorLoopStepResult is one step's outcome in a pass.
@@ -627,7 +634,10 @@ func (s *SupervisorLoopSteps) newestShippedRelease() string {
 // (resolveInfraHoldAnswer). Each hold is retried once by the loop; a task that
 // is held again stays for the operator.
 func (s *SupervisorLoopSteps) retryFailedInfra(_ context.Context) (string, error) {
-	type held struct{ prd, task string }
+	type held struct {
+		prd, task string
+		retried   bool // the loop retried this task's hold before
+	}
 	var holds []held
 	st := s.c.m.Store()
 	prds := st.ListPRDs()
@@ -640,7 +650,7 @@ func (s *SupervisorLoopSteps) retryFailedInfra(_ context.Context) (string, error
 				for j := range prd.Story[i].Tasks {
 					t := &prd.Story[i].Tasks[j]
 					if t.Status == TaskReviewNeeded && t.FailureReason != nil && t.FailureReason.Source == infraRetryHoldSource {
-						holds = append(holds, held{prd.ID, t.ID})
+						holds = append(holds, held{prd.ID, t.ID, t.LoopRetriedInfraHold})
 					}
 				}
 			}
@@ -656,11 +666,13 @@ func (s *SupervisorLoopSteps) retryFailedInfra(_ context.Context) (string, error
 		done := s.infraRetried[key]
 		s.infraRetried[key] = true
 		s.mu.Unlock()
-		if done {
+		// The map covers a retry that was refused; the task's own record
+		// covers one that ran, across passes and daemon restarts.
+		if done || h.retried {
 			continue
 		}
 		req := ReviewResolution{Action: reviewActionRetry, Note: "retried by the supervisor loop after an infrastructure hold"}
-		if _, err := s.c.m.ResolveTaskReview(h.prd, h.task, req, supervisorLoopActor); err != nil {
+		if err := s.resolveTaskReview(h.prd, h.task, req); err != nil {
 			if !errors.Is(err, ErrTaskNotInReview) {
 				errs = append(errs, fmt.Errorf("retry %s: %w", key, err))
 			}
@@ -676,6 +688,16 @@ func (s *SupervisorLoopSteps) retryFailedInfra(_ context.Context) (string, error
 	}
 	s.mu.Unlock()
 	return fmt.Sprintf("retried %d of %d held tasks", retried, len(holds)), errors.Join(errs...)
+}
+
+// resolveTaskReview retries a held task through the daemon's hook, which
+// wakes or starts the run. With no hook the task is only requeued.
+func (s *SupervisorLoopSteps) resolveTaskReview(prdID, taskID string, req ReviewResolution) error {
+	if s.hooks.ResolveTaskReview != nil {
+		return s.hooks.ResolveTaskReview(prdID, taskID, req, supervisorLoopActor)
+	}
+	_, err := s.c.m.ResolveTaskReview(prdID, taskID, req, supervisorLoopActor)
+	return err
 }
 
 // cleanupSweep runs the cleanup status sweep. Existing functions:
@@ -805,22 +827,29 @@ func (s *SupervisorLoopSteps) runMergeUntilConflict(ctx context.Context) (string
 	if err != nil && res.Conflict == "" {
 		return "", fmt.Errorf("merge pipeline: %w", err)
 	}
+	// A run whose push was held, skipped or not confirmed delivered nothing
+	// and is never counted as merged.
+	delivered := len(res.Merged) - len(res.NotMerged)
+	undelivered := ""
+	if len(res.NotMerged) > 0 {
+		undelivered = "; not merged (held or not pushed): " + strings.Join(res.NotMerged, ", ")
+	}
 	if res.Conflict != "" {
-		detail := fmt.Sprintf("conflict on %s, stopped after merging %d", res.Conflict, len(res.Merged))
+		detail := fmt.Sprintf("conflict on %s, stopped after merging %d", res.Conflict, delivered)
 		if res.Note != "" {
 			detail += ": " + res.Note
 		}
-		detail += excludedDetail(res.Excluded)
+		detail += undelivered + excludedDetail(res.Excluded)
 		s.mu.Lock()
 		s.lastConflict = detail
 		s.mu.Unlock()
 		return detail, nil
 	}
-	detail := fmt.Sprintf("merged %d branches, no conflict", len(res.Merged))
-	if res.Note != "" && len(res.Excluded) > 0 {
+	detail := fmt.Sprintf("merged %d branches, no conflict", delivered)
+	if res.Note != "" && (len(res.Excluded) > 0 || undelivered != "") {
 		detail += ": " + res.Note
 	}
-	return detail + excludedDetail(res.Excluded), nil
+	return detail + undelivered + excludedDetail(res.Excluded), nil
 }
 
 // excludedDetail lists what the merge selection rule left out, and why.

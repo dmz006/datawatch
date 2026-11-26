@@ -1,0 +1,80 @@
+#!/bin/sh
+# A stand-in for tmux holding one Claude Code start-up dialog that takes keys
+# the way Claude Code 2.1.332 was measured to: a key sent as soon as the dialog
+# is seen moves the cursor, but about 150 ms after it appears the dialog is
+# drawn again with the cursor back where it began, and an Enter sent before
+# then does nothing. State is in $DW_STUB_DIR.
+d=$DW_STUB_DIR
+kind=$(cat "$d/kind"); born=$(cat "$d/born"); redraw=$(cat "$d/redraw_ms")
+age=$(( ($(date +%s%N) - born) / 1000000 ))
+first=0; [ "$kind" = channels-on-exit ] && first=1
+[ -f "$d/cursor" ] || echo $first > "$d/cursor"
+[ -f "$d/state" ] || echo dialog > "$d/state"
+if [ ! -f "$d/redrawn" ] && [ "$redraw" -ge 0 ] && [ "$age" -ge "$redraw" ]; then
+  : > "$d/redrawn"; echo $first > "$d/cursor"
+fi
+cursor=$(cat "$d/cursor"); state=$(cat "$d/state")
+
+row() { # index text
+  if [ "$cursor" = "$1" ]; then printf ' ❯ %s\n' "$2"; else printf '   %s\n' "$2"; fi
+}
+rule() { echo '────────────────────────────────────────────────────────────────'; }
+screen() {
+  case $state in
+  exited) printf 'DATAWATCH_COMPLETE: claude done\nuser@host:~$ \n'; return ;;
+  running) rule; echo '❯ '; rule; echo '  ⏵⏵ bypass permissions on (shift+tab to cycle)'; return ;;
+  esac
+  rule
+  # A dialog still being filled in changes between readings.
+  if [ -f "$d/filling_ms" ] && [ "$age" -lt "$(cat "$d/filling_ms")" ]; then echo " Loading $age"; fi
+  case $kind in
+  trust) echo ' Quick safety check: Is this a project you created or one you trust?'; echo
+         row 0 'No, exit'; row 1 'Yes, I trust this folder' ;;
+  channels|channels-on-exit) echo '  WARNING: Loading development channels'; echo
+         row 0 '1. I am using this for local development'; row 1 '2. Exit' ;;
+  bypass) echo '  WARNING: Claude Code running in Bypass Permissions mode'; echo
+         row 0 'No, exit'; row 1 'Yes, I accept' ;;
+  digit) if [ "$state" = next ]; then echo '  A second question'; echo; row 0 '1. Exit'; row 1 '2. Stay'
+         else echo '  New MCP server found'; echo; row 0 '1. Use this MCP server'; row 1 '2. Skip'; fi ;;
+  esac
+  printf '\n Enter to confirm · Esc to cancel\n'
+}
+
+key() {
+  echo "$age $1" >> "$d/keys"
+  case $state in exited|running) return ;; esac
+  case $1 in
+  Down) [ -f "$d/down_lost" ] || echo $(( 1 - cursor )) > "$d/cursor" ;;
+  Enter)
+    # Not taken until the dialog has been drawn the second time.
+    [ "$redraw" -ge 0 ] && [ ! -f "$d/redrawn" ] && return
+    accept=0; [ "$kind" = trust ] || [ "$kind" = bypass ] && accept=1
+    if [ "$state" = next ]; then [ "$cursor" = 0 ] && echo exited > "$d/state" || echo running > "$d/state"
+    elif [ "$cursor" = "$accept" ]; then echo running > "$d/state"
+    else echo exited > "$d/state"; fi ;;
+  Escape) echo exited > "$d/state" ;;
+  text:*)
+    # In a numbered menu that takes digits, the digit answers at once.
+    if [ "$kind" = digit ] && [ "$state" = dialog ] && [ "$1" = text:1 ]; then
+      echo next > "$d/state"; echo 0 > "$d/cursor"
+    fi ;;
+  esac
+  cursor=$(cat "$d/cursor"); state=$(cat "$d/state")
+}
+
+cmd=$1; shift
+case $cmd in
+capture-pane) screen ;;
+display-message) echo '0 0 40' ;;
+send-keys)
+  literal=
+  while [ $# -gt 0 ]; do
+    case $1 in
+    -t) shift 2; continue ;;
+    -l) literal=1; shift; continue ;;
+    esac
+    if [ -n "$literal" ]; then key "text:$1"; else key "$1"; fi
+    shift
+  done ;;
+esac
+exit 0

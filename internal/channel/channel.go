@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 )
 
 //go:embed embed/channel.js
@@ -192,54 +191,18 @@ func RegisterSessionMCP(sessionID, channelJSPath string, env map[string]string) 
 // UnregisterSessionMCP removes the per-session MCP channel server registration.
 func UnregisterSessionMCP(sessionID string) {
 	name := "datawatch-" + sessionID
-	claudeCmd("mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
-}
-
-// UnregisterGlobalMCP removes the legacy global "datawatch" MCP registration.
-func UnregisterGlobalMCP() {
-	claudeCmd("mcp", "remove", "datawatch", "-s", "user").Run() //nolint:errcheck
+	if claudeCmd("mcp", "remove", name, "-s", "user").Run() == nil {
+		// The lock is not held over the claude call: it has no time limit,
+		// and every launch takes this lock.
+		regMu.Lock()
+		defer regMu.Unlock()
+		forgetRegistrationLocked(name)
+	}
 }
 
 // ChannelServerName returns the MCP server name for a given session.
 func ChannelServerName(sessionID string) string {
 	return "datawatch-" + sessionID
-}
-
-// CleanupStaleMCP removes MCP registrations for sessions that no longer exist.
-// sessionExists is called with the full session ID (hostname-id) to check if it's still tracked.
-// Runs on daemon startup to prevent stale entries from accumulating.
-func CleanupStaleMCP(sessionExists func(string) bool) {
-	out, err := claudeCmd("mcp", "list").Output()
-	if err != nil {
-		return
-	}
-	removed := 0
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "datawatch-") {
-			continue
-		}
-		// Extract the server name (before the colon)
-		name := line
-		if idx := strings.IndexByte(line, ':'); idx > 0 {
-			name = line[:idx]
-		}
-		// Extract the session ID from "datawatch-{hostname}-{id}"
-		sessionID := strings.TrimPrefix(name, "datawatch-")
-		if sessionID == "" {
-			continue
-		}
-		// Check if this session still exists (active or completed)
-		if sessionExists(sessionID) {
-			continue // session exists, keep the registration
-		}
-		// Session doesn't exist — remove the stale registration
-		claudeCmd("mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
-		removed++
-	}
-	if removed > 0 {
-		fmt.Printf("[channel] cleaned up %d stale MCP registration(s)\n", removed)
-	}
 }
 
 // BinaryPath resolves the native datawatch-channel Go bridge (BL174).
@@ -312,48 +275,6 @@ func RemoveLegacyJSArtifacts(dataDir string) []string {
 	for _, p := range paths {
 		if err := os.RemoveAll(p); err == nil {
 			removed = append(removed, p)
-		}
-	}
-	return removed
-}
-
-// CleanupStaleJSRegistrations (BL288, v5.4.0) — `claude mcp list` may
-// still show pre-Go-bridge `datawatch*` entries pointing at
-// `node + .channel.js`. Operator on v5.3.0 reported a fresh session
-// spawning the legacy node process even though `[channel] using
-// native Go bridge` was logged at boot — root cause was a leftover
-// `.mcp.json` project-scoped registration.
-//
-// This walks each scope (`user`, `local`, `project`) and removes any
-// MCP server named with the `datawatch` prefix whose command line
-// resolves to `node` + a `channel.js` path. Returns the names that
-// were removed; logs are the caller's job.
-func CleanupStaleJSRegistrations() []string {
-	var removed []string
-	out, err := claudeCmd("mcp", "list").CombinedOutput()
-	if err != nil {
-		return removed
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		// Format: `<name>: <command...> - <status>`
-		i := strings.IndexByte(line, ':')
-		if i <= 0 {
-			continue
-		}
-		name := strings.TrimSpace(line[:i])
-		if !strings.HasPrefix(name, "datawatch") {
-			continue
-		}
-		rest := line[i+1:]
-		if !strings.Contains(rest, "channel.js") {
-			continue
-		}
-		// Try each scope until one removes it cleanly.
-		for _, scope := range []string{"user", "local", "project"} {
-			if err := claudeCmd("mcp", "remove", name, "-s", scope).Run(); err == nil {
-				removed = append(removed, name+"@"+scope)
-				break
-			}
 		}
 	}
 	return removed
@@ -442,11 +363,14 @@ func BridgePath() string { return channelBinPathForReg }
 // takes the session back. The session-scoped entry must stay user scope:
 // a per-session CLAUDE_CONFIG_DIR (local/project scope) broke auth and
 // onboarding worse than the duplicate (see the GH#202 comment in the
-// ready handler). The legacy global "datawatch" entry (RegisterMCP) can
-// no longer start a second bridge: per-session registration only,
-// UnregisterGlobalMCP runs on every daemon start, and the pre-launch
+// ready handler). The legacy global "datawatch" entry (RegisterMCP) is
+// no longer registered: registration is per session, the startup cleanup
+// removes a global entry this data folder recorded (one made before records
+// were kept stays until the operator removes it), and the pre-launch
 // path removes any stale project-scoped "datawatch" .mcp.json entry.
 func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
+	claimRegistration(name)
+
 	// Remove existing entry (ignore errors — may not exist).
 	claudeCmd("mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
 

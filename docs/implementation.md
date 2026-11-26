@@ -325,8 +325,11 @@ path) and `autonomous.backoff_max_wait_minutes`
 
 A related admission rule, in the same area: a task's guardrail judge never queues
 behind the task's own worker lease, and the lease is never handed over to it. The task
-releases its worker lease when it enters `verifying` (`releaseWorkerLeaseForVerify`,
-`internal/autonomous/capacity.go`); a `JudgeAdmit.WorkerHolder` lease still present when
+shows `verifying` from the moment its worker has started and keeps the worker lease while
+that session runs. Ending the session frees the lease bound to it
+(`releaseLeasesOfEndedSession`, `cmd/datawatch/capacity_reap.go`); a session adopted
+after a restart releases it when its wait ends (`releaseWorkerLeaseForVerify`,
+`internal/autonomous/capacity.go`). A `JudgeAdmit.WorkerHolder` lease still present when
 the judge starts is released in `AdmitJudge` (`internal/autonomous/judge_capacity.go`),
 and the judge then acquires its own `judge:<unit>` lease (on `node-verify:<node>` where
 the node has a verifier pool). See [howto/automata-capacity.md](howto/automata-capacity.md#the-worker-slot-at-verification).

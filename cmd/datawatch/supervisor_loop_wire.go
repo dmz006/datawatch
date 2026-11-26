@@ -162,6 +162,19 @@ func daemonSupervisorLoopHooks(amgr *autonomouspkg.Manager, cfg *config.Config, 
 	return hooks
 }
 
+// supervisorLoopTaskRetry resolves a held task through the API, the path the
+// operator's retry takes: it wakes the live run or starts one. Nil without an
+// API.
+func supervisorLoopTaskRetry(aAPI *autonomouspkg.API) func(string, string, autonomouspkg.ReviewResolution, string) error {
+	if aAPI == nil {
+		return nil
+	}
+	return func(prdID, taskID string, req autonomouspkg.ReviewResolution, actor string) error {
+		_, err := aAPI.ResolveTaskReview(prdID, taskID, req, actor)
+		return err
+	}
+}
+
 // wireSupervisorLoop registers the eight mechanical steps on the coordinator's
 // idle tick and connects the escalator to the operator question queue. Run
 // records go to supervisor_loop_runs.jsonl in the data directory.
@@ -190,6 +203,7 @@ func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Ma
 	jobs := &supervisorloop.ModelJobs{Engine: engine, SettingsFn: settings}
 	amgr.SetSupervisorModelJobs(jobs)
 	hooks := daemonSupervisorLoopHooks(amgr, cfg, settings, srv)
+	hooks.ResolveTaskReview = supervisorLoopTaskRetry(aAPI)
 	steps := autonomouspkg.NewSupervisorLoopSteps(coord, engine, hooks)
 	coord.SetSupervisorLoopSteps(steps)
 	// The standing check of closed work reads this host's deploy facts.

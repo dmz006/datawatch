@@ -887,8 +887,8 @@ The account **usage calculator** — the account's usage verdict, lane count, pa
 | Form | Meaning |
 |---|---|
 | `usage` | The advice for the configured variant, policy and lane count. Same as `usage advice`. |
-| `usage advice [variant=V] [policy=P] [lanes=N]` | Advice for this one call. Overrides apply to this call only and are not saved. |
-| `usage reading <percent> [lanes=N] [session=N]` | Store a typed weekly percent (optionally a lane count and a second session's percent), then show the refreshed advice. |
+| `usage advice [variant=V] [policy=P] [lanes=N]` | Advice for this one call. Overrides apply to this call only and are not saved. `lanes=N` is a what-if lane count (0 is valid). |
+| `usage reading <percent> [session=N]` | Store a typed weekly percent (optionally a second session's percent), then show the refreshed advice. The daemon stamps the reading with the Claude lanes it sees running; a `lanes=N` on a reading is accepted from older callers and ignored. |
 | `usage extra <points>` | Set the bought extra-credit points, then show the refreshed advice. |
 | `usage work <points\|clear>` | Set (or clear) the typed remaining-work figure, then show the refreshed advice. When cleared, the per-task estimate stands in. |
 | `usage burn-guard` | The burn guard's status, read-only: state, rung in force, projected percent against the pace line and margin, burn per hour, over or under target, and the last decision. Same data as `GET /api/usage/burn-guard`; run it or change its settings from the CLI, REST or MCP (`datawatch usage burn-guard run`, `config`). |
@@ -906,12 +906,13 @@ usage advice variant=lane-planner lanes=3
   … 50-column advice text …
   reply with one of:
     usage advice [variant=V] [policy=P] [lanes=N]
-    usage reading <pct> [lanes=N] [session=N]
+    usage reading <pct> [session=N]
     usage extra <pts>
     usage work <pts|clear>
     usage burn-guard
+  lanes=N is a what-if, not saved.
 
-usage reading 72.5 lanes=3 session=41
+usage reading 72.5 session=41
 [myserver] usage reading
   reading stored: 72.5%
   … refreshed advice …
@@ -1519,6 +1520,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `prd-set-task-verification-llm <id> --task <task>` / `prd-set-story-verification-llm <id> --story <story>` / `prd-set-verification-llm <id>` | Pick the LLM that verifies one task / every task in a story / the whole Automaton. Flags `--backend` / `--model` / `--effort`; omitted flags are unchanged, `--backend ""` clears. Precedence task > story > Automaton > global `autonomous.verification_*` (v9.0.70) |
 | `prd-set-notify-events <prd-id> <kind,kind,...|inherit>` | Replace the Automaton's notify set — the list of lifecycle event kinds that produce notifications for it (Unreleased). Kinds are comma-separated; `inherit` (or an omitted/empty list) clears it back to the guardrail-profile tier, then the global `autonomous.notify.default_events`. Validates against the known kinds (`prd.updated` is not a valid kind). `POST /api/autonomous/prds/{id}/set_notify_events`; audit action `autonomous_notify_events_changed` |
 | `tag-list [--include-sub] [--counts]` (alias `tags`) | List Automata tags as a tree (`parent_id`) with the number of Automata carrying each; `--counts` adds subtree and direct counts for Automata and sessions plus the untagged totals (the subtree count is the figure a tag browser shows); `GET /api/autonomous/tags[?counts=true]` |
+| `tags repair [--from <file>]... [--apply] [--json]` (also under `tag-list repair`) | Tag repair: restore or merge the tag IDs that Automata, sessions or tag parents name and that have no record. A dry run unless `--apply`. `--from` reads saved copies of tag records. `POST /api/autonomous/tags/repair`. See [howto/automata-tags.md](howto/automata-tags.md) |
 | `tags sweep [--dry-run] [--json]` (also under `tag-list sweep`) | Tag sweep: apply the in-force `tags.placement` settings to what already exists — re-derives the system tags of every Automata-owned session and object (automata, tasks, automations, templates, decision records, held questions) and writes only the ones that differ (a second run changes nothing). The operator's own tags are a separate field the sweep never reads or writes. `--dry-run` runs the full re-derivation and reports the would-be counts without writing anything; the reply is a per-kind tally of examined / changed / unchanged / failed, printed as one row per kind, and `--json` prints the `POST /api/autonomous/tags/sweep` body untouched; chat: `autonomous tags sweep [dry-run]` |
 | `tag-create <name> [--parent <id>] [--color <hex>] [--description <text>]` | Create a tag, optionally nested under a parent; `POST /api/autonomous/tags` |
 | `tag-rename <id> <new-name>`, `tag-color <id> <color>`, `tag-move <id> --parent <new-parent-id\|root>` | Edit a tag; `PATCH /api/autonomous/tags/{id}`. A move that would make a tag its own ancestor is refused; a *system* tag (one the daemon keeps, such as an auto tag) cannot be renamed or moved — only recolored |

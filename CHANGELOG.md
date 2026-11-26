@@ -5,14 +5,176 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.24 — Tests keep to their own folders
+## v9.187.34 — Answers, wake-ups and one-time messages say whether they were typed
 
-### Changed
-- Tests now keep to their own temporary folders. Before, some tests could scan the whole shared temporary folder, use the real terminal multiplexer, or write into the home folder. This is developer tooling: how datawatch behaves does not change.
-- Added `make check-test-isolation`, which runs the tests in a sandbox and fails when one reaches outside its own folders (Linux only).
+### Fixed
+- A tracked answer or withdrawal now records whether its line was typed. At a prompt or unreadable screen nothing is typed: you get a warning, and it is retried while the task keeps that worker and no later question takes over (paused while held or the loop is off). If datawatch cannot tell, or must not type it, it is never typed again and you get a "review needed" alert. "Sent" means only that the send returned no error.
+- With several blocking questions, each answered one is typed once or listed for review; while the task is parked on an open one, the others wait, with a warning. A parked task keeps its live, started worker across a restart, and a new question from a worker taken over after a restart parks it.
+- A supervisor wake that cannot be typed (no usable session, prompt, unreadable screen) waits and is retried, with one warning. `event_count` counts only typed wakes; new `pass_count` counts passes. A one-time message to a session is typed (not sent over the channel bridge), saved first and removed only after typing works; if nothing was typed it is retried, also after restart or expiry; if it may have arrived it is listed, not resent. Changing one subscription no longer drops others' queued events.
+- A peer that does not take a discussion entry raises a warning (not resent); a write, receive or conflict resolve that cannot save its log fails. A forwarded command reports a refused or unreadable reply as an error. The "Received" log line and new-schedule audit entry give the text's length, not the text; other logs may still carry it.
+### Before you upgrade
+- In secure mode, older or non-secure peers get no discussion content. The schedule audit field `command` is now `command_length`. Resumes recorded by earlier versions are not typed or alerted by this tracking.
+### Not covered
+- **Delivery alerts stored while the daemon is starting reach the alert list only:** no web or phone push, chat, ntfy or email. In testing this included an interrupted one-time message (an interrupted answer's alert came later and reached ntfy). Check the alert list after a restart.
+- No line or alert: an expired question while another answer waits (nothing in datawatch expires one today); a withdrawal no worker can take; deleting an Automaton; a non-session asker's question on a task with no live attempt; datawatch's own questions. A held Automaton's answers can wait until release.
+- A review alert can be late: after a worker ended, in a one-slot test its verifier held the slot and the alert appeared only after the Automaton was cancelled. If the typing check finds Claude Code gone (from code, not tested): an answer is listed (as `send_error`, though nothing was typed), a wake is not retried and gets a review alert, and a one-time message is retried.
+- A task can show running and keep its slot while its worker waits on an earlier question. A restart drops waiting wakes (limit 200). One-time events still queued at stop, or dropped by a full queue (256), are lost. Crashes can repeat alerts; file-write failures can lose them (500 held at most). A restart past `resume_max_age_seconds` can still block the Automaton. An untyped answer does not pause stall checks.
+
+## v9.187.33 — A daemon start or a tag registry change no longer drops daemon-written tags
+
+### Fixed
+- Tag records the daemon writes itself, such as automatic tags, could be deleted by a daemon start, a tag registry change (also one running while they were written) or a peer's sync. A start and a registry change no longer drop them, a sync keeps those marked as this daemon's own, and the registry now sees them. A keeper therefore shares its automatic tags with peers.
+- A start no longer undoes the daemon's tag renames, or deletes made while the registry was running. The daemon's own tag updates no longer fail with "tag not found" after saving a membership change because the Automaton carries an ID with no record; setting an unknown ID yourself is still refused.
+- Merging or removing a tag no longer moves archived sessions back to the active list.
+
+### Added
+- A repair for tag IDs with no record. It changes tags or assignments only with `datawatch autonomous tags repair --apply`, chat `autonomous tags repair apply`, or REST `/api/autonomous/tags/repair` with `dry_run` false; otherwise it is a dry run. Nothing runs it automatically. It restores records or moves assignments to a replacement, leaves what it cannot decide, and deletes or overwrites no tag record. No MCP tool or web button.
 
 ### Not covered
-- `make check-test-isolation` does not pass yet: two test packages still look up files in the home folder, and one older test fails now and then. It is not a release check.
+- Repair limits: a merge has no simple undo. An auto tag rebuilt from Automations gets today's name template and creation time, and you cannot rename or delete it. After a missing parent is merged, child tags that still had a record keep the old parent ID, and later runs list the merge again.
+- Installing does not restore tags already lost, and the repair may leave some unresolved. A deleted tag can return after a restart if the daemon stopped partway through the delete, or deleted it while the registry was not running.
+- On peers: a sync can still delete automatic tags, with assignments, that a copy saved by an earlier version already lists; a daemon that becomes a peer can still lose its own non-automatic tags the keeper lacks.
+
+## v9.187.32 — Work recovered from older branches
+
+### Changed
+- A plan being stored or repaired is now refused when a `depends_on` entry names a title shared by two or more of its stories (story entries) or tasks (task entries); before, the last one was picked silently. IDs, positions and unique titles work as before. Stored plans are not re-checked unless repaired. In planning it is handled like other bad dependencies: a retry if the retry budget allows (one by default), then back to draft with the reason.
+- The release smoke, with no `DATAWATCH_BIN` and no `datawatch` file at the top of the source tree, now runs `make build` and stops if that fails, instead of using a `datawatch` from PATH. A binary already at the top of the tree is still used, even if old.
+
+### Fixed
+- Usage advice: when no reading had a usable lane stamp, a what-if lane count changed the measured burn per lane. It no longer does. Command, MCP and API-mapping references now say a lane count sent with a reading is ignored; an unused web text for the removed input is gone.
+
+### Added
+- Guard tests for parallel chains, stalled pi sessions, default task routing and the built-in docs index (needs `make docs-index` first); a smoke binary-choice test in `make test`. Recovered dated notes (voice, smoke failures, plan merge review; not all rechecked) and how-to additions on parallel chains, failure-escalation upgrades and plan records.
+
+## v9.187.31 — The pi launch check no longer sends pi's provider prefix to the node
+
+### Fixed
+- Present since 9.182.84: the launch check for pi and pi-prompt asked a compute node for pi's "provider/model" name, for example `ollama/qwen3.8-64k:27b`, which the Ollama nodes checked do not recognize (404). This check applies to nodes that belong to an LLM entry listing more than one node; a failed check stops the launch and marks the node unhealthy. The check now leaves off the first "provider/" part, and pi is still started with the full name.
+
+### Not covered
+- Any failed check is still worded "Request timed out", whatever its cause.
+- The check sends no API key and uses `<address>/v1`; an OpenAI-compatible node was not tested.
+- A cold model slower than the 20-second check limit could still be refused.
+- No full pi session was run end to end with this change.
+
+## v9.187.30 — A stricter task delivery check for Automaton workers
+
+### Fixed
+- datawatch's check of a local claude-code Automaton worker whose task datawatch types no longer passes it unless the task is recorded as delivered. A commit, a saved screen, a checkpoint with a passing script or the launch command's exit line is not enough; the attempt is a launch failure (by default retried, then held).
+- An interactive claude-code session reporting finished work now waits for input instead of switching between complete and running. If Claude Code quits and the terminal stays open, it can still switch.
+
+### Changed
+- Some work that did run can be retried, for example if you typed the task yourself or datawatch could not confirm delivery. For local claude-code one-shot workers with no recorded delivery (such as channel off), the exit line no longer counts as the worker's completion line, so one that exits before its own line is picked up is retried.
+- The supervisor loop's infrastructure-hold retry (on by default) now uses the same path as your own retry, which wakes or starts the run without waiting for lane fill. It retries a task once, even across daemon restarts; a later hold stays until you retry or reset the task. This change does not start tasks the loop requeued earlier; if held again, they can get one more loop retry.
+
+### Not covered
+- A recorded delivery does not prove that Claude read the task. If Claude stopped reading or a wrapper holds the terminal, typed text can still show; after a session restart, text redrawn from the earlier conversation can also count. Remote agent workers and other backends are not covered by this check.
+
+## v9.187.29 — A safer merge run, with merging still off
+
+### Changed
+- A datawatch-run merge now works in a separate scratch folder, based on the remote's `main`. Local `main` and the real branch move only after the remote confirms the exact commit that was pushed. A failed check, a held release or a refused push leaves local `main` where it was, and a later run does not carry that work.
+- Deploy, ship hooks (including the release notice and marking done) and tag or deploy command steps wait for that confirmation. The built-in tag step does not: it makes the tag locally before the push and sends it with the commit.
+- After a lost confirmation or a killed run, a later daemon start, merge run or loop check asks the remote and, if the merged branches have not changed, records what landed. The repair itself never pushes or deploys. A later run with nothing new can run the deploy again.
+- On Linux, a killed run's merge lock is taken over once its process and everything it started have ended. On macOS it can stay held, as can a lock left by an earlier version. A tree changed by a check, tracked or untracked, stops the push. A held or unpushed run is no longer reported as merged.
+
+### Before you upgrade
+- Merging stays off by default and this release does not turn it on. Before you ever turn it on: replace the recorded pipeline first, because a record without the new check steps would release with few checks.
+- Once merging is on, features release as a minor version, an unset kind is guessed from the title and the start of the spec, and a run may take up to 3 hours.
+- Under the `mechanical_and_model` conflict policy (the default), a `conflict_model` (default `sonnet`) naming an enabled model entry is now really called.
+
+### Not covered
+- Checks are not sandboxed and come from the work being merged: a check can itself push to the remote, move local branches or leave a tag, and it can read or change any file the daemon's user can.
+- A check can pass on content that is not pushed: through ignored files that it or an earlier step writes, or by hiding changes with `assume-unchanged`, `skip-worktree` or `.git/info/exclude`.
+- If a push arrives but is not confirmed and a merged branch gets new commits before the repair, the repair never finishes. Runs for that work are refused ("not released again", although the new commits never were), and the loop can stop there, until that run's file in `datawatch-merge-pushes/` in the git directory is removed by hand.
+- A landing recorded by repair runs no deploy and sends no notice.
+- A tag step written as a command, or the post-ship "tag" hook, can still make a tag; the hook can tag the old version when nothing was released.
+- The new conflict rules do nothing while the conflict policy is `stop_and_ask`.
+- No merge run was tried with a full release smoke, a real conflict model or a live daemon's merge loop.
+- Under the `mechanical` conflict policy, and under `mechanical_and_model` (the default) when its model entry is available, the new `keep_main` rules drop the branch's side of a conflicting hunk without asking, including its CHANGELOG line.
+- If only the daemon process is killed, a running check or push can carry on, and that push can still land.
+
+## v9.187.28 — Start-up dialogs are answered only when shown, and not too soon
+
+### Fixed
+- datawatch sends a key to a Claude start-up dialog only when the live screen ends with that dialog, not because its words appear somewhere on the screen. Before, ordinary output or a pasted task could make it press Down, Enter or Esc in a working session.
+- datawatch answers a start-up dialog only after it has stayed unchanged for 2 seconds, and looks at the cursor again before Enter. With Claude Code 2.1.332 in a test without a network, answering too soon made Claude exit at the trust prompt of a never-trusted repository; with the wait, no launch exited there in 22 tries.
+
+### Before you upgrade
+- Answering a start-up dialog takes about 2 to 3 seconds longer.
+- A dialog drawn differently from the ones datawatch recognises is left for a person. A session with a task is then ended as killed after about 4 minutes; the end note says a start-up dialog was still waiting, but the alert shows only the task. A session with no task keeps waiting.
+
+### Not covered
+- A screen that ends in text shaped like a dialog, with nothing below it, can still get a key.
+- A narrow screen, below about 40 columns, can leave a real dialog unanswered.
+- The real dialog for a single new MCP server is no longer answered. It did not appear with datawatch's own settings.
+- The unnumbered bypass-permissions dialog is not answered: datawatch can type 2 into it, more than once, but does not press Enter.
+- A redraw in the milliseconds between the last look and the key could still make Claude exit.
+- If the same dialog is still on screen more than 5 seconds after its answer, datawatch can answer it again, with a second Enter (seen at 9 seconds with a stand-in terminal). If one screen reading is blank or fails while a declined dialog is still up, a second Esc can be sent.
+- A real online login was not tested.
+- Only Claude Code 2.1.332 was tested; other versions and a stalled or swapping host were not.
+- No real update dialog or other general confirmation was seen; they were tested only on made-up screens.
+- When datawatch holds Enter back, it may already have typed Down or 2 and can type it again, although the log says "not typed".
+- Declining the settings-error dialog still makes Claude Code exit; v9.187.27 says when such a session ends as failed.
+
+## v9.187.27 — Task text is no longer typed into a shell after Claude Code leaves
+
+### Fixed
+- Before typing a task, a scheduled command, an output filter's input or a line datawatch writes on its own into a Claude session (automation messages and nudges, question answers, supervisor wake-ups, exit-hook, subscription and reply-to-parent lines, the rate-limit resume line), datawatch now checks two signs: whether the visible screen shows the line printed after Claude Code exits, and whether the terminal's shell is the only thing reading the keyboard. If either shows, it does not type, because a shell would run the text outside Claude Code's permission checks. The two signs do not prove that Claude Code is there (see Not covered). A task delivery that stays refused ends the session and says that the task was not typed again; an earlier attempt may already have typed it.
+- In one case, a Claude session that quits at a start-up dialog now ends once as failed, with the reason and one alert, instead of reading as finished, and its leftover shell is closed. All of this must hold: datawatch declined the dialog (only with `auto_accept_disclaimer` on) within the last two minutes, and the dialog ended with "Enter to confirm · Esc to cancel" under numbered choices; the Claude channel is on and the session's task was never delivered; datawatch sent the session nothing but answers to start-up dialogs; Claude Code was not then seen at its input box or working; and when datawatch looks, Claude Code has left, with only the terminal's own shell remaining or tmux confirming the terminal is gone. An Automaton retries such a worker as a launch failure and then holds it.
+
+### Not covered
+- Every other exit is handled as before: the session can be reported complete, and an interactive one can switch between complete and running with an alert each time. This includes the channel being off, a session with no task, an exit with no declined dialog, other dialog layouts, anything sent through datawatch (even one key), an exit more than two minutes after the dialog, a task already delivered, and other agents.
+- If anything else is still on the terminal or running under its shell when datawatch looks, or the process list or tmux cannot be read, the session is not failed. A one-shot is then complete after that first look; an interactive session is looked at again the next time round.
+- An Automaton worker that was never given its task is not guaranteed to stay unfinished outside the case above: with automatic commits on, the completion commit can get it past the check for undelivered work, and a restarted worker can be marked done. Earlier versions do this too.
+- The check before typing sees only what shows when it looks, and datawatch types whenever neither sign shows. If Claude Code has stopped reading the keyboard, or has exited under a wrapper script that did not exec and is still in the foreground, typed text can still run in the shell later. The same can happen if Claude Code leaves after the check, with job control off in the terminal's shell (datawatch's fallback memory watchdog turns it off) once the exit line is no longer on screen, or when neither the screen nor the process list can be read.
+- Some sends are not checked: what you send yourself; the MCP tools `send_input` and `send_saved_command`, also when an AI session calls them; answers to start-up dialogs; datawatch's own menu keys (the usage-limit answer, the MCP server retry, dismissing Claude Code prompts, Enter); and the memory wake-up text, which is typed without Enter.
+- The exit line is matched when a line reads `DATAWATCH_COMPLETE: claude done` after any leading spaces and non-ASCII marks such as ⎿ or ●, so automated input is also refused while a running Claude Code shows such a line, and a task delivery that stays refused ends the session.
+- A refused scheduled command is marked failed and is not retried, and a recurring one stops. This includes a shell command you scheduled for a Claude session whose Claude Code has left.
+
+## v9.187.26 — Daemon start no longer waits for the Claude registration cleanup
+
+### Fixed
+- Daemon startup no longer waits for the cleanup of old Claude MCP registrations, so an unresponsive MCP server no longer delays the daemon from answering.
+- The cleanup removes only registrations recorded in this daemon's data folder, never a name a session start or resume has registered since the daemon started. Its `claude` commands are ended after 2 minutes (list) or 30 seconds (each removal), and on daemon stop or restart.
+
+### Before you upgrade
+- Older entries are not recorded, so startup leaves them, including an old global `datawatch` or `channel.js` entry (which can start a second bridge). Run `claude mcp list` as the daemon's user and remove them with `claude mcp remove <name> -s user` (`-s local` or `-s project`, from that project folder, for entries in those scopes). Remove a `datawatch-<hostname>-<id>` entry (also a `channel.js` one) only if, for every daemon of that user, `datawatch session list` (with that daemon's `--config`) does not list session `<id>` or shows it as `complete`, `failed` or `killed`. A claude-code session's entry is also removed when it ends.
+
+### Not covered
+- If a cleanup removal hangs, a session start or resume can wait 30 s (90 s for a `channel.js` entry).
+- With the native bridge, a recorded `channel.js` entry is removed even if its session still exists.
+- Cleanup can remove one entry while a session adds another; whether Claude protects both writes was not tested.
+- A killed or crashed daemon can leave a cleanup command running.
+- Entries recorded by a since-deleted data folder stay.
+
+## v9.187.25 — A worker keeps its capacity slot while it works
+
+### Fixed
+- An Automaton worker now keeps its capacity slot while its session runs, except while it is parked on a question or an outside wait: its session stays open and the slot is free. Before, the slot was freed as soon as the session started, so a one-slot pool could run several workers at once.
+
+### Before you upgrade
+- Expect fewer workers in parallel and more tasks waiting for capacity.
+- A worker already waiting can take the freed slot before the finished task's verifier, which then waits.
+
+### Not covered
+- A worker resumed after a question or an outside wait can lose its slot after about 10 minutes while still running.
+- A resume still queued when its session ends can hold a slot for about 10 minutes.
+- Resuming or adopting a session can put a pool over its limit.
+- Two tasks sharing one project tree can block each other until the capacity wait expires (default 4 hours); this also happened before.
+- A task shows "verifying" while its worker is still running.
+- Verification or guardrail checks that use classify mode wait for a node slot with no time limit. On a one-slot node a verification can wait on the slot it already holds (read in the code, not run). Keep classify mode off.
+
+## v9.187.24 — Tests stop scanning the shared temporary folder
+
+### Changed
+- Tests no longer scan the shared temporary folder or write into the home folder; some home lookups and leftover files remain. Before, some tests could scan the whole shared temporary folder, use the real terminal multiplexer, or write into the home folder. This is developer tooling: how datawatch behaves does not change.
+- Added `make check-test-isolation`, which runs the tests in a sandbox and fails on the outside access it can detect (Linux with bubblewrap only).
+
+### Not covered
+- `make check-test-isolation` does not pass yet: two test packages still look up files in the home folder, and one older test often fails under it. It is not a release check.
+- It misses some outside access, such as a started program writing below an existing home subfolder, or writes to `/var/tmp`.
 - Tests can still leave their own files in the shared temporary folder.
 
 ## v9.187.23 — A commit value in a shipped record is checked before git sees it
@@ -40,7 +202,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Before you upgrade
 - An opencode or opencode-acp session is refused, with the reason, when its `opencode.json` cannot be safely read or updated. This includes comments and trailing commas, which opencode itself accepts. An automation task retries and is then held. A rate-limit fallback only logs the refusal, and an exit-hook restart ends the old session before it logs.
-- When a settings file cannot be read, datawatch's own entries are not added to it: a Claude session may stop at a prompt, and an old token stays in an unreadable MCP file.
+- When a settings file cannot be read, datawatch's own entries are not added to it, and an old token stays in an unreadable MCP file. If Claude Code cannot read the file either (seen with a comment in a project's Claude settings files), it shows an invalid-settings dialog at start. With `auto_accept_disclaimer` on, datawatch declines that dialog with Esc and Claude exits, so the session never runs its task. This version can report such a session complete, or switch it between complete and running or waiting for input.
 - Nested opencode permission rules are now kept (flat ones already were), so an unattended opencode session may prompt or be refused where it did not before. A whole-file string such as `"permission": "ask"` is refused, not kept.
 - Check that the settings files datawatch writes are strict JSON: the user and data-folder Claude settings, the data-folder MCP file, each project's `.claude/settings.local.json` and `.mcp.json`, and each opencode project's `opencode.json`.
 - Not covered: removing an old datawatch entry from a project MCP file can still drop a duplicated key, and the optional cleanup of session files on end still deletes `opencode.json` and `.mcp.json`.

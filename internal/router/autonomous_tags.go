@@ -1,6 +1,7 @@
 // Comm-channel verbs for the Automata tag registry, per-Automaton and
 // per-session tag assignment, the primary tag, the attention list and the
-// tag sweep: autonomous tags [counts]|tags sweep [dry-run]|tag-create|
+// tag sweep: autonomous tags [counts]|tags sweep [dry-run]|
+// tags repair [apply]|tag-create|
 // tag-rename|tag-move|tag-color|tag-delete|set-tags|set-primary|
 // session-tags|attention|tag-registry|tag-registry-dismiss. Each verb
 // proxies the matching REST endpoint.
@@ -55,8 +56,18 @@ func buildCommTagRequest(verb string, args []string) (req commTagRequest, usage 
 		case len(args) == 3 && args[1] == "sweep" &&
 			(strings.EqualFold(args[2], "dry-run") || strings.EqualFold(args[2], "dry_run")):
 			return commTagRequest{method: http.MethodPost, path: base + "/sweep?dry_run=true"}, ""
+		case len(args) >= 2 && len(args) <= 3 && args[1] == "repair":
+			// The tag repair: a dry run unless the word apply is given.
+			word := "dry-run"
+			if len(args) == 3 {
+				word = strings.ToLower(args[2])
+			}
+			if word == "apply" || word == "dry-run" || word == "dry_run" {
+				return commTagRequest{method: http.MethodPost, path: base + "/repair",
+					body: map[string]any{"dry_run": word != "apply"}}, ""
+			}
 		}
-		return req, "usage: autonomous tags [counts|sweep [dry-run]]"
+		return req, "usage: autonomous tags [counts|sweep [dry-run]|repair [apply]]"
 	case "tag-registry":
 		if len(args) != 1 {
 			return req, "usage: autonomous tag-registry"

@@ -119,7 +119,7 @@ func (s *Server) toolAutonomousUnsubscribe() mcpsdk.Tool {
 // toolAutonomousSubscriptions lists the stored subscriptions.
 func (s *Server) toolAutonomousSubscriptions() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_subscriptions",
-		mcpsdk.WithDescription("List the daemon's persisted lifecycle-event subscriptions, optionally filtered by owner. Proxies GET /api/autonomous/subscriptions. The CLI equivalent is `datawatch autonomous subscriptions [--owner <owner>]`."),
+		mcpsdk.WithDescription("List the daemon's persisted lifecycle-event subscriptions, optionally filtered by owner. Proxies GET /api/autonomous/subscriptions. A one-time subscription to a session whose message has not been typed carries a delivery object: state not_typed (or waiting, sending) means datawatch keeps it and tries again; review_needed means it may or may not have arrived and is not sent again. The CLI equivalent is `datawatch autonomous subscriptions [--owner <owner>]`."),
 		mcpsdk.WithString("owner",
 			mcpsdk.Description("Optional owner filter (e.g. \"operator\"); omitted = all owners."),
 		),

@@ -717,6 +717,61 @@ templates, decision records, held questions — each with examined, changed,
 unchanged and failed. `dry_run` reports the same tally without writing a
 single tag.
 
+### Missing tags and the repair
+
+A restart and an edit of another tag keep every tag record. A record goes when
+you delete it (`tag-delete`), when the daemon removes one of its own auto tags
+that nothing uses, or on a peer when it syncs and the registry keeper does not
+hold the tag. A peer sync keeps the tags this daemon wrote without the
+registry, such as its auto tags.
+
+Earlier releases could lose auto tag records at a restart, at any registry
+write or at a peer sync. An Automaton then still carries the tag ID, with no
+record behind it. The **tag repair** makes those IDs good again. It looks at
+every ID that an Automaton, a session or a tag's parent names and plans one of:
+
+| Plan | Meaning |
+|---|---|
+| `restore` | put the record back under the same ID |
+| `merge` | another tag has taken its place (for example the daemon made a new auto tag for the same Automation): move the assignments to that tag |
+| `unresolved` | leave the ID as it is; the reply says why |
+
+It takes records from the **saved copies** you give it with `--from`: the JSON
+reply of the tag list, the tag registry's saved copy, a JSON list of tags, or a
+tags file with one record on each line. A copy restores a record as it was. For
+an auto tag that no copy holds, the daemon works the tag out from the
+Automation whose members carry the ID (`from: automations`). It does so only
+when one answer is left; the restored tag takes the name the auto tag settings
+give now and the time of the repair as its creation time. A tag you made
+yourself can be restored only from a copy. A tag in a copy that nothing points
+to is not restored.
+
+It is a **dry run unless you ask for the write**. Read the plan, then apply it:
+
+```
+datawatch autonomous tags repair --from saved-tags.json
+datawatch autonomous tags repair --from saved-tags.json --apply
+```
+
+The repair adds records and moves assignments. It deletes no record and keeps
+each Automaton's updated time. A second run finds nothing left to restore or
+merge. Save a copy of the tag list before you apply it
+(`datawatch autonomous tags --counts > tags-before.json`). A restore is undone
+with `tag-delete` for an operator tag; auto tags are removed by the daemon when
+nothing uses them. A merge is undone by setting the old ID back on the Automata
+the reply lists, which needs the old record.
+
+| Surface | How |
+|---|---|
+| **REST** | `POST /api/autonomous/tags/repair` with `{"dry_run": false, "copies": [...]}`; without `dry_run: false` it is a dry run |
+| **CLI** | `datawatch autonomous tags repair [--from FILE]... [--apply] [--json]` |
+| **Comm channel** | `autonomous tags repair [apply]` (no saved copies) |
+
+An ID with no record does not block a change to an Automation: the daemon keeps
+the ID on the Automaton and finishes the membership change. Setting a tag ID
+that has no record on an Automaton that does not already carry it is still
+refused.
+
 ### Inherited by sessions and Automata
 
 - **Sessions** carry their placement tags in `system_tags`, separate from
@@ -817,6 +872,7 @@ the CLI `tag-list` takes `--axis`.
 | List Automata under a tag | `GET /api/autonomous/prds?tag=<id>[&include_sub=false]` | — | — | — |
 | List Automata by an object axis | `GET /api/autonomous/prds?tag=stage:task[&tag_match=all]` (also `?project=`, `?automation=`, `?automaton=`, `?tag_id=`) | — | — | — |
 | Sweep the in-force tag settings | `POST /api/autonomous/tags/sweep[?dry_run=true]` | `autonomous_tag_sweep` (`dry_run`) | `tags sweep [--dry-run]` (alias `tag-sweep`) | `tags sweep [dry-run]` |
+| Repair tag IDs with no record | `POST /api/autonomous/tags/repair` (`dry_run`, `copies`) | — | `tags repair [--from FILE] [--apply]` | `tags repair [apply]` |
 | The tags in use on sessions | `GET /api/sessions/tags` | `session_tag_list` | — | `session-tags list` |
 
 An empty tag list clears an Automaton's or a session's own tags.

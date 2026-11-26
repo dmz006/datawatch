@@ -47,9 +47,35 @@ func (m *Manager) SetTagEventFn(fn func(TagEvent)) {
 	m.tagEventFn = fn
 }
 
+// SetTagRecordHook registers the callback that runs after this manager creates,
+// changes or deletes a tag record itself, or clears it when fn is nil. The tag
+// registry uses it to keep its copy current. The record writes the registry
+// asks for (SaveTagRecords, UpdateTagRecords) do not run it. The callback runs
+// synchronously, without m.mu held.
+func (m *Manager) SetTagRecordHook(fn func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tagRecordHook = fn
+}
+
+// tagRecordsChanged runs the record hook, if one is set. Call it only after the
+// change is saved, and never while holding m.mu.
+func (m *Manager) tagRecordsChanged() {
+	m.mu.Lock()
+	fn := m.tagRecordHook
+	m.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
 // emitTagEvent delivers ev to the registered callback, if one is set. Call it
 // only after the change is saved, and never while holding m.mu.
 func (m *Manager) emitTagEvent(ev TagEvent) {
+	switch ev.Kind {
+	case TagEventCreated, TagEventRenamed, TagEventReparented, TagEventRecolored, TagEventDeleted:
+		m.tagRecordsChanged()
+	}
 	m.mu.Lock()
 	fn := m.tagEventFn
 	m.mu.Unlock()
