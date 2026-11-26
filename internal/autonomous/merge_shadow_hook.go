@@ -89,17 +89,20 @@ func (m *Manager) startMergeShadow(prd *PRD) <-chan struct{} {
 		defer close(done)
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		if m.store != nil {
-			sel := m.MergeEligibility(ctx, in.AutomatonID)
-			in.Selection = &mergeshadow.PlanSelection{Eligible: sel.Eligible, Basis: sel.Basis, Tip: sel.Tip, Reasons: sel.Reasons}
-		}
-		// The plan's gates run the project's own commands: each runs, with
-		// everything it starts, under a hard memory limit, or not at all.
+		// Every command the shadow starts runs, with everything it starts,
+		// under a hard memory limit. Where that cannot be had, the plan's
+		// gates, which run the project's own commands, are not run, and
+		// datawatch's own git reads run without it.
 		limit := proclimit.Host()
 		if err := limit.Available(ctx); err != nil {
 			limit = proclimit.None(err)
 		}
-		plan, err := mergeShadowRun(proclimit.With(ctx, limit, nil), in)
+		ctx = proclimit.With(ctx, limit, nil)
+		if m.store != nil {
+			sel := m.MergeEligibility(ctx, in.AutomatonID)
+			in.Selection = &mergeshadow.PlanSelection{Eligible: sel.Eligible, Basis: sel.Basis, Tip: sel.Tip, Reasons: sel.Reasons}
+		}
+		plan, err := mergeShadowRun(ctx, in)
 		if err != nil {
 			log.Printf("[autonomous] merge shadow: automaton %s: %v", prd.ID, err)
 			m.recordNoShadowPlan(prd.ID, in, err.Error())

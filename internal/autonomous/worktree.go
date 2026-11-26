@@ -224,8 +224,9 @@ func runGitInCtx(ctx context.Context, dir string, args ...string) (string, error
 	cmd.WaitDelay = mergeGitWaitDelay
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
-	// Under the limit ctx carries, such as a merge shadow's.
-	err := proclimit.Run(ctx, cmd)
+	// Under the limit ctx carries, such as a merge shadow's. These are
+	// datawatch's own reads, so they run also where no limit can be had.
+	err := proclimit.RunWhereHad(ctx, cmd)
 	if cerr := ctx.Err(); cerr != nil && err != nil {
 		return out.String(), fmt.Errorf("git %s: %w", args[0], cerr)
 	}
