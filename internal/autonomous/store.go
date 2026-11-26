@@ -573,7 +573,9 @@ var dependsOnRePlainNumber = regexp.MustCompile(`^[1-9][0-9]*$`)
 //     from the same plan — that sibling's real ID. Task-level entries match
 //     task titles only, as before. (Interpretation documented here for the
 //     live-observed case on PRD a2833a5e, where decompose's LLM output came
-//     back with sibling titles rather than IDs.)
+//     back with sibling titles rather than IDs.) A title that two or more
+//     of those siblings share is AMBIGUOUS and rejects the whole plan: no
+//     one of them is ever picked;
 //  3. a positional code, 1-based against the order of the stories slice
 //     being stored: "sN-tM" is the Mth task of the Nth story, "sN" is the
 //     Nth story, and bare number N is the Nth story at BOTH the story and
@@ -594,6 +596,10 @@ var dependsOnRePlainNumber = regexp.MustCompile(`^[1-9][0-9]*$`)
 func resolveDependsOn(stories []Story, storyByID map[string]*Story, taskByID map[string]*Task) error {
 	taskIDByTitle := make(map[string]string, len(taskByID))
 	storyIDByTitle := make(map[string]string, len(stories))
+	// How many stories and tasks of this plan carry each title: a title more
+	// than one of them carries cannot name a dependency.
+	storiesTitled := make(map[string]int, len(stories))
+	tasksTitled := make(map[string]int, len(taskByID))
 	// The ids of the plan being resolved. The store maps only hold plans that
 	// are already stored, so an entry that names an id inside this very plan
 	// (the task templates build theirs from real ids) is matched here.
@@ -601,57 +607,59 @@ func resolveDependsOn(stories []Story, storyByID map[string]*Story, taskByID map
 	planTaskIDs := make(map[string]bool, len(taskByID))
 	for i := range stories {
 		storyIDByTitle[stories[i].Title] = stories[i].ID
+		storiesTitled[stories[i].Title]++
 		if stories[i].ID != "" {
 			planStoryIDs[stories[i].ID] = true
 		}
 		for j := range stories[i].Tasks {
 			taskIDByTitle[stories[i].Tasks[j].Title] = stories[i].Tasks[j].ID
+			tasksTitled[stories[i].Tasks[j].Title]++
 			if stories[i].Tasks[j].ID != "" {
 				planTaskIDs[stories[i].Tasks[j].ID] = true
 			}
 		}
 	}
 
-	errUnresolvable := func(raw, owner string) error {
-		return fmt.Errorf("unresolvable depends_on entry %q on %s", raw, owner)
-	}
-
 	// resolve maps one raw entry to its real ID, applying the precedence
 	// described above; storyLevel selects the known-ID map and the
-	// sibling-title map, positional codes work at both levels.
-	resolve := func(raw string, storyLevel bool) (string, bool) {
+	// sibling-title map, positional codes work at both levels. owner names
+	// the story or task that carries the entry, for the error.
+	resolve := func(raw, owner string, storyLevel bool) (string, error) {
 		e := strings.TrimSpace(raw)
+		titled, idByTitle, kind := tasksTitled, taskIDByTitle, "tasks"
 		if storyLevel {
+			titled, idByTitle, kind = storiesTitled, storyIDByTitle, "stories"
 			if _, ok := storyByID[e]; ok || planStoryIDs[e] {
-				return e, true
+				return e, nil
 			}
-			if id, ok := storyIDByTitle[e]; ok {
-				return id, true
-			}
-		} else {
-			if _, ok := taskByID[e]; ok || planTaskIDs[e] {
-				return e, true
-			}
-			if id, ok := taskIDByTitle[e]; ok {
-				return id, true
-			}
+		} else if _, ok := taskByID[e]; ok || planTaskIDs[e] {
+			return e, nil
 		}
-		return positionalDependsOn(e, stories)
+		if n := titled[e]; n > 1 {
+			return "", fmt.Errorf("ambiguous depends_on entry %q on %s: %d %s share that title; name one by its ID or position", raw, owner, n, kind)
+		}
+		if id, ok := idByTitle[e]; ok {
+			return id, nil
+		}
+		if id, ok := positionalDependsOn(e, stories); ok {
+			return id, nil
+		}
+		return "", fmt.Errorf("unresolvable depends_on entry %q on %s", raw, owner)
 	}
 
 	for i := range stories {
 		for k, dep := range stories[i].DependsOn {
-			id, ok := resolve(dep, true)
-			if !ok {
-				return errUnresolvable(dep, "story "+quote(stories[i].Title))
+			id, err := resolve(dep, "story "+quote(stories[i].Title), true)
+			if err != nil {
+				return err
 			}
 			stories[i].DependsOn[k] = id
 		}
 		for j := range stories[i].Tasks {
 			for k, dep := range stories[i].Tasks[j].DependsOn {
-				id, ok := resolve(dep, false)
-				if !ok {
-					return errUnresolvable(dep, "task "+quote(stories[i].Tasks[j].Title))
+				id, err := resolve(dep, "task "+quote(stories[i].Tasks[j].Title), false)
+				if err != nil {
+					return err
 				}
 				stories[i].Tasks[j].DependsOn[k] = id
 			}
