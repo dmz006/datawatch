@@ -1095,6 +1095,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Without this, `exec.Command("claude", ...)` fails when the binary is in a
 	// non-standard location (e.g. ~/.local/bin) that isn't in the daemon's PATH.
 	channel.SetClaudeBin(claudeBin)
+	// Registrations this daemon makes are recorded in its data folder: its
+	// startup cleanup removes only those.
+	channel.SetRegistrationRecord(expandHome(cfg.DataDir))
 	// GH#128 v8.12.0 — MCP bridge registrations go to ~/.claude/ (default).
 	// Injecting a datawatch-scoped CLAUDE_CONFIG_DIR caused auth credential
 	// and first-run onboarding issues in spawned sessions.
@@ -1306,10 +1309,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		}
 		// Old registrations are cleaned up beside the start, never before it.
-		go cleanupStaleChannelMCP(usingGoBridge, cfg.Hostname, func(sessionID string) bool {
+		startChannelMCPCleanup(usingGoBridge, func(sessionID string) bool {
 			_, ok := mgr.GetSession(sessionID)
 			return ok
 		})
+		defer stopChannelMCPCleanup()
 	}
 
 	// Re-register claude-code with config-driven options (skip_permissions, channel_enabled).
@@ -3268,6 +3272,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
 			flushBackoff(autonomousBackoff)
+			stopChannelMCPCleanup()
 			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -9782,6 +9787,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// shutdowncause.Capture) before either exit path below.
 			recordShutdownCause(nil)
 			flushBackoff(autonomousBackoff)
+			stopChannelMCPCleanup()
 			_ = mgr.Close()
 			// Under systemd, let its own Restart= policy bring the service
 			// back up — exiting non-zero so Restart=on-failure fires —
@@ -10087,6 +10093,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
 			flushBackoff(autonomousBackoff)
+			stopChannelMCPCleanup()
 			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -10979,6 +10986,7 @@ func runAutoUpdater(ctx context.Context, cfg *config.Config) {
 				}
 				fmt.Printf("[updater] installed v%s, restarting daemon...\n", latest)
 				time.Sleep(500 * time.Millisecond)
+				stopChannelMCPCleanup()
 				selfPath, execErr := os.Executable()
 				if execErr == nil {
 					selfPath, _ = filepath.EvalSymlinks(selfPath)
