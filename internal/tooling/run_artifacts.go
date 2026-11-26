@@ -9,6 +9,7 @@ package tooling
 
 import (
 	"bufio"
+	"errors"
 	"io/fs"
 	"log"
 	"os"
@@ -33,6 +34,40 @@ func isRunArtifactName(name string) bool {
 		return true
 	}
 	return name == "decompose-output.json" || name == "decompose-output.json.failed"
+}
+
+type fileTrackingState int
+
+const (
+	fileUntracked fileTrackingState = iota
+	fileTracked
+	fileTrackingUnknown
+)
+
+// projectTracks asks the project folder's own repository whether it tracks rel.
+// It can track a file under a folder that later became a repository of its own,
+// which that inner repository knows nothing about.
+func projectTracks(gitBin, projectDir, rel string) bool {
+	return exec.Command(gitBin, "-C", projectDir, "ls-files", "--error-unmatch", "--", rel).Run() == nil
+}
+
+// gitTracking asks the repository that holds the file whether it tracks it.
+// git runs in the file's own folder: a project folder can hold other
+// repositories (clones, linked work trees, submodules), and the project's own
+// repository knows nothing about what those track. Only git's "no such tracked
+// file" answer (exit status 1) means untracked; any other failure is unknown.
+// A file is deleted only when projectTracks says no and this says untracked.
+func gitTracking(gitBin, abs string) fileTrackingState {
+	err := exec.Command(gitBin, "-C", filepath.Dir(abs),
+		"--literal-pathspecs", "ls-files", "--error-unmatch", "--", filepath.Base(abs)).Run()
+	if err == nil {
+		return fileTracked
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return fileUntracked
+	}
+	return fileTrackingUnknown
 }
 
 // CleanupRunArtifacts removes known harness scratch files at or under
@@ -106,10 +141,18 @@ func CleanupRunArtifacts(projectDir string) (removed []string, leftover []string
 	// Known-pattern files: delete only when confirmed untracked.
 	for _, rel := range candidates {
 		abs := filepath.Join(projectDir, rel)
-		if _, lerr := exec.Command(gitBin, "-C", projectDir,
-			"ls-files", "--error-unmatch", "--", rel).CombinedOutput(); lerr == nil {
+		state := fileTracked
+		if !projectTracks(gitBin, projectDir, rel) {
+			state = gitTracking(gitBin, abs)
+		}
+		switch state {
+		case fileTracked:
 			// Tracked — must never be deleted.
 			log.Printf("[tooling] run-artifact cleanup: %s: tracked file matches scratch pattern, kept (%s)", projectDir, rel)
+			addLeftover(rel)
+			continue
+		case fileTrackingUnknown:
+			log.Printf("[tooling] run-artifact cleanup: %s: git could not say whether this file is tracked, kept (%s)", projectDir, rel)
 			addLeftover(rel)
 			continue
 		}
