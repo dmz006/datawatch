@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 // ShipPolicy is the resolved ship settings for one project. Push, Tag and
@@ -18,6 +19,12 @@ type ShipPolicy struct {
 	TagFormat   string
 	Remote      string
 	CIWorkflows []string
+	// Scan is the pre-push secret scan policy for this run's pushes; a zero
+	// value uses the daemon's.
+	Scan git.SecretScanPolicy
+	// AtCompletion marks a run made because work finished: it pushes a work
+	// branch only, never the remote's default branch, and never tags.
+	AtCompletion bool
 }
 
 var (

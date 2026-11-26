@@ -110,6 +110,24 @@ type BootstrapGit struct {
 	Provider string `json:"provider,omitempty"`
 	// CreateBranch (BL407 Phase 4) mirrors server.BootstrapGit.CreateBranch.
 	CreateBranch bool `json:"create_branch,omitempty"`
+	// BaseBranch is the Project Profile's own branch, which the worker
+	// never pushes.
+	BaseBranch string `json:"base_branch,omitempty"`
+	// Push is the parent's push settings for this worker. A worker that
+	// received none pushes nothing.
+	Push *BootstrapPush `json:"push,omitempty"`
+}
+
+// BootstrapPush carries the parent daemon's push settings to a worker.
+type BootstrapPush struct {
+	// Policy is the effective push-on-complete policy: the Automaton's own
+	// value when it has one, else git.push_on_complete.
+	Policy string `json:"policy"`
+	// SecretScanMode and the lists are the parent's git.secret_scan settings.
+	SecretScanMode         string   `json:"secret_scan_mode"`
+	SecretScanDetectors    []string `json:"secret_scan_detectors,omitempty"`
+	SecretScanAllowPaths   []string `json:"secret_scan_allow_paths,omitempty"`
+	SecretScanFingerprints []string `json:"secret_scan_allow_fingerprints,omitempty"`
 }
 
 // BootstrapMemory mirrors server.BootstrapMemory (F10 S6.2 — memory

@@ -448,6 +448,10 @@ type PRD struct {
 	// the Automaton never had a branch.
 	Landing *Landing `json:"landing,omitempty"`
 
+	// MergeAcceptance is the operator's or supervisor's acceptance of one
+	// exact commit of the branch for merging (see merge_eligibility.go).
+	MergeAcceptance *MergeAcceptance `json:"merge_acceptance,omitempty"`
+
 	// ShippedRefusal is why the daemon dropped this Automaton as delivered:
 	// its own shipped record was already set when it was about to start. Nil
 	// when it never was. ClosedWorkOverride is the operator's audited force

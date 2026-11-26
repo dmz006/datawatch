@@ -40,6 +40,9 @@ type FinishedWorkFinding struct {
 	QuestionID string `json:"question_id,omitempty"`
 	// ReaskAt is the date a left-alone branch is asked about again.
 	ReaskAt string `json:"reask_at,omitempty"`
+	// MergeSelection is the merge selection rule's answer: whether datawatch
+	// may merge this work, and why not when it may not.
+	MergeSelection string `json:"merge_selection,omitempty"`
 }
 
 // FinishedWorkSweep is the bounded, persisted findings of the finished-work

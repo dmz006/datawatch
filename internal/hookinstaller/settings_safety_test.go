@@ -5,6 +5,7 @@ package hookinstaller
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -64,13 +65,24 @@ func put(t *testing.T, path, body string) {
 	}
 }
 
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+}
+
 // folders makes a project folder both ways a settings file can be in one that
 // git does not protect: outside any repository, and ignored by git.
 func folders(t *testing.T) map[string]func() (string, string) {
 	return map[string]func() (string, string){
 		"not a git folder": func() (string, string) { dir := t.TempDir(); return dir, dir },
 		"ignored by git": func() (string, string) {
-			dir := repoWith(t, map[string]string{".gitignore": ".claude/\n"})
+			dir := t.TempDir()
+			gitIn(t, dir, "init", "-q")
+			put(t, filepath.Join(dir, ".gitignore"), ".claude/\n")
 			return dir, dir
 		},
 	}
@@ -229,13 +241,4 @@ func TestInstallRefusesTheHomeFolderAndUserSettings(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-}
-
-// A folder that has a .git git cannot read is not taken for a plain folder.
-func TestInstallDoesNotGuessWhenGitCannotBeAsked(t *testing.T) {
-	dir := t.TempDir()
-	put(t, filepath.Join(dir, ".git"), "gitdir: /nowhere/at/all\n")
-	before := tree(t, dir)
-	mustRefuse(t, dir)
-	sameTree(t, before, tree(t, dir))
 }

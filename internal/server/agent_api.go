@@ -342,6 +342,10 @@ type BootstrapGit struct {
 	// same signal autonomous.branchNameFor's caller uses to ask for a
 	// dedicated branch in the first place.
 	CreateBranch bool `json:"create_branch,omitempty"`
+	// BaseBranch and Push mirror agents.BootstrapGit: the profile's own
+	// branch and the push settings the worker must obey.
+	BaseBranch string                `json:"base_branch,omitempty"`
+	Push       *agents.BootstrapPush `json:"push,omitempty"`
 }
 
 // BootstrapMemory is the memory federation bundle (F10 S6.2).
@@ -475,6 +479,10 @@ func (s *Server) handleAgentBootstrap(w http.ResponseWriter, r *http.Request) {
 				// default doesn't exist upstream yet — the worker
 				// must create it locally rather than check it out.
 				CreateBranch: branch != "" && branch != proj.Git.Branch,
+				// The worker makes its own push, so it is told the
+				// settings to obey and the branch it must not move.
+				BaseBranch: proj.Git.Branch,
+				Push:       s.workerPushSettings(agent.PushOnComplete),
 			}
 		}
 		// F10 S6.2 — memory federation bundle. Tells the worker

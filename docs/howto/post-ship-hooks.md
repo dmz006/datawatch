@@ -69,6 +69,11 @@ The five built-ins:
 | `notify` | Sends the rendered message through the daemon's notifier (its alert channel); the step fails rather than drops the message when no notifier is wired. |
 | `mark_completed` | Marks the Automaton whose branch just shipped **Completed**, with the release, the merge commit and the merge time, and records its branch's **landing** as `landed` with the merge commit. Needs no target setting. Safe to repeat: an Automaton that is already Completed is left alone, and a landing record that already names the commit is left alone. It never cancels anything and never touches a session. |
 
+`mark_completed` records nothing unless the remote's default branch contains the
+merge commit, so a held or failed push leaves the landing pending. A merge run
+records this itself after its push, with or without the hook (see
+[The landing record](landing-record.md#what-gets-recorded-after-a-push)).
+
 `mark_completed` is the daemon's own way to finish an Automaton after a ship,
 so nobody cancels a merged Automaton by hand. It is the same outcome the merge
 helper script reaches with its `completed_mark` step, and the one-off

@@ -416,6 +416,10 @@ the release for a person in every mode.
 
 ## Starting a merge run
 
+A run merges only what the [merge selection rule](landing-record.md#what-datawatch-may-merge)
+picks: exactly one Automaton branch, held to the selected commit. Any other
+request is recorded as a failed run that says why.
+
 A merge run is started with `POST /api/autonomous/merge/run` (there is no CLI,
 MCP, chat or web action for it). It is **off by default**: turn it on with
 `datawatch config set autonomous.merge_deploy_run_enabled true`. While the

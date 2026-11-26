@@ -491,8 +491,8 @@ launching Claude Code. This installs:
 The installer writes `.claude/settings.local.json` in the project. It installs
 **nothing**, and says why in the daemon log (`[memory] ... not installed`), for a home
 folder or user-level settings, for a linked `.claude` folder or settings file, and for
-a file it cannot read and parse in full (a `//` comment or a trailing comma counts). A
-file it can read keeps every setting, its numbers and its mode.
+a file it cannot read and parse in full (a `//` comment or a trailing comma counts) or
+cannot write. A file it can read keeps every setting, its numbers and its mode.
 
 Configure:
 ```yaml

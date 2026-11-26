@@ -16,6 +16,14 @@ exec_steps:
     description: Record that the Automaton's work branch and its work will not be merged (needs a reason)
     args: {id: "", reason: ""}
     read_only: false
+  - tool: autonomous_prd_merge_selection
+    description: Read which branches datawatch may merge and why each other one is left out
+    args: {id: ""}
+    read_only: true
+  - tool: autonomous_prd_accept_for_merge
+    description: Accept one exact commit of an Automaton's branch for merging (needs the full commit id and a reason)
+    args: {id: "", commit: "", reason: ""}
+    read_only: false
 ---
 # The landing record
 
@@ -41,7 +49,7 @@ The definition lives with the other Automaton terms in
 | State | Set by |
 |---|---|
 | `pending` | the daemon, when the Automaton's work branch is created: the actor is `autonomous`, the reason is the fixed note "branch created", and there is no merge commit yet. This is the default: an Automaton that carries a work branch starts `pending`. |
-| `landed` | the pipeline's `mark_completed` post-ship hook through the daemon's completed mark, when the branch ships. It names the merge commit in `commit`. See [Post-ship hooks](post-ship-hooks.md). A `landed` record is never rewritten. |
+| `landed` | the daemon, after a merge run's push step, once the remote's default branch is confirmed to contain the merge commit (see [What gets recorded](#what-gets-recorded-after-a-push)). It names the merge commit in `commit`. |
 | `kept` | you — an operator decision with an actor and a non-empty reason. Use it when the branch is kept on purpose and will not be merged. |
 | `dropped` | you — an operator decision with an actor and a non-empty reason. Use it when the work is abandoned and will not be merged. |
 
@@ -52,10 +60,94 @@ default branch").
 
 A `pending` landing is also treated as `landed` when the Automaton's branch
 tip is already an ancestor of the default branch (git's
-`merge-base --is-ancestor`). It does not matter how the merge happened: the
-pipeline, the shipped record call or a hand merge all count. The next archive
-check finds it, passes, and updates the record to `landed` with the merge
-commit.
+`merge-base --is-ancestor`) and, when the repository has a remote, the merge
+commit is on the remote's copy of that branch too. A merge that exists only on
+the local default branch has not landed. It does not matter how the merge
+happened. The next archive check finds it, passes, and updates the record to
+`landed` with the merge commit.
+
+## What datawatch may merge
+
+One rule picks the work datawatch may merge. The supervisor loop's merge job,
+a merge run request, the shadow merge plan, the selection read and the
+finished-work findings all use it. A branch is **selected** when either:
+
+- the Automaton is `completed` and its completion review **passed on exactly
+  the commit the branch points at**; or
+- the operator or the supervisor **accepted that exact commit**, with a
+  reason. This covers a review that is pending or timed out, a branch that
+  moved past the reviewed commit, and an Automaton that is `needs_review`.
+
+A branch is **never** selected, accepted or not, when the Automaton is failed,
+blocked, cancelled, archived or rejected, or its review is blocked. A block is
+kept for each check on each unit (the completion review, each story, each
+task): it stays until the **same check passes on that same unit**. A pass
+anywhere else does not hide it, and a later re-judge that only timed out does
+not remove it. An acceptance does not lift it.
+
+These also leave a branch out, and each answer lists every reason that
+applies: the work is not finished; an operator hold or pause (on the
+Automaton, its project or everything); uncommitted work held in its worktree;
+a code task that is not completed, or no finished task other than gate tasks
+(a finished task counts whatever its title says; an open task that is a gate,
+or whose title reads as documentation, does not hold the branch back); a
+landing already
+`landed`, `kept` or `dropped`; the answer "I will land it" (accepting the
+commit afterwards hands it back); a shipped record; a closed outcome; a branch
+that is not in the merge repository; a task branch with commits that are not on
+the Automaton branch.
+
+**An acceptance names one commit.** It must be the full commit id of the
+branch's tip. When the branch moves, the acceptance no longer covers it. A
+merge run holds the branch to the selected commit: if it moves during the run,
+the run stops. The pipeline's own rebase step rewrites the branch, so a run
+that stops after a rebase leaves a new commit that needs a new review or a new
+acceptance.
+
+The acceptance records the actor, the way keep and drop do, writes a
+`merge_accept` decision and a `merge_accept` audit entry (refusals too). It
+does not prove who the actor is. A caller the daemon knows to be a session or a
+federation peer is recorded as that, whatever it names. A session that is doing
+Automaton work cannot accept anything.
+
+| Surface | See what is selected | Accept a commit |
+|---|---|---|
+| PWA | **May datawatch merge it?** under the landing block | **Accept commit … for merge**, shown with the reasons; it asks why |
+| REST | `GET /api/autonomous/merge?selection=true`, or `?automaton=<id>` | `POST /api/autonomous/prds/{id}/landing/accept`, body `{"actor": "<who>", "commit": "<full id>", "reason": "<why>"}` |
+| CLI | `datawatch autonomous merge-selection [<id>]` | `datawatch autonomous prd-landing-accept <id> --commit <full id> --reason "<why>" [--actor <who>]` |
+| MCP | `autonomous_prd_merge_selection` | `autonomous_prd_accept_for_merge` with `id`, `commit`, `reason` |
+| chat / comm | `autonomous landing selection [<id>]` | `autonomous landing accept <id> <full commit id> <reason words…> [actor=<who>]` |
+
+From a federated peer, the read needs the autonomous read capability and the
+acceptance the autonomous write capability. Nothing here merges or pushes;
+merge runs stay off until
+`autonomous.merge_deploy_run_enabled` is on.
+
+A merge run request names exactly one Automaton branch. A refused request
+still answers with a recorded run whose result is `failed` and whose reason
+says why; nothing is merged. A branch that no Automaton owns is refused.
+
+## What gets recorded after a push
+
+After a merge run's push step, the daemon asks the remote whether its default
+branch contains the merge commit, and checks that the commit contains the
+Automaton's branch. Only then does it write, in one step: landing `landed`,
+status `completed` (also from `needs_review`), and the shipped record (commit,
+release version, source `merge_step`), with a `merge_landed` decision. The run
+shows this as the step `record-landing`. A push that was held, skipped or
+failed, or a remote that cannot confirm it, leaves everything as it was.
+
+A shipped record you set by hand with source `merge_step`, for a branch in the
+merge repository that has a remote, is refused unless the remote contains the
+commit; when it does, the landing becomes `landed` too. It never changes the
+Automaton's status.
+
+**A `backfill` record is stored as given, with no check**, and `backfill` is
+what the CLI, MCP and chat send unless you choose `merge_step`. So such a
+record can mark work that was never pushed as shipped. The landing stays
+`pending`, and the selection rule then leaves the work out as already shipped.
+Record a shipped record only after the push, or choose `merge_step` to have the
+daemon check it.
 
 ## Reading the record
 

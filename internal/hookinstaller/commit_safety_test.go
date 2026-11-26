@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func gitIn(t *testing.T, dir string, args ...string) string {
+func gitInTest(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -27,7 +27,7 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 func repoWith(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
-	gitIn(t, dir, "init", "-q")
+	gitInTest(t, dir, "init", "-q")
 	for name, body := range files {
 		p := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -37,13 +37,13 @@ func repoWith(t *testing.T, files map[string]string) string {
 			t.Fatal(err)
 		}
 	}
-	gitIn(t, dir, "add", "-A")
-	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "base")
+	gitInTest(t, dir, "add", "-A")
+	gitInTest(t, dir, "commit", "-q", "--allow-empty", "-m", "base")
 	return dir
 }
 
 func status(t *testing.T, dir string) string {
-	return gitIn(t, dir, "status", "--porcelain", "--untracked-files=all")
+	return gitInTest(t, dir, "status", "--porcelain", "--untracked-files=all")
 }
 
 func TestInstallLeavesTheWorkTreeClean(t *testing.T) {
@@ -61,8 +61,8 @@ func TestInstallLeavesTheWorkTreeClean(t *testing.T) {
 		if got := status(t, dir); got != "" {
 			t.Fatalf("install in %q left files a commit would take:\n%s", sub, got)
 		}
-		gitIn(t, dir, "add", "-A")
-		if got := gitIn(t, dir, "diff", "--cached", "--name-only"); got != "" {
+		gitInTest(t, dir, "add", "-A")
+		if got := gitInTest(t, dir, "diff", "--cached", "--name-only"); got != "" {
 			t.Fatalf("git add -A staged:\n%s", got)
 		}
 	}
@@ -71,7 +71,7 @@ func TestInstallLeavesTheWorkTreeClean(t *testing.T) {
 func TestInstallInALinkedWorktreeLeavesItClean(t *testing.T) {
 	dir := repoWith(t, map[string]string{"a.txt": "a"})
 	wt := filepath.Join(t.TempDir(), "wt")
-	gitIn(t, dir, "worktree", "add", "-q", "-b", "task", wt)
+	gitInTest(t, dir, "worktree", "add", "-q", "-b", "task", wt)
 	if err := Install(wt, "host-aa01", "http://localhost:1", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -164,4 +164,13 @@ func TestHookEventCarriesTheSessionsOwnID(t *testing.T) {
 	if got := sent(); got != "" {
 		t.Errorf("sent %q with no session", got)
 	}
+}
+
+// A folder that has a .git git cannot read is not taken for a plain folder.
+func TestInstallDoesNotGuessWhenGitCannotBeAsked(t *testing.T) {
+	dir := t.TempDir()
+	put(t, filepath.Join(dir, ".git"), "gitdir: /nowhere/at/all\n")
+	before := tree(t, dir)
+	mustRefuse(t, dir)
+	sameTree(t, before, tree(t, dir))
 }

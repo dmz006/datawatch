@@ -886,14 +886,16 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousDeployGet(), tracked(s.handleAutonomousDeployGet))
 	mcpSrv.AddTool(s.toolAutonomousDeployRun(), tracked(s.handleAutonomousDeployRun))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
-	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
-	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork))       // autonomous_unlanded_work: archived branches with work not on the default branch
-	mcpSrv.AddTool(s.toolAutonomousFinishedWork(), tracked(s.handleAutonomousFinishedWork))       // autonomous_finished_work: finished work waiting to land
-	mcpSrv.AddTool(s.toolAutonomousFinishedWorkRun(), tracked(s.handleAutonomousFinishedWorkRun)) // autonomous_finished_work_run: run one sweep pass or the audit
-	mcpSrv.AddTool(s.toolAutonomousDormantFeatures(), tracked(s.handleAutonomousDormantFeatures)) // autonomous_dormant_features: shipped features that are dormant
-	mcpSrv.AddTool(s.toolAutonomousLandingKeep(), tracked(s.handleAutonomousLandingKeep))         // autonomous_landing_keep: keep the branch unmerged on purpose
-	mcpSrv.AddTool(s.toolAutonomousLandingDrop(), tracked(s.handleAutonomousLandingDrop))         // autonomous_landing_drop: record that the work will not be merged
-	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations
+	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork))     // autonomous_uncommitted_work: policy, scope and held tasks
+	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork))           // autonomous_unlanded_work: archived branches with work not on the default branch
+	mcpSrv.AddTool(s.toolAutonomousFinishedWork(), tracked(s.handleAutonomousFinishedWork))           // autonomous_finished_work: finished work waiting to land
+	mcpSrv.AddTool(s.toolAutonomousFinishedWorkRun(), tracked(s.handleAutonomousFinishedWorkRun))     // autonomous_finished_work_run: run one sweep pass or the audit
+	mcpSrv.AddTool(s.toolAutonomousDormantFeatures(), tracked(s.handleAutonomousDormantFeatures))     // autonomous_dormant_features: shipped features that are dormant
+	mcpSrv.AddTool(s.toolAutonomousPRDAcceptForMerge(), tracked(s.handleAutonomousPRDAcceptForMerge)) // accept one exact commit for merging
+	mcpSrv.AddTool(s.toolAutonomousPRDMergeSelection(), tracked(s.handleAutonomousPRDMergeSelection)) // what datawatch may merge, and why not
+	mcpSrv.AddTool(s.toolAutonomousLandingKeep(), tracked(s.handleAutonomousLandingKeep))             // autonomous_landing_keep: keep the branch unmerged on purpose
+	mcpSrv.AddTool(s.toolAutonomousLandingDrop(), tracked(s.handleAutonomousLandingDrop))             // autonomous_landing_drop: record that the work will not be merged
+	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))           // autonomous_request_watch: in-flight model request observations
 	// autonomous_protected_paths: action, rules source, protected list, held tasks and authorised paths
 	mcpSrv.AddTool(s.toolAutonomousProtectedPaths(), tracked(s.handleAutonomousProtectedPaths))
 	// autonomous_standard_tasks: built-in standard tasks the decomposer adds to each story (same object as the REST read)

@@ -66,7 +66,18 @@ func RenderFinishedWorkDigest(w io.Writer, d *FinishedWorkDigest) error {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\t%s\n", f.Automaton, f.Title, f.Cause, f.Ahead,
 			finishedWorkWaited(f.Since, now), f.Owner, f.QuestionID)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	for _, f := range rows {
+		if f.MergeSelection == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "%s: %s\n", f.Automaton, f.MergeSelection); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RenderFinishedWorkRun writes the outcome of a sweep pass or an audit from

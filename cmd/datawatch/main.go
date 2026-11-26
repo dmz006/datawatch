@@ -126,7 +126,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.20"
+var Version = "9.187.22"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -691,7 +691,21 @@ func (projectGitPusher) CurrentBranch(projectDir string) (string, error) {
 	return session.NewProjectGit(projectDir).CurrentBranch()
 }
 func (projectGitPusher) PushBranch(projectDir, remoteName, branch, originURL, token string) error {
-	return session.NewProjectGit(projectDir).PushBranch(remoteName, branch, originURL, token)
+	// The hook runs because work finished: a work branch only.
+	return session.NewProjectGit(projectDir).PushWorkBranch(remoteName, branch, originURL, token)
+}
+
+// sessionGitPushSettings is the push-on-complete reader for this daemon's own
+// sessions, read live on every push. A container worker's sessions never push:
+// the worker's one push is PushOnCompletion, which obeys the parent's
+// settings, not the worker's own defaults.
+func sessionGitPushSettings(cfg *config.Config, isWorker bool) func() (string, string) {
+	return func() (string, string) {
+		if isWorker {
+			return gitpkg.PushNever, cfg.Git.EffectivePushRemote()
+		}
+		return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
+	}
 }
 
 // brokerAdapter narrows authpkg.TokenBroker to the agents.GitTokenMinter
@@ -771,14 +785,15 @@ func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, bo
 		}
 		tick.Stop()
 	}
-	// BL407 Phase 3 — push whatever got committed, win or lose: a
+	// BL407 Phase 3 — push whatever got committed, win or lose, when the
+	// parent's push settings and the outgoing check allow it: a
 	// failed task's partial progress is still worth preserving for
 	// operator inspection via the (unopened, in that case — see
 	// handleClusterGitCompletion) branch, and PushOnCompletion itself
 	// is a no-op when there's nothing new to push.
 	if branch, sha, perr := agentspkg.PushOnCompletion(context.Background(), projectDir, boot); perr != nil {
 		fmt.Fprintf(os.Stderr, "[worker] push on completion: %v\n", perr)
-		result.Summary += " (git push failed: " + perr.Error() + ")"
+		result.Summary += " (not pushed: " + perr.Error() + ")"
 	} else if branch != "" {
 		result.Branch = branch
 		result.CommitSHA = sha
@@ -1607,6 +1622,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 		channel.SetLaunchRoot(expandHome(cfg.DataDir))
 
+		// v8.7.0 — per-session opencode.json (opencode_launch.go). A launch
+		// check, so a refusal stops the launch before anything of it exists.
+		mgr.SetLaunchCheck(opencodeLaunchCheck(cfg, opencodeConfigRefusalFailsLaunch))
+
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
 			// Design A3 — mint this session's own scoped credential and
 			// build a PER-SESSION channelEnv carrying it, instead of the
@@ -1743,45 +1762,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					return mgr.SetPaneEnv(tmuxSession, map[string]string{key: value})
 				},
 			})
-
-			// v8.7.0 — write per-session opencode.json for OpenCode backends.
-			// Always written (not conditional) so the default model is always set.
-			// Idempotent; operator-added entries are preserved.
-			if sess.BackendFamily == "opencode" || sess.BackendFamily == "opencode-acp" {
-				model := sess.Model
-				if model == "" && cfg.OpenCode.DefaultModel != "" {
-					model = cfg.OpenCode.DefaultModel
-				}
-				ocOpts := opencode.ProjectConfigOpts{
-					Model:            model,
-					OllamaURL:        sess.OllamaURL,
-					ChunkTimeoutSec:  cfg.OpenCode.OllamaChunkTimeoutSec,
-					HeaderTimeoutSec: cfg.OpenCode.OllamaHeaderTimeoutSec,
-					BuildTemperature: cfg.OpenCode.BuildTemperature,
-					// 2026-10-15, live-validated — deny only the tools that
-					// are safe to deny for ANY one-shot autonomous task
-					// regardless of content; see DenyTools' doc comment for
-					// why this is not a broader allow-list.
-					DenyTools: []string{"task", "external_directory"},
-				}
-				if sess.LSPLanguage != "" {
-					if srv, ok := cfg.LSP.Servers[sess.LSPLanguage]; ok {
-						ocOpts.LSPServers = map[string]opencode.LSPServer{
-							sess.LSPLanguage: {
-								Command:    srv.Command,
-								Extensions: srv.Extensions,
-								Env:        srv.Env,
-							},
-						}
-					}
-				}
-				if err := opencode.WriteProjectConfig(sess.ProjectDir, ocOpts); err != nil {
-					fmt.Printf("[warn] %s: %v\n", sess.ID, err)
-				} else {
-					fmt.Printf("[opencode] wrote project config (model=%s lsp=%s) for %s\n",
-						model, sess.LSPLanguage, sess.ID)
-				}
-			}
 
 			if sess.BackendFamily != "claude-code" {
 				return
@@ -2310,9 +2290,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// result — read on every push attempt, so a runtime configure change
 	// applies without a restart (same live-config pattern as the
 	// autonomous manager's wiring).
-	mgr.SetGitPushSettings(func() (policy, remote string) {
-		return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
-	})
+	mgr.SetGitPushSettings(sessionGitPushSettings(cfg, bootEnv.IsWorker()))
 	// git.push_before_teardown: the kill-time save push is opt-in (default
 	// off), read live on every kill like the push policy above.
 	mgr.SetPushBeforeTeardown(func() bool { return cfg.Git.PushBeforeTeardown })
@@ -2322,7 +2300,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// effectiveSecretScanMode), so a fresh install scans + alerts without
 	// ever refusing a push; enforce refuses (Kind=secret_found) with the
 	// remote untouched.
-	mgr.SetSecretScanSettings(func() gitpkg.SecretScanPolicy {
+	daemonSecretScan := func() gitpkg.SecretScanPolicy {
 		al := cfg.Git.EffectiveSecretScanAllowList()
 		return gitpkg.SecretScanPolicy{
 			Mode:         cfg.Git.EffectiveSecretScanMode(),
@@ -2330,7 +2308,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PathPatterns: al.Paths,
 			Fingerprints: al.Fingerprints,
 		}
-	})
+	}
+	mgr.SetSecretScanSettings(daemonSecretScan)
+	// Daemon pushes that name no policy of their own (the merge run's push, a
+	// tag push, the worker pull request hook) use the same live settings.
+	gitpkg.SetDaemonScanPolicy(daemonSecretScan)
 	// Operator alert sink for one-shot push failures → the same alert
 	// store every other system alert goes to.
 	mgr.SetPushAlertFn(func(level, title, body string) {
@@ -5330,6 +5312,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// rather than leaving it to default to the
 					// Project Profile's shared static branch.
 					"branch": req.Branch,
+					// The worker makes its own push and must obey the
+					// Automaton's own push setting.
+					"push_on_complete": req.PushOnComplete,
 				})
 				agentReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 					loopbackBaseURL(cfg)+"/api/agents",

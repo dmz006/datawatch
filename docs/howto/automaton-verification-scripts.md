@@ -394,6 +394,15 @@ after it. Both linter findings and a linter that cannot start produce this block
 a missing `golangci-lint` is not retried as infrastructure. Fix the findings (or
 install the linter on the worker's node) and reset the task.
 
+**How the block is lifted.** When the same task or story later passes the gate,
+the daemon records a `lint-gate` pass on it and a `lint_gate_lifted` decision, and
+the earlier block no longer stands. This happens only for a unit with an open
+`lint-gate` block, and only when the gate actually ran: a skipped gate (no project
+directory, or not a git work tree) lifts nothing. A lint pass is **never a review
+pass**: it does not change the review state to passed, sends no judge event and
+lifts no other check's block. It matters for
+[what datawatch may merge](landing-record.md#what-datawatch-may-merge).
+
 The gate has no setting of its own; the linter command is fixed and injectable only
 in tests. See **Verification lint gate** in [the definitions](../datawatch-definitions.md#shadow-merge-checks), listed beside the merge lint checks.
 

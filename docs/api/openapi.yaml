@@ -11398,7 +11398,7 @@ paths:
       summary: Spawn a new agent worker
       operationId: agentSpawn
       tags: [Agents]
-      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {push_on_complete: {type: string, description: "Push-on-complete override for this worker's one push: never, branch or default_branch. Empty uses git.push_on_complete. Only branch pushes, and only a work branch."}}}}}}
       responses: {"200": {description: Spawned}, "400": {description: Bad Request}}
   /api/agents/audit:
     get:

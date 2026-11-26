@@ -251,60 +251,6 @@ func unpushedCommitList(ctx context.Context, dir, remote string) ([]string, erro
 	return shas, nil
 }
 
-// addedLine is one line a commit adds, with its new-file line number.
-type addedLine struct {
-	path string
-	line int
-	text string
-}
-
-// addedLines returns the lines commit sha adds, per file, with their
-// line numbers in the commit's version of the file. `git diff-tree
-// --root -r -U0` diffs the commit against its parent (or the empty tree
-// for a root commit); -U0 keeps the hunk headers small so the line
-// numbers stay easy to track.
-func addedLines(ctx context.Context, dir, sha string) ([]addedLine, error) {
-	out, err := runGit(ctx, dir, "diff-tree", "--root", "-r", "--no-commit-id", "--no-renames", "-U0", sha)
-	if err != nil {
-		return nil, fmt.Errorf("diff commit %s: %s", sha, tailReason(out))
-	}
-	var lines []addedLine
-	currentPath := ""
-	newLine := 0
-	for _, raw := range strings.Split(out, "\n") {
-		line := strings.TrimSuffix(raw, "\r")
-		switch {
-		case strings.HasPrefix(line, "diff --git "):
-			currentPath = pathFromDiffHeader(line)
-			newLine = 0
-		case strings.HasPrefix(line, "@@ "):
-			newLine = hunkNewStart(line)
-		case strings.HasPrefix(line, "+") && currentPath != "":
-			lines = append(lines, addedLine{path: currentPath, line: newLine, text: line[1:]})
-			newLine++
-		case strings.HasPrefix(line, " "):
-			// context line (rare with -U0; keep the counter honest)
-			if currentPath != "" {
-				newLine++
-			}
-		}
-	}
-	return lines, nil
-}
-
-// pathFromDiffHeader extracts the repository-relative path from a
-// `diff --git a/<p> b/<p>` header line. Quoting by git (paths with
-// unusual characters) is stripped.
-func pathFromDiffHeader(line string) string {
-	rest := strings.TrimSpace(strings.TrimPrefix(line, "diff --git "))
-	i := strings.LastIndex(rest, " b/")
-	if i < 0 {
-		return rest
-	}
-	p := rest[i+len(" b/"):]
-	return strings.Trim(p, `"`)
-}
-
 // hunkNewStart parses `@@ -a[,b] +c[,d] @@ ...` and returns c, the
 // first new-file line number of the hunk.
 func hunkNewStart(hunk string) int {
@@ -361,37 +307,89 @@ func ScanUnpushed(ctx context.Context, dir, remote string, opts ...ScanOptions) 
 	if err != nil {
 		return nil, err
 	}
-	var findings []SecretFinding
+	m := &outgoingManifest{}
 	for _, sha := range shas {
-		added, err := addedLines(ctx, dir, sha)
+		raw, err := readGit(ctx, dir, "", "cat-file", "commit", sha)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read commit %s: %w", sha, err)
 		}
-		for _, al := range added {
-			if o.pathAllowed(al.path) {
-				continue
-			}
-			for _, d := range dets {
-				m := d.re.FindString(al.text)
-				if m == "" {
-					continue
-				}
-				if d.minEntropy > 0 && shannonEntropy(m) < d.minEntropy {
-					continue
-				}
-				short, full := secretFingerprint(m)
-				if o.fpAllowed(short, full) {
-					continue
-				}
-				findings = append(findings, SecretFinding{
-					Detector:    d.name,
-					Commit:      sha,
-					Path:        al.path,
-					Line:        al.line,
-					Fingerprint: short,
-				})
+		lines, err := commitAddedLines(ctx, dir, sha, commitParents(raw))
+		if err != nil {
+			return nil, fmt.Errorf("diff commit %s: %w", sha, err)
+		}
+		m.lines = append(m.lines, lines...)
+	}
+	return scanManifest(m, dets, o), nil
+}
+
+// matchLine returns one finding per detector that matches text.
+func matchLine(text string, dets []secretDetector, o ScanOptions) []SecretFinding {
+	var out []SecretFinding
+	for _, d := range dets {
+		m := d.re.FindString(text)
+		if m == "" {
+			continue
+		}
+		if d.minEntropy > 0 && shannonEntropy(m) < d.minEntropy {
+			continue
+		}
+		short, full := secretFingerprint(m)
+		if o.fpAllowed(short, full) {
+			continue
+		}
+		out = append(out, SecretFinding{Detector: d.name, Fingerprint: short})
+	}
+	return out
+}
+
+// Where a finding outside file content is reported. A file or ref name is
+// never put in a finding when it is what matched.
+const (
+	findingInCommit   = "(commit message or header)"
+	findingInTag      = "(tag message or header)"
+	findingInFileName = "(file name)"
+	findingInRefName  = "(ref name)"
+)
+
+// scanManifest scans everything in the manifest: added lines, commit and tag
+// objects, added file names and destination ref names.
+func scanManifest(m *outgoingManifest, dets []secretDetector, o ScanOptions) []SecretFinding {
+	var findings []SecretFinding
+	add := func(text, commit, path string, line int) {
+		for _, f := range matchLine(text, dets, o) {
+			f.Commit, f.Path, f.Line = commit, path, line
+			findings = append(findings, f)
+		}
+	}
+	// shown keeps a secret that is part of a file name out of every finding.
+	shown := func(path string) string {
+		if len(matchLine(path, dets, ScanOptions{})) > 0 {
+			return findingInFileName
+		}
+		return path
+	}
+	for _, l := range m.lines {
+		if !o.pathAllowed(l.path) {
+			add(l.text, l.commit, shown(l.path), l.line)
+		}
+	}
+	for _, c := range m.commits {
+		for i, line := range strings.Split(c.raw, "\n") {
+			add(line, c.id, findingInCommit, i+1)
+		}
+		for i, name := range c.files {
+			if !o.pathAllowed(name) {
+				add(name, c.id, findingInFileName, i+1)
 			}
 		}
 	}
-	return findings, nil
+	for _, t := range m.tags {
+		for i, line := range strings.Split(t.raw, "\n") {
+			add(line, t.id, findingInTag, i+1)
+		}
+	}
+	for i, r := range m.refs {
+		add(r.dst, r.newID, findingInRefName, i+1)
+	}
+	return findings
 }

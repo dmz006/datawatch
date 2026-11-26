@@ -193,7 +193,7 @@ func TestRun_PushesWorkBranchAfterEachVerifiedTask(t *testing.T) {
 // asserted from the last task's verification closure), and at PRD
 // completion the work HEAD lands on the remote's main as a plain
 // fast-forward.
-func TestRun_DefaultBranchPolicyPushesMainOnlyAtPRDCompletion(t *testing.T) {
+func TestRun_DefaultBranchPolicyNeverMovesMain(t *testing.T) {
 	m, prd, cloneDir, _, initialMain := pushRunFixture(t, 0)
 
 	prd, _ = m.Store().GetPRD(prd.ID)
@@ -222,13 +222,12 @@ func TestRun_DefaultBranchPolicyPushesMainOnlyAtPRDCompletion(t *testing.T) {
 	if got.Status != PRDCompleted {
 		t.Fatalf("PRD status = %s, want completed", got.Status)
 	}
-	// The completion push fast-forwarded main to the work HEAD.
-	finalHead, err := runGitIn(cloneDir, "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatalf("rev-parse HEAD: %v", err)
+	// Completion never moves main: it records why nothing was pushed.
+	if gotSHA := bareRef(t, cloneDir, "main"); gotSHA != initialMain {
+		t.Errorf("bare refs/heads/main = %s, want it left at %s", gotSHA, initialMain)
 	}
-	if gotSHA := bareRef(t, cloneDir, "main"); gotSHA != strings.TrimSpace(finalHead) {
-		t.Errorf("bare refs/heads/main = %s, want final work HEAD %s", gotSHA, finalHead)
+	if got.Git.PushState != PushStateNotPushed || !strings.Contains(got.Git.PushWarning, "default branch") {
+		t.Errorf("state=%q warning=%q, want not_pushed naming the default branch", got.Git.PushState, got.Git.PushWarning)
 	}
 	if gotPolicy := got.Git.PushOnComplete; gotPolicy != git.PushDefaultBranch {
 		t.Errorf("PRD.Git.PushOnComplete = %q, want %q", gotPolicy, git.PushDefaultBranch)

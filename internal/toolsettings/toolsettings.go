@@ -6,12 +6,15 @@ package toolsettings
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/user"
 	"path/filepath"
+	"unicode/utf8"
 )
 
 // resolved is path with symlinks followed as far as it exists.
@@ -142,6 +145,9 @@ func Read(path string) (doc map[string]any, mode os.FileMode, err error) {
 	if len(raw) == 0 {
 		return map[string]any{}, mode, nil
 	}
+	if !utf8.Valid(raw) {
+		return left("is not valid UTF-8") // the decoder would replace the bytes
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber() // numbers are written back as they are
 	if err := dec.Decode(&doc); err != nil {
@@ -190,7 +196,24 @@ func Object(parent map[string]any, key string) (map[string]any, error) {
 	return o, nil
 }
 
+// newTemp makes the file Write fills beside path. When path exists the caller
+// gives the temporary file the old mode. When it does not, the file is made the
+// ordinary way, so the umask applies to mode as it would to any new file.
+func newTemp(path string, mode os.FileMode, exists bool) (*os.File, error) {
+	if exists {
+		return os.CreateTemp(filepath.Dir(path), ".dw-settings-*")
+	}
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return nil, err
+	}
+	name := filepath.Join(filepath.Dir(path), ".dw-settings-"+hex.EncodeToString(b[:]))
+	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) // #nosec G304 -- beside the settings file
+}
+
 // Write replaces path whole with doc: an interrupted write leaves the old file.
+// A file that could not be written in place (read-only, or another user's) is
+// not replaced either.
 func Write(path string, doc map[string]any, mode os.FileMode) error {
 	var body bytes.Buffer
 	enc := json.NewEncoder(&body)
@@ -199,14 +222,26 @@ func Write(path string, doc map[string]any, mode os.FileMode) error {
 	if err := enc.Encode(doc); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".dw-settings-*")
+	_, serr := os.Lstat(path)
+	exists := serr == nil
+	if exists {
+		// Opened without truncating: this only asks whether it may be written.
+		f, err := os.OpenFile(path, os.O_WRONLY, 0) // #nosec G304 -- the settings file
+		if err != nil {
+			return fmt.Errorf("%s cannot be written, so it is left as it is: %w", path, err)
+		}
+		_ = f.Close()
+	}
+	tmp, err := newTemp(path, mode, exists)
 	if err != nil {
-		return err
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }() // gone after the rename
 	_, werr := tmp.Write(body.Bytes())
-	if err := tmp.Chmod(mode); werr == nil {
-		werr = err
+	if exists {
+		if err := tmp.Chmod(mode); werr == nil {
+			werr = err
+		}
 	}
 	if err := tmp.Sync(); werr == nil {
 		werr = err

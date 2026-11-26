@@ -64,8 +64,27 @@ func (s *Server) handleAutonomousMerge(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if q := r.URL.Query(); q.Get("selection") == "true" || q.Get("automaton") != "" {
+		sel, ok := s.autonomousMgr.(mergeSelectionReader)
+		if !ok {
+			http.Error(w, "the merge selection read is not supported by this daemon", http.StatusNotImplemented)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), mergeSafeDeleteTimeout)
+		defer cancel()
+		writeJSONOK(w, sel.MergeSelection(ctx, q.Get("automaton")))
+		return
+	}
 	writeJSONOK(w, mr.MergeStatus())
 }
+
+// mergeSelectionReader is the optional Manager surface behind
+// GET /api/autonomous/merge?selection=true (and ?automaton=ID).
+type mergeSelectionReader interface {
+	MergeSelection(ctx context.Context, id string) autonomous.MergeSelection
+}
+
+var _ mergeSelectionReader = (*autonomous.API)(nil)
 
 // handleAutonomousSafeToDelete serves GET /api/autonomous/safe-to-delete: the
 // report of Automaton branches that are safe to delete and those held back.

@@ -89,6 +89,10 @@ scan is enforcing. The rule is:
 - An **attended** push (an operator runs it) is not affected by this rule.
 - A push to any branch other than the default branch is not affected by this rule.
 
+Finishing work itself never pushes the default branch or a tag; see
+[the outgoing check](secret-scan-push-gate.md#the-outgoing-check), which every
+datawatch push also goes through.
+
 A refusal is recorded in the audit log with outcome `refused`, and the release
 record keeps the same outcome. The error names the current mode, for example
 `current mode "shadow"`. To allow unattended pushes, set `git.secret_scan.mode`

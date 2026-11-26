@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.20 (2026-11-25).** The commit guard now reaches workers, datawatch merge and deploy are off until turned on, and hidden rules-file changes are held. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.22 (2026-11-25).** datawatch no longer rewrites a tool settings file it cannot read when it adds its own settings, and says why. The release notes list what is not covered. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

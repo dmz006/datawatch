@@ -29,6 +29,10 @@
 #   LEAK_CHECK_ALLOWED_EMAILS allowed-email glob list    (default: scripts/leak-check.allowed-emails)
 #   LEAK_CHECK_EXCLUDE        exclude glob list          (default: scripts/leak-check.exclude)
 #   LEAK_CHECK_LOCAL          local fixed-string lists   (default: <root>/.leak-patterns.local)
+#   LEAK_CHECK_REQUIRE_LOCAL  1 makes the local list required: a missing,
+#                             unreadable or pattern-free list (or leaving the
+#                             local class out) is a configuration error, and
+#                             the number of patterns loaded is printed
 #
 # Classes:
 #   address  private / internal / link-local IPv4, ULA + tailnet IPv6 and
@@ -44,7 +48,8 @@
 # candidate matches are extracted in memory purely to test them and are
 # discarded. When the local patterns file is absent or holds only comments
 # and blank lines, a single "local patterns: skipped" notice is printed
-# (on stderr) and the scan carries on — that is never an error.
+# (on stderr) and the scan carries on — that is never an error unless
+# LEAK_CHECK_REQUIRE_LOCAL=1 (the check of what is about to be pushed).
 #
 # Exit codes: 0 clean, 1 findings reported, 2 usage or configuration error.
 
@@ -188,6 +193,12 @@ if [[ -f "$LOCAL_FILE" && -r "$LOCAL_FILE" ]]; then
     done <"$LOCAL_FILE"
 fi
 HAVE_LOCAL=0
+if [[ "${LEAK_CHECK_REQUIRE_LOCAL:-0}" == 1 ]]; then
+    # Neither the list's path nor its content is printed.
+    (( ${#LOCAL_PATTERNS[@]} > 0 )) || die2 "a private pattern list with at least one pattern is required and none was found (.leak-patterns.local in the project's main working tree; make leak-patterns-init)"
+    wants local || die2 "the private pattern list is required, so the local class cannot be left out"
+    echo "local patterns: ${#LOCAL_PATTERNS[@]} loaded" >&2
+fi
 if (( ${#LOCAL_PATTERNS[@]} > 0 )); then
     HAVE_LOCAL=1
 else

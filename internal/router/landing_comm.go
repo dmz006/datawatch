@@ -11,12 +11,13 @@ package router
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
-const landingUsage = "usage: autonomous landing <id> | landing keep <id> <reason...> [actor=<who>] | landing drop <id> <reason...> [actor=<who>]"
+const landingUsage = "usage: autonomous landing <id> | landing keep <id> <reason...> [actor=<who>] | landing drop <id> <reason...> [actor=<who>] | landing accept <id> <commit> <reason...> [actor=<who>] | landing selection [<id>]"
 
 // LandingCommVerbs lists the landing comm verbs for the parity test.
 func LandingCommVerbs() []string {
@@ -38,6 +39,16 @@ func (r *Router) handleLandingVerb(verb string, args []string) {
 }
 
 func (r *Router) replyLanding(action string, args []string) {
+	if action == "show" && len(args) >= 2 {
+		switch strings.ToLower(strings.TrimSpace(args[1])) {
+		case "accept":
+			r.replyLandingAccept(args[2:])
+			return
+		case "selection":
+			r.replyLandingSelection(args[2:])
+			return
+		}
+	}
 	if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
 		r.reply("autonomous landing failed", landingUsage)
 		return
@@ -117,4 +128,50 @@ func (r *Router) replyLandingDecision(action, id string, rest []string) {
 		line = "landing recorded"
 	}
 	r.reply("autonomous landing "+action+" "+id, line)
+}
+
+// replyLandingAccept records the acceptance of one exact commit for merging:
+// `landing accept <id> <commit> <reason...> [actor=<who>]`.
+func (r *Router) replyLandingAccept(args []string) {
+	payload := map[string]string{}
+	var words []string
+	for _, a := range args {
+		if who, ok := strings.CutPrefix(a, "actor="); ok {
+			payload["actor"] = strings.TrimSpace(who)
+		} else if strings.TrimSpace(a) != "" {
+			words = append(words, a)
+		}
+	}
+	if len(words) < 3 {
+		r.reply("autonomous landing accept failed", "usage: autonomous landing accept <id> <commit> <reason...> [actor=<who>]")
+		return
+	}
+	id := words[0]
+	payload["commit"], payload["reason"] = words[1], strings.Join(words[2:], " ")
+	body, _ := json.Marshal(payload)
+	if _, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/landing/accept", string(body)); err != nil {
+		r.reply("autonomous landing accept failed", err.Error())
+		return
+	}
+	r.reply("autonomous landing accept "+id, "accepted commit "+payload["commit"]+" for merge; nothing has been merged or pushed")
+}
+
+// replyLandingSelection shows what the merge selection rule picks and why it
+// leaves the rest out: `landing selection [<id>]`.
+func (r *Router) replyLandingSelection(args []string) {
+	q := url.Values{"selection": {"true"}}
+	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
+		q.Set("automaton", strings.TrimSpace(args[0]))
+	}
+	out, err := r.commGet("/api/autonomous/merge", q)
+	if err != nil {
+		r.reply("autonomous landing selection failed", err.Error())
+		return
+	}
+	sel, err := autonomous.ParseMergeSelection([]byte(out))
+	if err != nil {
+		r.reply("autonomous landing selection failed", err.Error())
+		return
+	}
+	r.reply("autonomous landing selection", strings.TrimRight(autonomous.RenderMergeSelection(sel), "\n"))
 }
