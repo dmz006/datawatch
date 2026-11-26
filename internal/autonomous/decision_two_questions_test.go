@@ -514,3 +514,34 @@ func TestTwoQuestionsClosedAutomatonListsAndTypesNothing(t *testing.T) {
 		t.Fatalf("sends=%d alerts=%q, want nothing more typed and one listing", n, f.raised())
 	}
 }
+
+// A worker's question can be recorded after its task already moved on. Its
+// answer is still listed.
+func TestTwoQuestionsRaisedAfterTheTaskMovedOnIsStillListed(t *testing.T) {
+	cases := map[string]func(*Task){
+		"task completed": func(c *Task) { c.Status = TaskCompleted },
+		"task requeued":  func(c *Task) { c.Status, c.SessionID = TaskPending, "" },
+		"requeued, waiting for capacity": func(c *Task) {
+			c.Status, c.SessionID, c.WaitReason = TaskWaitingCapacity, "", "pool node:n1 full"
+		},
+	}
+	for name, move := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newDeliveryFixture(t)
+			f.decide(t)
+			f.tick()
+			f.m.store.MutateTask(f.task(t).ID, move)
+			q := sampleQuestion("Recorded late")
+			q.Context, q.PRDID, q.TaskID, q.Blocking = QuestionContextTask, f.prd.ID, f.task(t).ID, true
+			q.AskerKind, q.AskedBy, q.SessionID = QuestionAskerSession, "worker-sess", "worker-sess"
+			id := mustRaise(t, f.store, q)
+			f.tick()
+			f.answerID(t, id)
+			f.tick()
+			f.tick()
+			if got := f.typedFor(id); len(got) != 0 || len(f.reviewAlerts(id)) != 1 {
+				t.Fatalf("typed %v alerts %q, want it listed once and not typed", got, f.raised())
+			}
+		})
+	}
+}

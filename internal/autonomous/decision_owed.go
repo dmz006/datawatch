@@ -85,22 +85,23 @@ func (m *Manager) noteRaisedQuestion(q Question) {
 // worker session it has now. parkedOn is the question the task is, or is
 // about to be, parked on. Any other question asked by a different session (a
 // verifier, or an earlier attempt's worker) is owed to the session that asked
-// and never moved to this one, so its decision is listed, not typed.
+// and never moved to this one, so its decision is listed, not typed. The same
+// holds for a session's question recorded while the task has no live attempt:
+// it can arrive after its worker's task moved on.
 func (m *Manager) noteOwedDecisions(taskID, parkedOn string, open []Question) {
 	if len(open) == 0 {
 		return
 	}
 	if _, err := m.store.mutateTaskSaved(taskID, func(c *Task) bool {
-		if !hasLiveAttempt(c.Status) || c.SessionID == "" {
-			return false
-		}
+		live := hasLiveAttempt(c.Status) && c.SessionID != ""
 		next, changed := c.OwedDecisions, false
 		for i := range open {
 			q := &open[i]
-			if q.TaskID != c.ID || !owedQuestion(q) {
+			askedBySession := q.AskerKind == QuestionAskerSession && q.SessionID != ""
+			if q.TaskID != c.ID || !owedQuestion(q) || (!live && !askedBySession) {
 				continue
 			}
-			to, foreign := c.SessionID, q.ID != parkedOn && q.SessionID != "" && !sameSessionID(q.SessionID, c.SessionID)
+			to, foreign := c.SessionID, !live || (q.ID != parkedOn && q.SessionID != "" && !sameSessionID(q.SessionID, c.SessionID))
 			if foreign {
 				to = q.SessionID
 			}
