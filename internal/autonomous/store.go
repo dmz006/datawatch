@@ -258,6 +258,11 @@ func (s *Store) UpdatePRDFields(id, title, spec string) (*PRD, error) {
 // + re-run hundreds of times grows multi-MB Decisions slices that bloat
 // every JSONL row + the in-memory store snapshot the loop reads.
 func (s *Store) SavePRD(p *PRD) error {
+	return s.savePRD(p, true)
+}
+
+// savePRD is SavePRD. Without touch the record keeps its updated time.
+func (s *Store) savePRD(p *PRD, touch bool) error {
 	d := s.objectTagDeriver
 	var derived []string
 	if d != nil {
@@ -276,7 +281,9 @@ func (s *Store) SavePRD(p *PRD) error {
 	if d != nil {
 		p.SystemTags = replaceSystemTags(p.SystemTags, derived)
 	}
-	p.UpdatedAt = time.Now()
+	if touch {
+		p.UpdatedAt = time.Now()
+	}
 	p.Decisions = trimDecisions(p.Decisions)
 	clearStaleBlockedReason(p)
 	p.NotifyEventsEffective = nil // computed read-time view; never persisted

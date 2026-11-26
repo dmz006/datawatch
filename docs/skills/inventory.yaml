@@ -311,6 +311,7 @@ entries:
   - /api/autonomous/tags/registry
   - /api/autonomous/tags/registry/notes/
   - /api/autonomous/tags/registry/write
+  - /api/autonomous/tags/repair
   - /api/autonomous/tags/sweep
   - /api/autonomous/tags/sweep/
   - /api/autonomous/templates

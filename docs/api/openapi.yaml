@@ -6698,6 +6698,53 @@ paths:
         "405": {description: "POST only"}
         "503": {description: "Tag sweep is not wired into this server"}
 
+  /api/autonomous/tags/repair:
+    post:
+      summary: Restore tag IDs that have no tag record (dry run unless dry_run is false)
+      description: |
+        Looks at every tag ID that an Automaton, a session or a tag's parent names
+        and that has no record, and plans one of: `restore` (put the record back
+        under the same ID), `merge` (another tag has taken its place: move the
+        assignments to it) or `unresolved` (left as it is, with the reason).
+        Records come from `copies`; an auto tag that no copy holds is worked out
+        from the Automation whose members carry the ID, only when one answer is
+        left. The repair adds records and moves assignments. It deletes no record
+        and keeps each Automaton's updated time. It writes only when `dry_run` is
+        false, in the body or as `?dry_run=false`; the body wins.
+      operationId: autonomousTagRepair
+      tags: [Autonomous]
+      parameters:
+        - name: dry_run
+          in: query
+          required: false
+          schema: {type: boolean, default: true}
+          description: "false: make the changes; any other value, or none, is a dry run"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean, default: true}
+                copies:
+                  type: array
+                  description: Tag records from saved copies (id and name are required)
+                  items: {type: object}
+      responses:
+        "200":
+          description: |
+            `dry_run`, `copies_read`, `missing`, `restore`, `merge`, `unresolved`,
+            `automata`, `automata_left`, `items` (each with `tag_id`, `action`,
+            `source`, `name`, `into_tag_id`, `automaton_ids`, `sessions`,
+            `reason`) and `unused_copies`
+        "400": {description: "The body could not be read, or is over 4 MB"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "POST only"}
+        "500": {description: "The repair stopped part way; run it again after the cause is fixed"}
+        "503": {description: "Tag repair is not wired into this server"}
+
   /api/autonomous/attention:
     get:
       summary: List the Automata that need the operator's attention
