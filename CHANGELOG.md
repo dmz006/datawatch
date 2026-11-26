@@ -13,16 +13,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Before you upgrade
 - Answering a start-up dialog takes about 2 to 3 seconds longer.
-- A dialog drawn differently from the ones datawatch recognises is left for a person. An unattended session then waits, and is ended when its task cannot be delivered.
+- A dialog drawn differently from the ones datawatch recognises is left for a person. A session with a task is then ended as killed after about 4 minutes; the end note says a start-up dialog was still waiting, but the alert shows only the task. A session with no task keeps waiting.
 
 ### Not covered
 - A screen that ends in text shaped like a dialog, with nothing below it, can still get a key.
 - A narrow screen, below about 40 columns, can leave a real dialog unanswered.
 - The real dialog for a single new MCP server is no longer answered. It did not appear with datawatch's own settings.
-- The unnumbered bypass-permissions dialog is left unanswered.
+- The unnumbered bypass-permissions dialog is not answered: datawatch can type 2 into it, more than once, but does not press Enter.
 - A redraw in the milliseconds between the last look and the key could still make Claude exit.
-- If an answered dialog stays on screen for about 9 seconds, a second Enter can be sent. One blank or failed screen reading can lead to a second Esc.
+- If the same dialog is still on screen more than 5 seconds after its answer, datawatch can answer it again, with a second Enter (seen at 9 seconds with a stand-in terminal). If one screen reading is blank or fails while a declined dialog is still up, a second Esc can be sent.
 - A real online login was not tested.
+- Only Claude Code 2.1.332 was tested; other versions and a stalled or swapping host were not.
+- No real update dialog or other general confirmation was seen; they were tested only on made-up screens.
+- When datawatch holds Enter back, it may already have typed Down or 2 and can type it again, although the log says "not typed".
+- Declining the settings-error dialog still makes Claude Code exit; v9.187.27 says when such a session ends as failed.
 
 ## v9.187.27 — Task text is no longer typed into a shell after Claude Code leaves
 
