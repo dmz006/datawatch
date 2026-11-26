@@ -557,8 +557,15 @@ func (s *runState) shadowPush(ctx context.Context, head, tag string) (string, er
 	}
 	s.run.PushPlan = plan
 	if i.remote != "" {
-		res := git.CheckOutgoing(ctx, i.tree, i.remote, []git.OutgoingRef{{Src: head, Dst: "refs/heads/" + main}})
+		// The scan enforces whatever the daemon's mode is: a shadow run
+		// reports what the push would deliver.
+		res := git.CheckOutgoing(ctx, i.tree, i.remote, []git.OutgoingRef{{Src: head, Dst: "refs/heads/" + main}}, git.EnforcedScanPolicy())
+		s.run.PushCheck = &autonomous.MergePushCheck{
+			ProjectCheckRan: res.ProjectCheckRan, Output: redact(res.ProjectCheckOutput),
+			SecretScanRan: res.SecretScanned, SecretFindings: len(res.SecretFindings),
+		}
 		if res.Kind != "" {
+			s.run.PushCheck.Refusal = redact(string(res.Kind) + ": " + res.Reason)
 			err := fmt.Errorf("the push would be refused: %s: %s", res.Kind, redact(res.Reason))
 			return err.Error(), err
 		}
@@ -743,18 +750,25 @@ func (s *runState) checkEnvironment() []string {
 		version, _ = s.r.currentVersion()
 	}
 	shadow := ""
+	var closed []string
 	if s.shadow() {
 		shadow = "1"
+		closed = shadowCheckEnv
 	}
-	return isolatedEnv(os.Environ(), filepath.Join(i.root, "home"), i.tmux, []string{
-		"MERGE_PROJECT_DIR=" + i.project.Dir,
-		"MERGE_BASE_COMMIT=" + s.baseHead,
-		"MERGE_MAIN_BRANCH=" + i.project.mainBranch(),
-		"MERGE_RELEASE_SIZE=" + s.r.ReleaseSize,
-		"MERGE_RELEASE_VERSION=" + version,
-		"MERGE_SHADOW=" + shadow,
-	})
+	return isolatedEnv(os.Environ(), filepath.Join(i.root, "home"), i.tmux, append(append([]string(nil), closed...),
+		"MERGE_PROJECT_DIR="+i.project.Dir,
+		"MERGE_BASE_COMMIT="+s.baseHead,
+		"MERGE_MAIN_BRANCH="+i.project.mainBranch(),
+		"MERGE_RELEASE_SIZE="+s.r.ReleaseSize,
+		"MERGE_RELEASE_VERSION="+version,
+		"MERGE_SHADOW="+shadow,
+	))
 }
+
+// shadowCheckEnv closes two more ways out for the commands of a shadow run:
+// git over ssh and the system's git settings (a stored credential helper). It
+// is not a sandbox.
+var shadowCheckEnv = []string{"GIT_SSH_COMMAND=false", "GIT_SSH=false", "GIT_CONFIG_NOSYSTEM=1"}
 
 // shadowRuns reports whether a shadow run runs this command step: only checks
 // and the steps that write the release into files.

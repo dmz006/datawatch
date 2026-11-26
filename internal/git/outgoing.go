@@ -532,29 +532,29 @@ func writeManifest(dir string, m *outgoingManifest) error {
 // runProjectCheck runs the base commit's check target over the manifest. The
 // check's output is returned (bounded, secrets redacted) only on failure; a
 // check must not print what it matched.
-func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest, noProjectTree bool) error {
+func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest, noProjectTree bool) (string, error) {
 	tmp, err := os.MkdirTemp("", "dw-outgoing-")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 	tree, manifestDir := filepath.Join(tmp, "base"), filepath.Join(tmp, "manifest")
 	if err := os.MkdirAll(tree, 0o700); err != nil {
-		return err
+		return "", err
 	}
 	if err := materialize(ctx, dir, base, tree); err != nil {
-		return fmt.Errorf("lay out the base commit: %w", err)
+		return "", fmt.Errorf("lay out the base commit: %w", err)
 	}
 	if err := writeManifest(manifestDir, m); err != nil {
-		return fmt.Errorf("write the manifest: %w", err)
+		return "", fmt.Errorf("write the manifest: %w", err)
 	}
 	project := filepath.Join(tmp, "no-project-tree")
 	if noProjectTree {
 		if err := os.Mkdir(project, 0o700); err != nil {
-			return err
+			return "", err
 		}
 	} else if project, err = mainWorkTree(ctx, dir); err != nil {
-		return err
+		return "", err
 	}
 	ctx, cancel := context.WithTimeout(ctx, outgoingCheckTimeout)
 	defer cancel()
@@ -563,9 +563,6 @@ func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest,
 	cmd.WaitDelay = 10 * time.Second
 	configureCheckProcessGroup(cmd)
 	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return nil
-	}
 	text, _ := RedactSecrets(redactCreds(strings.TrimSpace(string(out))))
 	if len(text) > outgoingOutputTail {
 		text = text[len(text)-outgoingOutputTail:]
@@ -573,7 +570,10 @@ func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest,
 			text = text[i+1:]
 		}
 	}
-	return fmt.Errorf("the project's %s target (from base commit %.12s) did not pass: %v\n%s", OutgoingCheckTarget, base, err, text)
+	if err == nil {
+		return text, nil
+	}
+	return text, fmt.Errorf("the project's %s target (from base commit %.12s) did not pass: %v\n%s", OutgoingCheckTarget, base, err, text)
 }
 
 // ---- building the manifest ----
@@ -976,7 +976,8 @@ func checkedPush(ctx context.Context, dir, remote, label string, refs []Outgoing
 		return blocked
 	}
 	if rules.checkOnly {
-		return PushResult{Remote: remote, Ref: label, SHA: head, SecretFindings: findings}
+		return PushResult{Remote: remote, Ref: label, SHA: head, SecretFindings: findings,
+			ProjectCheckRan: blocked.ProjectCheckRan, ProjectCheckOutput: blocked.ProjectCheckOutput, SecretScanned: blocked.SecretScanned}
 	}
 
 	args := []string{"-c", "push.followTags=false", "push", "--no-follow-tags", "--recurse-submodules=no"}
@@ -1081,36 +1082,48 @@ func checkOutgoing(ctx context.Context, dir, remote string, st remoteState, refs
 	}
 	// The project's check goes first: when it refuses, nothing else about the
 	// content (a file name it objects to, say) is printed.
+	var ran PushResult
 	if inBase {
-		if err := runProjectCheck(ctx, dir, base, m, noProjectTree); err != nil {
+		output, err := runProjectCheck(ctx, dir, base, m, noProjectTree)
+		ran.ProjectCheckRan, ran.ProjectCheckOutput = true, output
+		if err != nil {
 			reason := "outgoing check refused the push, nothing was pushed: " + err.Error()
 			if noProjectTree {
 				reason += "\n" + noProjectTreeNote
 			}
-			return nil, PushResult{Kind: PushFailCheck, Reason: reason}
+			ran.Kind, ran.Reason = PushFailCheck, reason
+			return nil, ran
 		}
 	}
 	if !scan {
-		return nil, PushResult{}
+		return nil, ran
 	}
+	ran.SecretScanned = true
 	findings := scanManifest(m, detectors, policy.options())
 	if len(findings) == 0 {
-		return nil, PushResult{}
+		return nil, ran
 	}
 	RecordSecretScanFindings(len(findings))
 	summary := RedactedFindingsSummary(findings)
 	if policy.Mode == ScanShadow {
 		RecordSecretScanShadowReport()
 		log.Printf("git: push to %s proceeds with shadow-mode secret findings: %s", remote, summary)
-		return findings, PushResult{}
+		return findings, ran
 	}
 	// Enforce, and any other mode value: refuse.
 	RecordSecretScanRefusal()
-	return findings, PushResult{
-		Kind:           PushFailSecret,
-		Reason:         "secret scan (enforce mode): " + summary + " refuses the push to " + remote,
-		SecretFindings: findings,
-	}
+	ran.Kind = PushFailSecret
+	ran.Reason = "secret scan (enforce mode): " + summary + " refuses the push to " + remote
+	ran.SecretFindings = findings
+	return findings, ran
+}
+
+// EnforcedScanPolicy is the daemon's secret scan settings with the mode set to
+// enforce: what a comparison that must not miss a secret scans with.
+func EnforcedScanPolicy() SecretScanPolicy {
+	p := effectiveScanPolicy(SecretScanPolicy{})
+	p.Mode = ScanEnforce
+	return p
 }
 
 // CheckOutgoing runs every check a push of refs to remote would run and sends

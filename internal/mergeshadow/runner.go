@@ -386,6 +386,10 @@ func releaseSizeBetween(from, to string) ReleaseSize {
 	}
 }
 
+// ReleaseSizeBetween names the size of the release step from one X.Y.Z
+// version to another; none when it is not a step up.
+func ReleaseSizeBetween(from, to string) ReleaseSize { return releaseSizeBetween(from, to) }
+
 // parseSemver reads "X.Y.Z" or "vX.Y.Z" into its three numbers.
 func parseSemver(v string) ([3]int, bool) {
 	var out [3]int

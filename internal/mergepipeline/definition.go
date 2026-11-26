@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -91,6 +92,66 @@ type Definition struct {
 	// first matching rule wins; a file no rule matches keeps the built-in
 	// handling.
 	ConflictRules []ConflictRule `yaml:"conflict_rules,omitempty" json:"conflict_rules,omitempty"`
+	// Shadow says what the shadow of a hand merge needs to know about the
+	// project.
+	Shadow *ShadowDefinition `yaml:"shadow,omitempty" json:"shadow,omitempty"`
+}
+
+// ShadowDefinition is the project's part of the shadow of a hand merge.
+type ShadowDefinition struct {
+	// PrivateFiles are files of the project's checkout that are never
+	// committed and that its checks read, such as a private pattern list. The
+	// shadow copies them into its own copy of the project.
+	PrivateFiles []string `yaml:"private_files,omitempty" json:"private_files,omitempty"`
+	// CheckFiles are the files and folders that decide what the checks do. A
+	// change to one restarts the count of matched merges. None means the
+	// scripts folder and the Makefile.
+	CheckFiles []string `yaml:"check_files,omitempty" json:"check_files,omitempty"`
+	// ReleaseText says whether the hand merge's own release wording counts:
+	// strict (the default) allows only the dates to differ; ignore also leaves
+	// the new changelog section and the wording of the README release line out
+	// of the comparison.
+	ReleaseText string `yaml:"release_text,omitempty" json:"release_text,omitempty"`
+}
+
+// The release_text values.
+const (
+	ReleaseTextStrict = "strict"
+	ReleaseTextIgnore = "ignore"
+)
+
+// defaultCheckFiles are the check files of a pipeline that names none.
+var defaultCheckFiles = []string{DefaultScriptDir, "Makefile"}
+
+func (d Definition) checkFiles() []string {
+	if d.Shadow != nil && len(d.Shadow.CheckFiles) > 0 {
+		return append([]string(nil), d.Shadow.CheckFiles...)
+	}
+	return append([]string(nil), defaultCheckFiles...)
+}
+
+func (s *ShadowDefinition) problems() []string {
+	if s == nil {
+		return nil
+	}
+	var out []string
+	for key, list := range map[string][]string{"private_files": s.PrivateFiles, "check_files": s.CheckFiles} {
+		for _, f := range list {
+			clean := path.Clean(f)
+			if f == "" || clean != strings.TrimSuffix(f, "/") || clean == "." || path.IsAbs(f) || clean == ".." ||
+				strings.HasPrefix(clean, "../") || strings.HasPrefix(f, "-") || strings.HasPrefix(f, ":") ||
+				strings.ContainsAny(f, "*?[\\\n") || clean == ".git" || strings.HasPrefix(clean, ".git/") {
+				out = append(out, fmt.Sprintf("shadow.%s: %q is not a plain path inside the repository", key, f))
+			}
+		}
+	}
+	switch s.ReleaseText {
+	case "", ReleaseTextStrict, ReleaseTextIgnore:
+	default:
+		out = append(out, fmt.Sprintf("shadow.release_text: %q is not strict or ignore", s.ReleaseText))
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ConflictRule is one per-file conflict rule of a project.
@@ -202,6 +263,7 @@ func (d Definition) Validate() error {
 			problems = append(problems, label+": negative timeout")
 		}
 	}
+	problems = append(problems, d.Shadow.problems()...)
 	for i, r := range d.ConflictRules {
 		label := fmt.Sprintf("conflict rule %d", i+1)
 		if strings.TrimSpace(r.Path) == "" {

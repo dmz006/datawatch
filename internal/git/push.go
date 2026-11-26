@@ -119,6 +119,12 @@ type PushResult struct {
 	// the secret_found refusal in enforce mode. Findings never hold,
 	// and never render, the matched secret itself.
 	SecretFindings []SecretFinding
+	// ProjectCheckRan says the project's own check target ran over the push,
+	// and ProjectCheckOutput is the end of its output with secrets removed.
+	// SecretScanned says the secret scan ran.
+	ProjectCheckRan    bool
+	ProjectCheckOutput string
+	SecretScanned      bool
 }
 
 // pushTimeout caps every individual git call, on top of the

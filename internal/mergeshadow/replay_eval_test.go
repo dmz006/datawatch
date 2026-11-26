@@ -12,7 +12,7 @@ func matchedReplay(id string, at time.Time) *Replay {
 		Key: id + "-aaaaaaaaaaaa", AutomatonID: id, Project: "proj", Kind: "bug", State: ReplayDone,
 		SettingsHash: "s1", ChecksHash: "c1", CreatedAt: at,
 		Selection: &PlanSelection{Eligible: true, Basis: "review_passed", Tip: "t"},
-		Hand: HandMerge{Commit: "h", Base: "b", Tip: "t", At: at, Version: "1.2.4", Size: ReleaseSizePatch, Conflicts: []string{}},
+		Hand:      HandMerge{Commit: "h", Base: "b", Tip: "t", At: at, Version: "1.2.4", Size: ReleaseSizePatch, Conflicts: []string{}},
 		Daemon: DaemonMerge{Result: "ok", Version: "1.2.4", Size: ReleaseSizePatch, Candidate: "c",
 			Push: []ReplayPushRef{{Ref: "refs/heads/main", New: "c", Commits: 3}}, Conflicts: []string{},
 			Checks: []ReplayCheck{{Name: "lint", Kind: "lint", Result: "ok"}, {Name: "go-test", Kind: "test", Result: "ok"}}},
@@ -64,29 +64,29 @@ func TestReplayEachDifferenceFailsTheMatch(t *testing.T) {
 		"a tag in the push": {RowVersion, "tag", func(r *Replay) {
 			r.Daemon.Push = append(r.Daemon.Push, ReplayPushRef{Ref: "refs/tags/v1.2.4", New: "c"})
 		}},
-		"the hand merge tagged": {RowVersion, "v1.2.4", func(r *Replay) { r.Hand.Tags = []string{"v1.2.4"} }},
-		"daemon fail, hand pass": {RowChecks, "go-test", func(r *Replay) { r.Daemon.Checks[1].Result = "failed" }},
-		"daemon pass, hand fail": {RowChecks, "serious", func(r *Replay) { r.HandChecks["go-test"] = "fail" }},
-		"daemon skipped":         {RowChecks, "skipped", func(r *Replay) { r.Daemon.Checks[0].Result = "skipped"; r.HandChecks["lint"] = "skip" }},
-		"daemon not run":         {RowChecks, "not_run", func(r *Replay) { r.Daemon.Checks[0].Result = "not_run" }},
-		"hand skipped":           {RowChecks, "skip", func(r *Replay) { r.HandChecks["lint"] = "skip" }},
-		"hand result missing":    {RowChecks, "go-test", func(r *Replay) { delete(r.HandChecks, "go-test") }},
+		"the hand merge tagged":       {RowVersion, "v1.2.4", func(r *Replay) { r.Hand.Tags = []string{"v1.2.4"} }},
+		"daemon fail, hand pass":      {RowChecks, "go-test", func(r *Replay) { r.Daemon.Checks[1].Result = "failed" }},
+		"daemon pass, hand fail":      {RowChecks, "serious", func(r *Replay) { r.HandChecks["go-test"] = "fail" }},
+		"daemon skipped":              {RowChecks, "skipped", func(r *Replay) { r.Daemon.Checks[0].Result = "skipped"; r.HandChecks["lint"] = "skip" }},
+		"daemon not run":              {RowChecks, "not_run", func(r *Replay) { r.Daemon.Checks[0].Result = "not_run" }},
+		"hand skipped":                {RowChecks, "skip", func(r *Replay) { r.HandChecks["lint"] = "skip" }},
+		"hand result missing":         {RowChecks, "go-test", func(r *Replay) { delete(r.HandChecks, "go-test") }},
 		"hand check the daemon lacks": {RowChecks, "release-smoke", func(r *Replay) { r.HandChecks["release-smoke"] = "pass" }},
 		"no test step in the pipeline": {RowChecks, "test step", func(r *Replay) {
 			r.Daemon.Checks = r.Daemon.Checks[:1]
 			delete(r.HandChecks, "go-test")
 		}},
-		"conflict files differ":  {RowConflicts, "x.go", func(r *Replay) { r.Hand.Conflicts = []string{"x.go"} }},
-		"no push list":           {RowLeak, "", func(r *Replay) { r.Leak = ReplayLeak{PrivatePatterns: -1} }},
-		"push moves another ref": {RowLeak, "refs/heads/other", func(r *Replay) { r.Daemon.Push[0].Ref = "refs/heads/other" }},
-		"no project check":       {RowLeak, "local checks", func(r *Replay) { r.Leak.ProjectCheckRan = false }},
-		"project check refused":  {RowLeak, "address", func(r *Replay) { r.Leak.ProjectCheckPassed = false; r.Leak.Refusal = "address found" }},
+		"conflict files differ":    {RowConflicts, "x.go", func(r *Replay) { r.Hand.Conflicts = []string{"x.go"} }},
+		"no push list":             {RowLeak, "", func(r *Replay) { r.Leak = ReplayLeak{PrivatePatterns: -1} }},
+		"push moves another ref":   {RowLeak, "refs/heads/other", func(r *Replay) { r.Daemon.Push[0].Ref = "refs/heads/other" }},
+		"no project check":         {RowLeak, "local checks", func(r *Replay) { r.Leak.ProjectCheckRan = false }},
+		"project check refused":    {RowLeak, "address", func(r *Replay) { r.Leak.ProjectCheckPassed = false; r.Leak.Refusal = "address found" }},
 		"private list not counted": {RowLeak, "private", func(r *Replay) { r.Leak.PrivatePatterns = -1 }},
 		"private list empty":       {RowLeak, "private", func(r *Replay) { r.Leak.PrivatePatterns = 0 }},
 		"secret scan off":          {RowLeak, "secret scan", func(r *Replay) { r.Leak.SecretScanRan = false }},
 		"secret found":             {RowLeak, "1 secret", func(r *Replay) { r.Leak.SecretFindings = 1 }},
-		"side effect": {RowSideEffects, "pushed", func(r *Replay) { r.SideEffects.Found = []string{"a check pushed to the remote"} }},
-		"side effects unchecked": {RowSideEffects, "", func(r *Replay) { r.SideEffects.Checked = false }},
+		"side effect":              {RowSideEffects, "pushed", func(r *Replay) { r.SideEffects.Found = []string{"a check pushed to the remote"} }},
+		"side effects unchecked":   {RowSideEffects, "", func(r *Replay) { r.SideEffects.Checked = false }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := matchedReplay("a", time.Now())
@@ -180,10 +180,10 @@ func TestReplayStreak(t *testing.T) {
 		t.Errorf("after a would-ask: %+v", s)
 	}
 	for name, miss := range map[string]func(r *Replay){
-		"a planted leak":       func(r *Replay) { r.Leak.SecretFindings = 1 },
-		"a side effect":        func(r *Replay) { r.SideEffects.Found = []string{"x"} },
-		"a shadow that failed": func(r *Replay) { r.State, r.Error = ReplayError, "boom" },
-		"still running":        func(r *Replay) { r.State = ReplayRunning },
+		"a planted leak":           func(r *Replay) { r.Leak.SecretFindings = 1 },
+		"a side effect":            func(r *Replay) { r.SideEffects.Found = []string{"x"} },
+		"a shadow that failed":     func(r *Replay) { r.State, r.Error = ReplayError, "boom" },
+		"still running":            func(r *Replay) { r.State = ReplayRunning },
 		"waiting for hand results": func(r *Replay) { r.HandChecks = nil },
 	} {
 		bad := matchedReplay("z", at.Add(3*time.Hour))

@@ -16,6 +16,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/deploy"
+	"github.com/dmz006/datawatch/internal/genartifacts"
 	"github.com/dmz006/datawatch/internal/git"
 )
 
@@ -875,7 +876,6 @@ func (s *runState) hook(ctx context.Context, step Step) (string, error) {
 
 // action runs a built-in action.
 func (s *runState) action(ctx context.Context, step Step) (string, error) {
-	r := s.r
 	switch step.Action {
 	case ActionRebaseOntoMain:
 		return s.rebaseOntoMain(ctx)
@@ -890,7 +890,7 @@ func (s *runState) action(ctx context.Context, step Step) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return r.insertChangelog(v, s.req.Title)
+		return s.insertReleaseEntry(v)
 	case ActionSetReadmeReleaseLine:
 		return s.setReadmeReleaseLine()
 	case ActionCommitReleaseBump:
@@ -1078,6 +1078,11 @@ func (s *runState) mergeBranches(ctx context.Context) (string, error) {
 			}
 		}
 		out, err := s.m.MergeBranch(ctx, req)
+		if len(out.Files) > 0 {
+			s.run.Conflicts = append(s.run.Conflicts, autonomous.MergeRunConflict{
+				Branch: b, Files: append([]string(nil), out.Files...), Asked: out.Status == StatusAsked, Note: redact(out.Summary),
+			})
+		}
 		if err != nil && s.shadow() && errors.Is(err, ErrNoQuestionChannel) {
 			err = fmt.Errorf("shadow run: this conflict would be put to the operator. %s", out.Summary)
 		}
@@ -1749,6 +1754,69 @@ func (r *Runner) insertChangelog(version, title string) (string, error) {
 		return "", err
 	}
 	return "inserted the heading for v" + version, nil
+}
+
+// changelogDraft is the changelog entry the Automaton drafted, as the
+// candidate holds it, without a version heading of its own; "" when there is
+// none.
+func (s *runState) changelogDraft() string {
+	id := s.req.AutomatonID
+	if !automatonFileID.MatchString(id) {
+		return ""
+	}
+	rel := strings.ReplaceAll(genartifacts.DefaultPaths()[genartifacts.ChangelogDraft], genartifacts.IDPlaceholder, id)
+	_, data, err := s.r.readInside(rel)
+	if err != nil || len(data) > maxChangelogDraftBytes {
+		return ""
+	}
+	body := strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n"))
+	if strings.HasPrefix(body, "## ") {
+		_, body, _ = strings.Cut(body, "\n")
+		body = strings.TrimSpace(body)
+	}
+	// A second release heading would be a second release.
+	for _, l := range strings.Split(body, "\n") {
+		if strings.HasPrefix(l, "## ") {
+			return ""
+		}
+	}
+	return body
+}
+
+var automatonFileID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+const maxChangelogDraftBytes = 64 << 10
+
+// insertReleaseEntry writes the release's changelog heading and, under it, the
+// Automaton's drafted entry when the candidate holds one.
+func (s *runState) insertReleaseEntry(version string) (string, error) {
+	note, err := s.r.insertChangelog(version, s.req.Title)
+	if err != nil || !strings.HasPrefix(note, "inserted") {
+		return note, err
+	}
+	body := s.changelogDraft()
+	if body == "" {
+		return note + "; no changelog draft was found, so it has no text", nil
+	}
+	p, data, err := s.r.readInside(s.r.changelog())
+	if err != nil {
+		return "", err
+	}
+	head := "## v" + version + " — " + s.req.Title + "\n"
+	// The entry sits as one block: a blank line before it and one before
+	// the next release.
+	gap := "\n\n"
+	if !strings.Contains(string(data), head+gap) {
+		return "", fmt.Errorf("the heading for v%s was not found to put the drafted entry under", version)
+	}
+	if strings.Contains(string(data), head+"\n\n\n") {
+		gap = "\n\n\n"
+	}
+	text := strings.Replace(string(data), head+gap, head+"\n"+body+"\n\n", 1)
+	if err := os.WriteFile(p, []byte(text), 0o644); err != nil { // #nosec G306 -- changelog, normal mode
+		return "", err
+	}
+	return note + " with the Automaton's drafted entry", nil
 }
 
 // readmeReleaseShape matches the version and date on a Current release: line,
