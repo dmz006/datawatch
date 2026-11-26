@@ -155,6 +155,12 @@ one-token chat completion for the worker's model (`max_tokens` 1) and waits at
 most 20 seconds for it. This is the **launch probe**. It finds a stuck or
 unreachable model before a session exists and spend begins.
 
+pi names a model `provider/id`, for example `ollama/qwen3.8:27b`. The provider
+is pi's own name for the endpoint, so the probe asks the node for the id alone
+(`qwen3.8:27b`). Only the first part is removed: an id that holds slashes, such
+as `hf.co/org/repo:tag`, is sent whole. The worker is still started with the
+full `provider/id` name.
+
 | Result | What happens |
 |---|---|
 | Passes | The worker starts. Any unhealthy mark on the node is cleared. |

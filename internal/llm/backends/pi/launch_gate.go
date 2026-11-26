@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -53,6 +54,18 @@ func setPreflightClient(c HTTPDoer) {
 	launchGate.client = c
 }
 
+// nodeModelID is the name a node knows a pi model by. pi names a model
+// "provider/id": the provider picks the endpoint (see nodeAgentDir) and only
+// the id, which may itself hold slashes, is sent to it. A name without both
+// parts is returned unchanged.
+func nodeModelID(model string) string {
+	provider, id, ok := strings.Cut(model, "/")
+	if !ok || provider == "" || id == "" {
+		return model
+	}
+	return id
+}
+
 // preflightBeforeLaunch probes the node before a pi launch. With no node
 // address (a non-node launch), no model, or a node that is not part of a
 // pooled entry it does nothing. On failure it
@@ -77,7 +90,7 @@ func preflightBeforeLaunch(ctx context.Context, nodeAddr, model string) error {
 			node = n
 		}
 	}
-	err := Preflight(ctx, client, nodeBaseURL(nodeAddr), model)
+	err := Preflight(ctx, client, nodeBaseURL(nodeAddr), nodeModelID(model))
 	if err != nil {
 		if marker != nil {
 			marker.MarkNodeUnhealthy(node, err.Error())

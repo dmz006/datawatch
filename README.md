@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.29 (2026-11-26).** A datawatch-run merge now checks in a scratch folder and moves local main only after the remote confirms the pushed commit; merging stays off, and the changelog lists what is not protected. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.31 (2026-11-26).** pi and pi-prompt launches on nodes shared by an LLM entry no longer fail because the launch check asked the node for the wrong model name. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

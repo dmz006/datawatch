@@ -5092,6 +5092,13 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 					// the flag false, so an unconsumed clean restart never carries
 					// over into a later reset.
 					t.CleanRestart = cleanRestart
+					// The supervisor loop retries an infrastructure hold once
+					// for each time the operator has not stepped in.
+					if isOperatorActor(actor) {
+						t.LoopRetriedInfraHold = false
+					} else if review != nil && actor == supervisorLoopActor {
+						t.LoopRetriedInfraHold = true
+					}
 					// An operator review's changes go on last, so the hint they
 					// set replaces the generic one built above.
 					if review != nil {
