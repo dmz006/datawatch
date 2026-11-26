@@ -7,6 +7,7 @@
 package autonomous
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -31,7 +32,7 @@ func TestBL321_Decompose_UsesDecompositionProfile_OverGlobal(t *testing.T) {
 	}
 
 	// Create a PRD and assign a per-PRD decomposition_profile
-	prd, err := m.CreatePRD("test spec", "/tmp/bl321", "ollama", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "bl321"), "ollama", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestBL321_Decompose_FallsBackToGlobal_WhenProfileEmpty(t *testing.T) {
 	}
 
 	// Create PRD with no per-PRD profile
-	prd, err := m.CreatePRD("test spec", "/tmp/bl321b", "ollama", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "bl321b"), "ollama", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestBL321_Decompose_PRDProfileOverridesGlobal_BothNonEmpty(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	prd, err := m.CreatePRD("spec", "/tmp/bl321c", "ollama", "", "")
+	prd, err := m.CreatePRD("spec", filepath.Join(t.TempDir(), "bl321c"), "ollama", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}

@@ -19,14 +19,19 @@ import (
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // TestMain keeps the whole package from waiting out real back-off delays: any
 // test that meets a transient infrastructure failure (a launch failure, a spawn
 // error) retries at once. The tests below replace infraSleep with a recorder.
+//
+// It also gives the package its own HOME, temp folder and tmux folder. The
+// daemon temp sweeps run from triagePass and Manager.Start walk os.TempDir()
+// and may remove from it: it must never be the machine's shared one here.
 func TestMain(m *testing.M) {
 	infraSleep = func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
-	os.Exit(m.Run())
+	os.Exit(testhome.RunPrivateTmp(m))
 }
 
 // infraExecRun is one Automaton with a single task, ready to run.

@@ -9,6 +9,7 @@
 package autonomous
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -22,7 +23,7 @@ func TestBL320_SetPRDLLM_PersistsDecompositionProfile(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	prd, err := m.CreatePRD("test spec", "/tmp/ts-dp", "ollama", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "ts-dp"), "ollama", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestBL320_SetPRDLLM_DecisionLogContainsDecompProfile(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	prd, err := m.CreatePRD("test spec", "/tmp/ts-dp2", "ollama", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "ts-dp2"), "ollama", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -82,7 +83,7 @@ func TestBL320_SetPRDLLM_EmptyDecompProfile_Accepted(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	prd, err := m.CreatePRD("test spec", "/tmp/ts-dp3", "ollama", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "ts-dp3"), "ollama", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestBL320_SetPRDLLM_EmptyDecisionNote_WhenProfileEmpty(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	prd, err := m.CreatePRD("test spec", "/tmp/ts-dp4", "ollama", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "ts-dp4"), "ollama", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestBL320_SetPRDLLM_EmptyDecisionNote_WhenProfileEmpty(t *testing.T) {
 func TestBL320_SetPRDLLM_LockedOnRunning(t *testing.T) {
 	newRunning := func(t *testing.T, m *Manager) *PRD {
 		t.Helper()
-		prd, err := m.CreatePRD("test spec", "/tmp/ts-dp5", "ollama", "", "")
+		prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "ts-dp5"), "ollama", "", "")
 		if err != nil {
 			t.Fatalf("CreatePRD: %v", err)
 		}
@@ -177,7 +178,7 @@ func TestBL320_SetPRDLLM_LockedOnRunning(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewManager: %v", err)
 		}
-		prd, err := m.CreatePRD("test spec", "/tmp/ts-dp5c", "ollama", "", "")
+		prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "ts-dp5c"), "ollama", "", "")
 		if err != nil {
 			t.Fatalf("CreatePRD: %v", err)
 		}
