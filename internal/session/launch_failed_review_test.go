@@ -145,6 +145,8 @@ func TestOrdinaryTextIsNeverRecordedAsADeclinedDialog(t *testing.T) {
 		"footer inside a sentence":   " made-up settings notes\n ❯ 1. one\n   2. two\n Then press Enter to confirm · Esc to cancel, it said",
 		"the shell, after an exit":   exitedPane,
 		"a dialog above an open box": settingsErrorPane + "\n" + agentBox,
+		"unnumbered choices":         "──────────\n Update the made-up settings?\n ❯ Yes\n   No\n Enter to confirm · Esc to cancel",
+		"boxed choices":              "╭──────╮\n│ Update the made-up settings? │\n│ ❯ 1. Yes │\n│   2. No │\n│ Enter to confirm · Esc to cancel │\n╰──────╯",
 	}
 	for name, screen := range screens {
 		t.Run(name, func(t *testing.T) {
@@ -320,3 +322,72 @@ func TestARestartedSessionIsNotToldItNeverHadItsTask(t *testing.T) {
 		t.Errorf("reason talks about a task: %q", note)
 	}
 }
+
+// A one-shot that is not judged ends as it did before this rule.
+func TestAnUnjudgedOneShotCompletesAsBefore(t *testing.T) {
+	mgr, fake, sess, seen := launchFixture(t, func(s *Session) { s.OneShot = true })
+	mgr.deliveryArmed = nil // restarted, or the daemon was
+	setLaunchPane(fake, sess.TmuxSession, plainExitPane, "bash")
+	ctx, cancel := context.WithCancel(context.Background())
+	mgr.StartScreenCapture(ctx, sess.FullID, 20)
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+	mgr.bg.Wait()
+	s, _ := mgr.GetSession(sess.FullID)
+	if got := mgr.store.Snapshot(s).State; got != StateComplete {
+		t.Fatalf("state = %s, want complete as before; transitions %v", got, seen.list())
+	}
+}
+
+// A one-shot that would fail but lacks proof stays open.
+func TestAOneShotWithoutProofIsNeitherFailedNorComplete(t *testing.T) {
+	mgr, fake, sess, seen := launchFixture(t, func(s *Session) { s.OneShot = true })
+	mgr.paneProcsFn = fakeProcs(fake, paneProc{pid: 301, ppid: 1, tty: fakeTTY, comm: "node"})
+	setLaunchPane(fake, sess.TmuxSession, plainExitPane, "bash")
+	runWatchers(t, mgr, sess.FullID)
+	assertLeftAlone(t, mgr, fake, sess.FullID, seen)
+}
+
+// A line entered in the web terminal is a person using the session; a single
+// key without Enter is not read as that.
+func TestALineEnteredInTheWebTerminalCountsAsSomeoneUsingTheSession(t *testing.T) {
+	mgr, fake, sess, _ := launchFixture(t, nil)
+	setLaunchPane(fake, sess.TmuxSession, agentBox, "claude")
+	if err := mgr.SendRawKeys(sess.FullID, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if !mgr.EndedBeforeTask(sess.FullID) {
+		t.Fatal("a key without Enter ended the wait for the first task")
+	}
+	if err := mgr.SendRawKeys(sess.FullID, "\r"); err != nil {
+		t.Fatal(err)
+	}
+	if mgr.EndedBeforeTask(sess.FullID) {
+		t.Error("an entered line did not count")
+	}
+}
+
+// Only a fresh channel start waits for a first task.
+func TestOnlyAFreshChannelStartWaitsForItsFirstTask(t *testing.T) {
+	for name, tc := range map[string]struct {
+		channel bool
+		resume  string
+		want    bool
+	}{"fresh channel start": {true, "", true}, "resumed start": {true, "made-up-id", false}, "channel off": {false, "", false}} {
+		t.Run(name, func(t *testing.T) {
+			mgr, _, sess, _ := launchFixture(t, func(s *Session) { s.DaemonDeliversTask = false })
+			mgr.deliveryArmed = nil
+			ctx, cancel := context.WithCancel(context.Background())
+			mgr.armTaskDeliveryAfterStart(ctx, sess, madeUpChannelBackend(tc.channel), tc.resume)
+			cancel()
+			mgr.bg.Wait()
+			if got := mgr.EndedBeforeTask(sess.FullID); got != tc.want {
+				t.Errorf("waiting for a first task = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+type madeUpChannelBackend bool
+
+func (b madeUpChannelBackend) ChannelEnabled() bool { return bool(b) }
