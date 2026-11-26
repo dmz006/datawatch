@@ -6350,7 +6350,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 	if exited {
 		reason = "task delivery failed: session ended before the task was delivered"
 	} else if agentLeft {
-		reason = fmt.Sprintf("task delivery failed: nothing was typed: Claude had left the session's terminal (%d attempts)", attemptsMade)
+		reason = fmt.Sprintf("task delivery failed: the task was not typed again: the typing check found signs that Claude had left the session's terminal; an earlier attempt may already have typed it, so check what ran there (%d attempts)", attemptsMade)
 	} else if notEchoed {
 		reason = fmt.Sprintf("task delivery failed: the task text never appeared in the session input within %s of typing it, across %d attempts — worker was never given its task (prompt %d lines)", taskEchoWindow, attemptsMade, promptLines)
 	} else {

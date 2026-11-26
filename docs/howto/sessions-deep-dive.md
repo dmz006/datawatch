@@ -922,14 +922,47 @@ unfinished outside the case above. With automatic commits on, the commit made at
 completion can get such a task past the check for undelivered work, and a
 restarted worker can be marked done.
 
-**datawatch does not type into the shell.** Separately, it does not type a task,
-a scheduled command or other automated input into a Claude session when the
-visible screen shows the exit line, or the terminal's shell is the only thing
-reading the keyboard. A delivery refused this way ends the session, saying
-nothing was typed. What you send yourself is typed as before, and so is
-everything when neither sign can be read (for example a shell with job control
-off and the exit line no longer on screen). The check happens just before
-typing; Claude Code quitting in that instant is not caught.
+### The check before datawatch types on its own
+
+When Claude Code has left a session's terminal, what is there is a shell, which
+would run typed text outside Claude Code's permission checks. Before typing a
+task, a scheduled command, an output filter's input or a line it writes on its
+own (automation messages and nudges, question answers, supervisor wake-ups,
+exit-hook, subscription and reply-to-parent lines, the rate-limit resume line)
+into a Claude session, datawatch looks for two signs:
+
+- the visible screen shows the line printed after Claude Code exits: a line that
+  reads `DATAWATCH_COMPLETE: claude done` after any leading spaces and non-ASCII
+  marks such as `⎿` or `●`;
+- the terminal's own shell is the only thing reading the keyboard.
+
+If either shows, that attempt types nothing.
+
+**What the check does not do.** It does not know whether Claude Code is there.
+It sees only what shows when it looks, and datawatch types whenever neither sign
+shows. The typed text can still run in the shell later if Claude Code has
+stopped reading the keyboard, or has exited under a wrapper script that did not
+`exec` and is still in the foreground. The same can happen if Claude Code leaves
+after the check, with job control off in the terminal's shell (datawatch's
+fallback memory watchdog turns it off) once the exit line is no longer on
+screen, or when neither the screen nor the process list can be read.
+
+**Not checked at all:** what you send yourself; the MCP tools `send_input` and
+`send_saved_command`, also when an AI session calls them; answers to start-up
+dialogs; datawatch's own menu keys (the usage-limit answer, the MCP server
+retry, dismissing Claude Code prompts, Enter); and the memory wake-up text,
+which is typed without Enter.
+
+**What a refusal does.**
+
+- A task delivery that stays refused ends the session. The reason says the task
+  was not typed again; an earlier attempt may already have typed it, so check
+  what ran in that terminal.
+- A refused scheduled command is marked failed and is not retried, and a
+  recurring one stops. This includes a shell command you scheduled for a Claude
+  session whose Claude Code has left.
+- Because of how the exit line is matched, automated input is also refused while
+  a running Claude Code shows such a line.
 
 ## Claude Code interstitial prompts — recognised and dismissed for you
 

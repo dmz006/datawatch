@@ -9,7 +9,7 @@ The session list, session detail and alerts in every client of the daemon: the P
 ## What changed in the daemon
 
 1. A claude-code channel session ends `failed` when datawatch declined a start-up dialog with Esc and the agent then left, its task never delivered and nothing else sent to it. Every other exit is handled as before.
-2. A task, scheduled command or other automated input is no longer typed into a claude-code session whose agent has left the terminal; the send reports an error that says so.
+2. Before typing a task, a scheduled command or a line the daemon writes on its own into a claude-code session, the daemon looks for two signs that the agent has left the terminal, and the send reports an error if either shows. It is not proof: the daemon types whenever neither sign shows, and MCP `send_input` and `send_saved_command` are not checked.
 
 No setting, endpoint or key changed, and the keys datawatch sends to dialogs are unchanged.
 
@@ -17,7 +17,7 @@ No setting, endpoint or key changed, and the keys datawatch sends to dialogs are
 
 - `state: failed`, one warning alert whose body is the reason (not the task text), and the same reason on the chat state line.
 - Three new optional session fields: `launch_failure` (string), `startup_decline` (`dialog`, `files`, `at`) and `launch_input_sent` (bool).
-- A scheduled command refused by the typing check is marked failed like any other send error.
+- A scheduled command refused by the typing check is marked failed and is not retried; a recurring one stops.
 
 ## What the mobile app needs
 

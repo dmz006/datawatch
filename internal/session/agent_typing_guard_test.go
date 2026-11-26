@@ -1,6 +1,6 @@
-// datawatch never types a task or queued input into a claude-code session whose
-// agent has left: the pane's shell would run it, outside every check the agent
-// has.
+// Before typing a task or queued input into a claude-code session, datawatch
+// looks for two signs that the agent has left, where the pane's shell would run
+// the text outside every check the agent has.
 
 package session
 
@@ -130,8 +130,8 @@ func TestTheTaskIsNeverTypedOnceTheAgentHasLeft(t *testing.T) {
 			if !errors.Is(err, ErrTaskUndelivered) {
 				t.Errorf("err = %v, want undelivered", err)
 			}
-			if reason := mgr.TaskDeliveryFailure(sess.FullID); !strings.Contains(reason, "nothing was typed") {
-				t.Errorf("reason = %q, want it to say nothing was typed", reason)
+			if reason := mgr.TaskDeliveryFailure(sess.FullID); !strings.Contains(reason, "not typed again") {
+				t.Errorf("reason = %q, want it to say the task was not typed again", reason)
 			}
 			if got, _ := mgr.GetSession(sess.FullID); !mgr.store.Snapshot(got).State.IsTerminal() {
 				t.Error("the session was left live and deliverable")
@@ -195,5 +195,113 @@ func TestTheRateLimitResumeIsNotTypedIntoAShell(t *testing.T) {
 	mgr.ResumeRateLimitedSession(t.Context(), sess.FullID)
 	if typedContains(fake, "rate limit has reset") {
 		t.Fatalf("typed into the shell: %q", typed(fake))
+	}
+}
+
+// The case where the message was wrong: the first attempt typed the task and a
+// later one was refused. The session's message must not say nothing was typed.
+func TestARefusalAfterTheTaskWasTypedDoesNotSayNothingWasTyped(t *testing.T) {
+	mgr, fake, sess := guardFixture(t, liveBox, paneAgent)
+	fake.NoEcho = true // the typed text never shows, so delivery tries again
+	gone := false
+	mgr.paneProcsFn = func(string) (int, string, []paneProc, bool) {
+		if gone {
+			return guardShellPID, guardTTY, paneBareShell, true
+		}
+		return guardShellPID, guardTTY, paneAgent, true
+	}
+	now := time.Now()
+	mgr.clock = func() time.Time { return now }
+	mgr.sleepFn = func(d time.Duration) {
+		now = now.Add(d)
+		if !gone && typedContains(fake, markerLine) {
+			gone = true // the agent leaves after the first attempt typed
+			fake.mu.Lock()
+			fake.Pane[sess.TmuxSession] = leftScreen
+			fake.mu.Unlock()
+		}
+	}
+	if !mgr.ClaimTaskDelivery(sess.FullID) {
+		t.Fatal("claim")
+	}
+	if err := mgr.DeliverOneShotTask(sess.FullID, markerTask, 2, 5*time.Second, time.Millisecond); !errors.Is(err, ErrTaskUndelivered) {
+		t.Fatalf("err = %v", err)
+	}
+	if n := strings.Count(strings.Join(typed(fake), "\x00"), markerLine); n != 1 {
+		t.Fatalf("the task was typed %d times, want once: %q", n, typed(fake))
+	}
+	reason := mgr.TaskDeliveryFailure(sess.FullID)
+	if strings.Contains(reason, "nothing was typed") {
+		t.Errorf("reason says nothing was typed, but it was: %q", reason)
+	}
+	for _, want := range []string{"not typed again", "earlier attempt may already have typed it"} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("reason %q lacks %q", reason, want)
+		}
+	}
+}
+
+// The exit line is also matched behind spaces and the marks a terminal UI puts
+// in front of a line, so a running agent showing it there is refused too.
+func TestTheExitLineIsMatchedBehindMarksAndSpaces(t *testing.T) {
+	for name, line := range map[string]string{
+		"spaces": "    DATAWATCH_COMPLETE: claude done",
+		"corner": "  ⎿  DATAWATCH_COMPLETE: claude done",
+		"bullet": "● DATAWATCH_COMPLETE: claude done",
+	} {
+		t.Run(name, func(t *testing.T) {
+			mgr, fake, sess := guardFixture(t, line+"\n"+liveBox, paneAgent)
+			if err := mgr.SendInput(sess.FullID, "made-up words", "schedule"); !errors.Is(err, ErrAgentLeft) {
+				t.Fatalf("err = %v, typed %q", err, typed(fake))
+			}
+		})
+	}
+	for name, line := range map[string]string{
+		"words before":   "it printed DATAWATCH_COMPLETE: claude done",
+		"words after":    "DATAWATCH_COMPLETE: claude done and tidied up",
+		"other summary":  "DATAWATCH_COMPLETE: made the change",
+		"an ascii mark ": "> DATAWATCH_COMPLETE: claude done",
+	} {
+		t.Run(name, func(t *testing.T) {
+			mgr, _, sess := guardFixture(t, line+"\n"+liveBox, paneAgent)
+			if err := mgr.SendInput(sess.FullID, "made-up words", "schedule"); err != nil {
+				t.Fatalf("refused: %v", err)
+			}
+		})
+	}
+}
+
+// What a refusal does to a schedule: it is marked failed, so it is not tried
+// again, and a recurring one does not come round again.
+func TestARefusedScheduleIsNotRetriedAndARecurringOneStops(t *testing.T) {
+	for name, every := range map[string]int{"one time": 0, "recurring": 60} {
+		t.Run(name, func(t *testing.T) {
+			mgr, fake, sess := guardFixture(t, leftScreen, paneBareShell)
+			store, err := NewScheduleStore(filepath.Join(t.TempDir(), "schedule.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			sc, err := store.AddFull(AddOptions{SessionID: sess.FullID, Command: markerLine,
+				RunAt: time.Now().Add(-time.Second), RecurEvery: every})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sent, err := mgr.FireScheduled(store, sess.FullID, sc)
+			if sent || !errors.Is(err, ErrAgentLeft) || typedContains(fake, markerLine) {
+				t.Fatalf("sent=%v err=%v typed=%q", sent, err, typed(fake))
+			}
+			var state string
+			for _, e := range store.List() {
+				if e.ID == sc.ID {
+					state = string(e.State)
+				}
+			}
+			if state != string(SchedFailed) {
+				t.Errorf("state = %q, want failed", state)
+			}
+			if due := store.DuePending(time.Now().Add(time.Hour)); len(due) != 0 {
+				t.Errorf("still due later: %+v", due)
+			}
+		})
 	}
 }

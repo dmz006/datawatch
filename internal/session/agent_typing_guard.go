@@ -1,12 +1,13 @@
-// The typing guard: datawatch never types a task or queued input into a
-// claude-code session once its agent has left. What is left in the pane is a
-// shell, which would run the text outside every check the agent has.
+// The typing guard. When a claude-code agent has left, what is in the pane is a
+// shell, which would run typed text outside every check the agent has.
 //
-// It refuses only on one of two signs, read at the moment of typing: the live
+// Before typing a task or queued input, datawatch looks for two signs: the live
 // screen shows the line the launch command prints after the agent, or the
-// pane's shell itself is reading the terminal. Where neither can be read,
-// typing goes on as before. A person's own input and the answers to start-up
-// dialogs are not held to it.
+// pane's shell alone is reading the terminal. It does not know whether the
+// agent is there: it types whenever neither sign shows, also when the agent has
+// stopped reading or has exited under a wrapper script still in the foreground.
+// A person's own input, MCP send_input and send_saved_command, the daemon's
+// single menu keys and the answers to start-up dialogs are not held to it.
 
 package session
 
