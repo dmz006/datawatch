@@ -125,7 +125,9 @@ update:
 	daemon.Env = []string{
 		"INVOCATION_ID=dw-startup-test",
 		"HOME=" + dirs["home"], "TMPDIR=" + dirs["tmp"], "TMUX_TMPDIR=" + dirs["mux"],
-		"PATH=" + dirs["bin"] + string(os.PathListSeparator) + os.Getenv("PATH"),
+		// The stand-ins and the system's own folders only: with this account's
+		// PATH the daemon would run whatever tools are installed on the host.
+		"PATH=" + strings.Join([]string{dirs["bin"], "/usr/bin", "/bin"}, string(os.PathListSeparator)),
 	}
 	daemon.Stdout, daemon.Stderr = logFile, logFile
 	// Its own process group, so that nothing it started outlives the test.
