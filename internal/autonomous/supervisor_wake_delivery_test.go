@@ -77,6 +77,7 @@ type wakeDeliveryRig struct {
 	typed  []string
 	alerts []string
 	runs   int
+	record *supervisorloop.WakeRecord
 }
 
 // AlertSink lets the set raise operator alerts, as the Manager does.
@@ -98,7 +99,7 @@ func (r *wakeDeliveryRig) register(t *testing.T, memory *supervisorloop.WakeSend
 	st := supervisorloop.DefaultWakeSettings()
 	st.Enabled, st.Kinds, st.CoalesceSeconds = true, []string{"task.failed"}, 0
 	set := RegisterSupervisorWake(SupervisorWakeConfig{
-		Subscriber: r, Settings: st, Clock: r.clock, Memory: memory,
+		Subscriber: r, Settings: st, Clock: r.clock, Memory: memory, Record: r.record,
 		Run: func(supervisorloop.WakeBatch) { r.mu.Lock(); r.runs++; r.mu.Unlock() },
 		Session: func() string {
 			r.mu.Lock()
@@ -271,5 +272,92 @@ func TestWakeRecordCountsAWakeWithNoPassOnlyOnceTyped(t *testing.T) {
 	clock.pass(time.Hour)
 	if n := rec.Status().EventCount; n != 1 {
 		t.Fatalf("event count = %d after the retry typed it, want 1", n)
+	}
+}
+
+// The wake status counts a wake only once its line was typed, also when a
+// supervisor pass ran for it.
+func TestWakeStatusDoesNotCountAnUntypedLineWhenThePassRan(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err      error
+		afterAll int // the count once an hour of retries is over
+	}{
+		"refused, typed by a retry": {errRefusedBeforeTyping, 1},
+		"unsure, never typed again": {errors.New("send input: exit status 1"), 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newWakeDeliveryRig("sup", tc.err)
+			rec := supervisorloop.NewWakeRecord(r.clock, 0)
+			r.record = rec
+			set := r.register(t, nil)
+			r.failed(set, "t1")
+			if _, _, _, runs := r.state(); runs != 1 {
+				t.Fatalf("the pass ran %d times, want 1", runs)
+			}
+			if n := rec.Status().EventCount; n != 0 {
+				t.Fatalf("event count = %d with no line typed, want 0", n)
+			}
+			r.clock.pass(time.Hour)
+			if n := rec.Status().EventCount; n != tc.afterAll {
+				t.Fatalf("event count = %d after the retries, want %d", n, tc.afterAll)
+			}
+		})
+	}
+}
+
+// With no supervisor session designated, a wake that ran the pass stays
+// counted, as the controller's existing expectation requires; typing it later
+// does not count it again.
+func TestWakeStatusWithNoDesignatedSessionCountsThePassOnce(t *testing.T) {
+	r := newWakeDeliveryRig("")
+	rec := supervisorloop.NewWakeRecord(r.clock, 0)
+	r.record = rec
+	set := r.register(t, nil)
+	r.failed(set, "t1")
+	r.retarget("designated")
+	r.clock.pass(time.Hour)
+	if _, typed, _, _ := r.state(); len(typed) != 1 {
+		t.Fatalf("typed = %q, want the waiting wake once", typed)
+	}
+	if n := rec.Status().EventCount; n != 1 {
+		t.Fatalf("event count = %d, want 1 for the one wake", n)
+	}
+}
+
+// A wake that adds nothing the session has not been told types no line.
+func TestWakeStatusDoesNotCountARepeatThatTypesNothing(t *testing.T) {
+	r := newWakeDeliveryRig("sup")
+	rec := supervisorloop.NewWakeRecord(r.clock, 0)
+	r.record = rec
+	set := r.register(t, nil)
+	r.failed(set, "t1")
+	r.emit(LifecycleEvent{Kind: "task.failed", PRDID: "a1", TaskID: "t1", Details: "again"})
+	set.Wait()
+	if _, typed, _, runs := r.state(); len(typed) != 1 || runs != 2 {
+		t.Fatalf("typed %q in %d runs, want one line in two runs", typed, runs)
+	}
+	if n := rec.Status().EventCount; n != 1 {
+		t.Fatalf("event count = %d, want only the wake whose line was typed", n)
+	}
+}
+
+// A batch that reaches a set just closed by a settings change is typed by the
+// next set, and counted then.
+func TestWakeHandedToAClosedSetIsCountedWhenTheNextSetTypesIt(t *testing.T) {
+	r := newWakeDeliveryRig("sup")
+	rec := supervisorloop.NewWakeRecord(r.clock, 0)
+	r.record = rec
+	memory := supervisorloop.NewWakeSendMemory()
+	old := r.register(t, memory)
+	old.Close()
+	old.send([]supervisorloop.WakeEvent{{Kind: "task.failed", AutomatonID: "a1", TaskID: "t1"}}, true)
+	r.wakeTestSubscriber = &wakeTestSubscriber{}
+	r.register(t, memory)
+	r.clock.pass(time.Hour)
+	if _, typed, _, _ := r.state(); len(typed) != 1 {
+		t.Fatalf("typed = %q, want the wake once from the new set", typed)
+	}
+	if n := rec.Status().EventCount; n != 1 {
+		t.Fatalf("event count = %d, want 1", n)
 	}
 }

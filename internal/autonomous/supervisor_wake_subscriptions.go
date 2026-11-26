@@ -61,8 +61,9 @@ type SupervisorWakeConfig struct {
 	Record    *supervisorloop.WakeRecord
 	// Run, when set, is called first for each delivered batch: it is the
 	// supervisor loop pass the daemon runs at once instead of waiting for the
-	// scheduled check. The wake record counts a wake that ran it, whether or
-	// not its line could be typed yet; a retry never runs it again.
+	// scheduled check; a retry never runs it again. The wake record counts a
+	// wake once its line was typed. One exception: with no session designated,
+	// a wake that ran the pass is counted then, and not again when typed.
 	Run func(supervisorloop.WakeBatch)
 	// Alert raises an operator alert; nil uses the Subscriber's alert sink
 	// when it has one (the Manager does).
@@ -123,17 +124,10 @@ func RegisterSupervisorWake(c SupervisorWakeConfig) *SupervisorWakeSet {
 	}
 	set.cfg, set.memory = c, memory
 	set.runner = supervisorloop.NewRunner(func(b supervisorloop.WakeBatch) {
-		delivered := false
 		if c.Run != nil {
 			c.Run(b)
-			delivered = true
 		}
-		if set.send(b.Events) {
-			delivered = true
-		}
-		if delivered && c.Record != nil {
-			c.Record.MarkEvent()
-		}
+		set.send(b.Events, c.Run != nil)
 	})
 	window := time.Duration(c.Settings.CoalesceSeconds) * time.Second
 	set.coalescer = supervisorloop.NewCoalescer(c.Clock, window, func(b supervisorloop.WakeBatch) {
@@ -156,19 +150,32 @@ func RegisterSupervisorWake(c SupervisorWakeConfig) *SupervisorWakeSet {
 }
 
 // send types what is waiting, including events, into the designated session.
-// It reports whether a line was sent. Whatever was certainly not typed stays
-// waiting and a retry is scheduled.
-func (s *SupervisorWakeSet) send(events []supervisorloop.WakeEvent) bool {
+// Whatever was certainly not typed stays waiting and a retry is scheduled.
+// events is empty for a retry; passRan says the supervisor pass ran for them.
+func (s *SupervisorWakeSet) send(events []supervisorloop.WakeEvent, passRan bool) {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
 	pending := s.memory.Hold(events)
-	if s.isClosed() || len(pending) == 0 {
-		return false
+	fresh := len(events) > 0
+	if s.isClosed() {
+		if fresh {
+			s.memory.Owe() // the next set types it
+		}
+		return
+	}
+	if len(pending) == 0 {
+		return
 	}
 	sid := s.cfg.Session()
 	if sid == "" {
+		switch {
+		case fresh && passRan:
+			s.count()
+		case fresh:
+			s.memory.Owe()
+		}
 		s.wait(pending, "no supervisor session can take input now")
-		return false
+		return
 	}
 	c := s.cfg
 	interval := time.Duration(c.Settings.FallbackIntervalMinutes) * time.Minute
@@ -191,26 +198,39 @@ func (s *SupervisorWakeSet) send(events []supervisorloop.WakeEvent) bool {
 	news, typed := s.memory.Select(sid, pending, stalls, interval, now)
 	if len(news) == 0 {
 		s.finished(pending) // the session was already told
-		return false
+		return
 	}
 	line := wakeBatchText(supervisorloop.WakeBatch{Events: news})
 	err := c.SendInput(sid, line)
 	if session.RefusedBeforeTyping(err) {
 		log.Printf("[supervisor-wake] session %s: nothing typed, %d wake(s) waiting: %v", sid, len(pending), err)
+		if fresh {
+			s.memory.Owe()
+		}
 		s.wait(pending, "session "+sid+" shows a prompt or its screen cannot be read")
-		return false
+		return
 	}
 	// Sent, or possibly in the session already: either way it is not typed
 	// again.
 	typed()
+	if err == nil {
+		if owed := s.memory.TakeOwed(); fresh || owed {
+			s.count()
+		}
+	}
 	s.finished(pending)
 	if err != nil {
 		log.Printf("[supervisor-wake] session %s: send failed, not typing it again: %v", sid, err)
 		c.alert("error", "Supervisor wake: review needed", fmt.Sprintf(
 			"review needed: session=%s: %s. datawatch cannot tell that the session got this wake and will not type it again.", sid, line))
-		return false
 	}
-	return true
+}
+
+// count marks one wake on the wake record.
+func (s *SupervisorWakeSet) count() {
+	if s.cfg.Record != nil {
+		s.cfg.Record.MarkEvent()
+	}
 }
 
 // wait keeps the pending wakes for a retry and reports the wait once.
@@ -269,9 +289,7 @@ func (s *SupervisorWakeSet) retry() {
 	s.retryMu.Lock()
 	s.stopRetry = nil
 	s.retryMu.Unlock()
-	if s.send(nil) && s.cfg.Run == nil && s.cfg.Record != nil {
-		s.cfg.Record.MarkEvent()
-	}
+	s.send(nil, false)
 }
 
 func (s *SupervisorWakeSet) isClosed() bool {

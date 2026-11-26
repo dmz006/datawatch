@@ -67,6 +67,7 @@ type WakeSendMemory struct {
 	stalls  map[string]string               // session -> the stall list as last typed
 	waiting []WakeEvent                     // oldest first, one per typed line
 	noticed bool                            // the current wait was reported
+	owed    bool                            // a waiting wake is not counted yet
 	dropped int
 }
 
@@ -111,8 +112,25 @@ func (m *WakeSendMemory) Release(events []WakeEvent) {
 	}
 	m.waiting = kept
 	if len(kept) == 0 {
-		m.noticed, m.dropped = false, 0
+		m.noticed, m.dropped, m.owed = false, 0, false
 	}
+}
+
+// Owe notes that a waiting wake is to be counted once its line is typed.
+func (m *WakeSendMemory) Owe() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.owed = true
+}
+
+// TakeOwed reports whether a waiting wake still has to be counted, and clears
+// the note.
+func (m *WakeSendMemory) TakeOwed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	owed := m.owed
+	m.owed = false
+	return owed
 }
 
 // Waiting reports how many wakes are waiting to be typed.
