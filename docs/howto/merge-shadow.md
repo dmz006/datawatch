@@ -88,8 +88,10 @@ pipeline's check commands and the base commit's `check-outgoing`.
 | Left running | what a check leaves running when it ends is stopped, and reported under result 7 |
 | Git also | **2 GiB** of data memory for each git process of the merge engine, the copy and the push checks (`ulimit -d`) |
 
-The 16 GiB is set to hold this project's own whole `go test`, four packages at
-once; MEASURED.
+The 16 GiB is set to hold this project's own whole `go test`: one run of it,
+four packages at once under exactly this limit, peaked at about 4.3 GB with no
+process stopped. Its lint and release smoke steps were not measured, and a host
+with more cores may use more.
 
 **It needs Linux with systemd 254 or newer** and a systemd user manager (the
 system manager when datawatch runs as root). Where the limit cannot be put in
