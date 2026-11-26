@@ -3832,3 +3832,12 @@ Package `internal/pause` holds the state (global plus per-project entries, saved
 ## Remote branch reap settings (autonomous.remote_reap_enabled, autonomous.remote_reap_retention_days)
 
 `autonomous.remote_reap_enabled` (bool, default `false`) turns the remote branch reap on; while it is off the pass only reports, and it never runs on a timer. `autonomous.remote_reap_retention_days` (whole days) is how old the tip of a fully merged remote branch must be before it may be reaped; unset or 0 reads the default of 30, and a negative value is a config error when the config loads. Code: `internal/config/config.go` (`RemoteReapEnabled`, `RemoteReapRetentionDays`, `EffectiveRemoteReapRetentionDays`) and `internal/autonomous/remote_reap.go`. The operator-facing description is in [howto/automation-cleanup-passes.md](howto/automation-cleanup-passes.md).
+
+## "Done when" lists (`internal/acceptance`)
+
+- **Settings:** `AcceptanceConfig` (`internal/config/config.go`): `acceptance.mode` (`off` default, `report`), `rework_rounds` (0 = 2), `infra_retries` (0 = 2), `check_timeout_seconds` (0 = 600), `freshness_seconds` (0 = 300), `warn_hours` (0 = 24), `defaults_file` and `project_checks` (config file only: no API writes command text or swaps the defaults). All but the last two are read live and writable through `PUT /api/config`.
+- **Package:** `internal/acceptance` imports no other datawatch package except `secfile`, so no result can come from verifier, guardrail, gate, landing or shipped records (a test enforces the imports). `Service` is the only writer; the store is `<data_dir>/acceptance.json`, encrypted with the daemon key on a secure install. A damaged store leaves the surfaces unavailable and is not overwritten.
+- **Wiring:** `cmd/datawatch/acceptance_wiring.go` opens the store for the HTTP server. No `SubjectResolver`, `Probe` or `Reviewer` is set and nothing calls `Evaluate`, `NoteStart`, `NoteHolder` or `NewOccurrence` yet; those belong to the request sources and the reviewer build. Items that need them read cannot tell or unchecked.
+- **Audit:** `acceptance_changed` (CEF signature 103): request id, change, item, claimed name, observed caller. Never the ask, a statement or spoken words.
+- **Design:** [plans/2026-11-26-done-when-acceptance.md](plans/2026-11-26-done-when-acceptance.md).
+

@@ -6346,3 +6346,14 @@ An Automation's limit on members running at once, its stage gate and its decisio
 | A session end does not reach another session in a shared linked worktree, by full or short session id; its own processes are still ended | **Yes** (`TestSessionEndReap_SharedLinkedWorktreeOtherSessionScriptSurvives`, `TestSessionEndReap_LiveSessionProcessInEndedWorktreeSurvives`) | **No** | Real sleeping scripts in temp folders, real `/proc`, real signals, through the daemon's reap wiring |
 | Host load reap: shared project folders and worktrees a running session uses are not evidence; an ended session's own worktree is still reaped, a running session's process in it is not | **Yes** (`TestHostLoadReap_*` in `cmd/datawatch/session_end_reap_shared_test.go`) | **No** | Same fixtures; load and clock faked |
 
+## "Done when" lists (report only)
+
+| Interface | Tested | Validated | Test conditions and notes |
+|---|---|---|---|
+| Core rules against a false done (`internal/acceptance`) | **Yes** (`rules_test.go`, `git_test.go`: fakes, an injected clock and temporary git repositories) | **No** | Rule 10 (reviewer quotes) belongs to the reviewer build |
+| REST `/api/acceptance*`, config keys, audit event | **Yes** (`internal/server/acceptance_test.go`, `internal/audit/cef_acceptance_test.go`) | **No** | Handlers called directly; no daemon started |
+| MCP tools, registered only in report mode | **Yes** (`internal/mcp/acceptance_test.go`) | **No** | No live tool call |
+| CLI `datawatch acceptance` | **Yes** (`cmd/datawatch/cli_acceptance_test.go`: body and verbs) | **No** | Not run against a daemon |
+| Comm `acceptance` | **Yes** (`internal/router/acceptance_comm_test.go`: parse, request bodies, secure replies) | **No** | No channel backend |
+| PWA table, list view, settings, locales en de es fr ja | **Yes** (`internal/server/web/app-done-when.test.js`) | **No** | Not opened in a browser; no Playwright story yet; no smoke script yet |
+

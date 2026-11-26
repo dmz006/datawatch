@@ -5621,6 +5621,32 @@ tailscale:
 #   CLI           `datawatch config set usage.calculator.<key> <value>`
 #   Web UI        the Settings field arrives with the calculator screen; until
 #                 then use one of the methods above.
+# "Done when" lists (docs/howto/done-when.md). Report only: nothing is held,
+# blocked or merged because of a list.
+acceptance:
+  # off (default) or report. Any other value is off.
+  mode: "off"
+  # Rework rounds per list before it is the operator's (0 = 2).
+  rework_rounds: 0
+  # Retries of a run that failed for an infrastructure reason (0 = 2).
+  infra_retries: 0
+  # Time limit of one command check, in seconds (0 = 600).
+  check_timeout_seconds: 0
+  # Oldest accepted answer from a source, in seconds (0 = 300).
+  freshness_seconds: 0
+  # Early warning before a needed-by time, in hours (0 = 24).
+  warn_hours: 0
+  # File only (no API writes it): a YAML file that replaces default item lists.
+  defaults_file: ""
+  # File only (no API writes it): saved, named commands that lists refer to.
+  project_checks: {}
+  #  export-test:
+  #    command: go test -count=1 -v -run TestExport ./export/
+  #    inputs: [Makefile]
+  #    expect:
+  #      - {pass: "--- PASS: TestExport", fail: "--- FAIL: TestExport"}
+  #    timeout_seconds: 300
+
 # Operator pause (global and per project). The pause itself is runtime state the
 # operator sets (datawatch pause / resume, REST /api/pause, MCP pause_set,
 # chat `pause`, the PWA header button); this is only its default.

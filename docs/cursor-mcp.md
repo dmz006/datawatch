@@ -209,6 +209,12 @@ Selected core tools:
 | `autonomous_prd_merge_selection` | Which Automaton branches datawatch may merge, and why each other one is left out; optional `id`; read-only |
 | `autonomous_prd_accept_for_merge` | Accept one exact commit of an Automaton's branch for merging; needs `id`, `commit` (full id) and `reason` |
 | `supervisor_loop_run_job` | Run one supervisor loop job now; needs `job`; optional `input` and `candidates` (comma list); an unknown job is a tool error, and so are `run_merge_until_conflict` and `deploy_after_ship` while `autonomous.merge_deploy_run_enabled` is off or the operator pause holds them |
+| `acceptance_view` | Read "done when" lists (report mode only) |
+| `acceptance_edit` | Create, change or fix a list |
+| `acceptance_confirm` | Record a person's answer |
+| `acceptance_accept` | Accept an item without proof |
+| `acceptance_report` | The standing check, report only |
+| `acceptance_catalog` | Methods, default items, project check names |
 | `supervisor_loop_eval` | Compare models on a model job's eval cases; needs `job` and `models` (comma list); optional `cases_dir` (the name of a folder under the default cases folder); fails naming each model when none is reachable |
 | `supervisor_loop_stats` | Read the supervisor loop as numbers: `enabled`, `jobs`, `jobs_enabled`, `runs`, the split by outcome (`runs_ok`, `runs_validator_failed`, `runs_escalated`, `runs_error`), `retries` and `last_run_age_seconds` (-1 when none has run); takes no arguments, read-only |
 | `security_failure_list` | List the stored security failure reports, newest first: each entry has the failing run's `repo`, `ref_kind`, `ref_name`, `workflow`, `run_id`, `run_url` and `status` and the stored `report`; optional `repo` and `status` (`green`, `failing`, `pending`, `hung`, `rerunning` or `superseded`) |
