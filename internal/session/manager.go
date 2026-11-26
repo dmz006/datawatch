@@ -451,6 +451,10 @@ type Manager struct {
 	// deliveryFailure holds the last reason a task delivery gave up, per
 	// session. Guarded by mu; created on first use.
 	deliveryFailure map[string]string
+
+	// paneProcsFn lists a pane's processes; nil reads the system's. Tests set
+	// it.
+	paneProcsFn func(tmuxSession string) (shellPID int, tty string, procs []paneProc, ok bool)
 	// redelivering holds the sessions whose unverified delivery claim this
 	// daemon took over at boot and is typing again.
 	redelivering map[string]bool
@@ -4905,6 +4909,14 @@ func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) (e
 	// scheduleSettleMs defaults to 200ms and is configurable via
 	// session.schedule_settle_ms. Falls back to defaultSendSettle (120ms) if
 	// not configured (scheduleSettleMs == 0).
+	// Last look before the keys go: a task or queued input never goes to the
+	// shell of an agent that has left.
+	if heldToTypingGuard(source) && snap.OutputMode != "chat" {
+		if err := m.refuseTypingWithoutAgent(&snap); err != nil {
+			m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: fullID, Source: source, FilterID: filterID, Length: len(input), Reason: err.Error()})
+			return err
+		}
+	}
 	var sendErr error
 	submitter, canGuard := m.tmux.(guardedSubmitter)
 	switch {
@@ -6272,6 +6284,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 
 	exited := false
 	notEchoed := false
+	agentLeft := false
 	lastScreen := ""
 	attemptsMade := 0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -6295,6 +6308,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 				notEchoed = true
 				m.debugf("DeliverOneShotTask: task text for %s never appeared in the pane within %s of typing (attempt %d/%d)", fullID, taskEchoWindow, attempt, maxAttempts)
 			} else {
+				agentLeft = errors.Is(err, ErrAgentLeft)
 				m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d (window %s): %v", fullID, attempt, maxAttempts, window, err)
 			}
 		case oneShotSessionExited:
@@ -6316,6 +6330,8 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 	var reason string
 	if exited {
 		reason = "task delivery failed: session ended before the task was delivered"
+	} else if agentLeft {
+		reason = fmt.Sprintf("task delivery failed: nothing was typed: Claude had left the session's terminal (%d attempts)", attemptsMade)
 	} else if notEchoed {
 		reason = fmt.Sprintf("task delivery failed: the task text never appeared in the session input within %s of typing it, across %d attempts — worker was never given its task (prompt %d lines)", taskEchoWindow, attemptsMade, promptLines)
 	} else {
@@ -6957,7 +6973,7 @@ func (m *Manager) ResumeRateLimitedSession(ctx context.Context, fullID string) {
 	resumeMsg := "The rate limit has reset. Please read PAUSED.md in your working directory for context on what was in progress, then continue the task."
 	if err := m.automatedBlocked(sess.TmuxSession, "rate-limit-resume"); err != nil {
 		m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: sess.FullID, Source: "rate-limit-resume", Length: len(resumeMsg), Reason: err.Error()})
-	} else {
+	} else if m.mayTypeRateLimitResume(sess, resumeMsg) {
 		_ = m.tmux.SendKeys(sess.TmuxSession, resumeMsg)
 	}
 
