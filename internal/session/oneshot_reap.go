@@ -91,7 +91,7 @@ func (m *Manager) oneShotFinishReason(sess *Session) string {
 	if err != nil {
 		return ""
 	}
-	if paneShowsAgentExit(strings.Split(StripANSI(out), "\n")) && m.EndedBeforeTask(sess.FullID) {
+	if m.exitHeld(sess.FullID, sess.TmuxSession) {
 		return "" // the agent exited without its task: not finished work
 	}
 	// BL468 — note the state guard above already leaves sessions in a

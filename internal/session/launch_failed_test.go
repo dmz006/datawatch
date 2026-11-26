@@ -81,6 +81,9 @@ func launchFixture(t *testing.T, mutate func(*Session)) (*Manager, *FakeTmux, *S
 		t.Fatal(err)
 	}
 	fake.PaneCmd[sess.TmuxSession] = "claude"
+	mgr.paneProcsFn = fakeProcs(fake)
+	// A first start whose task this daemon is still to type.
+	mgr.deliveryArmed = map[string]bool{sess.FullID: sess.DaemonDeliversTask}
 	if err := mgr.SaveSession(sess); err != nil {
 		t.Fatal(err)
 	}
@@ -88,6 +91,32 @@ func launchFixture(t *testing.T, mutate func(*Session)) (*Manager, *FakeTmux, *S
 	mgr.SetStateChangeHandler(seen.add)
 	t.Cleanup(mgr.WaitBackground)
 	return mgr, fake, sess, seen
+}
+
+const (
+	fakeShellPID = 100
+	fakeTTY      = "pts/99"
+)
+
+// fakeProcs is a pane's process table: its shell, and the pane's foreground
+// command as the shell's child when that is not the shell itself.
+func fakeProcs(fake *FakeTmux, extra ...paneProc) func(string) (int, string, []paneProc, bool) {
+	return func(name string) (int, string, []paneProc, bool) {
+		procs := []paneProc{{pid: fakeShellPID, ppid: 1, tty: fakeTTY, comm: "bash"}}
+		if cmd := fake.PaneCommand(name); cmd != "" && cmd != "bash" {
+			procs = append(procs, paneProc{pid: 200, ppid: fakeShellPID, tty: fakeTTY, comm: cmd})
+		}
+		return fakeShellPID, fakeTTY, append(procs, extra...), true
+	}
+}
+
+// watchScreen runs the screen watcher until the session ends or d passes.
+func watchScreen(mgr *Manager, fullID string, d time.Duration) {
+	ctx, cancel := context.WithCancel(context.Background())
+	mgr.StartScreenCapture(ctx, fullID, 20)
+	awaitState(mgr, fullID, StateFailed, d)
+	cancel()
+	mgr.bg.Wait()
 }
 
 func setLaunchPane(fake *FakeTmux, name, pane, cmd string) {
@@ -191,6 +220,7 @@ func TestDeclinedDialogFailsACommandLineOneShot(t *testing.T) {
 	mgr, fake, sess, seen := launchFixture(t, func(s *Session) { s.DaemonDeliversTask = false; s.OneShot = true })
 	declineAndExit(t, mgr, fake, sess)
 	feedLine(mgr, sess, "DATAWATCH_COMPLETE: claude done")
+	watchScreen(mgr, sess.FullID, 3*time.Second)
 	assertFailedOnce(t, mgr, fake, sess.FullID, seen, "Settings Error", "settings.json")
 }
 
@@ -199,6 +229,7 @@ func TestDeclinedDialogFailsASessionWithoutATask(t *testing.T) {
 	mgr, fake, sess, seen := launchFixture(t, func(s *Session) { s.DaemonDeliversTask = false; s.Task = "" })
 	declineAndExit(t, mgr, fake, sess)
 	feedLine(mgr, sess, "DATAWATCH_COMPLETE: claude done")
+	watchScreen(mgr, sess.FullID, 3*time.Second)
 	assertFailedOnce(t, mgr, fake, sess.FullID, seen, "Settings Error")
 }
 
@@ -239,10 +270,6 @@ func TestTerminalGoneBeforeDeliveryIsFailed(t *testing.T) {
 	ends := map[string]func(*Manager){
 		"reconciler": func(m *Manager) { m.reconcileSessions(context.Background()) },
 		"finaliser":  func(m *Manager) { m.FinaliseGoneSessions(time.Now()) },
-		"boot":       func(m *Manager) { m.ResumeMonitors(context.Background()) },
-		"reconnect": func(m *Manager) {
-			m.ReconnectBackends(func(*Session, *BackendState) {})
-		},
 	}
 	for name, run := range ends {
 		t.Run(name, func(t *testing.T) {
@@ -261,6 +288,26 @@ func TestTerminalGoneBeforeDeliveryIsFailed(t *testing.T) {
 	}
 }
 
+// After a daemon restart only a recorded declined dialog is evidence.
+func TestADeclinedDialogStillCountsAfterADaemonRestart(t *testing.T) {
+	ends := map[string]func(*Manager){
+		"boot":      func(m *Manager) { m.ResumeMonitors(context.Background()) },
+		"reconnect": func(m *Manager) { m.ReconnectBackends(func(*Session, *BackendState) {}) },
+	}
+	for name, run := range ends {
+		t.Run(name, func(t *testing.T) {
+			mgr, fake, sess, seen := launchFixture(t, func(s *Session) { s.TrackingDir = s.ProjectDir })
+			declineAndExit(t, mgr, fake, sess)
+			mgr.deliveryArmed = nil // a new daemon process
+			if err := fake.KillSession(sess.TmuxSession); err != nil {
+				t.Fatal(err)
+			}
+			run(mgr)
+			assertFailedOnce(t, mgr, fake, sess.FullID, seen, "Settings Error")
+		})
+	}
+}
+
 // If closing the pane fails, neither the reconciler nor a restart of the daemon
 // may bring a failed launch back.
 func TestAFailedLaunchWithALivePaneIsNeverRevived(t *testing.T) {
@@ -269,7 +316,7 @@ func TestAFailedLaunchWithALivePaneIsNeverRevived(t *testing.T) {
 	fake.mu.Lock()
 	fake.FailNextOp = map[string]int{"kill-session": 1}
 	fake.mu.Unlock()
-	feedLine(mgr, sess, "DATAWATCH_COMPLETE: claude done")
+	watchScreen(mgr, sess.FullID, 3*time.Second)
 	if got := awaitState(mgr, sess.FullID, StateFailed, time.Second); got != StateFailed {
 		t.Fatalf("state = %s", got)
 	}
@@ -286,29 +333,25 @@ func TestAFailedLaunchWithALivePaneIsNeverRevived(t *testing.T) {
 func TestARestartFollowsTheSameRule(t *testing.T) {
 	mgr, fake, sess, seen := launchFixture(t, nil)
 	declineAndExit(t, mgr, fake, sess)
-	feedLine(mgr, sess, "DATAWATCH_COMPLETE: claude done")
+	watchScreen(mgr, sess.FullID, 3*time.Second)
 	assertFailedOnce(t, mgr, fake, sess.FullID, seen, "Settings Error")
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	if _, err := mgr.Restart(ctx, sess.FullID); err != nil {
 		t.Fatal(err)
 	}
+	cancel()
+	mgr.WaitBackground()
 	s, _ := mgr.GetSession(sess.FullID)
-	if got := mgr.store.Snapshot(s); got.State != StateRunning || got.EndNote != "" {
-		t.Fatalf("after restart: state %s note %q", got.State, got.EndNote)
+	if got := mgr.store.Snapshot(s); got.State != StateRunning || got.EndNote != "" || got.LaunchFailure != "" || got.StartupDecline != nil {
+		t.Fatalf("after restart: %+v", got)
 	}
-	// The relaunched agent exits without any dialog.
+	// The file is unchanged, so the relaunch meets the same dialog.
 	again := &stateLog{}
 	mgr.SetStateChangeHandler(again.add)
-	setLaunchPane(fake, sess.TmuxSession, plainExitPane, "bash")
-	feedLine(mgr, s, "DATAWATCH_COMPLETE: claude done")
-	awaitState(mgr, sess.FullID, StateFailed, 6*time.Second)
-	time.Sleep(200 * time.Millisecond)
-	assertFailedOnce(t, mgr, fake, sess.FullID, again, "before its task was delivered")
-	if got := mgr.store.Snapshot(s); strings.Contains(got.EndNote, "Settings Error") {
-		t.Errorf("the dialog of the first launch carried over: %q", got.EndNote)
-	}
+	declineAndExit(t, mgr, fake, sess)
+	watchScreen(mgr, sess.FullID, 3*time.Second)
+	assertFailedOnce(t, mgr, fake, sess.FullID, again, "Settings Error")
 }
 
 // The delivery loop sees the launch fail: it must not record the task as
@@ -370,9 +413,12 @@ func TestADeliveredTaskStillCompletes(t *testing.T) {
 
 func TestADeclinedDialogTheAgentGotPastDoesNotFailItsLaterExit(t *testing.T) {
 	mgr, fake, sess, _ := launchFixture(t, func(s *Session) { s.DaemonDeliversTask = false; s.OneShot = true })
-	setLaunchPane(fake, sess.TmuxSession, " Update available! Update now?\n\n Enter to confirm · Esc to cancel", "claude")
+	setLaunchPane(fake, sess.TmuxSession, "──────────\n Update the made-up settings?\n\n ❯ 1. Update\n   2. Not now\n\n Enter to confirm · Esc to cancel", "claude")
 	if err := mgr.DeclineStartupDialog(sess.FullID); err != nil {
 		t.Fatal(err)
+	}
+	if s, _ := mgr.GetSession(sess.FullID); mgr.store.Snapshot(s).StartupDecline == nil {
+		t.Fatal("the dialog was not recorded")
 	}
 	// Esc closed the dialog and the agent reached its input box.
 	setLaunchPane(fake, sess.TmuxSession, "──────────\n❯ \n──────────", "claude")
@@ -386,6 +432,9 @@ func TestADeclinedDialogTheAgentGotPastDoesNotFailItsLaterExit(t *testing.T) {
 	feedLine(mgr, sess, "DATAWATCH_COMPLETE: claude done")
 	if got := awaitState(mgr, sess.FullID, StateComplete, time.Second); got != StateComplete {
 		t.Fatalf("state = %s, want complete", got)
+	}
+	if s, _ := mgr.GetSession(sess.FullID); mgr.store.Snapshot(s).StartupDecline != nil {
+		t.Error("the record of a dialog the agent got past was kept")
 	}
 }
 

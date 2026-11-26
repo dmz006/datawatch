@@ -4,12 +4,23 @@
 // finished work. Such a session ends failed, with the reason on its record, and
 // nothing completes or revives it. Every path that would end or complete a
 // claude-code session asks here first.
+//
+// Failing closes a pane, so it needs proof, and what cannot be told apart is
+// left alone:
+//   - either datawatch declined a real dialog on this launch, or this daemon
+//     process is still to type the session's first task;
+//   - what the agent showed is read from the visible live screen only;
+//   - the agent is gone only when tmux says the terminal is not there, or when
+//     nothing but the pane's own shell is left on it.
 
 package session
 
 import (
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,11 +41,13 @@ const claudeExitSummary = "claude done"
 // that dialog. A declined dialog that ends the agent does so within seconds.
 const declineExitWindow = 2 * time.Minute
 
-// exitLineHoldLimit is how long the exit line may sit above a shell that still
-// has a child process before the agent is taken to be gone anyway.
-const exitLineHoldLimit = 15 * time.Second
-
 const launchFailedPrefix = "launch failed: "
+
+// paneProc is one process of the system's process table.
+type paneProc struct {
+	pid, ppid int
+	tty, comm string
+}
 
 var settingsFileInDialog = regexp.MustCompile(`^/.*settings[^/]*\.json$`)
 
@@ -85,14 +98,53 @@ func startupDialogDetails(pane string) (dialog string, files []string) {
 	return dialog, files
 }
 
-// noteStartupDecline records the dialog about to be declined. The first dialog
-// of a launch is kept: a later decline of the same screen adds nothing.
-func (m *Manager) noteStartupDecline(sess *Session, pane string) {
-	kind := classifyStartupDialog(pane).Kind
-	if kind != StartupDialogConfirmUnsafe && kind != StartupDialogUpdatePrompt {
+// declinedMenuRow is one numbered choice of a dialog; group 1 is the cursor.
+var declinedMenuRow = regexp.MustCompile(`^(❯[\s\x{00a0}]*)?\d+\.[\s\x{00a0}]+\S`)
+
+// declinedDialogShape reports that the live screen ends with a dialog: its
+// footer is the last line, numbered choices with one cursor sit right above it,
+// and nothing on the screen shows an agent at work. It decides only whether a
+// declined dialog is recorded, never which keys are sent or when. Text that
+// merely names a dialog's words does not have this shape.
+func declinedDialogShape(screen string) bool {
+	lines := nonEmptyTail(StripANSI(screen), 60)
+	for len(lines) > 0 && isFrameOnlyLine(lines[len(lines)-1]) {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) < 3 {
+		return false
+	}
+	footer := strings.ToLower(lines[len(lines)-1])
+	if !strings.HasPrefix(footer, "enter to confirm") || !strings.Contains(footer, "esc to cancel") {
+		return false
+	}
+	rows, cursors := 0, 0
+	for i := len(lines) - 2; i >= 0; i-- {
+		row := declinedMenuRow.FindStringSubmatch(lines[i])
+		if row == nil {
+			break
+		}
+		rows++
+		if row[1] != "" {
+			cursors++
+		}
+	}
+	return rows >= 2 && cursors == 1 && !showsAgentAtWork(lines)
+}
+
+// noteStartupDecline records the dialog that was just declined, if screen, read
+// before the key was sent, really showed one. The first dialog of a launch is
+// kept: a later decline of the same screen adds nothing.
+func (m *Manager) noteStartupDecline(sess *Session, screen string) {
+	kind := classifyStartupDialog(screen).Kind
+	if kind != StartupDialogConfirmUnsafe || !declinedDialogShape(screen) {
 		return
 	}
-	dialog, files := startupDialogDetails(pane)
+	snap := m.store.Snapshot(sess)
+	if taskReachedAgent(&snap) {
+		return
+	}
+	dialog, files := startupDialogDetails(screen)
 	if dialog == "" {
 		dialog = string(kind)
 	}
@@ -106,17 +158,46 @@ func (m *Manager) noteStartupDecline(sess *Session, pane string) {
 	_ = m.store.Save(sess)
 }
 
+// armFirstDelivery marks a fresh start whose task this daemon process is going
+// to type. The mark is not saved: a restarted daemon cannot know who has used
+// the session since.
+func (m *Manager) armFirstDelivery(fullID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.deliveryArmed == nil {
+		m.deliveryArmed = map[string]bool{}
+	}
+	m.deliveryArmed[fullID] = true
+}
+
+// noteOtherInput records input that is not the daemon typing the task or
+// answering a start-up dialog: someone else is using the session.
+func (m *Manager) noteOtherInput(fullID, source string) {
+	if source == "channel-task" || source == "auto-accept-disclaimer" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.deliveryArmed, fullID)
+}
+
 // taskReachedAgent reports a delivery the record proves.
 func taskReachedAgent(snap *Session) bool {
 	return snap.TaskVerifiedAt != nil || (snap.TaskDeliveredAt != nil && !snap.TaskDeliveryUnverified)
 }
 
 // exitWouldBeLaunchFailure reports whether an exit of snap's agent now would
-// mean it never ran its task, and says why.
+// mean its launch failed, and says why.
 func (m *Manager) exitWouldBeLaunchFailure(snap *Session) (string, bool) {
 	if snap.BackendFamily != "claude-code" || snap.Subprocess || snap.TmuxSession == "" || taskReachedAgent(snap) {
 		return "", false
 	}
+	// The daemon is still to type the first task of this start, and nothing
+	// shows that the agent has been given anything else to do.
+	m.mu.Lock()
+	awaiting := m.deliveryArmed[snap.FullID] && !m.agentSeenWorking[snap.FullID] &&
+		snap.DaemonDeliversTask && snap.Task != ""
+	m.mu.Unlock()
 	dialog := ""
 	if d := snap.StartupDecline; d != nil {
 		dialog = fmt.Sprintf("the start-up dialog %q that datawatch declined (sent Esc)", d.Dialog)
@@ -126,20 +207,14 @@ func (m *Manager) exitWouldBeLaunchFailure(snap *Session) (string, bool) {
 				" (fix or move them, then restart the session)"
 		}
 		if m.now().Sub(d.At) <= declineExitWindow {
-			return launchFailedPrefix + "the agent exited before the task was delivered, at " + dialog + files, true
+			if awaiting {
+				return launchFailedPrefix + "the agent exited before the task was delivered, at " + dialog + files, true
+			}
+			return launchFailedPrefix + "the agent exited at " + dialog + files, true
 		}
 		dialog = "; earlier it showed " + dialog + files
 	}
-	if !snap.DaemonDeliversTask || snap.Task == "" {
-		return "", false
-	}
-	// A claim that was never verified may still have arrived: a person can
-	// send the typed text themselves. Work seen on screen or in the recorded
-	// output counts as arrival.
-	m.mu.Lock()
-	worked := m.agentSeenWorking[snap.FullID]
-	m.mu.Unlock()
-	if worked || (snap.TaskDeliveredAt != nil && logShowsAssistantTurn(snap.LogFile)) {
+	if !awaiting {
 		return "", false
 	}
 	return launchFailedPrefix + "the agent exited before its task was delivered" + dialog, true
@@ -222,7 +297,7 @@ func (m *Manager) endAsLaunchFailure(sess *Session, reason string, why EndReason
 	}
 	m.mu.Lock()
 	delete(m.taskDeliveredAt, fullID)
-	delete(m.exitLineSince, fullID)
+	delete(m.deliveryArmed, fullID)
 	if m.deliveryFailure == nil {
 		m.deliveryFailure = make(map[string]string)
 	}
@@ -265,7 +340,8 @@ func (m *Manager) endAsLaunchFailure(sess *Session, reason string, why EndReason
 }
 
 // resetLaunchEvidence forgets what an earlier launch of this session showed. A
-// relaunch is judged on its own.
+// relaunch is judged on its own, and the daemon does not type its task for the
+// first time.
 func (m *Manager) resetLaunchEvidence(sess *Session) {
 	m.store.Mutate(func() {
 		sess.LaunchFailure = ""
@@ -274,7 +350,7 @@ func (m *Manager) resetLaunchEvidence(sess *Session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.agentSeenWorking, sess.FullID)
-	delete(m.exitLineSince, sess.FullID)
+	delete(m.deliveryArmed, sess.FullID)
 	delete(m.deliveryFailure, sess.FullID)
 }
 
@@ -287,7 +363,8 @@ func isAgentExitLine(l string) bool {
 		completionSummary(l, oneShotCompletionMarker) == claudeExitSummary
 }
 
-func paneShowsAgentExit(lines []string) bool {
+// agentExitIndex is the index of the exit line in lines, or -1.
+func agentExitIndex(lines []string) int {
 	for i, l := range lines {
 		if !isAgentExitLine(l) {
 			continue
@@ -300,103 +377,58 @@ func paneShowsAgentExit(lines []string) bool {
 			wrapped = strings.HasPrefix(next, "'") || strings.HasPrefix(next, `"`)
 		}
 		if !wrapped {
+			return i
+		}
+	}
+	return -1
+}
+
+// launchScreen is the visible live screen of a pane: not the view someone has
+// scrolled back to, and nothing from the scrollback. ok is false when tmux
+// cannot be read.
+func (m *Manager) launchScreen(tmuxSession string) (string, bool) {
+	pane, err := m.tmux.CapturePaneLiveTail(tmuxSession)
+	if err != nil {
+		return "", false
+	}
+	return StripANSI(pane), true
+}
+
+// showsAgentAtWork reports lines only a working or answering agent draws.
+func showsAgentAtWork(lines []string) bool {
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "●") {
 			return true
 		}
+		for _, mark := range agentTurnMarkers {
+			if strings.HasPrefix(t, mark) {
+				return true
+			}
+		}
 	}
-	return false
+	return paneShowsWork(nonEmptyTail(strings.Join(lines, "\n"), 40))
 }
 
-// agentGone reports whether sess's pane has gone back to its shell. When tmux
-// cannot say, the agent is taken to be there.
-func (m *Manager) agentGone(sess *Session) bool {
-	if !m.tmux.SessionExists(sess.TmuxSession) {
-		return true
-	}
-	if !isPlainShell(m.tmux.PaneCommand(sess.TmuxSession)) {
-		return false
-	}
-	shellHasChild := m.paneProcessAlive(sess)
+func (m *Manager) noteAgentWorked(sess *Session) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if !shellHasChild {
-		return true
+	if m.agentSeenWorking == nil {
+		m.agentSeenWorking = map[string]bool{}
 	}
-	if m.exitLineSince == nil {
-		m.exitLineSince = map[string]time.Time{}
-	}
-	since, seen := m.exitLineSince[sess.FullID]
-	if !seen {
-		m.exitLineSince[sess.FullID] = m.now()
-		return false
-	}
-	return m.now().Sub(since) >= exitLineHoldLimit
-}
-
-// guardEarlyExit looks at lines of a claude-code session's screen or output
-// before any of them may complete it. It reports true when they must not be
-// read further: the agent exited without running its task (the session is ended
-// failed here), or the exit line is up and the agent is not yet seen gone.
-// Lines that show the agent at its input box or at work are remembered.
-func (m *Manager) guardEarlyExit(fullID string, lines []string) bool {
-	sess, ok := m.store.Get(fullID)
-	if !ok {
-		return false
-	}
-	snap := m.store.Snapshot(sess)
-	if snap.LaunchFailure != "" {
-		return snap.State.IsTerminal()
-	}
-	if snap.BackendFamily != "claude-code" || taskReachedAgent(&snap) || !liveForLaunch(snap.State) {
-		return false
-	}
-	if !paneShowsAgentExit(lines) {
-		m.noteAgentPastStartup(sess, &snap, lines)
-		return false
-	}
-	if _, never := m.exitWouldBeLaunchFailure(&snap); !never {
-		return false
-	}
-	if m.agentGone(&snap) {
-		m.failIfNeverStarted(fullID)
-	}
-	return true
-}
-
-// noteAgentPastStartup records what a screen proves: an agent at its input box
-// or at work got past any dialog datawatch declined, and one at work has been
-// given something to do.
-func (m *Manager) noteAgentPastStartup(sess *Session, snap *Session, lines []string) {
-	if len(lines) < 2 {
-		return // a single output line is not a screen
-	}
-	m.mu.Lock()
-	delete(m.exitLineSince, snap.FullID)
+	m.agentSeenWorking[sess.FullID] = true
 	m.mu.Unlock()
-	if snap.StartupDecline == nil && !snap.DaemonDeliversTask {
-		return // nothing hangs on what this screen shows
+}
+
+// forgetDecline drops the recorded dialog: the agent got past it.
+func (m *Manager) forgetDecline(sess *Session) {
+	changed := false
+	m.store.Mutate(func() {
+		changed = sess.StartupDecline != nil
+		sess.StartupDecline = nil
+	})
+	if changed {
+		_ = m.store.Save(sess)
 	}
-	screen := strings.Join(lines, "\n")
-	kind, _ := classifyInputBox(screen, snap.Task)
-	switch kind {
-	case inputBoxBusy:
-		m.mu.Lock()
-		if m.agentSeenWorking == nil {
-			m.agentSeenWorking = map[string]bool{}
-		}
-		m.agentSeenWorking[snap.FullID] = true
-		m.mu.Unlock()
-	case inputBoxEmpty:
-		if !showsFramedInputBox(screen) {
-			return
-		}
-	default:
-		return
-	}
-	if snap.StartupDecline == nil {
-		return
-	}
-	m.store.Mutate(func() { sess.StartupDecline = nil })
-	_ = m.store.Save(sess)
 }
 
 // showsFramedInputBox reports the agent's own input box: its last ❯ row sits
@@ -415,6 +447,198 @@ func showsFramedInputBox(screen string) bool {
 	return false
 }
 
+// paneProcesses lists the system's processes with the pane's shell and tty. ok
+// is false when any of it cannot be read.
+func (m *Manager) paneProcesses(tmuxSession string) (shellPID int, tty string, procs []paneProc, ok bool) {
+	pider, can := m.tmux.(PanePIDer)
+	if !can {
+		return 0, "", nil, false
+	}
+	shellPID, tty = pider.PanePID(tmuxSession), m.tmux.PaneTTY(tmuxSession)
+	if shellPID <= 0 || tty == "" {
+		return 0, "", nil, false
+	}
+	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,tty=,comm=").Output()
+	if err != nil {
+		return 0, "", nil, false
+	}
+	return shellPID, tty, parseProcessTable(string(out)), true
+}
+
+func parseProcessTable(out string) []paneProc {
+	var procs []paneProc
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		pid, err1 := strconv.Atoi(f[0])
+		ppid, err2 := strconv.Atoi(f[1])
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		procs = append(procs, paneProc{pid: pid, ppid: ppid, tty: f[2], comm: strings.Join(f[3:], " ")})
+	}
+	return procs
+}
+
+// onlyShellLeft reports that the pane's own shell is there and that nothing
+// else is on its terminal or anywhere under it: no agent, no wrapper around
+// one, nothing it left behind.
+func onlyShellLeft(shellPID int, tty string, procs []paneProc) bool {
+	tty = strings.TrimPrefix(tty, "/dev/")
+	parent := make(map[int]int, len(procs))
+	for _, p := range procs {
+		parent[p.pid] = p.ppid
+	}
+	underShell := func(pid int) bool {
+		for hops := 0; hops < len(procs) && pid > 1; hops++ {
+			if pid = parent[pid]; pid == shellPID {
+				return true
+			}
+		}
+		return false
+	}
+	shellSeen := false
+	for _, p := range procs {
+		if p.pid == shellPID {
+			shellSeen = p.tty == tty && isPlainShell(filepath.Base(p.comm))
+			continue
+		}
+		if p.tty == tty || underShell(p.pid) {
+			return false
+		}
+	}
+	return shellSeen
+}
+
+// terminalProvenGone reports that tmux answered that the terminal is not
+// there. A tmux that cannot be asked proves nothing.
+func (m *Manager) terminalProvenGone(tmuxSession string) bool {
+	prober, ok := m.tmux.(paneGoneProber)
+	return ok && prober.SessionGone(tmuxSession)
+}
+
+// agentGone reports proof that no agent is left on sess's terminal.
+func (m *Manager) agentGone(sess *Session) bool {
+	if m.terminalProvenGone(sess.TmuxSession) {
+		return true
+	}
+	if !m.tmux.SessionExists(sess.TmuxSession) {
+		return false
+	}
+	list := m.paneProcsFn
+	if list == nil {
+		list = m.paneProcesses
+	}
+	shellPID, tty, procs, ok := list(sess.TmuxSession)
+	return ok && onlyShellLeft(shellPID, tty, procs)
+}
+
+// endMissingTerminal is called where a session's terminal looks gone. It
+// reports true when the caller must not complete the session: its launch
+// failed and it is ended here, or it would have and tmux cannot yet say that
+// the terminal is gone, so it is left for a later look.
+func (m *Manager) endMissingTerminal(fullID string) bool {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return false
+	}
+	snap := m.store.Snapshot(sess)
+	if snap.LaunchFailure != "" {
+		return snap.State.IsTerminal()
+	}
+	if !liveForLaunch(snap.State) {
+		return false
+	}
+	if _, never := m.exitWouldBeLaunchFailure(&snap); !never {
+		return false
+	}
+	if m.terminalProvenGone(snap.TmuxSession) {
+		m.failIfNeverStarted(fullID)
+	}
+	return true
+}
+
+// exitLineNeedsScreen reports a session whose exit line in the output log must
+// not complete it: the watchers decide, from the live screen.
+func (m *Manager) exitLineNeedsScreen(fullID string) bool {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return false
+	}
+	snap := m.store.Snapshot(sess)
+	if snap.LaunchFailure != "" {
+		return snap.State.IsTerminal()
+	}
+	return snap.BackendFamily == "claude-code" && !taskReachedAgent(&snap) && liveForLaunch(snap.State) &&
+		(snap.StartupDecline != nil || snap.DaemonDeliversTask)
+}
+
+// guardEarlyExit looks at the live screen of a claude-code session before
+// anything may complete it. It reports true when nothing on it may: its launch
+// failed (and it is ended here once the agent is proven gone), or it is an
+// interactive session still waiting for a typed task whose agent has left.
+// A screen without the exit line is remembered for what it shows of the agent.
+func (m *Manager) guardEarlyExit(fullID string) bool {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return false
+	}
+	snap := m.store.Snapshot(sess)
+	if snap.LaunchFailure != "" {
+		return snap.State.IsTerminal()
+	}
+	if snap.BackendFamily != "claude-code" || snap.TmuxSession == "" || taskReachedAgent(&snap) || !liveForLaunch(snap.State) {
+		return false
+	}
+	if snap.StartupDecline == nil && !snap.DaemonDeliversTask {
+		return false // nothing hangs on what this screen shows
+	}
+	screen, read := m.launchScreen(snap.TmuxSession)
+	if !read {
+		_, never := m.exitWouldBeLaunchFailure(&snap)
+		return never
+	}
+	lines := strings.Split(screen, "\n")
+	exit := agentExitIndex(lines)
+	before := lines
+	if exit >= 0 {
+		before = lines[:exit]
+	}
+	if showsAgentAtWork(before) {
+		m.noteAgentWorked(sess)
+		m.forgetDecline(sess)
+	}
+	if exit < 0 {
+		if snap.StartupDecline != nil && showsFramedInputBox(screen) {
+			m.forgetDecline(sess)
+		}
+		return false
+	}
+	snap = m.store.Snapshot(sess)
+	if _, never := m.exitWouldBeLaunchFailure(&snap); never {
+		if m.agentGone(&snap) {
+			m.failIfNeverStarted(fullID)
+		}
+		return true
+	}
+	// Not judged a failed launch. Completing an interactive session here
+	// would only have the reconciler set it running again, over and over.
+	return snap.DaemonDeliversTask && !snap.OneShot
+}
+
+// exitHeld reports, without changing anything, that a session whose launch
+// would count as failed shows the exit line: its completion line is not
+// finished work.
+func (m *Manager) exitHeld(fullID, tmuxSession string) bool {
+	if !m.EndedBeforeTask(fullID) {
+		return false
+	}
+	screen, read := m.launchScreen(tmuxSession)
+	return !read || agentExitIndex(strings.Split(screen, "\n")) >= 0
+}
+
 // failMissedEarlyExits ends the failed launches whose exit no watcher saw, as
 // the reaper does for a missed completion line.
 func (m *Manager) failMissedEarlyExits() {
@@ -423,12 +647,8 @@ func (m *Manager) failMissedEarlyExits() {
 		if snap.Hostname != m.hostname || !liveForLaunch(snap.State) {
 			continue
 		}
-		if _, never := m.exitWouldBeLaunchFailure(&snap); !never {
-			continue
-		}
-		out, err := m.tmux.CapturePaneScrollback(snap.TmuxSession, 500)
-		if err == nil {
-			m.guardEarlyExit(snap.FullID, strings.Split(StripANSI(out), "\n"))
+		if _, never := m.exitWouldBeLaunchFailure(&snap); never {
+			m.guardEarlyExit(snap.FullID)
 		}
 	}
 }

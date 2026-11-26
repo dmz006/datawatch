@@ -182,8 +182,7 @@ func (m *Manager) recoverUnverifiedDeliveries(ctx context.Context) {
 			continue
 		}
 		fullID := sess.FullID
-		if pane, err := m.tmux.CapturePaneVisible(sess.TmuxSession); err == nil &&
-			m.guardEarlyExit(fullID, strings.Split(StripANSI(pane), "\n")) {
+		if m.guardEarlyExit(fullID) {
 			continue // the agent is gone: nothing to deliver to
 		}
 		kind, _, why := m.readTaskClaim(fullID)
