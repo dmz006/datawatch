@@ -76,8 +76,12 @@ and says why in the daemon log (`[hookinstall] ... not installed`), when:
   settings (`~/.claude`, or the daemon's `CLAUDE_CONFIG_DIR`);
 - the `.claude` folder or `settings.json` is a link;
 - an existing `settings.json` cannot be read and parsed in full: no permission, not
-  plain JSON (a `//` comment or a trailing comma counts), text after the object, a key
-  written twice, or `hooks` or one of its events in an unexpected shape;
+  plain JSON (a `//` comment or a trailing comma counts), bytes that are not UTF-8,
+  text after the object, a key written twice, or `hooks` or one of its events in an
+  unexpected shape;
+- an existing `settings.json` that would have to change may not be written (the file
+  is left alone and no hook file is installed; the `info/exclude` lines and an empty
+  `.claude/sprint` folder may already have been made);
 - the project tracks `.claude/settings.json` or one of the hook files in git;
 - the project has its own `.claude/settings.json` that git does not ignore; or
 - the folder has a `.git` that git cannot be asked about.
