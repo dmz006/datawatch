@@ -17,10 +17,10 @@
 // The engine resyncs whenever the store changes (create, delete, expiry
 // prune, one-shot consumption) and cancels every registration on Close.
 // One-shot subscriptions are removed from the store ONLY after a
-// successful delivery — on failure the engine retries once, then logs,
-// leaving the subscription armed for a later event. There is no retry when the
-// text may already be in the session: it is not typed twice, and the operator
-// gets an alert.
+// successful delivery. A one-shot to a session is typed, not bridged, and is
+// kept and retried until it is typed (lifecycle_oneshot.go). Other session
+// deliveries are tried twice. Text that may already be in the session is
+// never sent again, and the operator gets an alert.
 //
 // Wiring: session lookup, the bridge POST and SendInput are injected as
 // function values (SessionPushConfig), so this file calls no session manager
@@ -198,11 +198,16 @@ type LifecycleSubscriptionEngine struct {
 	store *SubscriptionStore
 	cfg   SessionPushConfig
 	nowFn func() time.Time
+	// afterFn arms the retry timer of a one-time message; it returns the
+	// timer's stop function.
+	afterFn func(d time.Duration, f func()) (stop func() bool)
 
 	mu     sync.Mutex
 	active map[string]*activeSubscription
 	// scopes holds the delivery scope of each live webhook subscription.
 	scopes map[string]*deliveryScope
+	// one holds the one-time session messages in flight or waiting.
+	one oneShotState
 	// keepQueues names pending queues whose one-shot subscription was
 	// just consumed: the next resync leaves them in place so the client
 	// can still read the event the one-shot delivered.
@@ -228,10 +233,13 @@ func NewLifecycleSubscriptionEngine(m *Manager, store *SubscriptionStore, cfg Se
 		cfg.PostBridge = DefaultBridgePost
 	}
 	return &LifecycleSubscriptionEngine{
-		m:      m,
-		store:  store,
-		cfg:    cfg,
-		nowFn:  time.Now,
+		m:     m,
+		store: store,
+		cfg:   cfg,
+		nowFn: time.Now,
+		afterFn: func(d time.Duration, f func()) func() bool {
+			return time.AfterFunc(d, f).Stop
+		},
 		active: make(map[string]*activeSubscription),
 		scopes: make(map[string]*deliveryScope),
 		stop:   make(chan struct{}),
@@ -254,6 +262,7 @@ func (e *LifecycleSubscriptionEngine) Start() error {
 	e.store.OnChanged(e.resync)
 	if shouldStart {
 		e.resync()
+		e.resumeOneShots()
 		go e.janitor()
 	}
 	return nil
@@ -276,6 +285,7 @@ func (e *LifecycleSubscriptionEngine) Close() {
 	close(e.stop)
 	e.mu.Unlock()
 
+	e.closeOneShots()
 	e.store.OnChanged(nil)
 	for _, sc := range prevScopes {
 		sc.cancel()
@@ -308,10 +318,11 @@ func (e *LifecycleSubscriptionEngine) janitor() {
 	}
 }
 
-// resync rebuilds the live registrations from the current store: new
-// subscriptions get their filter registered, vanished ones (deleted,
-// expired, or consumed one-shots) lose theirs, and the diff is emitted
-// to the audit log via the existing SetAuditFn path.
+// resync brings the live registrations in line with the current store: new
+// and changed subscriptions get their filter registered, vanished ones
+// (deleted, expired, or consumed one-shots) and the old form of changed ones
+// lose theirs, unchanged ones keep theirs, and the diff is emitted to the
+// audit log via the existing SetAuditFn path.
 func (e *LifecycleSubscriptionEngine) resync() {
 	now := e.nowFn()
 	subs := e.store.List("")
@@ -338,9 +349,11 @@ func (e *LifecycleSubscriptionEngine) resync() {
 		if sub.ExpiresAt != nil && !sub.ExpiresAt.After(now) {
 			continue // expired: not registered; the janitor deletes it
 		}
+		unchanged := false
 		if prevIDs[sub.ID] {
 			prevIDs[sub.ID] = false
-			if !reflect.DeepEqual(prevActive[sub.ID].sub, sub) {
+			unchanged = reflect.DeepEqual(withoutDelivery(prevActive[sub.ID].sub), withoutDelivery(sub))
+			if !unchanged {
 				updated = append(updated, sub.ID)
 			}
 		} else {
@@ -349,6 +362,12 @@ func (e *LifecycleSubscriptionEngine) resync() {
 		if isDeliverySink(sub.Sink.Type) {
 			e.scopeLocked(sub)
 			liveScoped[sub.ID] = true
+		}
+		// An unchanged subscription keeps its registration: cancelling it
+		// would drop the events it has queued and not handled yet.
+		if unchanged {
+			next[sub.ID] = prevActive[sub.ID]
+			continue
 		}
 		subCancel := e.m.Subscribe(sub.Filter, func(ev LifecycleEvent) { e.handle(sub, ev) })
 		var comm *CommFanoutSink
@@ -373,6 +392,12 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	e.active = next
 	e.mu.Unlock()
 
+	for _, id := range removed {
+		if _, stored := subByID[id]; !stored {
+			e.forgetOneShot(id)
+		}
+	}
+
 	// Release pending queues no remaining subscription feeds.
 	if e.cfg.PendingQueue != nil {
 		live := make(map[string]bool)
@@ -395,7 +420,10 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	// Tear the previous set down OUTSIDE e.mu: cancel may be called from
 	// any goroutine (dispatcher contract), and comm Close flushes
 	// pending lines through the injected comm send.
-	for _, a := range prevActive {
+	for id, a := range prevActive {
+		if next[id] == a {
+			continue // kept
+		}
 		if a.comm != nil {
 			a.comm.Close()
 		}
@@ -420,6 +448,13 @@ func (e *LifecycleSubscriptionEngine) resync() {
 			e.audit(auditLifecycleSubRemove, map[string]any{"subscription_id": id})
 		}
 	}
+}
+
+// withoutDelivery is the subscription as its owner defined it: a change of
+// the one-time message state is not an update.
+func withoutDelivery(sub Subscription) Subscription {
+	sub.Delivery = nil
+	return sub
 }
 
 // subscriptionAuditDetails renders the fields an operator needs to
@@ -489,6 +524,10 @@ func (e *LifecycleSubscriptionEngine) handle(sub Subscription, ev LifecycleEvent
 			if ev.SessionID != "" {
 				target = ev.SessionID
 			}
+		}
+		if sub.OneShot {
+			e.fireOneShot(sub, target, text, ev.ID)
+			return
 		}
 		e.deliverSession(sub, target, text)
 
@@ -627,34 +666,24 @@ func (e *LifecycleSubscriptionEngine) commSink(subID string) (*activeSubscriptio
 	return a, ok
 }
 
-// deliverSession delivers one session-sink message to target (a session
-// name, full ID, or short ID): channel bridge first when the session
-// has a port, SendInput as the fallback. One-shot subscriptions are
-// consumed (deleted from the store) only after a successful delivery;
-// on failure the engine retries once, then logs and leaves it armed. A failure
-// after keys were sent is not retried.
+// deliverSession delivers one standing session-sink message to target (a
+// session name, full ID, or short ID): channel bridge first when the session
+// has a port, SendInput as the fallback. On failure the engine retries once,
+// then logs. A failure after keys were sent is not retried. One-time messages
+// go through fireOneShot instead.
 func (e *LifecycleSubscriptionEngine) deliverSession(sub Subscription, target, text string) {
-	var err error
 	const attempts = 2
 	for attempt := 1; attempt <= attempts; attempt++ {
-		err = e.deliverSessionOnce(target, text)
+		err := e.deliverSessionOnce(target, text)
 		if err == nil {
-			break
+			return
 		}
 		log.Printf("[autonomous] lifecycle sub %s: delivery attempt %d/%d to session %q failed: %v",
 			sub.ID, attempt, attempts, target, err)
 		if session.TextMayBeInSession(err) {
 			e.alertUnsureDelivery(sub.ID, target)
-			break
+			return
 		}
-	}
-	if err == nil && sub.OneShot {
-		if derr := e.store.Delete(sub.ID); derr != nil {
-			// Concurrent consumption (two matching events racing) is
-			// benign: the subscription was already removed.
-			log.Printf("[autonomous] lifecycle sub %s: one-shot removal: %v", sub.ID, derr)
-		}
-		return
 	}
 }
 
@@ -664,7 +693,7 @@ func (e *LifecycleSubscriptionEngine) alertUnsureDelivery(subID, target string) 
 	if e.m == nil {
 		return
 	}
-	e.m.deliveryAlert("error", "Subscription delivery: review needed", fmt.Sprintf(
+	e.m.deliveryAlert("error", oneShotReviewTitle, fmt.Sprintf(
 		"review needed: subscription=%s session=%s. The send failed after keys were sent, so datawatch does not send it again. Check the session.",
 		subID, target))
 }

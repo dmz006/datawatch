@@ -2706,6 +2706,8 @@
   "lifecycle_sub_flag_one_shot": "una vez",
   "lifecycle_sub_flag_coalesce": "agrupar",
   "lifecycle_sub_flag_expires": "caduca %1$s",
+  "lifecycle_sub_delivery_waiting": "El mensaje aún no se ha escrito. datawatch sigue intentándolo; elimina la suscripción para cancelarlo.",
+  "lifecycle_sub_delivery_review": "Revisa la sesión: puede que falte este mensaje de una sola vez. No se vuelve a enviar.",
   "lifecycle_sub_owner": "propietario: %1$s",
   "lifecycle_sub_form_title_add": "Añadir suscripción",
   "lifecycle_sub_form_title_edit": "Editar suscripción",

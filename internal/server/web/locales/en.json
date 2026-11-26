@@ -2706,6 +2706,8 @@
   "lifecycle_sub_flag_one_shot": "one-shot",
   "lifecycle_sub_flag_coalesce": "coalesce",
   "lifecycle_sub_flag_expires": "expires %1$s",
+  "lifecycle_sub_delivery_waiting": "Message not typed yet. datawatch keeps trying; delete the subscription to cancel.",
+  "lifecycle_sub_delivery_review": "Check the session: this one-time message may be missing. It is not sent again.",
   "lifecycle_sub_owner": "owner: %1$s",
   "lifecycle_sub_form_title_add": "Add subscription",
   "lifecycle_sub_form_title_edit": "Edit subscription",

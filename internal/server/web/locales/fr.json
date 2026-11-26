@@ -2706,6 +2706,8 @@
   "lifecycle_sub_flag_one_shot": "une fois",
   "lifecycle_sub_flag_coalesce": "regrouper",
   "lifecycle_sub_flag_expires": "expire le %1$s",
+  "lifecycle_sub_delivery_waiting": "Message pas encore saisi. datawatch réessaie ; supprimez l’abonnement pour annuler.",
+  "lifecycle_sub_delivery_review": "Vérifiez la session : ce message unique est peut-être absent. Il n’est pas renvoyé.",
   "lifecycle_sub_owner": "propriétaire : %1$s",
   "lifecycle_sub_form_title_add": "Ajouter un abonnement",
   "lifecycle_sub_form_title_edit": "Modifier l'abonnement",

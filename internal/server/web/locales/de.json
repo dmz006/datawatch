@@ -2706,6 +2706,8 @@
   "lifecycle_sub_flag_one_shot": "einmalig",
   "lifecycle_sub_flag_coalesce": "bündeln",
   "lifecycle_sub_flag_expires": "läuft ab %1$s",
+  "lifecycle_sub_delivery_waiting": "Nachricht noch nicht eingegeben. datawatch versucht es weiter; zum Abbrechen das Abonnement löschen.",
+  "lifecycle_sub_delivery_review": "Sitzung prüfen: Diese einmalige Nachricht fehlt vielleicht. Sie wird nicht erneut gesendet.",
   "lifecycle_sub_owner": "Eigentümer: %1$s",
   "lifecycle_sub_form_title_add": "Abonnement hinzufügen",
   "lifecycle_sub_form_title_edit": "Abonnement bearbeiten",

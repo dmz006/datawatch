@@ -213,3 +213,41 @@ func TestLiveWakeSendFailsThenArrivesOnce(t *testing.T) {
 		t.Fatalf("the supervisor received the wake %d times, want 1", n)
 	}
 }
+
+// A one-time message against a real prompt: nothing reaches the pane while the
+// prompt is up, and it is typed once after. The session has a channel bridge
+// port, which is never used.
+func TestLiveOneTimeMessageNeverAnswersAPromptAndArrivesOnce(t *testing.T) {
+	p := newLivePane(t, "ops-sess")
+	r := newOneShotRig(t)
+	r.e.cfg.FindSession = func(string) (string, int, bool) { return "ops-sess", 9013, true }
+	r.e.cfg.SendInput = p.mgr.SendInput // as the daemon wires it
+	sub := r.add(t)
+
+	r.fire()
+	r.waitState(t, sub.ID, "not_typed")
+	settle()
+	r.retries(3) // retries while the prompt is still up
+	if s := p.screen(); strings.Contains(s, oneShotText) || !strings.Contains(s, "Do you want to proceed?") {
+		t.Fatalf("the prompt was touched:\n%s", s)
+	}
+	if _, reason, _, _ := r.delivery(t, sub.ID); reason != "prompt_on_screen" {
+		t.Fatalf("reason = %q", reason)
+	}
+	if v := r.view(); len(v.alerts) != 1 {
+		t.Fatalf("alerts = %q, want one", v.alerts)
+	} else {
+		t.Logf("refused for real: %s", v.alerts[0])
+	}
+
+	p.clearPrompt()
+	r.retries(3)
+	r.waitGone(t, sub.ID)
+	r.retries(2)
+	if n := p.lines(oneShotText); n != 1 {
+		t.Fatalf("the session received the one-time message %d times, want 1", n)
+	}
+	if v := r.view(); len(v.bridged) != 0 {
+		t.Fatalf("sent over the bridge: %q", v.bridged)
+	}
+}

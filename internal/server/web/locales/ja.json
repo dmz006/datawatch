@@ -2706,6 +2706,8 @@
   "lifecycle_sub_flag_one_shot": "1回のみ",
   "lifecycle_sub_flag_coalesce": "まとめる",
   "lifecycle_sub_flag_expires": "期限 %1$s",
+  "lifecycle_sub_delivery_waiting": "メッセージはまだ入力されていません。datawatch は再試行を続けます。取り消すには購読を削除してください。",
+  "lifecycle_sub_delivery_review": "セッションを確認してください。この 1 回限りのメッセージは届いていない可能性があります。再送はされません。",
   "lifecycle_sub_owner": "所有者: %1$s",
   "lifecycle_sub_form_title_add": "サブスクリプションを追加",
   "lifecycle_sub_form_title_edit": "サブスクリプションを編集",
