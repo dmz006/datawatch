@@ -47,6 +47,7 @@ const (
 	deliveryNoSession      = "no_session"
 	deliverySessionChanged = "session_changed"
 	deliveryTaskMovedOn    = "task_moved_on"
+	deliveryReplaced       = "replaced"
 )
 
 // open marks a new resume record as not yet typed, for the worker session the
@@ -107,6 +108,31 @@ func (m *Manager) setDelivery(taskID, questionID string, change func(*DecisionRe
 		return true
 	})
 	return next, ok, err
+}
+
+// parkedOnAnotherQuestion reports whether the task is parked on a question
+// other than the one its delivery record is for.
+func parkedOnAnotherQuestion(tk Task, recorded string) bool {
+	if tk.Status != TaskWaitingCapacity {
+		return false
+	}
+	qid := AwaitDecisionQuestionID(tk.WaitReason)
+	return qid != "" && qid != recorded
+}
+
+// closeReplacedDelivery ends the task's open delivery as review needed before
+// a resume for another question takes its place, so a line that will never be
+// typed is not dropped silently. It reports whether the resume may go on;
+// false means that state could not be saved. The caller holds the task's
+// in-flight slot.
+func (m *Manager) closeReplacedDelivery(prd *PRD, tk Task, next string) bool {
+	old := tk.DecisionResume
+	if old == nil || old.QuestionID == next || !old.deliveryOpen() {
+		return true
+	}
+	m.deliveryNeedsReview(prd, tk.ID, old.QuestionID, deliveryReplaced)
+	cur, ok := m.store.TaskSnapshot(tk.ID)
+	return ok && (cur.DecisionResume == nil || cur.DecisionResume.QuestionID != old.QuestionID || !cur.DecisionResume.deliveryOpen())
 }
 
 // continueDelivery picks up an unfinished delivery on a tick. It starts at

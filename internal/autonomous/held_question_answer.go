@@ -651,6 +651,10 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 		return fmt.Errorf("task %s is no longer parked under a decision", t.ID)
 	}
 	defer m.questionTick.end(t.ID)
+	if cur, ok := m.store.TaskSnapshot(t.ID); !ok ||
+		(cur.Status == TaskWaitingCapacity && IsAwaitDecisionWaitReason(cur.WaitReason) && !m.closeReplacedDelivery(p, cur, q.ID)) {
+		return fmt.Errorf("task %s: the unsent decision before this one could not be saved for review", t.ID)
+	}
 	rec := &DecisionResume{QuestionID: q.ID, AnswerID: ans.ID, CurrentAnswerID: ans.ID, ResumedAt: time.Now().UTC()}
 	var claimed bool
 	var prev *DecisionResume
@@ -658,7 +662,9 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 		if c.Status != TaskWaitingCapacity || !IsAwaitDecisionWaitReason(c.WaitReason) {
 			return
 		}
-		if c.DecisionResume != nil && c.DecisionResume.QuestionID == q.ID {
+		// A record still waiting was never typed (the daemon stopped while
+		// the task was queued), so it may be claimed again.
+		if cur := c.DecisionResume; cur != nil && cur.QuestionID == q.ID && cur.Delivery != DecisionWaiting {
 			return
 		}
 		prev = c.DecisionResume

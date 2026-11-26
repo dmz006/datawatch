@@ -3003,6 +3003,9 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					}
 					log.Printf("[autonomous] boot-resume: await-external task %s for prd=%s has no live session; re-queueing a fresh attempt", t.ID, prd.ID)
 				}
+				if m.keepDecisionPark(prd, t, aliveFn, agentStartedFn) {
+					continue
+				}
 			case TaskInProgress:
 				switch decideInProgressResume(aliveFn, agentStartedFn, outputFn, t.SessionID) {
 				case resumeAdopt:

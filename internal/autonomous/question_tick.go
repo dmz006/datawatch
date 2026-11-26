@@ -255,8 +255,9 @@ func (m *Manager) questionTickTask(ctx context.Context, store *QuestionStore, tk
 		}
 	}
 
-	// A resume whose prompt line has not been seen to arrive.
-	if dr := tk.DecisionResume; dr != nil && dr.deliveryOpen() {
+	// A resume whose prompt line has not been seen to arrive. A task that has
+	// since parked on another question is resumed for that one instead.
+	if dr := tk.DecisionResume; dr != nil && dr.deliveryOpen() && !parkedOnAnotherQuestion(tk, dr.QuestionID) {
 		m.continueDelivery(ctx, store, tk, answered, withdrawn)
 		return
 	}
@@ -339,6 +340,11 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 	}
 	t, ok := m.store.GetTask(snap.ID)
 	if !ok {
+		return
+	}
+
+	if cur, ok := m.store.TaskSnapshot(snap.ID); !ok ||
+		(cur.Status == TaskWaitingCapacity && AwaitDecisionQuestionID(cur.WaitReason) == q.ID && !m.closeReplacedDelivery(prd, cur, q.ID)) {
 		return
 	}
 

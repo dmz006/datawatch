@@ -1550,13 +1550,19 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// running while the first attempt was recorded failed): adopt it instead
 		// of spawning a second one. The attempt number and counters are kept.
 		adoptedLive := false
-		if !readOnly && t.Status != TaskVerifying {
+		// A worker kept parked on a question across a restart is waited for as
+		// it is: parked, with no capacity lease, until its decision is typed.
+		keptRunning, keptParked := m.adoptedState(t)
+		if !readOnly && t.Status != TaskVerifying && !keptParked {
 			adoptedLive = m.adoptLiveWorkerBeforeSpawn(prd, t, attempt, m.resolveTaskProjectDir(prd, t)) != ""
 			if adoptedLive {
 				_ = m.store.SaveTask(t)
 			}
 		}
-		if (attempt == 0 || adoptedLive) && t.SessionID != "" && (t.Status == TaskVerifying || (t.Status == TaskInProgress && t.AdoptedSession)) {
+		if adoptedLive {
+			keptRunning, keptParked = m.adoptedState(t)
+		}
+		if (attempt == 0 || adoptedLive) && t.SessionID != "" && (t.Status == TaskVerifying || keptRunning || keptParked) {
 			m.mu.Lock()
 			aliveFn, outputFn, waitFn := m.sessionAliveFn, m.sessionOutputFn, m.sessionWaitFn
 			m.mu.Unlock()
@@ -1572,10 +1578,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// kill-before-respawn block). Wait for the session's completion
 				// marker, then verify it like a freshly finished worker.
 				log.Printf("[autonomous] executeOne: task %s waiting on adopted session %s (daemon restart)", t.ID, t.SessionID)
-				m.adoptCapacity(prd, t)
+				if !keptParked {
+					m.adoptCapacity(prd, t)
+				}
 				skipSpawn = true
 				run.SessionID, run.Adopted = t.SessionID, true
-				adopted := AdoptedWait{PRDID: prd.ID, TaskID: t.ID, SessionID: t.SessionID, NudgedAt: t.NudgeTimeForSession(t.SessionID)}
+				adopted := AdoptedWait{PRDID: prd.ID, TaskID: t.ID, SessionID: t.SessionID, NudgedAt: t.NudgeTimeForSession(t.SessionID),
+					decision: &adoptedDecision{m: m, prd: prd, task: t}}
 				startConfirm := m.adoptedStartWatchFor(t)
 				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, adopted, startConfirm); werr != nil {
 					if ctx.Err() != nil {
