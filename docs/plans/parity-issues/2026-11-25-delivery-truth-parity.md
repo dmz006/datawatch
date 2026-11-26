@@ -30,7 +30,8 @@ Draft for the datawatch-app mobile client. File only; no issue has been filed.
   reply as an error.
 
 Delivery alerts raised while the daemon starts are saved and appear in the
-alert list once alerting is up, also after another restart. A push may not be
+alert list once alerting is up, also after another restart. They reach the
+alert list only: no web or phone push and no chat, ntfy or email message is
 sent for them.
 
 ## Surfaces

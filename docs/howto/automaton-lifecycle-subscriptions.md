@@ -521,11 +521,13 @@ removed once the alert is stored.
 - One raised during start appears in the alert list when alerting is up. If the
   daemon stops before that, it appears after the next start and ends with
   *(Raised before a daemon restart.)*
-- It appears in the alert list. A web or phone push may not be sent for an
-  alert stored during start.
+- **It reaches the alert list only.** An alert stored while the daemon is
+  still starting is not sent as a web or phone push, or as a chat, ntfy or email
+  message, even where those are set up. Check the alert list after a restart.
 - After a crash you may see the same alert twice, or one for a change that was
-  not saved. A saved alert is not lost. At most 500 wait; the oldest are
-  dropped and logged.
+  not saved. A saved alert waits until the alert list takes it. If the alert
+  list cannot write its own file, a restart can still lose the alert. At most
+  500 wait; the oldest are dropped and logged.
 - If the file cannot be written, the daemon log says so and the alert is held
   in memory only.
 
