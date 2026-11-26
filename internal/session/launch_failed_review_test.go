@@ -176,7 +176,13 @@ func TestOldDialogTextInScrollbackDecidesNothing(t *testing.T) {
 	if err := mgr.DeclineStartupDialog(sess.FullID); err != nil {
 		t.Fatal(err)
 	}
-	watchScreen(mgr, sess.FullID, 300*time.Millisecond)
+	// The pane monitor's own capture holds the whole scrollback.
+	s, _ := mgr.GetSession(sess.FullID)
+	ctx, cancel := context.WithCancel(context.Background())
+	mgr.goBG(func() { mgr.monitorOutput(ctx, s, NewProjectGit(s.ProjectDir)) })
+	time.Sleep(4500 * time.Millisecond)
+	cancel()
+	mgr.WaitBackground()
 	setLaunchPane(fake, sess.TmuxSession, plainExitPane, "bash")
 	watchScreen(mgr, sess.FullID, 400*time.Millisecond)
 	for _, st := range seen.list() {
@@ -220,6 +226,9 @@ func TestAnExitLineWithAProcessLeftClosesNothing(t *testing.T) {
 			mgr, fake, sess, seen := launchFixture(t, nil)
 			mgr.paneProcsFn = fakeProcs(fake, left...)
 			mgr.paneChildFn = func(string) bool { return true }
+			// A fast clock: waiting longer is never proof.
+			start := time.Now()
+			mgr.clock = func() time.Time { return start.Add(20 * time.Since(start)) }
 			setLaunchPane(fake, sess.TmuxSession, "DATAWATCH_COMPLETE: claude done\n", "bash")
 			runWatchers(t, mgr, sess.FullID)
 			assertLeftAlone(t, mgr, fake, sess.FullID, seen)
