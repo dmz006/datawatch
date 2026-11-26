@@ -5,6 +5,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.28 — Start-up dialogs are answered only when shown, and not too soon
+
+### Fixed
+- datawatch sends a key to a Claude start-up dialog only when the live screen ends with that dialog, not because its words appear somewhere on the screen. Before, ordinary output or a pasted task could make it press Down, Enter or Esc in a working session.
+- datawatch answers a start-up dialog only after it has stayed unchanged for 2 seconds, and looks at the cursor again before Enter. With Claude Code 2.1.332 in a test without a network, answering too soon made Claude exit at the trust prompt of a never-trusted repository; with the wait, no launch exited there in 22 tries.
+
+### Before you upgrade
+- Answering a start-up dialog takes about 2 to 3 seconds longer.
+- A dialog drawn differently from the ones datawatch recognises is left for a person. An unattended session then waits, and is ended when its task cannot be delivered.
+
+### Not covered
+- A screen that ends in text shaped like a dialog, with nothing below it, can still get a key.
+- A narrow screen, below about 40 columns, can leave a real dialog unanswered.
+- The real dialog for a single new MCP server is no longer answered. It did not appear with datawatch's own settings.
+- The unnumbered bypass-permissions dialog is left unanswered.
+- A redraw in the milliseconds between the last look and the key could still make Claude exit.
+- If an answered dialog stays on screen for about 9 seconds, a second Enter can be sent. One blank or failed screen reading can lead to a second Esc.
+- A real online login was not tested.
+
 ## v9.187.27 — Task text is no longer typed into a shell after Claude Code leaves
 
 ### Fixed

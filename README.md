@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.27 (2026-11-26).** Before typing a task or scheduled command into a Claude session, datawatch now looks for two signs that Claude Code has left and does not type if either shows, and in one narrow case a session that quits at a start-up dialog datawatch declined ends as failed instead of finished (both have limits; see the changelog). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.28 (2026-11-26).** datawatch now answers a Claude start-up dialog only when the screen ends with it and it has stayed unchanged for two seconds; the changelog lists what can still go wrong. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
