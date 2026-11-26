@@ -249,6 +249,7 @@ type supervisorWakeBody struct {
 	LastScheduledCheck      string   `json:"last_scheduled_check"`
 	EventCount              int      `json:"event_count"`
 	ScheduledCount          int      `json:"scheduled_count"`
+	PassCount               int      `json:"pass_count"`
 	EventsSilentFor         string   `json:"events_silent_for"`
 	Session                 string   `json:"session"`
 	Target                  string   `json:"target"`
@@ -265,7 +266,8 @@ func newSupervisorLoopWakeCmd() *cobra.Command {
 		Long: "With no flags, show the wake settings in effect (on or off, the event " +
 			"kinds, the quiet window, the fallback interval), the designated " +
 			"supervisor session, the session a wake would type into now and why, " +
-			"and when the supervisor last woke for an event and last ran a scheduled check. A read.\n\n" +
+			"when an event wake line was last typed and a scheduled check last ran, with " +
+			"their counts, and how many supervisor passes event wakes ran. A read.\n\n" +
 			"With one or more of --enabled, --kinds, --coalesce-seconds, " +
 			"--fallback-interval-minutes and --session, set those supervisor_loop.wake.* values " +
 			"through the config endpoint in one request, then show the result. " +
@@ -331,6 +333,7 @@ func newSupervisorLoopWakeCmd() *cobra.Command {
 			}
 			_, _ = fmt.Fprintf(out, "last event: %s (%d events)\nlast scheduled check: %s (%d checks)\n",
 				wakeTime(w.LastEvent), w.EventCount, wakeTime(w.LastScheduledCheck), w.ScheduledCount)
+			_, _ = fmt.Fprintf(out, "event wake passes run: %d\n", w.PassCount)
 			if w.EventsSilentFor != "" {
 				_, _ = fmt.Fprintf(out, "events silent for: %s\n", w.EventsSilentFor)
 			}

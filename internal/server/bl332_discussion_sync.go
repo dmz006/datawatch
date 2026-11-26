@@ -8,7 +8,11 @@
 //	POST   /api/memory/discussion/{id}/conflicts/resolve → mark conflict resolved
 //
 // Push-on-write sync: after a successful POST to /api/memory/discussion/{id},
-// the entry is forwarded to each participant peer asynchronously.
+// the entry is forwarded to each participant peer asynchronously. A peer that
+// does not take an entry is logged and raised as one alert until a send to it
+// works again; entries are not sent again. A secure install first asks the
+// peer (GET .../receive) whether it seals what it receives, and sends nothing
+// unless the peer says it does.
 //
 // Throttle: 60 writes/minute per Bearer token (token-bucket, in-memory).
 //
@@ -21,6 +25,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,6 +34,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/secfile"
 )
 
@@ -272,10 +279,16 @@ type syncWritePayload struct {
 }
 
 // discussionSyncToParticipants fans out an entry to all participant peers
-// asynchronously. Errors are logged (not returned to the caller).
+// asynchronously. A failure does not fail the local write; it is reported by
+// reportDiscussionSync.
 func (s *Server) discussionSyncToParticipants(id string, entry discussionWALEntry) {
 	peers, err := s.discussionReadParticipants(id, s.encKey)
-	if err != nil || len(peers) == 0 {
+	if err != nil {
+		log.Printf("[discussion] %s: participant list not read: %v", id, err)
+		s.reportDiscussionSync(id, "(participant list)", entry.Seq, "the participant list could not be read, so no peer was sent the entry")
+		return
+	}
+	if len(peers) == 0 {
 		return
 	}
 
@@ -297,31 +310,92 @@ func (s *Server) discussionSyncToParticipants(id string, entry discussionWALEntr
 
 	for _, peerName := range peers {
 		peerName := peerName
+		if s.hostname != "" && peerName == s.hostname {
+			continue // this daemon already has the entry
+		}
 		go func() {
-			if s.serverStore == nil {
-				return
-			}
-			peerURL, tok, ok := s.serverStore.GetByName(peerName)
-			if !ok || peerURL == "" {
-				return
-			}
-			endpoint := strings.TrimRight(peerURL, "/") + "/api/memory/discussion/" + id + "/receive"
-			req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
-			if err != nil {
-				return
-			}
-			req.Header.Set("Content-Type", "application/json")
-			if tok != "" {
-				req.Header.Set("Authorization", "Bearer "+tok)
-			}
-			client := &http.Client{Timeout: 10 * time.Second}
-			resp, err := client.Do(req)
-			if err != nil {
-				return
-			}
-			_ = resp.Body.Close()
+			s.reportDiscussionSync(id, peerName, entry.Seq, s.discussionSendToPeer(id, peerName, body))
 		}()
 	}
+}
+
+// discussionSendToPeer posts one entry to one peer. It returns "" when the peer
+// took it, and otherwise why not, naming no content, address or token.
+func (s *Server) discussionSendToPeer(id, peerName string, body []byte) string {
+	if s.serverStore == nil {
+		return "no peer registry is available"
+	}
+	peerURL, tok, ok := s.serverStore.GetByName(peerName)
+	if !ok || peerURL == "" {
+		return "the peer is not registered"
+	}
+	endpoint := strings.TrimRight(peerURL, "/") + "/api/memory/discussion/" + id + "/receive"
+	client := &http.Client{Timeout: 10 * time.Second}
+	call := func(method string, content []byte) (*http.Response, error) {
+		req, err := http.NewRequest(method, endpoint, bytes.NewReader(content))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		return client.Do(req)
+	}
+	if s.encKey != nil {
+		// No redirect is followed: the content must reach the daemon that
+		// answered the question, and no other.
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		resp, err := call(http.MethodGet, nil)
+		if err != nil {
+			log.Printf("[discussion] %s: peer %s: sealing question failed: %v", id, peerName, err)
+			return "the peer could not be reached"
+		}
+		var answer struct {
+			Sealed *bool `json:"sealed"`
+		}
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&answer)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || decodeErr != nil || answer.Sealed == nil || !*answer.Sealed {
+			return fmt.Sprintf("this install is secure and the peer did not say that it seals what it receives (HTTP %d), so nothing was sent", resp.StatusCode)
+		}
+	}
+	resp, err := call(http.MethodPost, body)
+	if err != nil {
+		log.Printf("[discussion] %s: peer %s: send failed: %v", id, peerName, err)
+		return "the peer could not be reached"
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Sprintf("the peer answered HTTP %d", resp.StatusCode)
+	}
+	return ""
+}
+
+// discussionSyncFailing holds the (server, discussion, peer) sends that are
+// failing, so one outage raises one alert.
+var discussionSyncFailing sync.Map
+
+type discussionSyncKey struct {
+	server *Server
+	id     string
+	peer   string
+}
+
+// reportDiscussionSync records the outcome of one send: why is "" for success.
+func (s *Server) reportDiscussionSync(id, peer string, seq int, why string) {
+	key := discussionSyncKey{s, id, peer}
+	if why == "" {
+		discussionSyncFailing.Delete(key)
+		return
+	}
+	log.Printf("[discussion] %s: entry %d not delivered to peer %s: %s", id, seq, peer, why)
+	if _, already := discussionSyncFailing.LoadOrStore(key, true); already || s.alertStore == nil {
+		return
+	}
+	s.alertStore.AddSystem(alerts.LevelWarn, "Discussion entry not delivered to a peer", fmt.Sprintf(
+		"discussion=%s peer=%s entry=%d: %s. datawatch does not send it again. Further failures for this discussion and peer are only logged until a send works.",
+		id, peer, seq, why))
 }
 
 // ---------------------------------------------------------------------------
@@ -495,7 +569,10 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 			continue
 		}
 		markerContent := fmt.Sprintf("conflict-resolved: seq=%d losing, winner=%d", e.Seq, body.Seq)
-		_, _ = s.discussionAppendWALEntry(id, markerContent, "conflict-resolved", "", s.encKey)
+		if _, err := s.discussionAppendWALEntry(id, markerContent, "conflict-resolved", "", s.encKey); err != nil {
+			http.Error(w, fmt.Sprintf("resolve: a marker was not saved (%d saved before it): %v", resolved, err), http.StatusInternalServerError)
+			return
+		}
 		resolved++
 	}
 
@@ -515,9 +592,15 @@ func (s *Server) handleDiscussionConflictResolve(w http.ResponseWriter, r *http.
 // The body is a syncWritePayload where Message is a JSON-encoded discussionWALEntry.
 // This handler appends the entry to the local WAL and does NOT fan-out further
 // (loop prevention: the original sender already broadcast to all participants).
+// It answers ok only once the entry is saved. GET says whether this daemon
+// seals what it saves here, which a secure sender asks before it sends.
 func (s *Server) handleDiscussionReceive(w http.ResponseWriter, r *http.Request, id string) {
 	if err := validateDiscussionID(id); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if r.Method == http.MethodGet {
+		writeJSONOK(w, map[string]any{"discussion_id": id, "sealed": s.encKey != nil})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -539,6 +622,10 @@ func (s *Server) handleDiscussionReceive(w http.ResponseWriter, r *http.Request,
 	mu.Lock()
 	defer mu.Unlock()
 
-	_, _ = s.discussionAppendWALEntry(id, entry.Content, entry.Role, entry.OriginPeer, s.encKey)
+	if _, err := s.discussionAppendWALEntry(id, entry.Content, entry.Role, entry.OriginPeer, s.encKey); err != nil {
+		log.Printf("[discussion] %s: received entry not saved: %v", id, err)
+		http.Error(w, "save: the entry was not saved", http.StatusInternalServerError)
+		return
+	}
 	writeJSONOK(w, map[string]any{"discussion_id": id, "ok": true})
 }

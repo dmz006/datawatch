@@ -1656,7 +1656,7 @@ Per-discussion memory namespaces that are durable, federated, and conflict-aware
 
 **Card:** Settings → General → Discussion Scopes. Lists all known discussion IDs; provides a New Discussion form and per-discussion Recall + Participants controls.
 
-**Sync behavior:** When participant peers are set on a discussion, every successful write triggers an async fan-out push to each participant via `POST /api/memory/discussion/{id}/receive` (not `/api/push`, which is the ntfy topic route and does not apply the discussion ID rules). Each WAL entry carries `origin_peer` and `origin_wal_seq` fields; a peer that receives a sync push skips re-fanning any entry it originally produced (loop prevention).
+**Sync behavior:** When participant peers are set on a discussion, every successful write triggers an async fan-out push to each participant via `POST /api/memory/discussion/{id}/receive` (not `/api/push`, which is the ntfy topic route and does not apply the discussion ID rules). Each WAL entry carries `origin_peer` and `origin_wal_seq` fields; a peer that receives a sync push skips re-fanning any entry it originally produced (loop prevention). A write, a receive or a conflict resolve whose log entry cannot be saved answers with an error. A peer that does not take an entry raises one warning alert until a send to it works; the entry is not sent again. A daemon in secure mode first asks `GET /api/memory/discussion/{id}/receive` and sends content only when the peer answers `{"sealed": true}`.
 
 **Throttle:** 60 write operations per minute per peer, enforced via a per-peer token bucket. Exceeding the limit returns HTTP 429. Local daemon writes are not throttled.
 
@@ -2349,11 +2349,15 @@ lifecycle event (PRD/task status changes, `task.session_started` /
 `task.session_cleared`, `prd.updated`, the question kinds, the opt-in
 warning kinds `scope_warning` and `guardrail_warn`, and the opt-in
 *supervisor event kinds* above) to a delivery sink: a comm router,
-a datawatch session (bridge `POST /send` preferred, `SendInput` fallback
-tagged `lifecycle-sub`), a push topic, the in-app alert store, or a named
+a datawatch session (for a repeating rule, bridge `POST /send` preferred,
+`SendInput` fallback tagged `lifecycle-sub`; a one-shot is only typed), a push topic, the in-app alert store, or a named
 **pending events queue** (`mcp_queue` sink) that a client polls. Options:
-`one_shot` (removed after first *successful* delivery — one retry, then
-log + drop), `expires_at` TTL (pruned by the engine's janitor),
+`one_shot` (removed after first *successful* delivery; a one-time message to
+a session is kept in the rule's `delivery` field and retried until typed, or
+listed as `review_needed` when it may or may not have arrived, and is not sent
+again: see [one-time messages](howto/automaton-lifecycle-subscriptions.md#one-time-messages-to-a-session)),
+`expires_at` TTL (pruned by the engine's janitor, except while a one-time
+message waits),
 `coalesce` quiet-window batching for human-facing sinks. Delivery: each
 subscription consumes from its own bounded in-memory queue on its own
 goroutine; emitting an event never waits on any subscriber, and a
@@ -2408,6 +2412,10 @@ and
 **Blocking question** — an operator question whose asker said it cannot go on until the question is decided (`blocking: true`, from the marker's `blocked: true`). While it is open its task is parked: waiting, with the capacity slot given back and no retry counted. A non-blocking question leaves its task running.
 
 **await_decision wait reason** — the reason shown for a task parked on an open blocking question: `await_decision: <question id>`. The coordinator tick resumes the task after the question is answered or withdrawn and sends the worker one `[automaton decision]` line carrying the decision. It is a wait, not a failure.
+
+**Decision delivery** (`decision_resume.delivery` on a task) — what datawatch knows about the `[automaton decision]` line: `waiting` (nothing typed yet), `sending`, `sent` (the send returned no error), `not_typed` (a prompt was on screen, so nothing was typed; tried again on each coordinator tick) or `review_needed` (it cannot be told from a delivered line, or must not be typed now; it is never typed again and one alert is raised). See [worker questions](howto/operator-questions-workers.md#did-the-worker-get-the-line).
+
+**Owed decisions** (`owed_decisions` on a task) — the blocking questions of the task's worker whose decision line is not yet sent or listed for review. Each is typed once into that worker, or listed with a *review needed* alert. See [more than one open question](howto/operator-questions-workers.md#more-than-one-open-question).
 
 **Question context link** — the line *This question is about: …* in the answer dialog, which says what a question concerns and, where it can, lets you open it. For a proposal or document it is an **Open** link that opens the proposal in the documents viewer in a new tab; for an Automaton it is an **Open** button that goes to that Automaton; for a task or a registry row it names the item in words. A question about nothing in particular shows no line. It is for the operator who wants to read the thing being decided before answering. See [howto/operator-questions-answering.md](howto/operator-questions-answering.md).
 
@@ -2966,7 +2974,7 @@ What happens to an item that came from the file when its row has disappeared fro
 <a id="supervisor-loop-wake-session"></a>
 - **`supervisor_loop.wake.session`** — The designated supervisor session: the full or short id of the one session a wake may type into. Default empty, which designates none, so a wake runs its pass and types nothing. A launch role or the `role:supervisor` tag never makes a session the target. At most 128 characters, no spaces. Read live. The wake status shows it with the current target and why. See [Which session a wake types into](howto/supervisor-loop.md#which-session-a-wake-types-into).
 <a id="supervisor-wake-set"></a>
-- **`supervisor-wake` subscription set** — The built-in set of lifecycle subscriptions the daemon registers while [`supervisor_loop.wake.enabled`](#supervisor-loop-wake-enabled) is on, one per kind in [`supervisor_loop.wake.kinds`](#supervisor-loop-wake-kinds). Matching events are folded within the quiet window and typed into the [designated supervisor session](#supervisor-loop-wake-session) as a `supervisor wake: <kind> automaton=<id> task=<id>` line (a priority stall entry also carries `blocker=<code>`). An identical batch is not typed again within the fallback interval, and priority stall entries only when the stall list changes. Nothing is registered while the wake is off, and your own subscriptions are never changed. Nothing is typed when no session is designated, the designated one is not running or waiting for input, its output cannot be read, or its output ends with a completion marker. Status: `GET /api/supervisor-loop/wake`, `datawatch supervisor-loop wake`, `supervisor wake` on the comm channel, the `wake` object of the `supervisor_loop_stats` MCP tool, and **Settings → Automata → Supervisor wake**.
+- **`supervisor-wake` subscription set** — The built-in set of lifecycle subscriptions the daemon registers while [`supervisor_loop.wake.enabled`](#supervisor-loop-wake-enabled) is on, one per kind in [`supervisor_loop.wake.kinds`](#supervisor-loop-wake-kinds). Matching events are folded within the quiet window and typed into the [designated supervisor session](#supervisor-loop-wake-session) as a `supervisor wake: <kind> automaton=<id> task=<id>` line (a priority stall entry also carries `blocker=<code>`). An identical batch is not typed again within the fallback interval, and priority stall entries only when the stall list changes. Nothing is registered while the wake is off, and your own subscriptions are never changed. Nothing is typed when no session is designated, the designated one is not running or waiting for input, its output cannot be read, its output ends with a completion marker, or a prompt is on its screen. Such a line waits and is tried again, at most every 5 minutes, into the session designated at that moment; you get one warning alert for each wait. A send that fails in any other way is not typed again and raises a *review needed* alert. The status's event count records a wake once its line is typed; its pass count records the supervisor passes event wakes ran, typed or not. See [when the line cannot be typed](howto/supervisor-loop.md#when-the-line-cannot-be-typed). Status: `GET /api/supervisor-loop/wake`, `datawatch supervisor-loop wake`, `supervisor wake` on the comm channel, the `wake` object of the `supervisor_loop_stats` MCP tool, and **Settings → Automata → Supervisor wake**.
 
 Terms used by the [event-driven supervisor how-to](howto/automaton-event-driven-supervisor.md):
 

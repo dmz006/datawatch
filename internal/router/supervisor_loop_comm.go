@@ -298,6 +298,7 @@ func (r *Router) replySupervisorLoopWake(args []string) {
 		LastScheduledCheck      string   `json:"last_scheduled_check"`
 		EventCount              int      `json:"event_count"`
 		ScheduledCount          int      `json:"scheduled_count"`
+		PassCount               int      `json:"pass_count"`
 		Session                 string   `json:"session"`
 		Target                  string   `json:"target"`
 		TargetReason            string   `json:"target_reason"`
@@ -325,6 +326,7 @@ func (r *Router) replySupervisorLoopWake(args []string) {
 	text := fmt.Sprintf("wake: %s\nkinds: %s\ncoalesce: %ds\nfallback interval: %d min\nlast event: %s (%d events)\nlast scheduled check: %s (%d checks)",
 		state, strings.Join(w.Kinds, ", "), w.CoalesceSeconds, w.FallbackIntervalMinutes,
 		never(w.LastEvent), w.EventCount, never(w.LastScheduledCheck), w.ScheduledCount)
+	text += fmt.Sprintf("\nevent wake passes run: %d", w.PassCount)
 	text += fmt.Sprintf("\ndesignated session: %s\ntarget: %s", orNone(w.Session), orNone(w.Target))
 	if w.TargetReason != "" {
 		text += "\nwhy: " + w.TargetReason

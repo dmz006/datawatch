@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.33 (2026-11-26).** A daemon start or a tag registry change no longer drops tag records the daemon wrote outside the registry, such as automatic tags, and a new repair for tag IDs with no record is a dry run unless you tell it to write; the changelog lists what is not covered. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.34 (2026-11-26).** When a prompt stops datawatch from typing an answer, supervisor wake-up or one-time session message, it now keeps it to retry, and when it cannot tell whether one arrived it raises a review alert and does not send it again; the changelog lists the limits, including that delivery alerts stored while the daemon starts reach only the alert list. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

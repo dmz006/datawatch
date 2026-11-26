@@ -90,7 +90,14 @@ func WaitAdopted(ctx context.Context, w AdoptedWait, p AdoptedWaitPorts) error {
 			finish()
 			return nil
 		}
-		if err := StepWorkerNudge(tr, now(), family, w.SessionID, label, p.Nudge(w.SessionID)); err != nil {
+		if w.decision.hold() {
+			// The worker waits for the operator: no nudge and no stall, and the
+			// idle clock starts again once the decision is delivered.
+			if tr.Nudged() {
+				closeNudgeForQuestion(tr, p.Nudge(w.SessionID), w.SessionID, label)
+			}
+			tr = NewWorkerNudgeTracker(p.NudgeAfter, p.StallAfter)
+		} else if err := StepWorkerNudge(tr, now(), family, w.SessionID, label, p.Nudge(w.SessionID)); err != nil {
 			return err
 		}
 		if err := pause(ctx); err != nil {

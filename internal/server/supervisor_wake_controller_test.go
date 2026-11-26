@@ -143,8 +143,8 @@ func TestSupervisorWakeFollowsLiveSettings(t *testing.T) {
 	if r.runs.Load() != 1 {
 		t.Fatalf("a subscribed event ran the loop %d times, want 1", r.runs.Load())
 	}
-	if st := r.record.Status(); st.EventCount != 1 {
-		t.Fatalf("wake record counts %d events, want 1", st.EventCount)
+	if st := r.record.Status(); st.EventCount != 0 {
+		t.Fatalf("wake record counts %d events with no line typed, want 0", st.EventCount)
 	}
 	if r.sent.Load() != 0 {
 		t.Fatalf("typed into a session while none is running")
