@@ -1122,7 +1122,14 @@ my-custom-ai-tool --task "$TASK" --dir "$PROJECT_DIR"
 - The script must be executable: `chmod +x ~/scripts/my-ai.sh`
 - Use this to integrate with any AI tool not directly supported by datawatch
 - Interactive input is not supported; the script runs to completion
-- The completion marker `DATAWATCH_COMPLETE: shell done` is emitted automatically after the script exits
+- When the script exits, its exit status picks one line, printed automatically:
+  `DATAWATCH_COMPLETE: shell done` for status 0, `DATAWATCH_FAILED: shell script failed`
+  for any other. A one-shot session ends `complete` or `failed` to match. An
+  interactive session stays open either way. The status is that of the script's last
+  command, so end a script with `exit 0` if a non-zero last command is expected
+- Nothing is committed automatically for a failed one-shot
+- A script that prints its own `DATAWATCH_COMPLETE:` line is still believed when
+  that line appears, whatever it exits with later
 
 ---
 

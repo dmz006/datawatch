@@ -6,8 +6,10 @@ Draft only; no issue has been filed.
 - A command schedule datawatch ends without typing it becomes `failed` or `cancelled`,
   with the reason in `last_error`, and raises a system warn alert.
 - A schedule in `GET /api/schedules` may carry `kind` (`rate_limit_resume` or absent).
-- A recurring command schedule for a session id can be `pending` with
-  `consecutive_failures` above 0 and a `last_error`.
+- A recurring command schedule (by session id or name) can be `pending` with
+  `consecutive_failures` above 0 and a `last_error`. It alerts on the first
+  failure in a row and every 24th, not on every one.
+- A one-shot shell script session that exits non-zero ends `failed`, not `complete`.
 - Creating a schedule for a missing or ended session is refused; the REST reply is an
   error whose body starts with `schedule refused:`.
 - Two new system alerts: sessions found dead at daemon start, and running sessions

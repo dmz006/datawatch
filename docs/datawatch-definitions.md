@@ -268,7 +268,9 @@ Killing, deleting or ending the session does not cancel or fail a schedule creat
 
 If the named session is absent when the schedule fires, the item is skipped (not failed) and will try again on the next tick.
 
-**Ended without being typed** — when datawatch ends a schedule that was never typed (its session was killed, deleted or ended; the send failed; the schedule it follows did not run), the schedule is `failed` or `cancelled` with the reason in `last_error`, and a warn alert is raised. A recurring schedule for a session id survives a single send error. A schedule for a session id that does not exist or has ended is refused when created. Details: [`howto/schedule-rearm.md`](howto/schedule-rearm.md#when-a-command-schedule-does-not-run).
+**Shell scripts** — a one-shot session running a shell backend script ends `complete` when the script exits with status 0 and `failed` when it exits with any other. See [`llm-backends.md`](llm-backends.md).
+
+**Ended without being typed** — when datawatch ends a schedule that was never typed (its session was killed, deleted or ended; the send failed; the schedule it follows did not run), the schedule is `failed` or `cancelled` with the reason in `last_error`, and a warn alert is raised. A recurring schedule survives a send error and stays scheduled for its next fire (by session id: while that session can still take input). It does not alert on every failed send: only on the first in a row and then every 24th. A schedule for a session id that does not exist or has ended is refused when created. Details: [`howto/schedule-rearm.md`](howto/schedule-rearm.md#when-a-command-schedule-does-not-run).
 
 **Rate-limit resume** — the command datawatch queues to resume a rate-limited session, marked `kind: rate_limit_resume`.
 

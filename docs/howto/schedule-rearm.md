@@ -139,11 +139,15 @@ may no longer type, or the schedule it follows did not run. When more than ten e
 in one pass you get one alert that lists them. A schedule you cancel yourself raises
 no alert; the schedules chained behind it are failed, and those do.
 
-- **One send error does not end a recurring schedule that is addressed by session
-  id** while that session can still take input. It moves to its next fire, keeps the
-  error in `last_error`, and alerts on the first failure in a row and every 24th.
-  A one-time schedule becomes `failed`. A recurring schedule addressed by session
-  **name** still becomes `failed` on a send error.
+- **One send error does not end a recurring schedule.** It stays `pending`, moves to
+  its next fire and keeps the error in `last_error`. One addressed by session **id**
+  does this only while that session can still take input; one addressed by session
+  **name** does it either way. A one-time schedule becomes `failed`, and so does a
+  recurring one whose next fire is past its end time.
+- **Not every failed send alerts.** A schedule that stays scheduled raises an alert
+  on the first failure in a row and then on the 24th, 48th and so on. A send that
+  works starts the count again. `consecutive_failures` and `last_error` show the
+  failures in between.
 - **A chain follows its parent.** If the parent fails, the chained commands fail at
   once; if it is cancelled or deleted, they fail within 30 seconds. A chained command
   whose parent was typed but which never was itself is failed after two minutes. It
