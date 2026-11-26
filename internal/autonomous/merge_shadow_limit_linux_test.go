@@ -21,7 +21,31 @@ func TestFinishTimeShadowStartsEveryCommandUnderTheLimit(t *testing.T) {
 	if err := proclimit.Host().Available(context.Background()); err != nil {
 		t.Skipf("no systemd scope here: %v", err)
 	}
+	for name, edit := range map[string]func(t *testing.T, repo string){
+		"a clean merge": func(*testing.T, string) {},
+		// The trial merge conflicts, a file is added at the root, a changelog
+		// draft is read and a task branch holds work.
+		"the less usual paths": func(t *testing.T, repo string) {
+			shadowGit(t, repo, "branch", "automaton/p-shadow-task", "auto")
+			shadowGit(t, repo, "checkout", "-q", "auto")
+			shadowWrite(t, repo, "both.txt", "from the branch\n")
+			shadowWrite(t, repo, "stray.bin", "x\n")
+			shadowGit(t, repo, "add", "-A")
+			shadowGit(t, repo, "commit", "-q", "-m", "branch side")
+			shadowGit(t, repo, "checkout", "-q", "main")
+			shadowWrite(t, repo, "both.txt", "from main\n")
+			shadowGit(t, repo, "add", "-A")
+			shadowGit(t, repo, "commit", "-q", "-m", "main side")
+		},
+	} {
+		t.Run(name, func(t *testing.T) { finishTimeCommandsUnderTheLimit(t, edit) })
+	}
+}
+
+func finishTimeCommandsUnderTheLimit(t *testing.T, edit func(t *testing.T, repo string)) {
+	t.Helper()
 	repo := shadowRepo(t)
+	edit(t, repo)
 	stubShadowGates(t)
 	m := shadowManager(t)
 	// With a record store the hook asks the selection rule.

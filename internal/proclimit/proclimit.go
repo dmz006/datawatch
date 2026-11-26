@@ -1,5 +1,6 @@
-// Package proclimit holds a command, and everything it starts, to one hard
-// memory limit, and stops all of it together.
+// Package proclimit holds a command, and the processes it starts that stay
+// with it, to one hard memory limit, and stops them together. It is not a
+// sandbox: a command can run work outside the limit (see outside.go).
 //
 // Work that datawatch starts by itself over a project, such as the shadow of
 // a merge, runs commands the project supplies. A limit on each process does
@@ -12,7 +13,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,6 +39,11 @@ func (n none) Describe() string { return "no hard memory limit can be had here: 
 func RunWhereHad(ctx context.Context, cmd *exec.Cmd) error {
 	if s, ok := From(ctx); ok {
 		if _, isNone := s.(none); isNone {
+			env := cmd.Env
+			if env == nil {
+				env = os.Environ()
+			}
+			cmd.Env = Inside(env)
 			return cmd.Run()
 		}
 	}
@@ -56,6 +66,61 @@ func CombinedOutput(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
 // ShadowTreeBytes is the most memory one command of a shadow may use together
 // with everything it starts.
 const ShadowTreeBytes int64 = 16 << 30
+
+// MemoryMarginBytes is the memory that must be free beyond one command's limit
+// before a shadow starts.
+const MemoryMarginBytes int64 = 8 << 30
+
+// Room returns why a shadow under s should not start on this system now: its
+// commands may each take up to s's limit, and the system must have that and
+// MemoryMarginBytes free. It is a look at the moment of the start; nothing is
+// reserved. A Starter with no memory limit asks for no room.
+func Room(s Starter) error {
+	c, ok := s.(interface{ CeilingBytes() int64 })
+	if !ok {
+		return nil
+	}
+	free, err := freeMemory(memInfo)
+	if err != nil {
+		return fmt.Errorf("the system's free memory cannot be read, so it cannot be shown to have room: %w", err)
+	}
+	limit := c.CeilingBytes()
+	if need := limit + MemoryMarginBytes; free < need {
+		return fmt.Errorf("not enough free memory: %s is available and %s is needed, the %s limit of one command and a margin of %s",
+			amount(free), amount(need), amount(limit), amount(MemoryMarginBytes))
+	}
+	return nil
+}
+
+// memInfo is where Linux says how much memory is available.
+const memInfo = "/proc/meminfo"
+
+// freeMemory reads the memory available for new work, swap not counted.
+func freeMemory(path string) (int64, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- a fixed kernel file, or a test's own
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		f := strings.Fields(line)
+		if len(f) == 3 && f[0] == "MemAvailable:" && f[2] == "kB" {
+			kib, err := strconv.ParseInt(f[1], 10, 64)
+			return kib << 10, err
+		}
+	}
+	return 0, errors.New("it does not say how much memory is available")
+}
+
+// amount is a size in plain words, rounded down to a tenth of a GiB.
+func amount(b int64) string {
+	if b >= 1<<30 && b%(1<<30) == 0 {
+		return strconv.FormatInt(b>>30, 10) + " GiB"
+	}
+	if b >= 1<<30 {
+		return strconv.FormatFloat(float64(b*10>>30)/10, 'f', 1, 64) + " GiB"
+	}
+	return strconv.FormatInt(b>>20, 10) + " MiB"
+}
 
 // Starter puts a command and its whole process tree under a limit.
 type Starter interface {

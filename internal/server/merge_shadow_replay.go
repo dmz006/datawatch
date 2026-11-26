@@ -208,7 +208,15 @@ func (s *Server) startHandShadow(id, release, recorded string, checks map[string
 // runHandShadow runs one queued shadow and stores what it saw. The caller
 // holds the one-at-a-time lock.
 func runHandShadow(src mergeShadowSource, cfg config.MergePipelineConfig, repo, dataDir string, rec mergeshadow.Replay, subject autonomous.ShadowSubject, selected *mergeshadow.ReplaySelection) {
-	ctx, cancel := context.WithTimeout(context.Background(), mergeRunTimeout)
+	// One shadow at a time, of either kind: this one stays queued until it
+	// is its turn, and its time starts then.
+	turn, release, err := mergeshadow.AcquireSlot(context.Background())
+	if err != nil {
+		log.Printf("[merge-shadow] Automaton %s: %v", rec.AutomatonID, err)
+		return
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(turn, mergeRunTimeout)
 	defer cancel()
 	save := func(r *mergeshadow.Replay) {
 		r.UpdatedAt = time.Now().UTC()

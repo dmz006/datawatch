@@ -11,6 +11,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/changerecord"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // scratchDirName is the directory under the daemon data directory that holds
@@ -104,6 +105,19 @@ type Runner struct {
 func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	if err := in.validate(); err != nil {
 		return nil, err
+	}
+	// One shadow at a time, of either kind.
+	ctx, release, err := AcquireSlot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	// Before it starts a plan whose gates will run, the system must have room
+	// for a command's limit and the margin.
+	if l, ok := proclimit.From(ctx); ok && r.Gates == nil {
+		if err := proclimit.Room(l); err != nil {
+			return nil, fmt.Errorf("the shadow was not started: %w", err)
+		}
 	}
 	base := in.BaseRef
 	if base == "" {

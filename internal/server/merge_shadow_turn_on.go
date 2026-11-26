@@ -18,6 +18,7 @@ import (
 	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 	"github.com/dmz006/datawatch/internal/mergeshadow"
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 const (
@@ -372,8 +373,10 @@ func turnOnLines(rep *mergeTurnOn, selectionNote string) []string {
 		add("The count stops at %s.", rep.Streak.StoppedBy)
 	}
 	add("%s", streakScope)
-	add("Every command a shadow starts runs under: %s. Without that limit a shadow starts nothing. Git has in addition %d GiB per process and %d minutes per command.",
-		shadowCommandLimit().Describe(), git.ShadowProcessLimit.MemoryBytes>>30, int(git.ShadowProcessLimit.Time.Minutes()))
+	add("A shadow starts its commands under: %s. This does not hold everything a command can start: one that finds a service outside it can run work with no such limit while the result still reads matched. Without that limit a shadow runs none of the project's commands.",
+		shadowCommandLimit().Describe())
+	add("One shadow runs at a time. A hand merge's, or a finish-time plan with gates, starts only with a command's limit and %d GiB more of memory available; this is not reserved. Git in a shadow's engine, copy and push checks has in addition %d GiB per process and %d minutes per command.",
+		proclimit.MemoryMarginBytes>>30, git.ShadowProcessLimit.MemoryBytes>>30, int(git.ShadowProcessLimit.Time.Minutes()))
 	var merges []string
 	for _, m := range rep.Merges {
 		merges = append(merges, fmt.Sprintf("%s %s at %s: %s", m.At.UTC().Format("2006-01-02 15:04"), m.AutomatonID, shortID(m.HandCommit), m.Verdict))

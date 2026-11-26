@@ -579,6 +579,32 @@ func TestShadowStepNotRunNeverMatches(t *testing.T) {
 	})
 }
 
+// A built-in step left out for a missing make target did not run either: the
+// merge never matches.
+func TestShadowBuiltInStepSkippedForAMissingMakeTargetNeverMatches(t *testing.T) {
+	for _, action := range []string{ActionValidateReleaseBump, ActionCheckBranchVersions} {
+		t.Run(action, func(t *testing.T) {
+			g := newReplayRig(t)
+			name := ""
+			for i := range g.def.Steps {
+				if g.def.Steps[i].Action == action {
+					g.def.Steps[i].RequiresMakeTarget, name = "no-such-target", g.def.Steps[i].Name
+				}
+			}
+			if name == "" {
+				t.Fatalf("the sandbox pipeline has no %s step", action)
+			}
+			r := g.shadow(g.handMerge(handOptions{}))
+			allPass(r)
+			if v := r.Verdict(); v == mergeshadow.VerdictMatch || v == mergeshadow.VerdictWaiting {
+				t.Errorf("verdict %s with %s skipped: %+v", v, name, r.Rows())
+			}
+			wantMiss(t, r, mergeshadow.RowChecks, name)
+			wantMiss(t, r, mergeshadow.RowChecks, "no-such-target")
+		})
+	}
+}
+
 // A project that is a shallow clone is shadowed all the same.
 func TestShadowOfAShallowProject(t *testing.T) {
 	g := newReplayRig(t)

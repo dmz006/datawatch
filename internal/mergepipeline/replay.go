@@ -95,13 +95,22 @@ func ShadowHandMerge(ctx context.Context, in ReplayInput) *mergeshadow.Replay {
 	}
 	rec.CommandLimit = limit.Describe()
 	left := &proclimit.Tally{}
-	ctx = proclimit.With(ctx, limit, left)
-	err := limit.Available(ctx)
-	if err != nil {
-		err = fmt.Errorf("no hard memory limit for the shadow's commands can be had here, so none of them was started: %w", err)
-	} else {
-		err = shadowHandMerge(ctx, in, &rec)
-	}
+	err := func() error {
+		// One shadow at a time, of either kind.
+		ctx, release, err := mergeshadow.AcquireSlot(ctx)
+		if err != nil {
+			return err
+		}
+		defer release()
+		ctx = proclimit.With(ctx, limit, left)
+		if err := limit.Available(ctx); err != nil {
+			return fmt.Errorf("no hard memory limit for the shadow's commands can be had here, so none of them was started: %w", err)
+		}
+		if err := proclimit.Room(limit); err != nil {
+			return fmt.Errorf("the shadow was not started: %w", err)
+		}
+		return shadowHandMerge(ctx, in, &rec)
+	}()
 	if err != nil {
 		rec.State, rec.Error = mergeshadow.ReplayError, redact(err.Error())
 	}
@@ -941,10 +950,24 @@ func daemonSide(rec *mergeshadow.Replay, r *Runner, def Definition, out RunResul
 		}
 	}
 	for _, s := range def.Steps {
+		result := results[s.Name]
+		ran := result == autonomous.MergeStepOK || result == autonomous.MergeStepFailed
+		notRun := func() {
+			why := firstLine(details[s.Name])
+			if why == "" {
+				why = "the run did not reach it"
+			}
+			d.NotRun = append(d.NotRun, mergeshadow.ReplayStepNotRun{Name: s.Name, Kind: string(s.Kind), Why: why})
+		}
 		if s.Action != "" {
+			// A built-in check that did not run, and any built-in step left
+			// out for a missing make target, keep the merge from matching.
+			check := s.Action == ActionValidateReleaseBump || s.Action == ActionCheckBranchVersions
+			if !ran && (check || strings.HasPrefix(details[s.Name], noMakeTargetNote)) {
+				notRun()
+			}
 			continue
 		}
-		result := results[s.Name]
 		if s.Kind == KindLint || s.Kind == KindTest {
 			check := mergeshadow.ReplayCheck{Name: s.Name, Kind: string(s.Kind), Result: result}
 			switch result {
@@ -958,12 +981,8 @@ func daemonSide(rec *mergeshadow.Replay, r *Runner, def Definition, out RunResul
 		}
 		// Any other command step that did not run is listed, whatever left
 		// it out, so that the merge cannot read as matched.
-		if result != autonomous.MergeStepOK && result != autonomous.MergeStepFailed {
-			why := firstLine(details[s.Name])
-			if why == "" {
-				why = "the run did not reach it"
-			}
-			d.NotRun = append(d.NotRun, mergeshadow.ReplayStepNotRun{Name: s.Name, Kind: string(s.Kind), Why: why})
+		if !ran {
+			notRun()
 		}
 	}
 	for _, c := range run.Conflicts {

@@ -24,13 +24,14 @@ func (noTreeLimit) Prepare(*exec.Cmd, time.Duration) (func() proclimit.Result, e
 
 func (noTreeLimit) Describe() string { return "no limit: a test on a system without one" }
 
-// testLimit is the limit the sandbox shadows run under: this system's own
-// where it can be had.
+// testLimit is the limit the sandbox shadows run under: a real one where
+// this system can give it, smaller than a shadow's own so that a machine with
+// little free memory has room for it.
 func testLimit(t *testing.T) proclimit.Starter {
 	t.Helper()
-	if err := proclimit.Host().Available(context.Background()); err != nil {
-		t.Logf("no tree limit here: %v", err)
-		return noTreeLimit{}
+	if s, ok := sandboxLimit(); ok {
+		return s
 	}
-	return nil
+	t.Logf("no tree limit here")
+	return noTreeLimit{}
 }

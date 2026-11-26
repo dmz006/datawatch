@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -134,5 +135,44 @@ func TestWithNoWayToLimitNothingRuns(t *testing.T) {
 	}
 	if _, err := os.Stat(mark); !os.IsNotExist(err) {
 		t.Errorf("the command ran with no limit: %v", err)
+	}
+}
+
+// A command is told neither the user manager's address nor of a tmux server
+// already running; one that starts tmux gets a socket folder of its own,
+// which goes when the command ends. A folder made private for it is kept.
+func TestACommandIsGivenNoWayOutAndATmuxFolderOfItsOwn(t *testing.T) {
+	ctx, _ := needScope(t, 256<<20)
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/"+strconv.Itoa(os.Getuid()))
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/"+strconv.Itoa(os.Getuid())+"/bus")
+	t.Setenv("TMUX", "/tmp/nowhere,1,0")
+	t.Setenv("TMUX_TMPDIR", "")
+	run := func(env []string) string {
+		cmd := sh(ctx, `printf '%s|%s|%s|%s' "${XDG_RUNTIME_DIR-unset}" "${DBUS_SESSION_BUS_ADDRESS-unset}" "${TMUX-unset}" "${TMUX_TMPDIR-unset}"; test -d "$TMUX_TMPDIR"`)
+		cmd.Env = env
+		var out strings.Builder
+		cmd.Stdout, cmd.Stderr = &out, &out
+		if err := Run(ctx, cmd); err != nil {
+			t.Fatalf("%v: %s", err, out.String())
+		}
+		return out.String()
+	}
+	// With the daemon's own environment, and with one that names no folder.
+	for name, env := range map[string][]string{"the daemon's": nil, "a bare one": {"PATH=" + os.Getenv("PATH")}} {
+		got := strings.Split(run(env), "|")
+		if len(got) != 4 || got[0] != "unset" || got[1] != "unset" || got[2] != "unset" || !strings.HasPrefix(got[3], "/tmp/dwt-") {
+			t.Errorf("%s: %q", name, got)
+			continue
+		}
+		if _, err := os.Stat(got[3]); !os.IsNotExist(err) {
+			t.Errorf("%s: the folder is still there: %v", name, err)
+		}
+	}
+	own := t.TempDir()
+	if got := run([]string{"PATH=" + os.Getenv("PATH"), "TMUX_TMPDIR=" + own}); !strings.HasSuffix(got, "|"+own) {
+		t.Errorf("a folder of its own was replaced: %q", got)
+	}
+	if _, err := os.Stat(own); err != nil {
+		t.Errorf("a folder of its own was removed: %v", err)
 	}
 }

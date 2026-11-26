@@ -44,12 +44,11 @@ func newHandRig(t *testing.T) *handRig {
 	t.Setenv("GIT_COMMITTER_NAME", "Test")
 	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.invalid")
 	s, mgr, repo, _, _, _ := switchServer(t)
-	// Where this system cannot give the limit, a stand-in lets the rest of
-	// the shadow be tested.
-	if proclimit.Host().Available(context.Background()) != nil {
-		handShadowLimit = noTreeLimit{}
-		t.Cleanup(func() { handShadowLimit = nil })
-	}
+	// A real limit where this system can give it, smaller than a shadow's
+	// own so that a machine with little free memory has room for it; else a
+	// stand-in, so the rest of the shadow is tested.
+	handShadowLimit = sandboxHandLimit()
+	t.Cleanup(func() { handShadowLimit = nil })
 	for name, body := range map[string]string{
 		"Makefile": "check-outgoing:\n\t@sh scripts/check-outgoing.sh\n", "scripts/check-outgoing.sh": handCheckScript,
 		".gitignore": ".leak-patterns.local\n",

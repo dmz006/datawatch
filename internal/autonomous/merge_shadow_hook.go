@@ -87,7 +87,15 @@ func (m *Manager) startMergeShadow(prd *PRD) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		// One shadow at a time, of either kind. The time the plan has starts
+		// once it is its turn.
+		turn, release, err := mergeshadow.AcquireSlot(context.Background())
+		if err != nil {
+			m.recordNoShadowPlan(prd.ID, in, err.Error())
+			return
+		}
+		defer release()
+		ctx, cancel := context.WithTimeout(turn, timeout)
 		defer cancel()
 		// Every command the shadow starts runs, with everything it starts,
 		// under a hard memory limit. Where that cannot be had, the plan's

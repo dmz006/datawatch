@@ -734,11 +734,15 @@ func (s *runState) builtinPostShipHook(ctx context.Context, builtin, version str
 	return "", builtinErr("unknown built-in post-ship hook %q", builtin)
 }
 
+// noMakeTargetNote begins the account of a step left out for a missing make
+// target.
+const noMakeTargetNote = "the project's Makefile has no "
+
 // execute performs the step and returns its result and a short account. The
 // caller bounds it with the step's timeout.
 func (s *runState) execute(ctx context.Context, step Step) (string, string, error) {
 	if step.RequiresMakeTarget != "" && !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
-		return autonomous.MergeStepSkipped, "the project's Makefile has no " + step.RequiresMakeTarget + " target", nil
+		return autonomous.MergeStepSkipped, noMakeTargetNote + step.RequiresMakeTarget + " target", nil
 	}
 	// The release gate applies to every step that leaves the machine, and
 	// only to those: it is decided at most once per run, before the first

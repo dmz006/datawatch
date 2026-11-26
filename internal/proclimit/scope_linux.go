@@ -17,8 +17,9 @@ import (
 )
 
 // Scope runs each command in a systemd scope of its own: one control group
-// with a hard memory limit and no swap, which every process the command
-// starts belongs to, whatever process group or session it moves to.
+// with a hard memory limit and no swap. The processes the command starts
+// belong to it, whatever process group or session they move to, unless
+// something moves them or runs the work elsewhere (see outside.go).
 type Scope struct {
 	// MemoryBytes is the limit of the whole tree.
 	MemoryBytes int64
@@ -41,8 +42,8 @@ const scopeSlack = 30 * time.Second
 // so that a command never runs without it. After the command it reports the
 // processes still running and what the kernel stopped for memory, and stops
 // what is left. Only shell builtins run beside the command.
-const scopeScript = `status=$1 want=$2 xdg=$3 bus=$4
-shift 4
+var scopeScript = `status=$1 want=$2
+shift 2
 cg=
 while IFS= read -r line; do
 	case $line in 0::*) cg=/sys/fs/cgroup${line#0::} ;; esac
@@ -54,8 +55,8 @@ if [ "$max" != "$want" ] || [ "$swap" != 0 ]; then
 	exit 125
 fi
 printf 'cgroup %s\n' "$cg" >"$status"
-case $xdg in -) unset XDG_RUNTIME_DIR ;; *) XDG_RUNTIME_DIR=${xdg#=}; export XDG_RUNTIME_DIR ;; esac
-case $bus in -) unset DBUS_SESSION_BUS_ADDRESS ;; *) DBUS_SESSION_BUS_ADDRESS=${bus#=}; export DBUS_SESSION_BUS_ADDRESS ;; esac
+# systemd-run needed the manager's address; the command is not given it.
+unset ` + strings.Join(outsideVars, " ") + `
 "$@"
 rc=$?
 others() {
@@ -77,9 +78,12 @@ printf 'left %s\noom %s\ndone\n' "$n" "$stopped" >>"$status"
 [ "$n" -gt 0 ] && kill -9 $pids 2>/dev/null
 exit "$rc"`
 
+// CeilingBytes is the memory one command may take.
+func (s Scope) CeilingBytes() int64 { return s.MemoryBytes }
+
 // Describe says what the limit covers.
 func (s Scope) Describe() string {
-	return fmt.Sprintf("%s of memory and no swap for each command together with everything it starts (a systemd scope)", size(s.MemoryBytes))
+	return fmt.Sprintf("%s of memory and no swap for the processes of each command that stay in its systemd scope", size(s.MemoryBytes))
 }
 
 func size(b int64) string {
@@ -139,31 +143,31 @@ func (s Scope) Prepare(cmd *exec.Cmd, maxRun time.Duration) (func() Result, erro
 		maxRun = scopeMaxRun
 	}
 
-	// systemd-run needs the user manager's address; the command gets back
-	// exactly what it had.
+	// A tmux the command starts or reaches without naming a socket must be
+	// one of its own, started inside the scope, not a server already running.
 	env := cmd.Env
 	if env == nil {
 		env = os.Environ()
 	}
+	kept := Inside(env)
+	tmuxDir := ""
+	if own := envValue(kept, "TMUX_TMPDIR"); own == "" || own == os.Getenv("TMUX_TMPDIR") {
+		// A short path: tmux's socket lies below it.
+		if tmuxDir, err = os.MkdirTemp(shortTempDir(), "dwt-"); err != nil {
+			_ = os.Remove(status)
+			return nil, err
+		}
+		kept = append(withoutVar(kept, "TMUX_TMPDIR"), "TMUX_TMPDIR="+tmuxDir)
+	}
+	// systemd-run needs the user manager's address. The script takes it away
+	// again before it starts the command.
 	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
 	if runtimeDir == "" {
 		runtimeDir = filepath.Join("/run/user", strconv.Itoa(os.Getuid()))
 	}
-	own := map[string]string{"XDG_RUNTIME_DIR": runtimeDir, "DBUS_SESSION_BUS_ADDRESS": os.Getenv("DBUS_SESSION_BUS_ADDRESS")}
-	had := map[string]string{"XDG_RUNTIME_DIR": "-", "DBUS_SESSION_BUS_ADDRESS": "-"}
-	var kept []string
-	for _, kv := range env {
-		k, v, _ := strings.Cut(kv, "=")
-		if _, ok := own[k]; ok {
-			had[k] = "=" + v
-			continue
-		}
-		kept = append(kept, kv)
-	}
-	for k, v := range own {
-		if v != "" {
-			kept = append(kept, k+"="+v)
-		}
+	kept = append(kept, "XDG_RUNTIME_DIR="+runtimeDir)
+	if bus := os.Getenv("DBUS_SESSION_BUS_ADDRESS"); bus != "" {
+		kept = append(kept, "DBUS_SESSION_BUS_ADDRESS="+bus)
 	}
 
 	args := []string{"systemd-run"}
@@ -176,7 +180,7 @@ func (s Scope) Prepare(cmd *exec.Cmd, maxRun time.Duration) (func() Result, erro
 		"-p", "OOMPolicy=continue",
 		"-p", "RuntimeMaxSec="+strconv.FormatInt(int64((maxRun+scopeSlack)/time.Second), 10),
 		"--", "/bin/sh", "-c", scopeScript, "datawatch-scope",
-		status, strconv.FormatInt(limit, 10), had["XDG_RUNTIME_DIR"], had["DBUS_SESSION_BUS_ADDRESS"], cmd.Path)
+		status, strconv.FormatInt(limit, 10), cmd.Path)
 	if len(cmd.Args) > 1 {
 		args = append(args, cmd.Args[1:]...)
 	}
@@ -193,7 +197,12 @@ func (s Scope) Prepare(cmd *exec.Cmd, maxRun time.Duration) (func() Result, erro
 	}
 
 	return func() Result {
-		defer func() { _ = os.Remove(status) }()
+		defer func() {
+			_ = os.Remove(status)
+			if tmuxDir != "" {
+				_ = os.RemoveAll(tmuxDir)
+			}
+		}()
 		st := readStatus(status)
 		cg := st["cgroup"]
 		killGroup(cg)
@@ -201,12 +210,12 @@ func (s Scope) Prepare(cmd *exec.Cmd, maxRun time.Duration) (func() Result, erro
 			return Result{Failed: "the command was not run: the hard memory limit of " + size(limit) + " could not be put in force"}
 		}
 		if _, ok := st["done"]; !ok {
-			return Result{Failed: "the command and everything it started were stopped before it ended: its time limit, or its memory limit of " + size(limit)}
+			return Result{Failed: "the processes of the command's scope were stopped before it ended: its time limit, or its memory limit of " + size(limit)}
 		}
 		r := Result{}
 		r.Left, _ = strconv.Atoi(st["left"])
 		if n, _ := strconv.Atoi(st["oom"]); n > 0 {
-			r.Failed = fmt.Sprintf("stopped by the memory limit: the command and everything it started passed %s of memory, and the kernel stopped %d of its processes", size(limit), n)
+			r.Failed = fmt.Sprintf("stopped by the memory limit: the command's processes passed %s of memory, and the kernel stopped %d of them", size(limit), n)
 		}
 		return r
 	}, nil
@@ -234,4 +243,32 @@ func killGroup(cg string) {
 		return
 	}
 	_ = os.WriteFile(filepath.Join(cg, "cgroup.kill"), []byte("1"), 0o200) // #nosec G306 -- an existing kernel control file
+}
+
+func envValue(env []string, name string) string {
+	value := ""
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == name {
+			value = v
+		}
+	}
+	return value
+}
+
+func withoutVar(env []string, name string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		if k, _, _ := strings.Cut(kv, "="); k != name {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+// shortTempDir is where a folder that must have a short path is made.
+func shortTempDir() string {
+	if st, err := os.Stat("/tmp"); err == nil && st.IsDir() {
+		return "/tmp"
+	}
+	return ""
 }

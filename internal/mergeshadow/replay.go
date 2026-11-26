@@ -52,8 +52,8 @@ type ReplayCheck struct {
 	Why string `json:"why,omitempty"`
 }
 
-// ReplayStepNotRun is a command step of the pipeline, other than a lint or
-// test step, that the shadow did not run.
+// ReplayStepNotRun is a step of the pipeline, other than a lint or test
+// step, that the shadow did not run.
 type ReplayStepNotRun struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
@@ -79,8 +79,9 @@ type DaemonMerge struct {
 	Candidate string          `json:"candidate,omitempty"`
 	Push      []ReplayPushRef `json:"push,omitempty"`
 	Checks    []ReplayCheck   `json:"checks"`
-	// NotRun are the other command steps the shadow did not run. A merge
-	// with one never matches.
+	// NotRun are the steps the shadow did not run that keep the merge from
+	// matching: any other command step, any built-in step left out for a
+	// missing make target, and a built-in check left out for any reason.
 	NotRun    []ReplayStepNotRun `json:"not_run,omitempty"`
 	Conflicts []string           `json:"conflicts"`
 	// Asked says a conflict would have been put to the operator.

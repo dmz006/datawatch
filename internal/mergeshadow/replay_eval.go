@@ -154,14 +154,27 @@ func orNone(s string) string {
 }
 
 func (r *Replay) checksRow(set rowSetter) {
-	if len(r.Daemon.NotRun) > 0 {
-		var left []string
-		for _, s := range r.Daemon.NotRun {
-			left = append(left, fmt.Sprintf("%s (%s step): %s", s.Name, s.Kind, s.Why))
-		}
-		set(RowChecks, RowDiffers, "the shadow did not run %d command step(s) of the pipeline, so nothing shows they would pass: %s", len(left), strings.Join(left, "; "))
+	if len(r.Daemon.NotRun) == 0 {
+		r.checkResults(set)
 		return
 	}
+	// A step that did not run never lets the result match. What differs in
+	// the checks that did run is said first: a failed check is often why.
+	result, detail := "", ""
+	r.checkResults(func(_ int, res, format string, a ...any) { result, detail = res, fmt.Sprintf(format, a...) })
+	var left []string
+	for _, s := range r.Daemon.NotRun {
+		left = append(left, fmt.Sprintf("%s (%s step): %s", s.Name, s.Kind, s.Why))
+	}
+	why := fmt.Sprintf("the shadow did not run %d step(s) of the pipeline, so nothing shows they would pass: %s", len(left), strings.Join(left, "; "))
+	if result == RowDiffers {
+		why = detail + "; " + why
+	}
+	set(RowChecks, RowDiffers, "%s", why)
+}
+
+// checkResults compares the lint and test steps with the hand merge's.
+func (r *Replay) checkResults(set rowSetter) {
 	lint, test := false, false
 	daemon, why := map[string]string{}, map[string]string{}
 	var order []string
