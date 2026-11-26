@@ -70,10 +70,10 @@ func TestArchivedCleanupPassReleasesLandedWork(t *testing.T) {
 	if len(audit.events(worktreeCleanupAuditAction)) != 1 {
 		t.Fatalf("want one removal audit record")
 	}
-	// The record says the work landed, so the weekly audit does not later read
-	// the deleted branch as lost work.
+	// The removal proves nothing about where the work went: no landing is
+	// written.
 	got, _ := m.Store().GetPRD(prd.ID)
-	if got.Status != PRDArchived || got.Landing == nil || got.Landing.State != LandingLanded {
+	if got.Status != PRDArchived || got.Landing == nil || got.Landing.State != LandingPending {
 		t.Fatalf("status=%s landing=%+v", got.Status, got.Landing)
 	}
 }
@@ -282,14 +282,16 @@ func (f *keepFixture) setArchivedSwitch(on bool) {
 	f.m.cfg.Automation.CleanupArchived = &on
 }
 
-func TestArchiveReleasesCleanLandedTaskWorktreeAndBranch(t *testing.T) {
+func TestArchivedPassReleasesCleanLandedTaskWorktreeAndBranch(t *testing.T) {
 	f := newKeepFixture(t, config.CleanupModeOn)
 	tip := f.commit(t, "feature.txt")
 	f.land(t)
 	f.archive(t)
+	f.age(t)
+	f.m.CleanupWorktreesPass()
 	f.mustNotHaveWorktree(t)
 	if f.hasBranch(t) {
-		t.Fatal("the landed task branch was not deleted at archive")
+		t.Fatal("the landed task branch was not deleted by the periodic pass")
 	}
 	if got := f.backupSHAs(t); !strings.Contains(got, tip) {
 		t.Fatalf("no backup of %s: %q", tip, got)
@@ -367,12 +369,9 @@ func TestArchivedTaskBranchReleasedWhenWorkLandsLater(t *testing.T) {
 	f := newKeepFixture(t, config.CleanupModeOn)
 	tip := f.commit(t, "feature.txt")
 	f.archive(t)
-	f.mustNotHaveWorktree(t)
-	if !f.hasBranch(t) {
-		t.Fatal("unmerged task branch deleted")
-	}
 	f.age(t)
 	f.m.CleanupWorktreesPass()
+	f.mustNotHaveWorktree(t)
 	if !f.hasBranch(t) {
 		t.Fatal("unmerged task branch deleted by the pass")
 	}
@@ -404,7 +403,6 @@ func TestArchivedTaskPassWaitsForRetention(t *testing.T) {
 // The per-pass limit bounds the task work the periodic pass removes.
 func TestArchivedTaskPassHonoursRemovalLimit(t *testing.T) {
 	f := newKeepFixture(t, config.CleanupModeOn)
-	f.setArchivedSwitch(false) // archive without releasing, as records archived earlier are
 	second := Task{ID: "task0002", StoryID: "s1", PRDID: f.prd.ID, Title: "second", Status: TaskCompleted}
 	f.prd.Story[0].Tasks = append(f.prd.Story[0].Tasks, second)
 	if err := f.m.Store().SavePRD(f.prd); err != nil {
@@ -416,7 +414,6 @@ func TestArchivedTaskPassHonoursRemovalLimit(t *testing.T) {
 	}
 	f.archive(t)
 	f.age(t)
-	f.setArchivedSwitch(true)
 	f.m.mu.Lock()
 	f.m.cfg.Automation.CleanupMaxRemovalsPerPass = 1
 	f.m.cfg.WorktreeBaseRepo = f.repo

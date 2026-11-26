@@ -6,7 +6,8 @@ Draft for the datawatch-app client. Not filed.
 - New setting `autonomous.automation.cleanup_archived` (boolean, default true, unset reads true). With it on, the cleanup treats an archived Automaton as finished, under the same keep-work rules as a completed or cancelled one. `cleanup_mode` still decides whether anything is removed.
 - Two new values in `task_worktree_cleanup.reasons` and its `kept` entries: `needed_by_record` (an Automaton that has not finished still points at the worktree or branch) and `over_limit` (the periodic pass reached its removal limit).
 - The cleanup skip list has a new reason, `needed_by_record`.
-- An archived Automaton's landing record can read `landed` with actor `worktree-cleanup`.
+- Archiving releases nothing more: only the periodic cleanup releases archived work. Removing a branch writes no landing record.
+- The settings help text says so and names what a folder removal can delete.
 - An Automaton's own removed worktree is created again at its next plan or run; the record gets a `worktree_recreated` decision.
 
 ## Client work

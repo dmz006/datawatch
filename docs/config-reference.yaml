@@ -1624,14 +1624,15 @@ autonomous:
   # cleanup_archived: bool, default true (an unset key reads true). Whether
   # the cleanup treats an archived Automaton as finished, like a completed or
   # cancelled one and under the same keep-work rules. cleanup_mode still
-  # decides whether anything is removed. When true, archiving releases the
-  # Automaton's task worktrees, task branches and work branch where nothing
-  # unmerged or hand-written would be lost, and the periodic pass releases the
-  # rest after cleanup_retention_hours once the work has landed;
-  # cleanup_max_removals_per_pass bounds what that pass removes. A worktree or
-  # branch that an unfinished Automaton still points at is kept. When false,
-  # archiving removes no task worktree or branch and the periodic pass leaves
-  # archived Automata alone. Settable via PUT /api/config (key
+  # decides whether anything is removed. Archiving releases nothing more
+  # because of this key: when true, only the periodic pass releases archived
+  # work, after cleanup_retention_hours and within
+  # cleanup_max_removals_per_pass, and a later pass releases what lands later.
+  # A worktree or branch that an unfinished Automaton still points at is kept.
+  # Removing a worktree also deletes ignored files outside the protected
+  # folders and edits hidden with assume-unchanged or skip-worktree; backup
+  # refs keep commits only. When false, the periodic pass leaves archived
+  # Automata alone. Settable via PUT /api/config (key
   # autonomous.automation.cleanup_archived; a value that is not true or false
   # is refused with 400), CLI `datawatch config set
   # autonomous.automation.cleanup_archived=false`, comm `configure

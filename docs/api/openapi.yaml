@@ -7162,7 +7162,7 @@ paths:
                       cleanup_archived:
                         type: boolean
                         default: true
-                        description: "Whether the cleanup treats archived Automata as finished, under the same keep-work rules as completed and cancelled ones (autonomous.automation.cleanup_archived). cleanup_mode still decides whether anything is removed."
+                        description: "Whether the cleanup treats archived Automata as finished, under the same keep-work rules as completed and cancelled ones (autonomous.automation.cleanup_archived). cleanup_mode still decides whether anything is removed. Only the periodic pass releases archived work, with the retention window and the per-pass limit."
                       cleanup_retention_hours:
                         type: integer
                         default: 24

@@ -4,7 +4,11 @@
 // Automaton counts as finished for the cleanup, like a completed or cancelled
 // one, and under the same keep-work rules (worktree_cleanup.go,
 // task_worktree_keep.go). It removes nothing by itself: cleanup_mode still
-// decides. Work that lands after the archive is released by the periodic pass.
+// decides. Only the periodic pass releases archived work, after the retention
+// window and within the per-pass limit; archiving releases nothing more than
+// it did before. A removal says nothing about where the work went, so no
+// landing record is written and the finished-work audit judges the record on
+// what it holds.
 //
 // One rule protects every finished record, archived or not: a folder or a
 // branch that an Automaton which has not finished still points at is kept.
@@ -221,29 +225,6 @@ func anyPathExists(paths []string) bool {
 		}
 	}
 	return false
-}
-
-// ---- the landing record of a released archived branch ----
-
-// markArchivedBranchReleased records on an archived Automaton that its work
-// landed, after the cleanup removed its work branch on proof that every commit
-// was on the base branch. Without it the finished-work audit would read the
-// missing branch as lost work. A recorded landing, keep or drop decision
-// stands. UpdatedAt is left alone: the retention windows count from it.
-func (m *Manager) markArchivedBranchReleased(prd *PRD, branch string) error {
-	s := m.store
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cur, ok := s.prds[prd.ID]
-	if !ok || cur.Status != PRDArchived || cur.Git.Branch != branch {
-		return nil
-	}
-	if cur.Landing != nil && cur.Landing.State != LandingPending {
-		return nil
-	}
-	cur.Landing = &Landing{State: LandingLanded, Actor: "worktree-cleanup", At: time.Now(),
-		Reason: "every commit was on the base branch when the cleanup removed the work branch"}
-	return s.persistPRD(cur.ID)
 }
 
 // ---- a record's own missing worktree ----

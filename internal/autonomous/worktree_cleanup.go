@@ -909,9 +909,6 @@ func (m *Manager) recordWorktreeRemoval(branch, text string) error {
 	if prd == nil {
 		return nil
 	}
-	if err := m.markArchivedBranchReleased(prd, branch); err != nil {
-		return fmt.Errorf("recording the landing: %w", err)
-	}
 	err := m.AppendTriageNote(prd.ID, "worktree-cleanup", text)
 	if err == nil {
 		return nil
@@ -1014,8 +1011,8 @@ func branchBackupIn(repo string) func(context.Context, string, int64) (string, s
 	}
 }
 
-// ReleaseAutomatonWorktree attempts to release one finished (completed,
-// cancelled or archived) Automaton's work branch and work tree from an end path,
+// ReleaseAutomatonWorktree attempts to release one finished (completed or
+// cancelled) Automaton's work branch and work tree from an end path,
 // under the cleanup's safety criteria (all but the retention window). If anything fails — a
 // safety check holds the entry, a command refuses — the entry is left
 // alone and the reason is recorded (log + audit); the periodic
@@ -1024,13 +1021,23 @@ func branchBackupIn(repo string) func(context.Context, string, int64) (string, s
 //
 // The retention window does not apply here: the entry's age is measured
 // from the moment it finished, so at the end path it is always young and
-// a window of at least an hour would make this path release nothing. Only
-// work whose every commit is already on the base branch, with a clean work
-// tree and no live user, is released, so nothing an operator could still
-// want is lost; the periodic pass keeps the retention window for whatever
-// this path held back.
+// a window of at least an hour would make this path release nothing. The work
+// branch goes only when every commit is already on the base branch, with a
+// clean work tree and no live user; the periodic pass keeps the retention
+// window for whatever this path held back. Removing a worktree still deletes
+// ignored files outside the protected folders, and edits git does not report
+// (assume-unchanged, skip-worktree).
+//
+// With cleanup_archived on, an archived Automaton is left to the periodic pass:
+// archived work is never released without the retention window and the
+// per-pass limit.
 func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 	if prd == nil || prd.ID == "" || prd.Git.Branch == "" {
+		return
+	}
+	var archived bool
+	m.readLocked(func() { archived = prd.Status == PRDArchived })
+	if archived && m.cleanupArchivedOn() {
 		return
 	}
 	m.mu.Lock()
