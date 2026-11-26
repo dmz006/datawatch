@@ -133,6 +133,9 @@ func (m *Manager) folderUpdate(id, dir string, saved *Session, terminals map[str
 		return folderEnd{}, false
 	}
 	state, note := GoneFinalState(ReadOutputTail(own.LogFile, goneTailBytes))
+	if saved.LaunchFailure != "" {
+		state, note = StateFailed, saved.LaunchFailure
+	}
 	ended := now
 	return folderEnd{state: state, endedAt: &ended, note: note}, true
 }

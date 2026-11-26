@@ -345,6 +345,7 @@ func (m *Manager) maybeDismissUIPrompt(sess *Session, action InterstitialPromptA
 	// Rule 3: ONE key, sent exactly like DeclineStartupDialog. This is the
 	// only place a dismissal keystroke is ever issued.
 	literal := dismissKeyLiteral(keyName)
+	m.noteInputSent(sess.FullID)
 	if err := m.tmux.SendKeysLiteral(sess.TmuxSession, literal); err != nil {
 		m.debugf("ui-prompt: %s: send %q failed: %v (still an attempt)", sess.FullID, literal, err)
 	}
