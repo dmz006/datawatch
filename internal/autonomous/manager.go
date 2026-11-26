@@ -2954,9 +2954,9 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 	}
 	var reset []pendingTaskEvent
 	completedCount, requeuedCount := 0, 0
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			t := &prd.Story[si].Tasks[ti]
+	// Parked workers come last: every running worker is counted first.
+	for _, group := range parkedLast(prd) {
+		for _, t := range group {
 			prevStatus := t.Status
 			if t.Kind == TaskKindFinalGate && (prevStatus == TaskInProgress || prevStatus == TaskVerifying || prevStatus == TaskRunningTests) && m.holdFinalGateForRecord(prd, t) {
 				// The final gate outlived the daemon (or finished while it was

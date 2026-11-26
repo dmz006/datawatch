@@ -380,6 +380,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if err != nil {
 		return err
 	}
+	order = m.restartOrder(prd, order)
 	retries := m.effectiveSpawnRetries(prd)
 	if retries < 0 {
 		retries = 0
@@ -478,7 +479,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if o, err := topoSort(tasks); err != nil {
 					log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
 				} else {
-					order = o
+					order = m.restartOrder(prd, o)
 				}
 				failedIDs = make(map[string]bool)
 				heldIDs = make(map[string]bool)
@@ -785,7 +786,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			if o, err := topoSort(tasks); err != nil {
 				log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
 			} else {
-				order = o
+				order = m.restartOrder(latest, o)
 			}
 			for _, tid := range order {
 				if inFlight[tid] {

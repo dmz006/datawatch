@@ -333,3 +333,62 @@ func (m *Manager) admitRetryResume(ctx context.Context, prd *PRD, t *Task) error
 	m.addQueueWait(t.ID, m.attemptNow().Sub(requested))
 	return nil
 }
+
+// parkedLast splits the Automaton's tasks for the restart pass: every other
+// task, then the workers parked on an outside wait. A parked worker is prompted
+// only when its slot fits, which is known only once the running workers, that
+// already use theirs, have been counted.
+func parkedLast(prd *PRD) [2][]*Task {
+	var out [2][]*Task
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			g := 0
+			if t.Status == TaskWaitingCapacity && IsAwaitExternalWaitReason(t.WaitReason) {
+				g = 1
+			}
+			out[g] = append(out[g], t)
+		}
+	}
+	return out
+}
+
+// restartOrder gives lanes back to the work that held them before a restart or
+// a resume: first the tasks whose worker or verification is under way, then the
+// parked workers, then everything else, each group in its old order. A running
+// task may already use a slot, so it needs a lane before a task that still has
+// to wait for one: otherwise the waiting tasks can fill every lane and wait for
+// a slot that only the task with no lane would free. A parked task may have
+// kept the project tree, which a task that never started would wait for. A task
+// whose dependencies are not all completed keeps its place among the rest.
+func (m *Manager) restartOrder(prd *PRD, order []string) []string {
+	var running, parked, rest []string
+	m.store.WithLock(func() {
+		byID := map[string]*Task{}
+		for _, t := range flattenTasks(prd) {
+			byID[t.ID] = t
+		}
+		depsDone := func(t *Task) bool {
+			for _, dep := range t.DependsOn {
+				if d, ok := byID[dep]; ok && d.Status != TaskCompleted {
+					return false
+				}
+			}
+			return true
+		}
+		for _, id := range order {
+			t := byID[id]
+			switch {
+			case t == nil || t.SessionID == "" || !depsDone(t):
+				rest = append(rest, id)
+			case t.Status == TaskInProgress || t.Status == TaskVerifying || t.Status == TaskRunningTests:
+				running = append(running, id)
+			case t.Status == TaskWaitingCapacity && IsAwaitExternalWaitReason(t.WaitReason):
+				parked = append(parked, id)
+			default:
+				rest = append(rest, id)
+			}
+		}
+	})
+	return append(append(running, parked...), rest...)
+}
