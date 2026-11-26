@@ -109,6 +109,8 @@ const (
 	// behaviour as REST / MCP / CLI.
 	CmdPause  CommandType = "pause"
 	CmdResume CommandType = "resume"
+	// "Done when" lists (see acceptance_comm.go).
+	CmdAcceptance CommandType = "acceptance"
 	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
 	// as REST / MCP / CLI.
 	CmdUsageBackoff CommandType = "usage_backoff"
@@ -1517,6 +1519,9 @@ func Parse(text string) Command {
 	//   usage work <points|clear>
 	case lower == "usage" || strings.HasPrefix(lower, "usage "):
 		return parseUsage(strings.TrimSpace(text[len("usage"):]))
+
+	case lower == "acceptance" || strings.HasPrefix(lower, "acceptance "):
+		return parseAcceptance(text[len("acceptance"):])
 
 	case lower == "pause" || strings.HasPrefix(lower, "pause "):
 		return parsePause(strings.TrimSpace(text[len("pause"):]))

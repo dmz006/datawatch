@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/acceptance"
 	"github.com/dmz006/datawatch/internal/trace"
 	"github.com/dmz006/datawatch/internal/trace/observe"
 	"io"
@@ -413,6 +414,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30
 		newPauseCmd(),          // operator pause
+		newAcceptanceCmd(),     // "done when" lists
 		newResumeCmd(),         // operator pause
 		newUsageBackoffCmd(),   // BL428 Phase 4
 		newStaleCmd(),          // BL40
@@ -10105,6 +10107,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
+		AcceptanceTools:        cfg.Acceptance.Mode == acceptance.ModeReport,
 		AlertStore:             alertStore,
 		SchedStore:             schedStore,
 		ExitHookStore:          exitHookStore,
@@ -15990,6 +15993,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
+		AcceptanceTools:        cfg.Acceptance.Mode == acceptance.ModeReport,
 		AlertStore:             mcpAlertStore,
 		SchedStore:             mcpSchedStore,
 		QueueStore:             mcpQueueStore,  // BL357

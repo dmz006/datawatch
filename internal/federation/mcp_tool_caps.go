@@ -564,6 +564,12 @@ var MCPToolCap = map[string]string{
 	"orchestrator_verdicts":          CapAutonomousRead,
 	"per_automaton_guardrails_set":   CapAutonomousWrite,
 	"per_automaton_retry_policy_set": CapAutonomousWrite,
+	"acceptance_accept":              CapAutonomousWrite,
+	"acceptance_catalog":             CapAutonomousRead,
+	"acceptance_confirm":             CapAutonomousWrite,
+	"acceptance_edit":                CapAutonomousWrite,
+	"acceptance_report":              CapAutonomousRead,
+	"acceptance_view":                CapAutonomousRead,
 	"pause_resume":                   CapPauseWrite,
 	"pause_set":                      CapPauseWrite,
 	"pause_status":                   CapPauseRead,
@@ -856,6 +862,8 @@ var sensitiveWriteTools = map[string]bool{
 }
 
 var nonConfigWriteTools = map[string]bool{
+	"acceptance_accept": true, "acceptance_catalog": true, "acceptance_confirm": true, "acceptance_edit": true,
+	"acceptance_report": true, "acceptance_view": true,
 	"packs_list": true, "packs_setting_get": true, "packs_inputs_get": true,
 	"acme_issuer_log": true, "acme_status": true, "agent_audit": true,
 	"agent_get": true, "agent_list": true, "agent_logs": true, "agent_spawn": true,
