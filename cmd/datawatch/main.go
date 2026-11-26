@@ -7924,6 +7924,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			var requestWatchReader requestwatch.Reader = requestWatcher
 			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
 			wirePause(cfg, amgr, httpServer)
+			wireAcceptance(cfg, encKey, httpServer)
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, headroom.Gate, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)

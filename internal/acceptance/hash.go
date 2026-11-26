@@ -85,3 +85,12 @@ func (l *List) ChangesSinceFirst() Changes {
 	c.Reviewer = first.Reviewer != l.Reviewer
 	return c
 }
+
+// TextDigest names a saved text by its hash, for views that must not hand out
+// what datawatch runs. Empty stays empty.
+func TextDigest(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "sha256:" + hashOf(s)
+}

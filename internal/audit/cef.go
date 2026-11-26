@@ -152,6 +152,8 @@ func cefSignature(action string) (int, string, int) {
 		return 29, "AutomationUpdated", 3
 	case "automation_delete":
 		return 30, "AutomationDeleted", 5
+	case ActionAcceptanceChanged:
+		return 103, "AcceptanceListChanged", 3
 	case ActionPauseSet:
 		return 98, "PauseSet", 5
 	case ActionPauseResumed:

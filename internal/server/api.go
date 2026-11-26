@@ -30,6 +30,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/acceptance"
 	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
@@ -406,6 +407,9 @@ type Server struct {
 	capacityWatchdogThreshold time.Duration
 	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
 	usageBackoff *autonomous.Backoff
+	// acceptance keeps the "done when" lists (see acceptance.go); nil = not wired.
+	acceptance       *acceptance.Service
+	acceptanceSecure bool
 	// pauseStore is the operator pause service (see pause.go); nil = not wired.
 	pauseStore *pause.Store
 	// backoffReserve is the review-reserve gate (nil = not wired); the usage
@@ -7182,6 +7186,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// documented defaults).
 			"services": pluginServicesSurface(s.cfg),
 		},
+		"acceptance": map[string]interface{}{
+			"mode":                  acceptanceMode(s.cfg),
+			"rework_rounds":         s.cfg.Acceptance.ReworkRounds,
+			"infra_retries":         s.cfg.Acceptance.InfraRetries,
+			"check_timeout_seconds": s.cfg.Acceptance.CheckTimeoutSeconds,
+			"freshness_seconds":     s.cfg.Acceptance.FreshnessSeconds,
+			"warn_hours":            s.cfg.Acceptance.WarnHours,
+			"defaults_file":         s.cfg.Acceptance.DefaultsFile,
+		},
 		"orchestrator": map[string]interface{}{
 			"enabled":              s.cfg.Orchestrator.Enabled,
 			"default_guardrails":   s.cfg.Orchestrator.DefaultGuardrails,
@@ -10148,6 +10161,31 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// See https://github.com/dmz006/datawatch/issues/19.
 		case "autonomous.enabled":
 			cfg.Autonomous.Enabled = toBool(v)
+		case "acceptance.mode":
+			// Only the two known values are stored.
+			if m, ok := v.(string); ok && (m == acceptance.ModeOff || m == acceptance.ModeReport) {
+				cfg.Acceptance.Mode = m
+			}
+		case "acceptance.rework_rounds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Acceptance.ReworkRounds = n
+			}
+		case "acceptance.infra_retries":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Acceptance.InfraRetries = n
+			}
+		case "acceptance.check_timeout_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Acceptance.CheckTimeoutSeconds = n
+			}
+		case "acceptance.freshness_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Acceptance.FreshnessSeconds = n
+			}
+		case "acceptance.warn_hours":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Acceptance.WarnHours = n
+			}
 		case "pause.start_paused":
 			// Read once at daemon start (a saved pause state wins over it).
 			cfg.Pause.StartPaused = toBool(v)
