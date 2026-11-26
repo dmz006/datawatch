@@ -255,25 +255,35 @@ func respondStartupDialog(m *session.Manager, sessID string) bool {
 }
 
 // answerLiveStartupDialog answers the start-up dialog on the live screen, if
-// there is one: words in output or in a task send nothing.
+// there is one: words in output or in a task send nothing. It waits until the
+// dialog has stood unchanged, because one that has just appeared does not keep
+// its keys.
 func answerLiveStartupDialog(m *session.Manager, sessID string) bool {
-	a, ok := m.LiveStartupDialog(sessID)
+	a, ok := m.SettledStartupDialog(sessID)
 	return ok && answerStartupDialog(m, sessID, a)
 }
 
 // answerStartupDialog sends the answer to dialog a.
 func answerStartupDialog(m *session.Manager, sessID string, a session.StartupDialogAction) bool {
+	// One answer for each dialog, whichever responder sends it.
+	answer := func(send func() error) (sent bool, err error) {
+		err = m.AnswerStartupScreen(sessID, a.Kind, send)
+		if errors.Is(err, session.ErrStartupScreenAnswered) {
+			return false, nil
+		}
+		return err == nil, err
+	}
 	switch a.Kind {
 	case session.StartupDialogNone:
 		return false
 	case session.StartupDialogTrustFolder:
 		// Arrow-key TUI ("❯ No, exit" pre-selected): Down moves the selector
 		// onto the accept option, Enter confirms.
-		if err := m.SendTrustDialogAccept(sessID); err != nil {
+		sent, err := answer(func() error { return m.SendTrustDialogAccept(sessID) })
+		if err != nil {
 			fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
-			return false
 		}
-		return true
+		return sent
 	case session.StartupDialogUnknownConfirm:
 		// The classifier declined to guess: send nothing and let the
 		// silent-start detector flag the session as a start failure.
@@ -283,22 +293,27 @@ func answerStartupDialog(m *session.Manager, sessID string, a session.StartupDia
 	if a.Retry {
 		// Unsafe dialog (confirm-unsafe / update-prompt): decline with
 		// exactly one Esc; the start-failure budget owns any re-try.
-		if err := m.DeclineStartupDialog(sessID); err != nil {
+		sent, err := answer(func() error { return m.DeclineStartupDialog(sessID) })
+		if err != nil {
 			fmt.Printf("[claude] decline %q dialog send failed %s: %v\n", a.Kind, sessID, err)
-			return false
+		} else if sent {
+			fmt.Printf("[claude] declined %q startup dialog on %s (sent esc)\n", a.Kind, sessID)
 		}
-		fmt.Printf("[claude] declined %q startup dialog on %s (sent esc)\n", a.Kind, sessID)
-		return true
+		return sent
 	}
 	text := session.StartupDialogSendText(a)
 	if text == "" {
 		return false
 	}
-	if err := m.SendInput(sessID, text, "auto-accept-disclaimer"); err != nil {
+	sent, err := answer(func() error {
+		// Enter is checked against the screen just before it is pressed.
+		defer m.GuardStartupEnter(sessID, a.Kind)()
+		return m.SendInput(sessID, text, "auto-accept-disclaimer")
+	})
+	if err != nil {
 		fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
-		return false
 	}
-	return true
+	return sent
 }
 
 // claudeStartupAccepted tracks sessions whose startup auto-accept goroutine
@@ -2695,15 +2710,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				time.Sleep(750 * time.Millisecond)
 				// Classifier-driven: answers whichever startup dialog is
 				// actually on the live pane (trust arrow keys, Enter-type
-				// accepts, or a single Esc for unsafe dialogs). At most one
-				// answer per appearance; a few re-captures in case the TUI is
-				// still rendering.
-				for i := 0; i < 5; i++ {
-					if answerLiveStartupDialog(mgr, sessID) {
-						break
-					}
-					time.Sleep(500 * time.Millisecond)
-				}
+				// accepts, or a single Esc for unsafe dialogs), each once it has
+				// settled, until none is left.
+				respondToStartupScreens(mgr, sessID, answerLiveStartupDialog, startupRespondWindow, startupRespondPause)
 			}()
 		},
 	})
@@ -10473,15 +10482,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// Classifier-driven: answers whichever startup dialog is
 					// on the live pane (trust arrow keys, Enter-type accepts,
 					// or a single Esc for unsafe dialogs), not only the one the
-					// prompt line named. At most one answer per appearance;
-					// re-capture a few times in case the TUI is still
-					// rendering.
-					for i := 0; i < 5; i++ {
-						if answerLiveStartupDialog(mgr, sessID) {
-							break
-						}
-						time.Sleep(500 * time.Millisecond)
-					}
+					// prompt line named, each once it has settled, until none is
+					// left.
+					respondToStartupScreens(mgr, sessID, answerLiveStartupDialog, startupRespondWindow, startupRespondPause)
 				}(sess.FullID)
 			}
 		}

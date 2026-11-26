@@ -64,11 +64,31 @@ func liveDialogBlock(pane string) (block []string, opened, ok bool) {
 	return lines[start : end+1], opened, true
 }
 
+// startupScreen is a start-up dialog as the screen shows it.
+type startupScreen struct {
+	action StartupDialogAction
+	// text is the dialog's own lines; two readings of an unchanged dialog have
+	// the same text.
+	text string
+	// selected is the option under the cursor, lower case, "" when the dialog
+	// lists none; selectedNumber is its number, "" when it has none.
+	selected, selectedNumber string
+}
+
 // liveStartupDialog returns the start-up dialog on the screen pane shows, and
 // whether there is one. The kind and keys are classifyStartupDialog's, read
 // from the dialog alone.
 func liveStartupDialog(pane string) (StartupDialogAction, bool) {
-	none := StartupDialogAction{Kind: StartupDialogNone, Keys: startupKeysNone}
+	d, ok := readStartupScreen(pane)
+	if !ok {
+		return StartupDialogAction{Kind: StartupDialogNone, Keys: startupKeysNone}, false
+	}
+	return d.action, true
+}
+
+// readStartupScreen is liveStartupDialog with what the screen shows of it.
+func readStartupScreen(pane string) (startupScreen, bool) {
+	var none startupScreen
 	if PaneShowsApprovalPrompt(pane) {
 		return none, false
 	}
@@ -76,7 +96,11 @@ func liveStartupDialog(pane string) (StartupDialogAction, bool) {
 	if !ok {
 		return none, false
 	}
-	text := strings.Join(block, "\n")
+	trimmed := make([]string, len(block))
+	for i, l := range block {
+		trimmed[i] = strings.TrimRight(l, " \t")
+	}
+	text := strings.Join(trimmed, "\n")
 	if containsAnyPhrase(strings.ToLower(text), sessionMarks...) {
 		return none, false
 	}
@@ -84,7 +108,7 @@ func liveStartupDialog(pane string) (StartupDialogAction, bool) {
 	// selected is the text under the cursor, and cursors counts the cursors
 	// that are not on a numbered option, as an input prompt's is not.
 	var options []string
-	selected, numbered, cursors, bare := "", 0, 0, 0
+	selected, selectedNumber, numbered, cursors, bare := "", "", 0, 0, 0
 	for _, l := range block {
 		if boxPromptLine.MatchString(l) {
 			return none, false
@@ -103,6 +127,7 @@ func liveStartupDialog(pane string) (StartupDialogAction, bool) {
 		}
 		if part[1] != "" {
 			selected = option
+			selectedNumber = strings.TrimRight(strings.Trim(part[2], " \t\u00a0"), ".)")
 			cursors++
 			if part[2] == "" {
 				bare++
@@ -148,7 +173,7 @@ func liveStartupDialog(pane string) (StartupDialogAction, bool) {
 	if !shaped {
 		return none, false
 	}
-	return a, true
+	return startupScreen{action: a, text: text, selected: selected, selectedNumber: selectedNumber}, true
 }
 
 // LiveStartupDialog returns the start-up dialog on the live screen of session

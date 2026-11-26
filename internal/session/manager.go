@@ -778,6 +778,11 @@ type Manager struct {
 	// in-flight / attempts and confirms the dismissal once the dialog is
 	// observed gone — see dismissClaudeStartupDialog.
 	claudeDialogDismiss sync.Map
+	// startupAnswers records the start-up screens answered, by session and
+	// kind (startup_answer.go). Guarded by startupMu.
+	startupMu      sync.Mutex
+	startupAnswers map[string]time.Time
+	startupSending map[string]bool
 
 	// summaries stores the last generated summary per session ID.
 	// Access is protected by the summariesMu mutex.
@@ -6499,6 +6504,7 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 
 	specs := []struct {
 		name       string
+		kind       StartupKind
 		visible    bool
 		sendAccept func() error
 	}{
@@ -6509,6 +6515,7 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			// (it reads the pane to pick between plain Enter and
 			// Down+Enter — see TmuxManager.SendTrustPromptAccept).
 			name:    claudeDialogTrust,
+			kind:    StartupDialogTrustFolder,
 			visible: onScreen == StartupDialogTrustFolder,
 			sendAccept: func() error {
 				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
@@ -6523,11 +6530,13 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			// (not the "loading development channels" warning) so a stray
 			// Enter never races ahead of a still-pending trust dialog.
 			name:    claudeDialogChannels,
+			kind:    StartupDialogDevChannels,
 			visible: onScreen == StartupDialogDevChannels,
 			sendAccept: func() error {
 				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
 					return err
 				}
+				defer m.guardEnter(sess.TmuxSession, StartupDialogDevChannels)()
 				return m.tmux.SendKeys(sess.TmuxSession, "Enter")
 			},
 		},
@@ -6536,7 +6545,20 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 	acted := false
 	for _, d := range specs {
 		if d.visible {
-			if m.trySendDialogAccept(sess, d.name, d.sendAccept) {
+			// A screen that has its answer is not an attempt of this
+			// responder, and is not worth waiting on.
+			if m.startupScreenHeld(sess.FullID, d.kind) {
+				continue
+			}
+			// The keys go once the dialog has stood unchanged, and only
+			// one watcher sends them.
+			answer := func() error {
+				if got, ok := m.settledScreen(sess.FullID, sess.TmuxSession); !ok || got.action.Kind != d.kind {
+					return errStartupNotSettled
+				}
+				return m.AnswerStartupScreen(sess.FullID, d.kind, d.sendAccept)
+			}
+			if m.trySendDialogAccept(sess, d.name, answer) {
 				acted = true
 			}
 		} else {
@@ -6598,6 +6620,10 @@ func (m *Manager) trySendDialogAccept(sess *Session, dialog string, sendAccept f
 	err := sendAccept()
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	if errors.Is(err, errStartupNotSettled) || errors.Is(err, ErrStartupScreenAnswered) {
+		st.attempts-- // nothing was typed
+		return false
+	}
 	st.lastAttempt = time.Now()
 	if err != nil {
 		st.inFlight = false
