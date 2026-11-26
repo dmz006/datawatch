@@ -3126,7 +3126,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	} else if m.cfg != nil {
 		sess.InputMode = m.cfg.GetInputMode(backendName)
 	}
-	m.debugf("creating tmux session %q for backend=%q task=%q dir=%q size=%dx%d mode=%s", tmuxSession, backendName, task, projectDir, cols, rows, sess.OutputMode)
+	m.debugf("creating tmux session %q for backend=%q task_length=%d dir=%q size=%dx%d mode=%s", tmuxSession, backendName, len(task), projectDir, cols, rows, sess.OutputMode)
 	var ceilingOv resources.Override
 	if opt != nil {
 		ceilingOv = opt.MemoryCeiling
@@ -7760,7 +7760,7 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 		}
 		for _, sc := range m.WaitingInputSchedules(m.schedStore, sess) {
 			if sent, _ := m.FireScheduled(m.schedStore, sess.FullID, sc); sent {
-				fmt.Printf("[schedule] sent waiting_input command to %s: %s\n", sess.FullID, sc.Command)
+				fmt.Printf("[schedule] sent waiting_input [%s] to %s\n", sc.ID, sess.FullID)
 				m.FireChained(m.schedStore, sess.FullID, sc.ID)
 			}
 		}
