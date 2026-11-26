@@ -138,9 +138,19 @@ shows this as the step `record-landing`. A push that was held, skipped or
 failed, or a remote that cannot confirm it, leaves everything as it was.
 
 A shipped record you set by hand with source `merge_step`, for a branch in the
-merge repository that has a remote, is refused unless the remote contains the
-commit; when it does, the landing becomes `landed` too. It never changes the
-Automaton's status.
+merge repository, is refused unless the commit contains that branch and, when
+the repository has a remote, the remote contains the commit; when the remote
+does, the landing becomes `landed` too. It never changes the Automaton's status.
+Work that was squashed or ported by hand does not contain the branch: record it
+with `backfill`. If the branch is no longer in the repository, nothing can be
+checked: the record is stored as given and the landing is not changed.
+
+For such a record the commit must be a commit id: hex only, either the full id
+(the repository's hash length) or its first 7 or more characters, as
+`git rev-parse --short` prints. Anything else, such as a branch or ref name, is
+refused before git runs. An abbreviation is matched against the commits the
+merge repository holds and the full id is stored; if none or more than one
+matches, the record is refused and you give the full id.
 
 **A `backfill` record is stored as given, with no check**, and `backfill` is
 what the CLI, MCP and chat send unless you choose `merge_step`. So such a
