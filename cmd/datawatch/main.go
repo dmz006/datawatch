@@ -1306,7 +1306,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		}
 		// Old registrations are cleaned up beside the start, never before it.
-		go cleanupStaleChannelMCP(usingGoBridge, func(sessionID string) bool {
+		go cleanupStaleChannelMCP(usingGoBridge, cfg.Hostname, func(sessionID string) bool {
 			_, ok := mgr.GetSession(sessionID)
 			return ok
 		})
