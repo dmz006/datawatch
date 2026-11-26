@@ -35,12 +35,6 @@ exec_steps:
       value: "{{params.mode}}"
     read_only: false
   - tool: config_set
-    description: Switch the shared temp cache sweep on or off (off by default; it removes caches made by any program)
-    args:
-      key: autonomous.automation.cleanup_shared_cache_sweep
-      value: "{{params.shared_cache_sweep}}"
-    read_only: false
-  - tool: config_set
     description: Set how many hours a finished Automaton's work is kept before it can be removed
     args:
       key: autonomous.automation.cleanup_retention_hours
