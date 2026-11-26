@@ -220,6 +220,16 @@ failure is again a retried class, what happens depends on `autonomous.infra_retr
 - Other tasks that do not depend on the held one keep running. Tasks that depend
   on it wait.
 
+**The supervisor loop retries such a hold once by itself.** Its
+[`retry_failed_infra` step](supervisor-loop.md#the-mechanical-steps-no-model),
+on by default, retries the task on its next pass, usually within a minute, and
+withdraws the question. The retry runs the task as your own retry does. A task
+held again stays held until you act. To keep every such hold for yourself:
+
+```sh
+datawatch config set autonomous.supervisor_loop.retry_failed_infra.enabled false
+```
+
 **You answer in one of two ways: retry or cancel.** Answer the operator question,
 or resolve the held task the way you resolve any held task:
 

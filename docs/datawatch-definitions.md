@@ -2910,7 +2910,7 @@ What happens to an item that came from the file when its row has disappeared fro
 <a id="supervisor-loop-deploy-after-ship-enabled"></a>
 - **`supervisor_loop.deploy_after_ship.enabled`** — Turns the deploy after ship step on or off. The step deploys the daemon after a release ships. On by default. The step, also when run by hand, is held unless [`autonomous.merge_deploy_run_enabled`](#autonomous-merge-deploy-run-enabled) is `true`, and while the [operator pause](#paused-by-operator) covers the repository.
 <a id="supervisor-loop-retry-failed-infra-enabled"></a>
-- **`supervisor_loop.retry_failed_infra.enabled`** — Turns the retry failed infra step on or off. The step retries tasks that failed for infrastructure reasons. On by default.
+- **`supervisor_loop.retry_failed_infra.enabled`** — Turns the retry failed infra step on or off. The step retries a task held after its [infrastructure retries](howto/infrastructure-retry.md#when-the-retries-run-out) ran out, of every class (a failed worker launch included), and runs it as the operator's retry does. It does so once for each task; a later hold stays for the operator, also after a daemon restart, until the operator retries or resets the task. On by default.
 <a id="supervisor-loop-cleanup-sweep-enabled"></a>
 - **`supervisor_loop.cleanup_sweep.enabled`** — Turns the cleanup sweep step on or off. The step sweeps leftover worktrees and scratch files. On by default.
 <a id="supervisor-loop-apply-answers-enabled"></a>
