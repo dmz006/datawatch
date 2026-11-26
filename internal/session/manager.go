@@ -6510,6 +6510,14 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 		return false
 	}
 	lower := strings.ToLower(StripANSI(text))
+	// The text (a pane capture or one log line) is only a reason to look: a
+	// dialog is answered when the live screen shows it.
+	onScreen := StartupDialogNone
+	if containsAnyPhrase(lower, "yes, i trust this folder", "quick safety check", "i am using this for local development") {
+		if a, ok := liveStartupDialog(m.liveScreen(sess.TmuxSession)); ok {
+			onScreen = a.Kind
+		}
+	}
 
 	specs := []struct {
 		name       string
@@ -6525,7 +6533,7 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			// Down+Enter — see TmuxManager.SendTrustPromptAccept).
 			name:    claudeDialogTrust,
 			kind:    StartupDialogTrustFolder,
-			visible: strings.Contains(lower, "yes, i trust this folder") || strings.Contains(lower, "quick safety check"),
+			visible: onScreen == StartupDialogTrustFolder,
 			sendAccept: func() error {
 				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
 					return err
@@ -6540,7 +6548,7 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			// Enter never races ahead of a still-pending trust dialog.
 			name:    claudeDialogChannels,
 			kind:    StartupDialogDevChannels,
-			visible: strings.Contains(lower, "i am using this for local development"),
+			visible: onScreen == StartupDialogDevChannels,
 			sendAccept: func() error {
 				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
 					return err

@@ -248,8 +248,22 @@ func claudeDisclaimerResponse(line string) string {
 // It reports whether it sent a keystroke. A "no keystroke" outcome, a screen
 // already answered included, returns false so caller loops may re-capture
 // later within their window.
+//
+// It chooses the key for whatever the pane's text names. Live responders call
+// answerLiveStartupDialog, which first requires the dialog to be on screen.
 func respondStartupDialog(m *session.Manager, sessID string) bool {
-	a := m.ActiveStartupDialog(sessID)
+	return answerStartupDialog(m, sessID, m.ActiveStartupDialog(sessID))
+}
+
+// answerLiveStartupDialog answers the start-up dialog on the live screen, if
+// there is one: words in output or in a task send nothing.
+func answerLiveStartupDialog(m *session.Manager, sessID string) bool {
+	a, ok := m.LiveStartupDialog(sessID)
+	return ok && answerStartupDialog(m, sessID, a)
+}
+
+// answerStartupDialog sends the answer to dialog a.
+func answerStartupDialog(m *session.Manager, sessID string, a session.StartupDialogAction) bool {
 	// Every answer goes through the manager, which sends one per screen
 	// whichever responder asks.
 	answer := func(send func() error) (answered bool, err error) {
@@ -2696,7 +2710,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// answer per appearance; a few re-captures in case the TUI is
 				// still rendering.
 				for i := 0; i < 5; i++ {
-					if respondStartupDialog(mgr, sessID) {
+					if answerLiveStartupDialog(mgr, sessID) {
 						break
 					}
 					time.Sleep(500 * time.Millisecond)
@@ -2737,7 +2751,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// trust arrow keys, Enter-type accepts, or a single Esc for unsafe
 		// dialogs.
 		if claudeAutoAccept && sess.BackendFamily == "claude-code" {
-			go pollStartupDialog(sess.FullID, func(id string) bool { return respondStartupDialog(mgr, id) },
+			go pollStartupDialog(sess.FullID, func(id string) bool { return answerLiveStartupDialog(mgr, id) },
 				500*time.Millisecond, 45*time.Second)
 		}
 		// Memory context is not put into the session here. Typing it into the
@@ -10424,7 +10438,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// re-capture a few times in case the TUI is still
 					// rendering.
 					for i := 0; i < 5; i++ {
-						if respondStartupDialog(mgr, sessID) {
+						if answerLiveStartupDialog(mgr, sessID) {
 							break
 						}
 						time.Sleep(500 * time.Millisecond)
