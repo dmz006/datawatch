@@ -119,6 +119,13 @@ func isPlainShell(name string) bool {
 // logShowsAssistantTurn reports whether the recorded output file at path
 // shows an assistant turn. A missing or unreadable file reports false.
 func logShowsAssistantTurn(path string) bool {
+	return logShowsAssistantTurnSince(path, 0)
+}
+
+// logShowsAssistantTurnSince is logShowsAssistantTurn over what the file holds
+// from offset on. A file now shorter than offset was started over and is read
+// whole.
+func logShowsAssistantTurnSince(path string, offset int64) bool {
 	if path == "" {
 		return false
 	}
@@ -127,6 +134,11 @@ func logShowsAssistantTurn(path string) bool {
 		return false
 	}
 	defer f.Close() //nolint:errcheck
+	if st, serr := f.Stat(); serr == nil && offset > 0 && offset <= st.Size() {
+		if _, serr = f.Seek(offset, io.SeekStart); serr != nil {
+			return false
+		}
+	}
 	return outputShowsAssistantTurn(f)
 }
 

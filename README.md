@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.28 (2026-11-26).** datawatch now answers a Claude start-up dialog only when the screen ends with it and it has stayed unchanged for two seconds; the changelog lists what can still go wrong. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.30 (2026-11-26).** datawatch's check of a local claude-code Automaton worker whose task datawatch types no longer passes it unless the task is recorded as delivered; the changelog lists what that does not prove. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

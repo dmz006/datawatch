@@ -161,6 +161,21 @@ func taskReachedAgent(snap *Session) bool {
 	return snap.TaskVerifiedAt != nil || (snap.TaskDeliveredAt != nil && !snap.TaskDeliveryUnverified)
 }
 
+// TaskNeverProven reports a claude-code session whose task datawatch has to
+// type itself and has no proof it arrived on this launch. The claim saved
+// before typing is not proof, and nothing the session left behind (a commit, a
+// captured screen, a completion line) can stand in for it.
+func (s *Session) TaskNeverProven() bool {
+	return s.BackendFamily == "claude-code" && !s.Subprocess && s.DaemonDeliversTask &&
+		s.Task != "" && !taskReachedAgent(s)
+}
+
+// IsLauncherExitSummary reports a completion summary that is only the line the
+// launch command prints when Claude Code leaves, whatever it had done.
+func IsLauncherExitSummary(summary string) bool {
+	return summary == claudeExitSummary
+}
+
 // launchFailureIfAgentLeft reports whether everything but the agent having left
 // is proven for snap, and the reason it would then have failed.
 func (m *Manager) launchFailureIfAgentLeft(snap *Session) (string, bool) {

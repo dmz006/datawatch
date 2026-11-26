@@ -1462,7 +1462,7 @@ The per-provider billing profile a cost-report row is read against, keyed by a p
 
 #### Detection filters
 
-Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt patterns** trigger `WaitingInput` when matched (e.g. `❯`, `$ `). **Completion patterns** trigger `Complete` (e.g. `DATAWATCH_COMPLETE:`). Per-deployment overrides; the global defaults work for most setups.
+Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt patterns** trigger `WaitingInput` when matched (e.g. `❯`, `$ `). **Completion patterns** trigger `Complete` (e.g. `DATAWATCH_COMPLETE:`) for a one-shot session. An interactive agent's own completion line does not end its session: it goes to `WaitingInput` and stays a live session. The line a launch command prints after Claude Code quits is the exception; see [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#an-interactive-session-that-reports-its-work-done). Per-deployment overrides; the global defaults work for most setups.
 
 #### Compute Nodes
 
@@ -2910,7 +2910,7 @@ What happens to an item that came from the file when its row has disappeared fro
 <a id="supervisor-loop-deploy-after-ship-enabled"></a>
 - **`supervisor_loop.deploy_after_ship.enabled`** — Turns the deploy after ship step on or off. The step deploys the daemon after a release ships. On by default. The step, also when run by hand, is held unless [`autonomous.merge_deploy_run_enabled`](#autonomous-merge-deploy-run-enabled) is `true`, and while the [operator pause](#paused-by-operator) covers the repository.
 <a id="supervisor-loop-retry-failed-infra-enabled"></a>
-- **`supervisor_loop.retry_failed_infra.enabled`** — Turns the retry failed infra step on or off. The step retries tasks that failed for infrastructure reasons. On by default.
+- **`supervisor_loop.retry_failed_infra.enabled`** — Turns the retry failed infra step on or off. The step retries a task held after its [infrastructure retries](howto/infrastructure-retry.md#when-the-retries-run-out) ran out, of every class (a failed worker launch included), and runs it as the operator's retry does. It does so once for each task; a later hold stays for the operator, also after a daemon restart, until the operator retries or resets the task. On by default.
 <a id="supervisor-loop-cleanup-sweep-enabled"></a>
 - **`supervisor_loop.cleanup_sweep.enabled`** — Turns the cleanup sweep step on or off. The step sweeps leftover worktrees and scratch files. On by default.
 <a id="supervisor-loop-apply-answers-enabled"></a>
@@ -3076,7 +3076,7 @@ What counts as a change is read from git alone: files the task committed, edits 
 
 - `spawn_error` — the worker could not be started at all.
 - `storage_write` — a write failed because the disk is full, the quota is used up or the file system is read-only; the script gate's **temporary folder full** reason (a no-space exit at the gate) is one of the texts this class matches, so it takes this path rather than the normal failure path.
-- `session_killed_before_delivery` — the worker session ended before the task text reached it.
+- `session_killed_before_delivery` — the worker session ended before the task text reached it. For a task datawatch types itself (a Claude channel launch), a worker with no proof that the task arrived on its current start is never verified or done, whatever it left behind; see [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#when-an-automaton-worker-never-got-its-task).
 - `daemon_restart` — the daemon restarted or shut down while the task was running.
 
 A wrong answer, a failed check, a task that went out of scope or a stall that is not a launch failure is the task's own fault and follows the normal failure path. A session that never started has its own start budget and is not classified here. A throttle or usage limit from a model provider is not an infrastructure failure either, and it is never retried by this feature.
