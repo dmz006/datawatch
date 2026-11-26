@@ -110,9 +110,13 @@ type mergeFacts struct {
 	byHand       bool
 	review       ReviewState
 	passedCommit string // commit of the newest completion pass that records one
-	hasPass      bool   // a completion review pass exists
+	passedAt     time.Time
+	hasPass      bool // a completion review pass exists
 	acceptance   *MergeAcceptance
 	tasks        []mergeTaskBranch
+	// handTip asks the rule about the commit a hand merge merged, in place of
+	// the branch's head, and sets an operator pause aside.
+	handTip string
 }
 
 // unitReviewBlocked reports whether, for any guardrail among one unit's
@@ -265,7 +269,7 @@ func mergeFactsOf(p *PRD) mergeFacts {
 		}
 	}
 	if v := latestVerdict(anchored, "pass"); v != nil {
-		f.passedCommit = v.JudgedCommitSHA
+		f.passedCommit, f.passedAt = v.JudgedCommitSHA, v.VerdictAt
 	}
 	for i := range p.Story {
 		for j := range p.Story[i].Tasks {
@@ -317,10 +321,12 @@ func (m *Manager) evaluateMerge(ctx context.Context, f mergeFacts) MergeSelectio
 	}
 
 	repo := strings.TrimSpace(m.MergeBaseRepo())
-	if b, paused := m.pauseBlock(f.projectDir); paused {
-		add("%s", b.Message())
-	} else if b, paused := m.pauseBlock(repo); paused && repo != "" {
-		add("%s", b.Message())
+	if f.handTip == "" {
+		if b, paused := m.pauseBlock(f.projectDir); paused {
+			add("%s", b.Message())
+		} else if b, paused := m.pauseBlock(repo); paused && repo != "" {
+			add("%s", b.Message())
+		}
 	}
 
 	git := m.archivedUnmergedGitRunner()
@@ -331,6 +337,9 @@ func (m *Manager) evaluateMerge(ctx context.Context, f mergeFacts) MergeSelectio
 		add("%s", ErrMergeNoBaseRepo.Error())
 	default:
 		tip, ok := branchCommit(ctx, git, repo, e.Branch)
+		if f.handTip != "" {
+			tip, ok = f.handTip, fullCommitID.MatchString(f.handTip)
+		}
 		if !ok {
 			add("branch %s is not in the merge repository (it belongs to another repository, or it is gone)", e.Branch)
 			break

@@ -43,6 +43,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/memory"
+	"github.com/dmz006/datawatch/internal/mergeshadow"
 	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -3020,9 +3021,20 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			MergedAt        time.Time `json:"merged_at"`
 			MergeCommit     string    `json:"merge_commit"`
 			Source          string    `json:"source"`
+			// HandChecks are the hand merge's check results, one per lint
+			// and test step of the merge pipeline, for the merge shadow.
+			HandChecks map[string]string `json:"hand_checks"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := mergeshadow.ValidateHandChecks(req.HandChecks); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(req.HandChecks) > 0 && req.Source != autonomous.ShippedSourceMergeStep {
+			http.Error(w, "bad request: hand_checks go with source "+autonomous.ShippedSourceMergeStep, http.StatusBadRequest)
 			return
 		}
 		updated, err := s.autonomousMgr.RecordPRDShipped(id, req.MergedInRelease, req.MergedAt, req.MergeCommit, req.Source)
@@ -3039,6 +3051,15 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			"merge_commit":      req.MergeCommit,
 			"source":            req.Source,
 		})
+		// A merge made by hand is shadowed: datawatch builds the same merge
+		// and compares. It changes and sends nothing.
+		if req.Source == autonomous.ShippedSourceMergeStep {
+			recorded := req.MergeCommit
+			if p, ok := updated.(*autonomous.PRD); ok && p != nil && p.MergeCommit != "" {
+				recorded = p.MergeCommit
+			}
+			s.startHandShadow(id, req.MergedInRelease, recorded, req.HandChecks)
+		}
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// Per-Automaton lane preference: gpu, claude or any (empty clears it).
