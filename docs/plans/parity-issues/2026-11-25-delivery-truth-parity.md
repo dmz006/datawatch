@@ -7,6 +7,9 @@ Draft for the datawatch-app mobile client. File only; no issue has been filed.
   `waiting`, `sending`, `sent`, `not_typed` or `review_needed`, with
   `delivery_reason`, `delivery_session_id` and `delivered_at`. All are
   optional; a record without `delivery` says nothing about the send.
+- `decision_resume` also carries `open_at_resume` (question ids). New reason
+  codes: `question_missing`, and `earlier_line_unfinished` on the waiting
+  notice. An expired question releases its park with a line saying so.
 - A task also carries `owed_decisions` (`question_id`, `session_id`,
   `waiting_noticed`): blocking questions still waiting for their line.
 - The supervisor wake status gains `pass_count` (passes event wakes ran).

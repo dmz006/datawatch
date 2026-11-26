@@ -199,7 +199,7 @@ rules apply to a task released by an answer to a held-Automaton question.
 | `waiting` | The resume is recorded and nothing is typed yet | The line is typed once the task runs again. After a daemon restart it is typed if the same worker session survived; if not, the task is queued again and the line becomes `review_needed` |
 | `sending` | Saved just before the keystrokes | If the daemon stops here, it becomes `review_needed` |
 | `sent` | The send returned no error | Nothing. It does not prove the model acted on the line |
-| `not_typed` | The session shows a prompt, or its screen cannot be read, so nothing was typed (`delivery_reason` `prompt_on_screen`) | One warning alert, then a new try on each coordinator tick into the same session. If you supersede your answer meanwhile, the newest one is typed |
+| `not_typed` | The session shows a prompt, or its screen cannot be read, so nothing was typed (`delivery_reason` `prompt_on_screen`) | One warning alert, then a new try on each coordinator tick into the same session while the task stays with that worker and no later question takes over. Retries pause while the Automaton is held or the autonomous loop is off. If they stop, you get a `review_needed` alert. If you supersede your answer meanwhile, the newest one is typed |
 | `review_needed` | datawatch cannot tell that the worker got the line, or must not type it now | One error alert. **It is never typed again.** Check the session and send the decision yourself if it is missing |
 
 `delivery_reason` for `review_needed` is one of `send_error` (the send failed
@@ -207,14 +207,20 @@ after it may have typed, including a prompt that appeared while the text was
 being typed), `interrupted` (the daemon stopped during the send),
 `session_changed` (the task has another worker session), `task_moved_on` (the
 task left the running state before the line could be typed), `replaced` (the
-task was resumed for another question before this line could be typed) or
-`no_session`.
+task was resumed, or parked on a later question, before this line could be
+typed), `question_missing` (the question or its answer can no longer be read)
+or `no_session`.
 
-If the worker asks a second blocking question while the first line is refused
-or still being sent, the task parks on the second one. When that one is
-decided, the first line is marked `review_needed` (`replaced`) with an alert,
-and the second line is typed. The task's `decision_resume` then describes the
-second question; the alert and the audit log keep the first.
+**An unfinished line keeps its task.** While a line is `waiting`, `sending` or
+`not_typed`:
+
+- The task is not re-parked behind another question that was already open when
+  the line was recorded (`decision_resume.open_at_resume`). That question's
+  turn comes after the line is typed.
+- It is not re-parked while the line is being sent.
+- A question the worker asks **later** can take over a refused or waiting line:
+  the worker has moved on. The old line is marked `review_needed` (`replaced`)
+  with an alert **at that moment**, and is never typed. The audit log keeps it.
 
 ### More than one open question
 
@@ -227,12 +233,18 @@ unless the task is parked on it; otherwise its answer is listed.
 
 - The task is not re-parked while the question it is parked on has a decision
   that is not typed yet.
+- While an earlier line cannot be typed, another decision waits behind it. You
+  get one warning (`earlier_line_unfinished`) naming both.
 - A decided question the task is not parked on is typed once the task runs: the
   coordinator tick parks the task on it and resumes it.
 - If the task is parked on another question that is still open, the decision
   waits for that one. You get one warning alert (`other_question_open`) naming
   both. Answer or withdraw the open one. If it expires instead, the waiting
   decision is typed.
+- A question that **expires** releases the task parked on it. If another
+  decision is waiting, that one is typed. If not, the worker gets one line
+  saying the question expired, that no default was applied and that no decision
+  was made.
 - If the worker can no longer get a decision (the task ended or was queued
   again, it has another worker session, the session ended, or verification has
   started), an answer is listed with a `review_needed` alert and not typed.
