@@ -462,8 +462,8 @@ func TestRule12ThinOrEmptyLists(t *testing.T) {
 	ctx := context.Background()
 	t.Run("zero items", func(t *testing.T) {
 		w := newWorld(t)
-		l := must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Source: "message", Ask: "tell them", Remove: nil}, operator))
-		l = must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Remove: []string{"d-received"}}, operator))
+		must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Source: "message", Ask: "tell them"}, operator))
+		l := must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Remove: []string{"d-received"}}, operator))
 		l = must[*List](t)(w.svc.Freeze(ctx, "r1", l.Hash(), operator, ""))
 		wantStatus(t, l, StatusNoCriteria)
 		if Read(l).Done {
@@ -618,14 +618,14 @@ func TestRule15ChangesAreShownAgainstRevisionOne(t *testing.T) {
 		t.Fatalf("freeze without a hash: %v", err)
 	}
 	l := must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Upsert: []Item{fix()}}, operator))
-	l = must[*List](t)(w.svc.Freeze(ctx, "r1", l.Hash(), operator, ""))
+	must[*List](t)(w.svc.Freeze(ctx, "r1", l.Hash(), operator, ""))
 	w.cover("r1")
 	wantStatus(t, w.work("r1", "c1"), StatusDone)
 
 	// The worker weakens the item to a confirmation after work began.
 	easy := Item{ID: "fix", Statement: "looks fine", From: oneAsk, Method: MethodConfirm}
-	l = must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Upsert: []Item{easy}, Words: "operator said so"}, worker))
-	l = must[*List](t)(w.svc.Confirm("r1", "fix", true, "fine", "", "", operator))
+	must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Upsert: []Item{easy}, Words: "operator said so"}, worker))
+	must[*List](t)(w.svc.Confirm("r1", "fix", true, "fine", "", "", operator))
 	l = w.cover("r1")
 	wantStatus(t, l, StatusChangedList)
 	if Read(l).Done || Read(l).PlainDone || read(l, "fix").Changed != "altered" {
@@ -662,9 +662,9 @@ func TestRule3SavingACheckAgainIsAShownChange(t *testing.T) {
 
 func TestFrozenCheckIgnoresLaterSettings(t *testing.T) {
 	w := newWorld(t)
-	l := w.frozen("r1", "bug", oneAsk, fix())
+	w.frozen("r1", "bug", oneAsk, fix())
 	w.set.ProjectChecks["unit"] = ProjectCheck{Command: "true"}
-	l = w.work("r1", "c1")
+	l := w.work("r1", "c1")
 	if _, it := l.item("fix"); it.Check.Command != "make test" || len(it.Check.Expect) != 1 {
 		t.Fatalf("%+v", it.Check)
 	}
@@ -1012,4 +1012,31 @@ func TestAConfirmationOfTheWorkBelongsToItsVersion(t *testing.T) {
 	if got := read(l, "c").Result; got.Value != ResultUnchecked || !strings.Contains(got.Reason, "stale") {
 		t.Fatalf("confirmation survived a changed subject: %+v", got)
 	}
+}
+
+// Without caller rights (those come later), the proof is: a session changes
+// its list, the change shows, the saved check still runs on the item it did
+// not touch, and no plain done appears.
+func TestASessionChangesItsListAndNoPlainDoneAppears(t *testing.T) {
+	w := newWorld(t)
+	w.frozen("r1", "bug", oneAsk, fix())
+	if err := w.svc.NoteHolder("r1", "w1"); err != nil {
+		t.Fatal(err)
+	}
+	w.set.ProjectChecks["unit"] = ProjectCheck{Command: "true"}
+	l := must[*List](t)(w.svc.Edit(context.Background(), EditInput{RequestID: "r1", Upsert: []Item{{ID: "extra", Statement: "also fine", Method: MethodConfirm}}}, worker))
+	if ch := l.ChangesSinceFirst(); len(ch.Added) != 1 || ch.Added[0] != "extra" {
+		t.Fatalf("change not shown: %+v", ch)
+	}
+	must[*List](t)(w.svc.Confirm("r1", "extra", true, "yes", "", "", worker))
+	l = w.work("r1", "c1")
+	if _, it := l.item("fix"); it.Check.Command != "make test" || read(l, "fix").Result.Value != ResultMet {
+		t.Fatalf("the saved check did not run: %+v", read(l, "fix"))
+	}
+	if r := Read(l); r.Done || r.PlainDone || read(l, "extra").Claim == "" {
+		t.Fatalf("%+v", r)
+	}
+	// Even with the operator answering everything, the changed list is shown.
+	must[*List](t)(w.svc.Confirm("r1", "extra", true, "yes", "", "", operator))
+	wantStatus(t, w.cover("r1"), StatusChangedList)
 }
