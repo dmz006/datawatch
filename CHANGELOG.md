@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.34 — Answers, wake-ups and one-time messages say whether they were typed
+
+### Fixed
+- A tracked answer or withdrawal now records whether its line was typed. At a prompt or unreadable screen nothing is typed: you get a warning, and it is retried while the task keeps that worker and no later question takes over (paused while held or the loop is off). If datawatch cannot tell, or must not type it, it is never typed again and you get a "review needed" alert. "Sent" means only that the send returned no error.
+- With several blocking questions, each answered one is typed once or listed for review; while the task is parked on an open one, the others wait, with a warning. A parked task keeps its live, started worker across a restart, and a new question from a worker taken over after a restart parks it.
+- A supervisor wake that cannot be typed (no usable session, prompt, unreadable screen) waits and is retried, with one warning. `event_count` counts only typed wakes; new `pass_count` counts passes. A one-time message to a session is typed (not sent over the channel bridge), saved first and removed only after typing works; if nothing was typed it is retried, also after restart or expiry; if it may have arrived it is listed, not resent. Changing one subscription no longer drops others' queued events.
+- A peer that does not take a discussion entry raises a warning (not resent); a write, receive or conflict resolve that cannot save its log fails. A forwarded command reports a refused or unreadable reply as an error. The "Received" log line and new-schedule audit entry give the text's length, not the text; other logs may still carry it.
+### Before you upgrade
+- In secure mode, older or non-secure peers get no discussion content. The schedule audit field `command` is now `command_length`. Resumes recorded by earlier versions are not typed or alerted by this tracking.
+### Not covered
+- **Delivery alerts stored while the daemon is starting reach the alert list only:** no web or phone push, chat, ntfy or email. In testing this included an interrupted one-time message (an interrupted answer's alert came later and reached ntfy). Check the alert list after a restart.
+- No line or alert: an expired question while another answer waits (nothing in datawatch expires one today); a withdrawal no worker can take; deleting an Automaton; a non-session asker's question on a task with no live attempt; datawatch's own questions. A held Automaton's answers can wait until release.
+- A review alert can be late: after a worker ended, in a one-slot test its verifier held the slot and the alert appeared only after the Automaton was cancelled. If the typing check finds Claude Code gone (from code, not tested): an answer is listed (as `send_error`, though nothing was typed), a wake is not retried and gets a review alert, and a one-time message is retried.
+- A task can show running and keep its slot while its worker waits on an earlier question. A restart drops waiting wakes (limit 200). One-time events still queued at stop, or dropped by a full queue (256), are lost. Crashes can repeat alerts; file-write failures can lose them (500 held at most). A restart past `resume_max_age_seconds` can still block the Automaton. An untyped answer does not pause stall checks.
+
 ## v9.187.33 — A daemon start or a tag registry change no longer drops daemon-written tags
 
 ### Fixed
