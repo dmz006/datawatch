@@ -268,6 +268,14 @@ Killing, deleting or ending the session does not cancel or fail a schedule creat
 
 If the named session is absent when the schedule fires, the item is skipped (not failed) and will try again on the next tick.
 
+**Ended without being typed** — when datawatch ends a schedule that was never typed (its session was killed, deleted or ended; the send failed; the schedule it follows did not run), the schedule is `failed` or `cancelled` with the reason in `last_error`, and a warn alert is raised. A recurring schedule for a session id survives a single send error. A schedule for a session id that does not exist or has ended is refused when created. Details: [`howto/schedule-rearm.md`](howto/schedule-rearm.md#when-a-command-schedule-does-not-run).
+
+**Rate-limit resume** — the command datawatch queues to resume a rate-limited session, marked `kind: rate_limit_resume`.
+
+**Daemon lock** — `daemon.lock` beside `schedule.json`, held while the daemon runs. The schedule CLI writes the file only when the daemon does not answer and this lock is free.
+
+**Session notices** — one warn alert naming the sessions found dead when the daemon starts, and one for running sessions that have not changed for longer than `session.stale_timeout_seconds` (default 1800).
+
 ---
 
 ### Scheduled session spawn (ephemeral one-shot)

@@ -66,6 +66,23 @@ session:
 
 Or pass `--no-hooks` on `datawatch sessions start`.
 
+## What auto-install will not touch
+
+Installed hook files never reach your commits. In a git repository datawatch lists the
+files it creates in the repository's own `info/exclude` file. It installs **nothing**,
+and says why in the daemon log (`[hookinstall] ... not installed`), when:
+
+- the project tracks `.claude/settings.json` or one of the hook files in git, or
+- the project has its own `.claude/settings.json` that git does not ignore.
+
+Each session's hook events carry that session's own id (from `DATAWATCH_SESSION_ID`),
+also when several sessions share a folder.
+
+**A daemon with an API token does not accept these events yet.** The installer writes
+no token into the project, and the event endpoint needs a credential, so the daemon
+answers `401` and the hook script ignores the answer. A narrow per-session credential
+for hook events is planned with the authentication work.
+
 ## Two happy paths
 
 ### 4a. Happy path — auto-install (default)
