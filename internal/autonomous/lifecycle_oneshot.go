@@ -116,10 +116,13 @@ func (e *LifecycleSubscriptionEngine) fireOneShot(sub Subscription, target, text
 		return // already fired, deleted, or no longer a one-time session message
 	}
 	// Two attempts at once, as any session delivery gets, then it waits.
-	if e.attemptOneShot(sub.ID) == oneShotRetry && e.attemptOneShot(sub.ID) == oneShotRetry {
-		e.announceOneShot(sub.ID)
-		e.scheduleOneShotRetry(sub.ID)
+	for attempt := 0; attempt < 2; attempt++ {
+		if e.attemptOneShot(sub.ID) != oneShotRetry {
+			return
+		}
 	}
+	e.announceOneShot(sub.ID)
+	e.scheduleOneShotRetry(sub.ID)
 }
 
 func (e *LifecycleSubscriptionEngine) claimOneShot(id string, rec OneTimeDelivery) (bool, error) {
