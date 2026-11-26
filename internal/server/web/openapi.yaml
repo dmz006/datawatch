@@ -11875,6 +11875,45 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
 
   # Discussion subscriptions (BL358)
+  /api/memory/discussion/{id}/receive:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      summary: Say whether this daemon seals the discussion entries it receives
+      description: A daemon in secure mode asks this before it sends discussion content to a peer, with the token it sends with. It sends only when the answer is sealed true.
+      operationId: discussionReceiveSealing
+      responses:
+        "200":
+          description: The sealing answer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  discussion_id: {type: string}
+                  sealed: {type: boolean}
+    post:
+      summary: Receive a discussion entry from a peer
+      description: Appends the entry to the local discussion log and does not send it on. It answers ok only once the entry is saved.
+      operationId: discussionReceive
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+                message: {type: string, description: JSON of the log entry}
+                origin_peer: {type: string}
+                origin_wal_seq: {type: integer}
+      responses:
+        "200": {description: Saved}
+        "400": {description: Bad body or discussion id}
+        "500": {description: The entry was not saved}
   /api/discussion-subs:
     get:
       summary: List discussion subscriptions
