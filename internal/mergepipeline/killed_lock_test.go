@@ -31,7 +31,8 @@ func killedRun(t *testing.T, s sandbox, lockDir, scratch, command string) {
 	}
 	go func() { done <- child.Wait() }()
 	select {
-	case <-done:
+	case err := <-done:
+		t.Logf("the child run ended: %v", err) // it is expected to be killed
 	case <-time.After(40 * time.Second):
 		_ = child.Process.Kill() // end-reason-ok: the test kills its own child process
 		t.Fatal("the child run was not killed")
