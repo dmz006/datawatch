@@ -106,6 +106,8 @@ update:
 		"PATH=" + dirs["bin"] + string(os.PathListSeparator) + os.Getenv("PATH"),
 	}
 	daemon.Stdout, daemon.Stderr = logFile, logFile
+	// Its own process group, so that nothing it started outlives the test.
+	daemon.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := daemon.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
@@ -122,6 +124,10 @@ update:
 		case <-time.After(15 * time.Second):
 			_ = daemon.Process.Kill()
 			<-exited
+		}
+		_ = syscall.Kill(-daemon.Process.Pid, syscall.SIGKILL)
+		for i := 0; i < 500 && syscall.Kill(-daemon.Process.Pid, 0) == nil; i++ {
+			time.Sleep(10 * time.Millisecond)
 		}
 	})
 	return d
@@ -189,6 +195,7 @@ func TestDaemonStart_LeavesOtherDaemonsMCPRegistrations(t *testing.T) {
 	ownGone := "datawatch-" + startupHostname + "-ef56"
 	d := startStartupDaemon(t, other+": x - ok\n"+longer+": x - ok\n"+ownGone+": x - ok\n")
 	d.release()
+	d.waitFor("a health answer", d.healthy)
 	// The own registration is listed last, so once it is removed the other two
 	// have been judged.
 	d.waitFor("the removal of this daemon's own stale registration", func() bool {
