@@ -348,9 +348,17 @@ func (m *Manager) ArchiveWithOutcome(id, actor string, in OutcomeInput) (*PRD, e
 	// completed PRD (Phase 2 already removed its worktree on success)
 	// or one that never had a worktree.
 	m.cleanupOrphanedWorktree(prd)
-	// Archiving removes no task worktree; the result says which ones the
-	// Automaton still holds and why.
-	m.assessTaskWorktrees(prd)
+	if m.cleanupArchivedOn() && prd.Git.Branch != "" {
+		// An archived Automaton is finished: release its task worktrees, task
+		// branches and work branch under the same keep-work rules as at
+		// completion and cancel, following cleanup_mode. What is kept now, the
+		// periodic pass takes once the work has landed.
+		m.ReleaseAutomatonWorktree(prd)
+	} else {
+		// With cleanup_archived off, archiving removes no task worktree; the
+		// result says which ones the Automaton still holds and why.
+		m.assessTaskWorktrees(prd)
+	}
 	updated, _ := m.store.GetPRD(id)
 	return updated, nil
 }

@@ -304,8 +304,29 @@ func (c *Coordinator) laneFillCheckWorktrees(cfg LaneFillConfig, cands []LaneFil
 		if !laneFillQueuedStatus(cands[i].Status) {
 			continue
 		}
-		cands[i].WorktreeState, cands[i].WorktreeProblem = CheckLaneFillWorktree(dirs[cands[i].ID], list)
+		dir := dirs[cands[i].ID]
+		if c.laneFillWorktreeRecreatable(cands[i].ID, dir, baseRepo) {
+			// The run makes the Automaton's own missing worktree again
+			// (recreateOwnWorktree), so it is no reason to refuse it.
+			cands[i].WorktreeState, cands[i].WorktreeProblem = LaneFillWorktreeNone, ""
+			continue
+		}
+		cands[i].WorktreeState, cands[i].WorktreeProblem = CheckLaneFillWorktree(dir, list)
 	}
+}
+
+// laneFillWorktreeRecreatable reports whether dir is the Automaton's own
+// worktree path and nothing is there.
+func (c *Coordinator) laneFillWorktreeRecreatable(id, dir, baseRepo string) bool {
+	if c.m == nil || strings.TrimSpace(baseRepo) == "" {
+		return false
+	}
+	cfg := c.m.Config()
+	worktreeDir := strings.TrimSpace(cfg.WorktreeDir)
+	if worktreeDir == "" {
+		worktreeDir = defaultWorktreeDir(c.m.dataDir)
+	}
+	return ownWorktreeMissing(id, dir, worktreeDir)
 }
 
 // LaneFillBaseBranch resolves the base branch of repo the way the merge proof

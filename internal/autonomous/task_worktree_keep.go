@@ -48,6 +48,8 @@ const (
 	taskKeepNoDefaultBranch = "no_default_branch"
 	taskKeepBackupFailed    = "backup_failed"
 	taskKeepDeleteFailed    = "branch_delete_failed"
+	taskKeepNeeded          = "needed_by_record"
+	taskKeepOverLimit       = "over_limit"
 )
 
 // Audit actions for task worktrees and task branches.
@@ -74,7 +76,7 @@ type TaskWorktreeKept struct {
 	// Reason is one of: cleanup_off, report_mode, not_removed_by_archive,
 	// no_base_repo, live_session, uncommitted_work, detached_commits,
 	// unverified, remove_failed, unmerged_branch, no_default_branch,
-	// backup_failed, branch_delete_failed.
+	// backup_failed, branch_delete_failed, needed_by_record, over_limit.
 	Reason string `json:"reason"`
 	Detail string `json:"detail,omitempty"`
 	// Files lists (at most maxKeptFiles of) the uncommitted files, each as
@@ -104,8 +106,12 @@ type TaskWorktreeCleanup struct {
 // taskCleanupRun says how one pass over an Automaton's task worktrees behaves.
 type taskCleanupRun struct {
 	mode string // config.CleanupModeOff / Report / On
-	// assessOnly looks and records but removes nothing (the archive step).
+	// assessOnly looks and records but removes nothing (the archive step with
+	// autonomous.automation.cleanup_archived off).
 	assessOnly bool
+	// budget, when set, is the number of removals the periodic pass may still
+	// make; each task something is removed for spends one.
+	budget *int
 }
 
 // taskCleanupLocks holds one mutex per Automaton, so two end paths running at
@@ -401,7 +407,9 @@ type taskCleanupPass struct {
 	defKnown   bool
 
 	removed, deleted int
-	kept             []TaskWorktreeKept
+	// charged is the task the last removal of the limit was spent on.
+	charged string
+	kept    []TaskWorktreeKept
 	// events are the audit records of refusals; a refusal already on the
 	// Automaton record is not written again.
 	events []taskAuditEvent
@@ -446,6 +454,29 @@ func (p *taskCleanupPass) keep(action string, e TaskWorktreeKept) {
 	p.events = append(p.events, taskAuditEvent{action: action, entry: e})
 }
 
+// spend takes one removal of the periodic pass's limit for a task, once for
+// its worktree and branch together. It reports false when none is left.
+func (p *taskCleanupPass) spend(taskID string) bool {
+	if p.run.budget == nil || p.charged == taskID {
+		return true
+	}
+	if *p.run.budget <= 0 {
+		return false
+	}
+	*p.run.budget--
+	p.charged = taskID
+	return true
+}
+
+// neededBy is the refusal detail when an Automaton that has not finished still
+// points at the task's folder or branch, "" otherwise.
+func (p *taskCleanupPass) neededBy(path, branch string) string {
+	if by := p.m.worktreeNeededBy(p.prd.ID, path, branch); by != "" {
+		return "the Automaton " + by + " has not finished and still points at the worktree or the branch"
+	}
+	return ""
+}
+
 // handle looks at one task's worktree and branch and removes what the rules
 // allow.
 func (p *taskCleanupPass) handle(t *Task) {
@@ -486,6 +517,9 @@ func (p *taskCleanupPass) handleWorktree(t *Task, path, branch, tip string) bool
 	}
 	if p.m.taskWorktreeInUse(path) {
 		return refuse(taskKeepLiveSession, "a live session works in the worktree")
+	}
+	if why := p.neededBy(path, branch); why != "" {
+		return refuse(taskKeepNeeded, why)
 	}
 	if sameDirectory(path, p.prd.ProjectDir) {
 		return refuse(taskKeepUnverified, "the recorded path is the Automaton worktree, not a task worktree")
@@ -547,6 +581,11 @@ func (p *taskCleanupPass) handleWorktree(t *Task, path, branch, tip string) bool
 			Reason: taskKeepReportMode, Detail: "cleanup_mode is report: the worktree is clean and would be removed"})
 		return false
 	}
+	if !p.spend(t.ID) {
+		p.kept = append(p.kept, TaskWorktreeKept{TaskID: t.ID, Worktree: path, Branch: branch, BranchTip: tip,
+			Reason: taskKeepOverLimit, Detail: "the per-pass removal limit was reached; a later pass takes it"})
+		return false
+	}
 	// Without --force git itself refuses a worktree that changed since the
 	// check. It is passed only when what is left is the daemon's own.
 	args := []string{"-c", showUntrackedOverride, "worktree", "remove"}
@@ -568,6 +607,10 @@ func (p *taskCleanupPass) handleBranch(t *Task, branch, tip string) {
 	refuse := func(reason, detail string) {
 		p.keep(auditTaskBranchKept, TaskWorktreeKept{TaskID: t.ID, Branch: branch, BranchTip: tip, Reason: reason, Detail: detail})
 	}
+	if why := p.neededBy("", branch); why != "" {
+		refuse(taskKeepNeeded, why)
+		return
+	}
 	def := p.defaultBranch()
 	if def == "" {
 		refuse(taskKeepNoDefaultBranch, "the default branch could not be resolved, so the branch cannot be checked")
@@ -584,6 +627,11 @@ func (p *taskCleanupPass) handleBranch(t *Task, branch, tip string) {
 	}
 	if p.run.mode != config.CleanupModeOn {
 		refuse(taskKeepReportMode, "cleanup_mode is report: every commit is on "+on+" and the branch would be deleted")
+		return
+	}
+	if !p.spend(t.ID) {
+		p.kept = append(p.kept, TaskWorktreeKept{TaskID: t.ID, Branch: branch, BranchTip: tip,
+			Reason: taskKeepOverLimit, Detail: "the per-pass removal limit was reached; a later pass takes it"})
 		return
 	}
 	ref, err := writeBranchBackup(p.ctx, p.repo, branch, tip, p.m.holdNow().Unix())

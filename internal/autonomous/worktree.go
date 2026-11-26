@@ -170,7 +170,8 @@ func prepareWorktreeBestEffort(path string) {
 // call for the same PRD, reuse — EnsureWorktree is idempotent) an
 // isolated git worktree and point the PRD at it. No-op otherwise
 // (worktree mode not configured, or an explicit work-source already
-// set). Extracted to one place specifically to avoid a third
+// set), except that the Automaton's own worktree is made again when it is
+// missing. Extracted to one place specifically to avoid a third
 // hand-copied duplicate of this gating logic — Decompose() and
 // DecomposeStreaming() are already a documented drifted-duplicate
 // pair (see decomposeStreamingCore's own "operator-reported" comment)
@@ -179,7 +180,16 @@ func prepareWorktreeBestEffort(path string) {
 // callers can decide whether/how to log it (Run() and Decompose()
 // want different log phrasing).
 func (m *Manager) ensureWorktreeIfConfigured(prd *PRD) (created bool, err error) {
-	if prd.ProjectDir != "" || prd.ProjectProfile != "" || prd.ClusterProfile != "" {
+	if prd.ProjectDir != "" {
+		// The Automaton's own worktree may have been cleared since it was
+		// made; it is then made again (worktree_cleanup_archived.go).
+		made, rerr := m.recreateOwnWorktree(prd)
+		if rerr != nil {
+			return false, fmt.Errorf("worktree setup: %w", rerr)
+		}
+		return made, nil
+	}
+	if prd.ProjectProfile != "" || prd.ClusterProfile != "" {
 		return false, nil
 	}
 	m.mu.Lock()
