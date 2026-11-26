@@ -765,7 +765,7 @@ The **Status** sub-tab (session detail → Status) shows a live sprint/git/test 
 | **Tests** | Last test run outcome (pass/fail/skip counts) |
 | **Git** | Current branch + recent commit |
 
-For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.sh` hook script into the project directory on session start. The environment file beside it holds the daemon URL and session id, never a token. Other backends (opencode, opencode-acp) emit equivalent events through their own hook paths.
+For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.sh` hook script into the project directory on session start. The environment file beside it holds the daemon URL and session id, never a token. Other backends (opencode, opencode-acp) emit equivalent events through their own hook paths. The installer writes only its own files, never through a link, and keeps the files it creates out of git ([limits](howto/claude-hooks.md#what-can-still-be-committed)).
 
 **CLI:** `datawatch session status <id>` · **REST:** `GET /api/sessions/{id}/status` · **MCP:** `session_timeline`
 

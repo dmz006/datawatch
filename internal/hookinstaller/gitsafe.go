@@ -51,7 +51,7 @@ func keepOutOfCommits(projectDir string) error {
 		}
 		return nil
 	}
-	for _, f := range append([]string{settingsFile}, installedFiles...) {
+	for _, f := range append([]string{settingsFile, sprintIgnoreFile}, installedFiles...) {
 		if _, err := gitOut(projectDir, "ls-files", "--error-unmatch", "--", f); err == nil {
 			return fmt.Errorf("hookinstaller: not installed: the project tracks %s in git", f)
 		}

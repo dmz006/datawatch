@@ -61,6 +61,9 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 	if err != nil {
 		return err
 	}
+	if err := refuseOthersFiles(projectDir); err != nil {
+		return err
+	}
 	if err := keepOutOfCommits(projectDir); err != nil {
 		return err
 	}
@@ -70,8 +73,15 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 		return fmt.Errorf("hookinstaller: mkdir %s: %w", sprintDir, err)
 	}
 
+	// First, so that no file below is ever there without being ignored.
+	if err := writeOwn(filepath.Join(projectDir, sprintIgnoreFile), []byte(sprintIgnore), 0o644); err != nil {
+		return fmt.Errorf("hookinstaller: write %s: %w", sprintIgnoreFile, err)
+	}
+
 	// settings.json — chain into existing hooks dict.
 	settingsPath := filepath.Join(claudeDir, "settings.json")
+	_, statErr := os.Lstat(settingsPath)
+	newSettings := os.IsNotExist(statErr)
 	hookCmdBase := filepath.Join(sprintDir, "post-event.sh")
 	hooks, _ := doc["hooks"].(map[string]any)
 	if hooks == nil {
@@ -142,6 +152,11 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 	addIfMissing("SessionStart", hookCmdBase+" SessionStart", "compact|clear")
 	doc["hooks"] = hooks
 	if changed {
+		if newSettings {
+			if err := ignoreNewSettings(claudeDir); err != nil {
+				return fmt.Errorf("hookinstaller: write .claude/.gitignore: %w", err)
+			}
+		}
 		if err := writeSettings(settingsPath, doc, settingsMode); err != nil {
 			return err
 		}
@@ -212,13 +227,13 @@ curl -ks -X POST "${DAEMON_URL:-https://localhost:8443}/api/sessions/${SESSION_I
   >/dev/null 2>&1 || true
 `
 	scriptPath := filepath.Join(sprintDir, "post-event.sh")
-	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
+	if err := writeOwn(scriptPath, []byte(scriptBody), 0o755); err != nil {
 		return fmt.Errorf("hookinstaller: write post-event.sh: %w", err)
 	}
 
 	// platform-context.txt — printed by the SessionStart hook.
 	ctxPath := filepath.Join(sprintDir, "platform-context.txt")
-	if err := os.WriteFile(ctxPath, []byte(platformcontext.PlatformContext+"\n"), 0o644); err != nil {
+	if err := writeOwn(ctxPath, []byte(platformcontext.PlatformContext+"\n"), 0o644); err != nil {
 		return fmt.Errorf("hookinstaller: write platform-context.txt: %w", err)
 	}
 
@@ -226,18 +241,15 @@ curl -ks -X POST "${DAEMON_URL:-https://localhost:8443}/api/sessions/${SESSION_I
 	// never holds a token.
 	envBody := fmt.Sprintf("DAEMON_URL=%s\nSESSION_ID=%s\n", daemonURL, sessionFullID)
 	envPath := filepath.Join(sprintDir, ".dw-env")
-	if err := os.WriteFile(envPath, []byte(envBody), 0o600); err != nil {
+	if err := writeOwn(envPath, []byte(envBody), 0o600); err != nil {
 		return fmt.Errorf("hookinstaller: write .dw-env: %w", err)
-	}
-	// WriteFile keeps the mode of a file that already existed.
-	if err := os.Chmod(envPath, 0o600); err != nil {
-		return fmt.Errorf("hookinstaller: chmod .dw-env: %w", err)
 	}
 
 	return nil
 }
 
-// Cleanup removes the .claude/sprint/.dw-env file written by Install.
+// Cleanup removes the .claude/sprint/.dw-env file written by Install, and no
+// other file of that name.
 // Best-effort. Leaves settings.json + post-event.sh intact so the
 // operator's project state is preserved between sessions.
 func Cleanup(projectDir string) error {
@@ -245,6 +257,8 @@ func Cleanup(projectDir string) error {
 		return nil
 	}
 	envPath := filepath.Join(projectDir, ".claude", "sprint", ".dw-env")
-	_ = os.Remove(envPath)
+	if body, found, err := regularFile(envPath); err == nil && found && ownEnvFile(body) {
+		_ = os.Remove(envPath)
+	}
 	return nil
 }
