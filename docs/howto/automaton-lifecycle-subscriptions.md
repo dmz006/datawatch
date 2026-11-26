@@ -466,9 +466,13 @@ When a subscription with a `session` sink fires, the daemon:
    `lifecycle-sub` (visible in the session's input history so you can
    tell daemon-typed text from operator-typed text).
 
-A failed one-shot delivery is retried once; after that the
-subscription is dropped and the failure is logged (the daemon never
-holds a one-shot hostage to a dead target).
+A failed one-shot delivery is retried once; after that the failure is
+logged and the subscription stays armed for a later matching event. There
+is no retry when keys may already have reached the session (the send failed
+part-way, a prompt appeared while the text was being typed, or the session
+could not be saved afterwards): the text is not sent twice, the subscription
+stays armed, and an error alert says *review needed* with the subscription
+and session ids. This holds for repeating subscriptions too.
 
 ## One-shot, expiry, coalesce, and how delivery works
 

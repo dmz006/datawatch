@@ -177,6 +177,34 @@ The task records which answer it resumed for. If you later *supersede* your
 answer, that becomes the new current answer on the question, and the task is not
 resumed a second time.
 
+### Did the worker get the line?
+
+The task's `decision_resume.delivery` field says what datawatch knows. The same
+rules apply to a task released by an answer to a held-Automaton question.
+
+| `delivery` | Meaning | What happens next |
+|---|---|---|
+| `waiting` | The resume is recorded and nothing is typed yet | The line is typed once the task runs again, also after a daemon restart |
+| `sending` | Saved just before the keystrokes | If the daemon stops here, it becomes `review_needed` |
+| `sent` | The send returned no error | Nothing. It does not prove the model acted on the line |
+| `not_typed` | The session shows a prompt, or its screen cannot be read, so nothing was typed (`delivery_reason` `prompt_on_screen`) | One warning alert, then a new try on each coordinator tick into the same session. If you supersede your answer meanwhile, the newest one is typed |
+| `review_needed` | datawatch cannot tell that the worker got the line, or must not type it now | One error alert. **It is never typed again.** Check the session and send the decision yourself if it is missing |
+
+`delivery_reason` for `review_needed` is one of `send_error` (the send failed
+after it may have typed, including a prompt that appeared while the text was
+being typed), `interrupted` (the daemon stopped during the send),
+`session_changed` (the task has another worker session), `task_moved_on` (the
+task left the running state before the line could be typed) or `no_session`.
+
+Nothing is typed unless the `sending` state could be saved first. Alerts carry
+ids and these codes, not your words. A record with no `delivery` field was
+written before delivery was tracked and is never typed or alerted. The field is
+part of the task record, so REST, MCP and CLI task output show it; the web app
+shows the alerts.
+
+A `not_typed` line does not hold the worker's stall checks off. If the worker is
+ended as stalled while the prompt stays up, the line becomes `review_needed`.
+
 ## Answering from each surface
 
 You answer a worker's question exactly as you answer any question. The

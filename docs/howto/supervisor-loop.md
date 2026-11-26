@@ -123,7 +123,8 @@ How it behaves:
 - Each wake runs the loop's mechanical steps at once and, if the
   [designated supervisor session](#which-session-a-wake-types-into) can take input,
   types a line such as `supervisor wake: task.failed automaton=<id> task=<id>` into
-  it. Otherwise the pass still runs and only the line is skipped.
+  it. Otherwise the pass still runs and the line
+  [waits](#when-the-line-cannot-be-typed).
 - The registration follows the setting live: switching `wake.enabled` or changing
   the kinds or quiet window takes effect within a few seconds, with no restart.
 - The scheduled check is the fallback: while the wake is on it runs a pass every
@@ -133,6 +134,26 @@ How it behaves:
   last ran a scheduled check, with a count of each. If the event path has been
   silent for more than an hour, the status says so, which usually means the
   kinds list is too narrow or nothing you subscribed to has happened.
+
+### When the line cannot be typed
+
+A wake line counts as delivered only when the send worked.
+
+- **Nothing was typed** (no session is designated, the designated one cannot take
+  input, a prompt is on its screen or the screen cannot be read): the line waits.
+  datawatch tries again after 30 seconds, then less often, at most every 5
+  minutes, and also with the next wake. It types only into the session designated
+  at that moment, all waiting lines together, once. A retry does not run the
+  supervisor pass again. You get one warning alert for each wait. At most 200
+  lines wait; beyond that the oldest is dropped and logged.
+- **The send failed in any other way** (the text may be in the session, for
+  example when a prompt appeared while it was being typed): it is not typed
+  again. You get an error alert that says *review needed* and shows the line.
+
+The waiting list is kept in memory. It survives a change of the wake settings,
+including turning the wake off and on, and is lost when the daemon restarts; the
+scheduled check still runs. The wake status's last event time still counts a
+wake whose pass ran, even while its line waits.
 
 ### Which session a wake types into
 
