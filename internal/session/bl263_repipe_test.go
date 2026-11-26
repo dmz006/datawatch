@@ -16,6 +16,7 @@ package session
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -27,12 +28,12 @@ func TestBL263_ResumeMonitorsRepipesActiveSessions(t *testing.T) {
 	_ = mgr.SaveSession(&Session{
 		ID: "aa01", FullID: "testhost-aa01", TmuxSession: "cs-aa01",
 		Hostname: "testhost", State: StateRunning, UpdatedAt: time.Now(),
-		LogFile: "/tmp/aa01.log",
+		LogFile: filepath.Join(t.TempDir(), "aa01.log"),
 	})
 	_ = mgr.SaveSession(&Session{
 		ID: "bb02", FullID: "testhost-bb02", TmuxSession: "cs-bb02",
 		Hostname: "testhost", State: StateWaitingInput, UpdatedAt: time.Now(),
-		LogFile: "/tmp/bb02.log",
+		LogFile: filepath.Join(t.TempDir(), "bb02.log"),
 	})
 	_ = mgr.SaveSession(&Session{
 		ID: "cc03", FullID: "testhost-cc03", TmuxSession: "cs-cc03",
@@ -63,7 +64,7 @@ func TestBL263_ResumeMonitorsSkipsRepipeForDeadTmux(t *testing.T) {
 	_ = mgr.SaveSession(&Session{
 		ID: "aa01", FullID: "testhost-aa01", TmuxSession: "cs-aa01",
 		Hostname: "testhost", State: StateRunning, UpdatedAt: time.Now(),
-		LogFile: "/tmp/aa01.log",
+		LogFile: filepath.Join(t.TempDir(), "aa01.log"),
 	})
 	// Tmux session is NOT alive — ResumeMonitors should mark it failed
 	// and skip the repipe path entirely. (no NewSession call on fake.)

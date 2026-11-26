@@ -23,6 +23,10 @@ type acceptCase struct {
 func newAcceptCase(t *testing.T) *acceptCase {
 	t.Helper()
 	repo := snapTestRepo(t)
+	// The daemon's commit helpers commit with the repository's own identity;
+	// without one the test would depend on the real ~/.gitconfig.
+	snapTestGit(t, repo, "config", "user.name", "test")
+	snapTestGit(t, repo, "config", "user.email", "test@example.test")
 	m, api := newFailureEscalationFixture(t, t.TempDir())
 	prd := newFailureEscalationPRD(t, m, repo, nil)
 	task, _ := heldTaskOf(t, m, api, prd)

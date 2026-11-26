@@ -139,7 +139,8 @@ func TestProjectAliasAutomationListGetAndFilter(t *testing.T) {
 func TestProjectAliasReadLeavesStoredFilesUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	rec := filepath.Join(dir, "prd.json")
-	orig := []byte(`{"id":"x","project_dir":"/tmp/x","status":"running"}`)
+	projectDir := filepath.Join(dir, "x")
+	orig := []byte(`{"id":"x","project_dir":"` + projectDir + `","status":"running"}`)
 	if err := os.WriteFile(rec, orig, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +150,7 @@ func TestProjectAliasReadLeavesStoredFilesUnchanged(t *testing.T) {
 	if err := json.Unmarshal(orig, &p); err != nil {
 		t.Fatal(err)
 	}
-	_ = withProjectField(&p, autonomous.ProjectAliasOfPRD(&p, map[string]string{"x": "/tmp/x"}))
+	_ = withProjectField(&p, autonomous.ProjectAliasOfPRD(&p, map[string]string{"x": projectDir}))
 	b, _ := json.Marshal(&p)
 	var m map[string]any
 	_ = json.Unmarshal(b, &m)

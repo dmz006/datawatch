@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/testhome"
 	"github.com/mdp/qrterminal/v3"
 )
 
@@ -19,7 +20,9 @@ func TestMain(m *testing.M) {
 	if mode := os.Getenv("_FAKE_SIGNAL_CLI_MODE"); mode != "" {
 		os.Exit(runFakeSignalCLI(mode))
 	}
-	os.Exit(m.Run())
+	// Private HOME, temp folder and tmux folder: no test may read the real
+	// ~/.datawatch/config.yaml (scripts/check-test-isolation.sh).
+	os.Exit(testhome.RunPrivateTmp(m))
 }
 
 func runFakeSignalCLI(mode string) int {
