@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.31 — Local PI workers can start again on shared nodes
+## v9.187.31 — The pi launch check no longer sends pi's provider prefix to the node
 
 ### Fixed
 - Present since 9.182.84: the launch check for pi and pi-prompt asked a compute node for pi's "provider/model" name, for example `ollama/qwen3.8-64k:27b`, which the Ollama nodes checked do not recognize (404). This check applies to nodes that belong to an LLM entry listing more than one node; a failed check stops the launch and marks the node unhealthy. The check now leaves off the first "provider/" part, and pi is still started with the full name.
@@ -14,6 +14,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Any failed check is still worded "Request timed out", whatever its cause.
 - The check sends no API key and uses `<address>/v1`; an OpenAI-compatible node was not tested.
 - A cold model slower than the 20-second check limit could still be refused.
+- No full pi session was run end to end with this change.
 
 ## v9.187.30 — A stricter task delivery check for Automaton workers
 
