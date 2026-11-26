@@ -175,7 +175,16 @@ the model cannot be reached; the show output says so.
 
 ## Choose the conflict model
 
-`autonomous.merge_pipeline.conflict_model` names an entry in your LLM registry.
+`autonomous.merge_pipeline.conflict_model` names an entry in your LLM registry
+(an entry name, not a model name: a value that names no enabled entry makes the
+policy stop and ask, and the show output says so). A run sends the conflict to
+that entry directly: an entry with an API is called as it is, and a
+session-style entry (such as a `claude-code` one) runs as a one-shot session on
+that entry and its model. The planner is never used, so the prompt carries no
+planning text and no other model can answer. A session-style entry has tools;
+the conflict text it reads comes from the repository, so choose the entry with
+that in mind.
+
 Leave it unset to use the built-in default name, which is the non-Opus daemon
 default (`sonnet`); set it to an empty string for no model. A model the
 operator names is always used as written — an operator who wants a premium
@@ -186,6 +195,33 @@ you run a model of your own, name that one.
 See also [Explicit model policy](explicit-model-policy.md) — the daemon-wide
 rule that a `claude-code` model is always one that was named, never the
 backend's built-in (account) default.
+
+## Per-file conflict rules
+
+A pipeline (file or record) can say how a conflict in a particular file is
+settled:
+
+```yaml
+conflict_rules:
+  - {path: docs/reference.md, rule: keep_main}
+  - {path: "docs/notes/*.md", rule: keep_both}
+```
+
+`path` is a file path, or a pattern for one folder level. The first rule that
+matches wins. `keep_main` takes main's side of each conflicting hunk,
+`keep_both` takes main's lines followed by the branch's, and `ask` always asks
+you. Lines that did not conflict keep both sides' changes. A file no rule
+matches keeps the handling of its [class](#conflict-classes), and anything left
+unsettled asks. Rules apply under `mechanical` and `mechanical_and_model`;
+**`stop_and_ask` ignores them, so under it they do nothing.** That includes a
+`mechanical_and_model` setting that is acting as `stop_and_ask` because its model
+is not available. A file that was deleted or renamed on one side is never
+settled by a rule.
+
+**`keep_main` silently drops the branch's side of every conflicting hunk.** For
+a `CHANGELOG.md` rule, a line the branch added where main also added one is
+gone from the result, with no question and no warning. Use it only for files
+where losing the branch's side is acceptable.
 
 ## Conflict classes
 
@@ -437,13 +473,13 @@ See
 
 When the daemon's merge run prepares a release, a release gate stands between the prepared work and anything that leaves the machine. It applies to every leaving step — the `tag_release`, `push_release` and `deploy_latest` actions and the tag, deploy and post-ship-hook steps — and decides at most once per run, before the first of them runs; the decision is cached and applies to every later leaving step, so the run cannot answer the push differently from the tag.
 
-What the gate keeps back is only the leaving steps. The preparation — merging the branches into the local main, the version bump, the changelog, the commit — lands as usual; holding the release means the tag is not made, nothing is pushed and the deploy does not run.
+What the gate keeps back is the leaving steps: the tag is not made, nothing is pushed and the deploy does not run. The preparation (the merge, the version bump, the changelog and the commit) happens only in the [scratch tree](#a-run-works-in-a-scratch-tree), so a held run leaves your main and your branches as they were. It is prepared and checked again by the next run, and no post-ship hook runs for it.
 
 The checks are the ground rule, and the mode decides the rest:
 
 - **A failed check never ships, in any mode, and never asks.** A "yes" against failed checks could only be honoured by shipping them, so the leaving steps are skipped and the run holds for a person to look at what failed.
 - **`auto`** — with the checks passing, the leaving steps run as before and nothing is asked.
-- **`ask`** — the gate raises one yes/no question, ending "Ship this release?", with the plan in it: the project, the Automaton, the size, the version it would get, the branches it merges, the checks and their results, and the leaving steps in the order they would run. The options are "yes (ship it)" and "no (do not ship)", and "no" is the default. The run ships only when the question is answered yes, and then its first leaving step records that it was approved by the operator, with the question id. A re-run for the same project, Automaton and size finds the question already raised rather than raising a second one, and a changed mind replaces the earlier answer — only the current one counts.
+- **`ask`** — the gate raises one yes/no question, ending "Ship this release?", with the plan in it: the project, the Automaton, the size, the version it would get, the branches it merges, the checks and their results, and the leaving steps in the order they would run. The options are "yes (ship it)" and "no (do not ship)", and "no" is the default. The run ships only when the question is answered yes, and then its first leaving step records that it was approved by the operator, with the question id. A re-run for the same project, Automaton, size and selected commit finds the question already raised, answered or not, rather than raising a second one: the held release is built again, and ships if the answer is yes. A new commit on the branch is a new question. A changed mind replaces the earlier answer — only the current one counts.
 - **`manual`** — the leaving steps are held for a person and no question is raised; the operator ships the release.
 
 The gate never guesses: if the `ask` mode cannot raise its question, the leaving step fails and the run stops short of the ship.
@@ -527,7 +563,16 @@ whatever the result. The glossary entry is [Merge lock](../datawatch-definitions
   that held the lock starts its merge again for the same branches (the case
   after a daemon restart), the lock is handed back to it and the run is not
   refused by its own earlier lock. A different Automaton, or the same one with
-  different branches, is refused like any other second run.
+  different branches, is refused like any other second run, unless the holder
+  is provably gone.
+- **A killed run does not keep the lock.** Another run takes it over only when
+  the run that held it is provably gone: its process no longer exists, the
+  daemon has replaced its own program since (a restart), or the machine has
+  restarted; and nothing that run started is still working in its scratch
+  folder. While something of it still runs, the refusal says so and names the
+  process ids. A lock that records no owning process (written by an earlier
+  version), or any case that cannot be proven, stays held: that includes a
+  system with no `/proc`, where the run's leftover processes cannot be listed.
 - **A broken lock file refuses merges; it never lets them run unlocked.** If
   `merge-locks.json` is unreadable or corrupt, every merge run is refused with a
   message that the lock store is unavailable. Repair the file or restore it from
@@ -547,21 +592,132 @@ The lock is one of three things, and the surfaces show which:
 The surfaces that show the lock and the last validator result are listed in
 [Where to read the lock and the last result](#where-to-read-the-lock-and-the-last-result).
 
+## A run works in a scratch tree
+
+Every merge run the daemon makes is isolated, whatever its pipeline says:
+
+- The run adds a temporary worktree on a temporary branch
+  (`datawatch-merge/<run>`) under the daemon data directory, and every step
+  works there. Your checkout of main must be clean, as before.
+- It starts from the remote's main. **A local main that holds a commit the
+  remote does not is refused**, naming the commits: a push would send them with
+  the run's own work.
+- A rebase works on a copy. Your branch does not move while the run checks it.
+- The push sends the exact commit the run checked. Just before it, the run
+  checks again that the selected branch has not moved, that the Automaton is
+  still eligible (a hold put on during the checks stops the push), that the
+  [merge run switch](#starting-a-merge-run) is still on and that no operator
+  pause covers the repository. A failed step stops the push even when its
+  `on_failure` is `continue`.
+- **Only after the remote is confirmed to contain that commit** do your local
+  main (by fast-forward) and a rebased branch move. The run records this as the
+  `update-local-main` step. The later steps, the deploy and the post-ship hooks
+  among them, then work in your checkout.
+- **Nothing is released before that confirmation.** The deploy step, the
+  pipeline's own `tag`, `deploy` and post-ship-hook commands (wherever they are
+  listed), the post-ship hooks and `mark_completed` all wait for it, whatever
+  `on_failure` says. If the push reports success but the remote does not show
+  the commit, or cannot be asked, the run fails and none of them runs. The
+  built-in `tag_release` step makes a local tag that leaves together with main.
+  (A run with nothing new still deploys, when the remote's main is the commit
+  it stands on.)
+- A run that fails before its push, is held or is refused leaves your main,
+  your branches and your tags as they were. A tag it made is removed, but never
+  one the remote has, and not while the remote cannot be asked. What a killed
+  run left behind (worktree, temporary branches, an unpushed tag) is cleared by
+  the next run.
+
+If the push succeeded but local main cannot be moved (you edited the checkout
+meanwhile), the step says so; your main is then only behind the remote.
+
+### When the outcome of a push is lost
+
+Before anything leaves, the run writes what the push will send (the commit, the
+tag, the Automaton and where each merged branch goes) to
+`datawatch-merge-pushes/` in the repository's git directory. When the push
+reports an error, when the remote cannot be asked, or when the run or the
+daemon dies, that entry is compared with the remote: right after a push error,
+before the next merge run, before the supervisor loop lists what is waiting,
+and when the daemon starts.
+
+- **The remote has the commit:** the rebased branch and local main are moved to
+  what was pushed, the local tag is made to match the remote's, and the landing
+  is recorded. The deploy and post-ship hooks are **not** run afterwards; run
+  them yourself if you need them. The same work is never released again: a run
+  for it is refused, saying it was already pushed.
+- **It does not, and the remote's main has not moved:** the push may still
+  arrive, so the entry is kept (for up to a day). An unpushed tag is removed.
+- **It does not, and main has moved:** it can no longer arrive; the entry goes.
+- **The remote cannot be asked:** nothing is changed, and the tag is kept.
+
+If a repair cannot be finished (for example the branch has new commits since the
+push, or your checkout blocks the fast-forward), the entry stays, the run record
+shows the `reconcile-push` step with the reason, and it is tried again. Until
+then a run for that work is refused. Reconciling records only what the remote
+already holds, so it runs even while merge runs are switched off.
+
+### What a check step can see and do
+
+A command step (a check) runs in the scratch tree with an empty `HOME`, a
+private tmux socket folder and no credential, daemon, git host or model account
+variables. The build tools' caches stay shared. It is an environment, not a
+sandbox: a command can still open any file the daemon's user can. These
+variables tell it about the merge:
+
+| Variable | Meaning |
+|---|---|
+| `MERGE_PROJECT_DIR` | Your own checkout, for files that are never committed (a private pattern list). |
+| `MERGE_BASE_COMMIT` | The commit the merge is built on. |
+| `MERGE_MAIN_BRANCH` | The main branch's name. |
+| `MERGE_RELEASE_SIZE` | `patch`, `minor`, `major` or `none`. |
+| `MERGE_RELEASE_VERSION` | The version the merge carries. |
+| `MERGE_SHADOW` | `1` in a shadow run. |
+| `MERGE_PROPOSAL` | `1` while the command judges a model's conflict proposal, before any release bump. |
+
+A model's conflict proposal must pass every `lint` and `test` step of the
+pipeline, and they run inside the merge step: give that step a `timeout` long
+enough for all of them.
+
+A command step must not change what is pushed. It fails if it commits, leaves
+the scratch branch, or leaves the scratch tree other than it found it: a
+changed, staged or untracked file counts, files your `.gitignore` ignores do
+not. This holds for the checks of a model's conflict proposal too. Steps of
+kind `version_bump` and `changelog` may write and commit; **the push still
+needs a clean tree.** Processes a command leaves running are stopped when it
+ends or times out. A command step that needs your credentials must be a `tag`,
+`deploy` or post-ship hook step; the release gate decides about those, and they
+run only after the push is confirmed.
+
+Put checks of the finished candidate after `commit-release-bump` and before
+`push-release`, so they test exactly what is pushed. Each step has its own
+`timeout`; a whole run may take at most three hours.
+
+### Shadow runs
+
+The pipeline engine can also make a **shadow** run: a full run in a scratch tree
+that changes and sends nothing. It moves no branch, tag or remote-tracking ref,
+pushes nothing, raises no question, runs no hook or deploy, runs only command
+steps of kind `test`, `lint`, `version_bump` and `changelog`, and calls no
+model. Its push step runs the outgoing checks and records the refs and commits
+it would send (`push_plan` on the run record). No surface starts a shadow run
+yet; it is what the merge shadow comparison will run.
+
 ## The order inside the lock
 
 Once a run holds the lock, it works through these steps in order. The
 step names are the built-in ones listed in [The built-in pipeline](#the-built-in-pipeline) below.
 
 1. **Rebase onto the latest main.** Main is fetched first when the project has
-   a remote, and each branch is rebased onto it. A branch that conflicts stops
-   the run with that branch untouched.
+   a remote, and a copy of each branch is rebased onto it. A branch whose
+   rebase conflicts is merged as it is, so the conflict policy and the
+   [file rules](#per-file-conflict-rules) settle it or ask. (With no merge step
+   in the pipeline, the conflicting rebase stops the run.)
 2. **Check and merge the branches.** `check-branch-versions` must pass for every
    branch before anything merges; then `merge-branches` merges them in order.
 3. **Compute the release version after the merge.** The version is main's
-   version as it stands after the merge, plus the release size. The release
-   size the version step applies is patch today (the resolved release size is
-   stored but not yet applied; see [Choose the release size](#choose-the-release-size)),
-   so the next patch above main is used. The version is then fixed for the run.
+   version as it stands after the merge, plus the Automaton's
+   [release size](#choose-the-release-size). The version is then fixed for the
+   run.
 4. **Make the release bump.** The version files, the changelog heading, the
    README line and one bump commit, then the release tag on that commit.
 5. **Validate the bump.** The [release validator](#the-release-bump-validator)
@@ -578,12 +734,12 @@ The lock is released after the last step, whatever the result.
 If the push is refused because the remote's main moved while the run worked,
 the run redoes itself rather than failing:
 
-- its own merge commits and release bump are undone, and the run's local tag is
-  deleted;
-- local main is fast-forwarded to the remote's main (a diverged local main stops
-  the redo and fails the run);
-- the steps run again from the rebase step, so the release version is computed
-  again from the moved main.
+- the candidate in the scratch tree is moved to the remote's new main, and the
+  run's tag is deleted;
+- a local main holding a commit the remote does not stops the redo and fails
+  the run;
+- the steps run again from the rebase step, so every check runs again and the
+  release version is computed from the moved main.
 
 A run redoes at most **three times**. A fourth refusal fails the run with the
 reason `main kept moving`. Each redo appears in the run record as a step named
@@ -627,7 +783,7 @@ In order:
 8. `commit-release-bump` (`commit_release_bump`) — one commit of the version files, the changelog and the README; with nothing staged no commit is made.
 9. `tag-release` (`tag_release`) — tag that commit with the new version. A tag already on that commit is left alone. A tag of that name pointing at another commit fails the step, naming the tag and both commits — the daemon never moves a release tag, so resolving it is an operator call.
 10. `validate-release-bump` (`validate_release_bump`) — before anything leaves the machine, run the release-bump validator over the bump the earlier steps made (see [The release-bump validator](#the-release-bump-validator) below). A failing check fails this step and names each check that failed, so the push never runs. The result is kept on the run record as `validator`.
-11. `push-release` (`push_release`) — push main and the tag; fast-forward only.
+11. `push-release` (`push_release`) — push main, and the tag when the run made one; fast-forward only.
 12. `deploy-latest` (`deploy_latest`) — run the deploy command; a failure does not fail the run (`on_failure: continue`).
 
 ### Why every merge step is safe to run twice
@@ -644,13 +800,15 @@ tag exist, and before the push. The step calls `ValidateReleaseBump` in
 which runs the five checks below and returns the result the run record keeps.
 It only reads: it never writes a file, a tag or a remote. The glossary entry is
 [Release validator](../datawatch-definitions.md#release-validator). Every check runs, even after one fails, so the result names each
-check that failed. The five checks, in the order they run:
+check that failed. The five checks, in the order they run (the by-hand script
+below names the third `one_step_above_last_tag` and compares with the newest
+local `vX.Y.Z` tag instead):
 
 | Check name | What it requires |
 |---|---|
 | `version_variables_equal` | Every file in `version_files` carries the same `X.Y.Z` in its `var Version = "..."` line. A file with no such line fails the check. `version_files` has no default: with an empty list this check fails rather than guessing (see [Settings](#settings)). |
 | `changelog_heading_matches` | The first `## vX.Y.Z` heading in `CHANGELOG.md` is that version. |
-| `one_step_above_last_tag` | The version is exactly one patch, minor or major step above the newest local `vX.Y.Z` tag. The run's own release tag is not counted as the previous release. |
+| `one_step_above_base` | In a daemon run: the version is exactly one patch, minor or major step above the version of the commit the merge is built on. Tags play no part, since most releases may have none. |
 | `tag_not_taken` | The tag `vX.Y.Z` is not on `origin`, and any local tag of that name points at HEAD. If `origin` cannot be queried, the check fails. |
 | `readme_line_matches` | The first `Current release:` line in `README.md` names that version. The check looks at the version only, not the date: a line that names the right version without the `(YYYY-MM-DD)` date still passes here — it is the `set-readme-release-line` step, not this validator, that requires the shape. |
 
@@ -710,45 +868,56 @@ carries, it is resolved at merge time.
   nothing merges, and the two version files must agree on main and on the
   branch wherever they are read.
 - **After the branches have merged**, the `set-release-version` step computes
-  the release version from main as it stands at that point — the next patch
-  release above M — and writes it into every `version_files` entry. It runs
+  the release version from main as it stands at that point (the next release of
+  the Automaton's size above M) and writes it into every `version_files` entry.
+  It runs
   exactly once per run, so a run that redoes from the rebase step sets the
   version from the moved main.
 - The version is then fixed for the run: the `add-changelog-heading` step
   adds a changelog heading for it, the `tag-release` step names it in the tag,
   and the run record keeps it as `release_version`.
 
-**The release size the version step applies is patch today.** The daemon merges
-the next patch release above main. The release size and the approval mode for
-each size are settings now (see [Choose the release size](#choose-the-release-size)
-and [Release approval modes](#release-approval-modes)), but the version step
-does not yet apply a resolved size; until it does, deciding what ships as
-minor or major stays a manual operator call.
+**The size comes from the run's Automaton:** its own release size when set,
+else its kind through the [release size map](#choose-the-release-size), else
+the built-in sizes (feature is minor, bug is patch, other is none). The
+[approval mode](#release-approval-modes) is the one for that size; a breaking
+change takes the major mode. A size of `none` merges and pushes the work with
+no version, changelog or tag (its approval mode is `ask`). A milestone
+Automation does not yet raise a merge to major.
+
+## Which releases are tagged
+
+A pipeline with no `tag_release` step pushes main only; no tag leaves, even one
+already in your repository. To tag only some releases, limit the step:
+
+```yaml
+- {name: tag-release, kind: tag, action: tag_release, tag_sizes: [minor, major]}
+```
+
+A release of another size is not tagged, and its push carries main only. A
+patch that fixes a real bug cannot yet be told apart from any other patch.
 
 ## When main moves before the push
 
 Another machine can land commits on the remote's main while a run is working.
 The push step is fast-forward-only: it lists and fetches the remote's branch
-first, and refuses to push unless that head is an ancestor of the local head,
+first, and refuses to push unless that head is an ancestor of the commit it
+sends,
 so a push can only move the remote forward. The refusal says why — it names
 the head of the branch on the remote and the local head, and says that
 nothing was pushed. The run does not fail for that alone. It undoes its own
 work and starts again:
 
-- The run's local merge commits and release bump are undone: local main is
-  reset to the head it had when the lock was taken (or, after an earlier redo,
-  the head that redo synced to). The run's local release tag is deleted.
-- Local main is fast-forwarded to the remote's main. A local main that cannot
-  fast-forward (the histories have diverged) stops the redo and fails the run.
+- The scratch tree is moved to the remote's new main and the run's tag is
+  deleted. Your local main does not move.
 - The steps run again from the rebase step, so the release version is computed
   from the moved main, and the changelog heading and bump commit are made once.
-- Each redo is a run step named `main-moved-redo-<n>`, with what it reset and
-  synced to. A run allows three redos. A fourth refusal fails the run with the
-  reason `main kept moving`.
+- Each redo is a run step named `main-moved-redo-<n>`, with what it did. A run
+  allows three redos. A fourth refusal fails the run with the reason
+  `main kept moving`.
 
-A redo refuses to reset local main when any commit above the base is not one
-the run made, for example a commit someone made on local main during the run.
-The run then fails and nothing is reset.
+A local main that holds a commit the remote does not stops the redo, and the
+run fails.
 
 A redo can also end with nothing new to release: if main moved so that the
 run's branches are already contained in it, the release steps are recorded as

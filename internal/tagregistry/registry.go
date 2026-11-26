@@ -76,6 +76,8 @@ type Registry struct {
 	reachable bool
 	lastErr   string
 	running   bool
+	// unsaved is set while the tags hold local changes the cache does not.
+	unsaved bool
 }
 
 // New builds a registry for the role the options give, and loads the cache
@@ -114,11 +116,15 @@ func New(opts Options) (*Registry, error) {
 	if err := r.load(); err != nil {
 		return nil, err
 	}
+	if w, ok := r.store.(watchedStore); ok {
+		w.WatchLocalChanges(r.AbsorbLocal)
+	}
 	return r, nil
 }
 
-// load reads the cache when one exists and makes the store match it. With no
-// cache the state starts from the store's tags.
+// load reads the cache when one exists and puts it together with the store's
+// tags, removing none of either (loadCached). With no cache the state starts
+// from the store's tags.
 func (r *Registry) load() error {
 	if r.cache != nil {
 		data, ok, err := r.cache.Load()
@@ -129,13 +135,14 @@ func (r *Registry) load() error {
 			if err := json.Unmarshal(data, &r.st); err != nil {
 				return fmt.Errorf("tag registry: decode cache: %w", err)
 			}
-			return r.store.ApplySnapshot(copyTags(r.st.Tags))
+			return r.loadCached()
 		}
 	}
 	tags, err := r.store.ListTags()
 	if err != nil {
 		return fmt.Errorf("tag registry: list tags: %w", err)
 	}
+	markLocalAutoTags(tags)
 	r.st.Tags = tags
 	return nil
 }
@@ -185,6 +192,9 @@ func (r *Registry) syncInterval() time.Duration {
 func (r *Registry) View() View {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.refreshLocked(); err != nil {
+		r.lastErr = err.Error()
+	}
 	return View{
 		Role:         r.role,
 		Keeper:       r.keeper,
@@ -260,6 +270,10 @@ func (r *Registry) mutateLocked(change func() error) error {
 // undone by this package, because the Store interface has no inverse
 // operations. The error says so. Callers hold mu.
 func (r *Registry) mutateWithStoreLocked(change func(steps *[]storeStep) error) error {
+	// The change starts from what the records hold now.
+	if err := r.absorbLocked(); err != nil {
+		return err
+	}
 	prev := r.st.clone()
 	var steps []storeStep
 	if err := change(&steps); err != nil {
@@ -270,7 +284,7 @@ func (r *Registry) mutateWithStoreLocked(change func(steps *[]storeStep) error) 
 		r.st = prev
 		return err
 	}
-	if err := r.runStoreStepsLocked(steps); err != nil {
+	if err := r.runStoreStepsLocked(prev.Tags, steps); err != nil {
 		r.st = prev
 		if serr := r.saveStateLocked(prev); serr != nil {
 			return errors.Join(err, fmt.Errorf("tag registry: restore cache: %w", serr))
@@ -281,14 +295,14 @@ func (r *Registry) mutateWithStoreLocked(change func(steps *[]storeStep) error) 
 }
 
 // runStoreStepsLocked runs the store steps of a committed change and then
-// mirrors the tags to the store. Callers hold mu.
-func (r *Registry) runStoreStepsLocked(steps []storeStep) error {
+// mirrors the change from prev to the store. Callers hold mu.
+func (r *Registry) runStoreStepsLocked(prev []Tag, steps []storeStep) error {
 	for _, step := range steps {
 		if err := step(); err != nil {
 			return err
 		}
 	}
-	if err := r.store.ApplySnapshot(copyTags(r.st.Tags)); err != nil {
+	if err := r.mirrorLocked(prev); err != nil {
 		return fmt.Errorf("tag registry: apply tags to store: %w", err)
 	}
 	return nil
@@ -321,6 +335,7 @@ func (r *Registry) saveLocked() error {
 // saveStateLocked writes s to the cache, if there is one. Callers hold mu.
 func (r *Registry) saveStateLocked(s state) error {
 	if r.cache == nil {
+		r.unsaved = false
 		return nil
 	}
 	data, err := json.Marshal(s)
@@ -330,6 +345,7 @@ func (r *Registry) saveStateLocked(s state) error {
 	if err := r.cache.Save(data); err != nil {
 		return fmt.Errorf("tag registry: write cache: %w", err)
 	}
+	r.unsaved = false
 	return nil
 }
 

@@ -118,7 +118,7 @@ func (m *Manager) readTaskClaim(fullID string) (claimScreen, string, string) {
 		return claimUnreadable, "", "the session is gone"
 	}
 	snap := m.store.Snapshot(sess)
-	if logShowsAssistantTurn(snap.LogFile) {
+	if logShowsAssistantTurnSince(snap.LogFile, snap.LaunchLogStart) {
 		return claimDelivered, "", "the recorded output holds an answer"
 	}
 	pane, err := m.tmux.CapturePaneVisible(snap.TmuxSession)

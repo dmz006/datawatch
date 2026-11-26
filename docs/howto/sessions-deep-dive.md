@@ -113,6 +113,24 @@ datawatch config set session.finalise_interval_minutes 2
 
 The details of how a record is judged and what each run covers follow below.
 
+## An interactive session that reports its work done
+
+A completion line such as `DATAWATCH_COMPLETE: wrote the report` ends a
+one-shot session. It does not end an interactive one: that session goes to
+`waiting_input` and takes your next instruction. While it works on a later turn
+it reads `running`, even with the earlier line still on screen. The report
+never turns it `complete`.
+
+This is about Claude Code's own report. When Claude Code **quits**, the line its
+launch command prints afterwards (`DATAWATCH_COMPLETE: claude done`) still
+reads as before: with the terminal left open the session can switch between
+`complete` and `running`, with an alert each time. End or restart it:
+
+```bash
+datawatch session kill a3f2
+datawatch session restart a3f2
+```
+
 ## Gone session records
 
 A session record can be left in `running` (or another non-final state)
@@ -854,6 +872,136 @@ backend and which message size it affects.
               ▼
        output.log (append-only, ANSI preserved)
 ```
+
+## A Claude session that quits at a declined start-up dialog
+
+**What you see.** The session ends `failed`. One alert and the session's
+`launch_failure` and `end_note` fields say why, for example:
+
+```
+launch failed: the agent exited at the start-up dialog "Settings Error" that
+datawatch declined (sent Esc); no task was delivered; settings file(s) named by
+the dialog: /path/to/project/.claude/settings.local.json (fix or move them, then
+restart the session)
+```
+
+**Why.** With `auto_accept_disclaimer` on for the `claude-code` LLM entry,
+datawatch answers a Claude Code start-up dialog about settings, updates or
+permission modes with Esc only. It never picks "Fix with Claude" (which could
+rewrite your file) or "Continue without these settings" (your choice to make).
+When Claude Code quits on that Esc, the line the launch command prints
+afterwards (`DATAWATCH_COMPLETE: claude done`) is not finished work. With the
+setting off, datawatch sends nothing and the dialog waits for you.
+
+**When a session is failed this way.** Only when all of these hold:
+
+- datawatch declined the dialog on this start, within the last two minutes, and
+  the screen showed its footer, `Enter to confirm · Esc to cancel`, as the last
+  line with numbered choices right above it;
+- the Claude channel is on, the session has a task, and it was never delivered;
+- datawatch sent the session nothing but answers to start-up dialogs;
+- Claude Code was not then seen at its input box or working;
+- it has left: tmux says the terminal is gone, or the visible screen shows the
+  exit line and only the terminal's own shell remains.
+
+datawatch then closes that shell, commits nothing and does not bring the session
+back. An Automaton task is retried as a launch failure and then held.
+
+**What to do.** Fix or move the files the reason names (for Claude Code settings,
+plain JSON with no comments), then restart the session:
+
+```bash
+datawatch alerts --limit 5          # the alert body is the reason
+datawatch session restart a3f2
+```
+
+With the file unchanged, the restart meets the same dialog and fails again.
+
+**Not covered.** Every other exit is handled as before, so such a session can
+still be reported `complete`, and an interactive one can switch between
+`complete` and `running` with an alert each time. In particular:
+
+- the channel is off, or the session has no task;
+- Claude Code quits without a declined dialog;
+- the screen did not have the shape above (an update notice without that footer,
+  unnumbered or boxed choices);
+- anything was sent through datawatch, even one key;
+- something is still on the terminal or running under its shell when datawatch
+  looks (a wrapper script, a process left behind, a job your shell started), or
+  the process list or tmux cannot be read. An interactive session is looked at
+  again each time round and can still fail then; a one-shot is `complete` after
+  the first look;
+- more than two minutes have passed since the dialog;
+- the task had been delivered;
+- other agents.
+
+An Automaton worker is never marked done without its task, also outside the
+case above. See [When an Automaton worker never got its
+task](#when-an-automaton-worker-never-got-its-task).
+
+### When an Automaton worker never got its task
+
+On a Claude channel launch datawatch types the task itself. When such a worker
+ends and datawatch has no proof that the task arrived on **this** start, the task
+is not verified and not done. It is retried as a [launch
+failure](infrastructure-retry.md#what-counts-as-transient) and held when the
+retries run out. Proof is the task seen on screen after datawatch typed it, or,
+after a daemon restart mid-delivery, the task on screen or an answer recorded
+since this start.
+None of these stands in for it: that datawatch had started typing, a commit made
+when the session ended, a screen captured on an earlier start, a finished
+checkpoint file with a passing check, or the `DATAWATCH_COMPLETE: claude done`
+line the launch command prints when Claude Code leaves.
+
+A restart is a new start: the task has to arrive again. So a worker whose task
+you typed yourself, or that you restarted and told to carry on while datawatch
+never typed the task again, is retried too.
+
+With the channel off the task is part of the launch command. Such a worker is
+judged by what it left: a completion line of its own plus a commit or a stored
+response. The launch command's exit line does not count as its own.
+
+### The check before datawatch types on its own
+
+When Claude Code has left a session's terminal, what is there is a shell, which
+would run typed text outside Claude Code's permission checks. Before typing a
+task, a scheduled command, an output filter's input or a line it writes on its
+own (automation messages and nudges, question answers, supervisor wake-ups,
+exit-hook, subscription and reply-to-parent lines, the rate-limit resume line)
+into a Claude session, datawatch looks for two signs:
+
+- the visible screen shows the line printed after Claude Code exits: a line that
+  reads `DATAWATCH_COMPLETE: claude done` after any leading spaces and non-ASCII
+  marks such as `⎿` or `●`;
+- the terminal's own shell is the only thing reading the keyboard.
+
+If either shows, that attempt types nothing.
+
+**What the check does not do.** It does not know whether Claude Code is there.
+It sees only what shows when it looks, and datawatch types whenever neither sign
+shows. The typed text can still run in the shell later if Claude Code has
+stopped reading the keyboard, or has exited under a wrapper script that did not
+`exec` and is still in the foreground. The same can happen if Claude Code leaves
+after the check, with job control off in the terminal's shell (datawatch's
+fallback memory watchdog turns it off) once the exit line is no longer on
+screen, or when neither the screen nor the process list can be read.
+
+**Not checked at all:** what you send yourself; the MCP tools `send_input` and
+`send_saved_command`, also when an AI session calls them; answers to start-up
+dialogs; datawatch's own menu keys (the usage-limit answer, the MCP server
+retry, dismissing Claude Code prompts, Enter); and the memory wake-up text,
+which is typed without Enter.
+
+**What a refusal does.**
+
+- A task delivery that stays refused ends the session. The reason says the task
+  was not typed again; an earlier attempt may already have typed it, so check
+  what ran in that terminal.
+- A refused scheduled command is marked failed and is not retried, and a
+  recurring one stops. This includes a shell command you scheduled for a Claude
+  session whose Claude Code has left.
+- Because of how the exit line is matched, automated input is also refused while
+  a running Claude Code shows such a line.
 
 ## Claude Code interstitial prompts — recognised and dismissed for you
 

@@ -623,6 +623,24 @@ or, on one Automaton, `datawatch autonomous failure-escalation set <automaton-id
 With escalation off, a task that fails its attempts is marked failed, and the
 retry count is still `autonomous.auto_fix_retries`.
 
+## After upgrading: what to check
+
+Two behaviours changed for ladders that include a `claude-code` step:
+
+- A step with no model no longer lands on the backend's built-in or the
+  account's default model (which could be an Opus model). It runs on the daemon
+  default, `sonnet` (`haiku` for a mechanical task kind). If you want a
+  different model for a step, name it on the step.
+- A step whose backend is backed off is skipped for that attempt, so a task
+  pinned to a local model may run on its normally resolved worker for one
+  attempt instead of escalating. Look for `failure_escalation` entries in the
+  decision log to see which attempts were skipped.
+
+Review any ladder you wrote before this change: a step you relied on to reach a
+particular Claude model should name that model explicitly. See
+[explicit model policy](explicit-model-policy.md) and
+[usage back-off](usage-backoff.md).
+
 ## See also
 
 - [failed-attempt-cost.md](failed-attempt-cost.md): what a failed attempt costs,

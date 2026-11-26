@@ -1385,6 +1385,10 @@ type Task struct {
 	// current incident. It is reset when the task gets a fair attempt; the
 	// InfraRetries history is not.
 	InfraRetryCount int `json:"infra_retry_count,omitempty"`
+	// LoopRetriedInfraHold is true once the supervisor loop has retried this
+	// task off an infrastructure hold. A later hold then stays for the
+	// operator, whose own reset or retry clears it.
+	LoopRetriedInfraHold bool `json:"loop_retried_infra_hold,omitempty"`
 	// VerifierFaultRetries is the consecutive verifier-only retries of the
 	// current worker's result. Above zero, the worker is known to have
 	// finished, so a restart verifies again instead of running it. It returns
@@ -1457,6 +1461,9 @@ type Task struct {
 	// resumed this task for (question_tick.go), so a later tick never resumes
 	// it twice for the same answer. Nil = never resumed for a question.
 	DecisionResume *DecisionResume `json:"decision_resume,omitempty"`
+	// OwedDecisions are the blocking questions of this task's worker whose
+	// decision line has not been sent or listed for review (decision_owed.go).
+	OwedDecisions []OwedDecision `json:"owed_decisions,omitempty"`
 	// EscalationFailures counts failed attempts since the last operator
 	// action; it indexes the policy's steps and is compared with
 	// max_failures.

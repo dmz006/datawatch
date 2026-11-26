@@ -21,6 +21,48 @@ type AutonomousStore struct {
 	Book TagBook
 }
 
+// tagRecordEditor is a TagBook that can save and remove single records.
+type tagRecordEditor interface {
+	UpdateTagRecords(save []*autonomous.Tag, remove []string) error
+}
+
+// tagRecordWatcher is a TagBook that reports its own record changes.
+type tagRecordWatcher interface {
+	SetTagRecordHook(fn func())
+}
+
+// ApplyChanges saves and removes single records. A book that can only replace
+// every record gets its own records with the changes made to them.
+func (s AutonomousStore) ApplyChanges(save []Tag, remove []string) error {
+	recs := make([]*autonomous.Tag, 0, len(save))
+	for _, t := range save {
+		recs = append(recs, recordFromTag(t))
+	}
+	if ed, ok := s.Book.(tagRecordEditor); ok {
+		return ed.UpdateTagRecords(recs, remove)
+	}
+	drop := map[string]bool{}
+	for _, id := range remove {
+		drop[id] = true
+	}
+	for _, t := range save {
+		drop[t.ID] = true
+	}
+	for _, t := range s.Book.ListTags() {
+		if !drop[t.ID] {
+			recs = append(recs, t)
+		}
+	}
+	return s.Book.SaveTagRecords(recs)
+}
+
+// WatchLocalChanges registers fn for the book's own record changes.
+func (s AutonomousStore) WatchLocalChanges(fn func()) {
+	if w, ok := s.Book.(tagRecordWatcher); ok {
+		w.SetTagRecordHook(fn)
+	}
+}
+
 // ListTags returns every tag record the autonomous store holds.
 func (s AutonomousStore) ListTags() ([]Tag, error) {
 	recs := s.Book.ListTags()

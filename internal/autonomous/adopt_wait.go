@@ -23,6 +23,9 @@ type AdoptedWaitPorts struct {
 	Status func(sessionID string) (state session.State, family string, ok bool)
 	// Completed reports whether the session's output carries the completion marker.
 	Completed func(sessionID string) bool
+	// LaunchFailure returns the launch failure error of a session recorded as
+	// a failed launch, or nil. nil port: never one.
+	LaunchFailure func(sessionID string) error
 	// Nudge returns the idle-nudge hooks for the session.
 	Nudge func(sessionID string) WorkerNudgeHooks
 
@@ -76,13 +79,25 @@ func WaitAdopted(ctx context.Context, w AdoptedWait, p AdoptedWaitPorts) error {
 			finish()
 			return nil
 		case session.StateFailed, session.StateKilled:
+			if p.LaunchFailure != nil {
+				if err := p.LaunchFailure(w.SessionID); err != nil {
+					return err
+				}
+			}
 			return fmt.Errorf("adopted session %s ended %s", w.SessionID, state)
 		}
 		if p.Completed(w.SessionID) {
 			finish()
 			return nil
 		}
-		if err := StepWorkerNudge(tr, now(), family, w.SessionID, label, p.Nudge(w.SessionID)); err != nil {
+		if w.decision.hold() {
+			// The worker waits for the operator: no nudge and no stall, and the
+			// idle clock starts again once the decision is delivered.
+			if tr.Nudged() {
+				closeNudgeForQuestion(tr, p.Nudge(w.SessionID), w.SessionID, label)
+			}
+			tr = NewWorkerNudgeTracker(p.NudgeAfter, p.StallAfter)
+		} else if err := StepWorkerNudge(tr, now(), family, w.SessionID, label, p.Nudge(w.SessionID)); err != nil {
 			return err
 		}
 		if err := pause(ctx); err != nil {

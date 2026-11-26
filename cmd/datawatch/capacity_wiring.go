@@ -1721,8 +1721,8 @@ func wireJudgeAdmission(amgr *autonomous.Manager, judges *verifierRegistry) {
 // channel. priority maps a session id to its capacity priority; verifiers
 // tracks the running verifier leases.
 func wireVerifierAdmission(amgr *autonomous.Manager, priority func(sessionID string) int, verifiers *verifierRegistry) {
-	// The verifier takes its own lease through AdmitJudge. The task released its
-	// worker lease when it entered verifying, so the verifier waits for a
+	// The verifier takes its own lease through AdmitJudge. Ending the worker
+	// session freed the worker lease, so the verifier waits for a
 	// verifier slot holding no worker slot; a worker lease still present is
 	// released, never handed over. The node is the one the verifier holds, ""
 	// for a one-node entry.

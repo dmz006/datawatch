@@ -19,6 +19,9 @@ func (r *Registry) KeeperSnapshot() (Snapshot, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.refreshLocked(); err != nil {
+		return Snapshot{}, err
+	}
 	return Snapshot{
 		Revision: r.st.Revision,
 		Tags:     copyTags(r.st.Tags),

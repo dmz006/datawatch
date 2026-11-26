@@ -37,8 +37,8 @@ How-to: [howto/automaton-lifecycle-subscriptions.md](../howto/automaton-lifecycl
  │       ∧ (prd_id = ""  ∨ = event.prd_id)                               │
  │       ∧ (task_id = "" ∨ = event.task_id)                              │
  │  2. per matched sink → deliver (see below)                            │
- │  3. one_shot ⇒ delete the record only after successful delivery:      │
- │       delivery err → retry once → still err ⇒ log + drop              │
+ │  3. one_shot ⇒ delete the record only after successful delivery.      │
+ │       session sink: typed only; kept and retried until typed          │
  │  4. janitor: prune expires_at elapsed; coalesce human-facing sinks    │
  │  5. live re-attach: store OnChanged → swap the active set             │
  │     (add/delete applies immediately — no daemon restart)              │
@@ -57,6 +57,8 @@ How-to: [howto/automaton-lifecycle-subscriptions.md](../howto/automaton-lifecycl
  │               │  │  (+ send_input     │                                ▼
  │               │  │    action text)    │                       (pending-events path
  └───────────────┘  └─────────────────────┘                        below)
+ The session box above is a repeating rule. A one-shot session rule is typed
+ only, and kept until typed (see "One-shot watch-and-inject" below).
 
  ┌───────────────────────────────┐  ┌───────────────────────────────────────────┐
  │ webhook sink  (ships OFF)     │  │ peer sink  (ships OFF)                    │
@@ -217,10 +219,11 @@ Operator guide: [howto/automaton-lifecycle-webhooks.md](../howto/automaton-lifec
     │                           │        │                              │
     │                           │        ▼                              │
     │                           │  engine matches record →             │
-    │                           │  session adapter:                    │
-    │                           │   ① bridge? POST :port/send ────────►│ ✅ text in,
-    │                           │   ② else  SendInput "lifecycle-sub"─►│
-    │                           │  success ⇒ store.Remove(record)       │
+    │                           │  one-time message saved on the rule  │
+    │                           │  SendInput "lifecycle-sub" ─────────►│ ✅ typed
+    │                           │   (never over the bridge; a prompt   │
+    │                           │    on screen ⇒ wait and retry)       │
+    │                           │  typed ⇒ store.Remove(record)         │
     │                           │  (one-shot consumed; audit-logged)    │
 ```
 

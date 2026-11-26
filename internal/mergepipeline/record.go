@@ -112,6 +112,7 @@ func (s *RecordStore) List() []Record {
 
 func cloneRecord(r Record) Record {
 	r.Definition.Steps = append([]Step(nil), r.Definition.Steps...)
+	r.Definition.ConflictRules = append([]ConflictRule(nil), r.Definition.ConflictRules...)
 	return r
 }
 
