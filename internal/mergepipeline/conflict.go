@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 // ConflictPolicy says what happens when merging a branch conflicts.
@@ -346,7 +347,15 @@ func (m *Merger) runEnv(ctx context.Context, env []string, contained bool, dir s
 	if !within(m.Dir, dir) {
 		return cmdResult{}, fmt.Errorf("refusing to run %s outside the project directory", name)
 	}
-	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- fixed binaries, arguments built here
+	var cmd *exec.Cmd
+	if name == "git" && !contained {
+		// Held to the limit ctx carries, when it carries one.
+		c, done := git.Command(ctx, args...)
+		defer done()
+		cmd = c
+	} else {
+		cmd = exec.CommandContext(ctx, name, args...) // #nosec G204 -- fixed binaries, arguments built here
+	}
 	cmd.Dir = dir
 	cmd.Env = env
 	var out bytes.Buffer

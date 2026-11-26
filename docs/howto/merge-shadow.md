@@ -60,10 +60,35 @@ use**, in shadow mode:
   is the base). A fast-forwarded merge, or a release that carried a second merge,
   cannot be rebuilt, and the stored shadow says so;
 - in a disposable copy of the project under the data directory, with a bare
-  remote of its own. The copy's git settings name neither your repository nor
-  its remote. git over ssh is switched off for its commands;
+  remote of its own. The copy holds the history of the hand merge's base,
+  branch tip and release commit, `main` at the base, the merged branch at the
+  tip and the tags the base already had (a tag of a tag is left out); no other
+  branch or tag. The copy's git settings name neither your repository nor its
+  remote. git over ssh is switched off for its commands;
 - running every command step of the recorded pipeline's checks. They take as
   long as a real run's. One shadow runs at a time.
+
+#### Memory and time limit
+
+Every git process datawatch starts for a hand-merge shadow is held to **2 GiB**
+of data memory (heap), and every git command to **10 minutes**, after which it
+and everything it started are stopped. A process git starts itself, such as the
+receiving side of a push, gets the same memory limit. A command that needs more
+fails, and the shadow is stored as one that could not run, with git's message.
+The memory limit is set with `ulimit -d`, which the Linux kernel enforces; it
+counts each process on its own and does not count mapped pack files. On other
+systems only the time limit is certain. The pipeline's own check commands are
+not held to this limit: they keep their own time limits.
+
+Why it matters: in a **shallow clone with very many tags**, pushing every tag
+into a repository that is not cut at the same place makes git's receiving side
+use memory that grows with the square of the number of tags times the length of
+the history. The copy is therefore built without any push: the commits are
+fetched by id, the tags are written as refs over copied tag objects, and the
+copy's remote is a file copy that is cut at the same place, so a push from the
+copy to it, such as one a check command makes, has nothing to work out. A check
+command that pushes from the copy into a **new** repository of its own is not
+protected by this.
 
 It asks, sends, deploys, records and calls nothing, and runs whether or not
 merging is switched on. `autonomous.merge_shadow.enabled: false` stops it.

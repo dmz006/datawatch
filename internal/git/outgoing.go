@@ -159,7 +159,8 @@ func readGit(ctx context.Context, dir, stdin string, args ...string) (string, er
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
 	full := append([]string{"-c", "core.quotePath=false", "-c", "core.commitGraph=false"}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd, done := Command(ctx, full...)
+	defer done()
 	cmd.Dir = dir
 	cmd.Env = outgoingEnv()
 	if stdin != "" {
@@ -342,7 +343,8 @@ func materialize(ctx context.Context, dir, commit, dest string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "cat-file", "--batch")
+	cmd, done := Command(ctx, "cat-file", "--batch")
+	defer done()
 	cmd.Dir = dir
 	cmd.Env = outgoingEnv()
 	var ids strings.Builder

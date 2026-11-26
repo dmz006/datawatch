@@ -533,3 +533,22 @@ func TestShadowThatCannotRunSaysWhy(t *testing.T) {
 		})
 	}
 }
+
+// A project that is a shallow clone is shadowed all the same.
+func TestShadowOfAShallowProject(t *testing.T) {
+	g := newReplayRig(t)
+	hand := g.handMerge(handOptions{})
+	// Cut the history behind the commit that declared the outgoing check.
+	boundary := runGit(t, g.dir, "rev-list", "--max-count=1", "--grep=^outgoing check$", "main")
+	if err := os.WriteFile(filepath.Join(g.dir, ".git", "shallow"), []byte(boundary+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := runGit(t, g.dir, "rev-parse", "--is-shallow-repository"); got != "true" {
+		t.Fatalf("fixture: shallow = %s", got)
+	}
+	r := g.shadow(hand)
+	allPass(r)
+	if v := r.Verdict(); v != mergeshadow.VerdictMatch {
+		t.Errorf("%s: %q %+v", v, r.Error, r.Rows())
+	}
+}

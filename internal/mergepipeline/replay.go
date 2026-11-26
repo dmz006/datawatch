@@ -12,6 +12,7 @@
 package mergepipeline
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/mergeshadow"
 )
 
@@ -75,6 +77,10 @@ func ShadowHandMerge(ctx context.Context, in ReplayInput) *mergeshadow.Replay {
 	rec.Content = mergeshadow.ReplayContent{Differences: []string{}}
 	rec.Leak = mergeshadow.ReplayLeak{PrivatePatterns: -1}
 	rec.SideEffects = mergeshadow.ReplaySideEffects{Found: []string{}}
+	// Every git step of the shadow is held to a limit.
+	if _, ok := git.ProcessLimitOf(ctx); !ok {
+		ctx = git.WithProcessLimit(ctx, git.ShadowProcessLimit)
+	}
 	if err := shadowHandMerge(ctx, in, &rec); err != nil {
 		rec.State, rec.Error = mergeshadow.ReplayError, redact(err.Error())
 	}
@@ -324,47 +330,61 @@ type shadowCopy struct {
 // copiedSettings are the project's own git settings a commit in the copy needs.
 var copiedSettings = []string{"user.name", "user.email", "commit.gpgsign", "tag.gpgsign", "core.autocrlf", "core.filemode"}
 
-// makeShadowCopy clones the project into work, leaves it with only its main
-// branch at the hand merge's base and the merged branch at the hand merge's
-// tip, and gives it a bare remote of its own at the base.
+// makeShadowCopy builds the copy of the project in work: the history of the
+// hand merge's base, tip and commit, its main branch at the base, the merged
+// branch at the tip and the tags the base already had, with a bare remote of
+// its own at the base.
+//
+// Nothing is pushed, and git is never asked to move more than those three
+// commits from one repository to another. A project can be a shallow clone
+// with very many tags. When git receives refs from a shallow repository into
+// one that is not cut at the same place, it can keep one bit per received ref
+// for every commit and walk the history once per ref, so that its memory grows
+// with the square of the number of refs times the history. The tags are
+// therefore written here as refs, over objects copied by name, and the remote
+// is a file copy that is cut at the same place as the copy: a later push
+// between the two, such as one a check command makes, has nothing to work out.
 func makeShadowCopy(ctx context.Context, src *Merger, work string, rec *mergeshadow.Replay) (*shadowCopy, error) {
 	c := &shadowCopy{git: &Merger{Dir: work}, dir: filepath.Join(work, "project"), bare: filepath.Join(work, "remote.git")}
 	mainRef := "refs/heads/" + DefaultMainBranch
-	if "refs/heads/"+rec.Branch == mainRef || strings.HasPrefix(rec.Branch, "-") {
+	branchRef := "refs/heads/" + rec.Branch
+	if branchRef == mainRef || strings.HasPrefix(rec.Branch, "-") {
 		return nil, fmt.Errorf("%q cannot be a work branch", rec.Branch)
 	}
 	run := func(dir string, args ...string) (string, error) { return c.git.gitOK(ctx, dir, args...) }
-	if _, err := run(work, "clone", "--quiet", "--no-checkout", "--", src.Dir, c.dir); err != nil {
-		return nil, err
+	if _, err := run(work, "check-ref-format", branchRef); err != nil {
+		return nil, fmt.Errorf("%q cannot be a work branch: %w", rec.Branch, err)
 	}
-	if _, err := run(c.dir, "remote", "remove", "origin"); err != nil {
-		return nil, err
-	}
-	refs, err := run(c.dir, "for-each-ref", "--format=%(refname)")
+	format, err := src.gitOK(ctx, src.Dir, "rev-parse", "--show-object-format")
 	if err != nil {
 		return nil, err
 	}
-	for _, ref := range lines(refs) {
-		if _, err := run(c.dir, "update-ref", "--no-deref", "-d", ref); err != nil {
-			return nil, err
-		}
-	}
-	for ref, id := range map[string]string{mainRef: rec.Hand.Base, "refs/heads/" + rec.Branch: rec.Hand.Tip} {
-		if _, err := run(c.dir, "update-ref", ref, id); err != nil {
-			return nil, err
-		}
-	}
-	// The tags the base already had, which a version check may read.
-	tags, err := src.gitOK(ctx, src.Dir, "for-each-ref", "--merged="+rec.Hand.Base, "--format=%(refname) %(objectname)", "refs/tags")
-	if err != nil {
+	initArgs := []string{"init", "--quiet", "--initial-branch=" + DefaultMainBranch, "--object-format=" + strings.TrimSpace(format)}
+	if _, err := run(work, append(initArgs, c.dir)...); err != nil {
 		return nil, err
 	}
-	for _, line := range strings.Split(strings.TrimSpace(tags), "\n") {
-		if ref, id, ok := strings.Cut(line, " "); ok {
-			if _, err := run(c.dir, "update-ref", ref, id); err != nil {
-				return nil, err
-			}
+	for _, kv := range [][2]string{{"gc.auto", "0"}, {"maintenance.auto", "false"}} {
+		if _, err := run(c.dir, "config", kv[0], kv[1]); err != nil {
+			return nil, err
 		}
+	}
+	// By commit id, so that no ref of the project comes along. A shallow
+	// project's cut comes with them.
+	// git drops its -c settings for the other end of a local fetch, so the
+	// thread count of the packing there is named in the command.
+	if _, err := run(c.dir, "-c", "protocol.version=2", "fetch", "--quiet", "--no-tags", "--no-write-fetch-head",
+		"--no-recurse-submodules", "--update-shallow", "--upload-pack=git -c pack.threads=2 upload-pack", "--", src.Dir, rec.Hand.Base, rec.Hand.Tip, rec.Hand.Commit); err != nil {
+		return nil, err
+	}
+	tags, err := c.copyBaseTags(ctx, src, work, rec.Hand.Base)
+	if err != nil {
+		return nil, fmt.Errorf("copy the tags of the base: %w", err)
+	}
+	head := "create " + mainRef + " " + rec.Hand.Base + "\n"
+	if err := c.updateRefs(ctx, c.dir, head+tags+
+		"create "+branchRef+" "+rec.Hand.Tip+"\n"+
+		"create refs/remotes/origin/"+DefaultMainBranch+" "+rec.Hand.Base+"\n"); err != nil {
+		return nil, err
 	}
 	for _, key := range copiedSettings {
 		r, err := src.git(ctx, src.Dir, "config", "--local", "--get", key)
@@ -378,7 +398,6 @@ func makeShadowCopy(ctx context.Context, src *Merger, work string, rec *mergesha
 		}
 	}
 	for _, args := range [][]string{
-		{"config", "gc.auto", "0"},
 		{"symbolic-ref", "HEAD", mainRef},
 		{"reset", "--hard", "--quiet"},
 	} {
@@ -386,16 +405,31 @@ func makeShadowCopy(ctx context.Context, src *Merger, work string, rec *mergesha
 			return nil, err
 		}
 	}
-	if _, err := run(work, "init", "--bare", "--quiet", "--initial-branch="+DefaultMainBranch, c.bare); err != nil {
+	initArgs = append(initArgs, "--bare")
+	if _, err := run(work, append(initArgs, c.bare)...); err != nil {
+		return nil, err
+	}
+	// The same objects, cut at the same place.
+	if err := copyFiles(ctx, filepath.Join(c.dir, ".git", "objects"), filepath.Join(c.bare, "objects")); err != nil {
+		return nil, fmt.Errorf("copy the objects to the copy's remote: %w", err)
+	}
+	shallow, err := os.ReadFile(filepath.Join(c.dir, ".git", "shallow")) // #nosec G304 -- the shadow's own folder
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return nil, err
+	default:
+		if err := os.WriteFile(filepath.Join(c.bare, "shallow"), shallow, 0o600); err != nil {
+			return nil, err
+		}
+	}
+	if err := c.updateRefs(ctx, c.bare, head+tags); err != nil {
 		return nil, err
 	}
 	if _, err := run(c.dir, "remote", "add", "origin", c.bare); err != nil {
 		return nil, err
 	}
-	if _, err := run(c.dir, "push", "--quiet", "origin", mainRef+":"+mainRef, "refs/tags/*:refs/tags/*"); err != nil {
-		return nil, err
-	}
-	// The clone's own records name the project's folder.
+	// git's own records can name the project's folder.
 	for _, p := range []string{"logs", "FETCH_HEAD"} {
 		if err := os.RemoveAll(filepath.Join(c.dir, ".git", p)); err != nil {
 			return nil, err
@@ -409,6 +443,121 @@ func makeShadowCopy(ctx context.Context, src *Merger, work string, rec *mergesha
 		return nil, errors.New("the copy's settings still name the project")
 	}
 	return c, nil
+}
+
+// copyBaseTags copies the tag objects of the tags base already had, which a
+// version check may read, and returns the update-ref lines that make the tags.
+// The commits they name are part of the base's history, which the copy has.
+// A tag of a tag is left out.
+func (c *shadowCopy) copyBaseTags(ctx context.Context, src *Merger, work, base string) (string, error) {
+	out, err := src.gitOK(ctx, src.Dir, "for-each-ref", "--merged="+base,
+		"--format=%(refname) %(objectname) %(objecttype) %(type)", "refs/tags")
+	if err != nil {
+		return "", err
+	}
+	var refs, objects strings.Builder
+	seen := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || (f[2] == "tag" && (len(f) < 4 || f[3] != "commit")) {
+			continue
+		}
+		fmt.Fprintf(&refs, "create %s %s\n", f[0], f[1])
+		if f[2] == "tag" && !seen[f[1]] {
+			seen[f[1]] = true
+			objects.WriteString(f[1] + "\n")
+		}
+	}
+	if objects.Len() == 0 {
+		return refs.String(), nil
+	}
+	// Exactly the named objects: no history is walked.
+	packFile := filepath.Join(work, "tags.pack")
+	pack, err := os.OpenFile(packFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- the shadow's own folder
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.Remove(packFile) }()
+	err = src.gitStream(ctx, src.Dir, strings.NewReader(objects.String()), pack, "pack-objects", "--stdout", "--quiet")
+	if cerr := pack.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return "", err
+	}
+	in, err := os.Open(packFile) // #nosec G304 -- the shadow's own folder
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = in.Close() }()
+	if err := c.git.gitStream(ctx, c.dir, in, io.Discard, "index-pack", "--stdin"); err != nil {
+		return "", err
+	}
+	return refs.String(), nil
+}
+
+// updateRefs writes many refs in one git process.
+func (c *shadowCopy) updateRefs(ctx context.Context, dir, lines string) error {
+	return c.git.gitStream(ctx, dir, strings.NewReader(lines), io.Discard, "update-ref", "--no-deref", "--stdin")
+}
+
+// gitStream runs git in dir with in as its input and out as its output.
+func (m *Merger) gitStream(ctx context.Context, dir string, in io.Reader, out io.Writer, args ...string) error {
+	if !within(m.Dir, dir) {
+		return errors.New("refusing to run git outside the project directory")
+	}
+	cmd, done := git.Command(ctx, args...)
+	defer done()
+	var stderr bytes.Buffer
+	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = dir, scrubbedEnv(), in, out, &stderr
+	if err := cmd.Run(); err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		return fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(tail(stderr.String(), 1000)))
+	}
+	return nil
+}
+
+// copyFiles copies the plain files under from into to. A file is linked where
+// the file system allows it: git never rewrites an object file.
+func copyFiles(ctx context.Context, from, to string) error {
+	return filepath.WalkDir(from, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		rel, err := filepath.Rel(from, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(to, rel)
+		switch {
+		case d.IsDir():
+			return os.MkdirAll(target, 0o700)
+		case !d.Type().IsRegular():
+			return fmt.Errorf("%s is not a plain file", rel)
+		}
+		if os.Link(path, target) == nil {
+			return nil
+		}
+		in, err := os.Open(path) // #nosec G304 G122 -- the shadow's own folder
+		if err != nil {
+			return err
+		}
+		defer func() { _ = in.Close() }()
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- the shadow's own folder
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(out, in)
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+		return err
+	})
 }
 
 // copyPrivateFiles copies the files the pipeline names as never committed. A

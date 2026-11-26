@@ -25,7 +25,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -157,7 +156,8 @@ func gitEnv() []string {
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd, done := Command(ctx, args...)
+	defer done()
 	cmd.Dir = dir
 	cmd.Env = gitEnv()
 	out, err := cmd.CombinedOutput()
