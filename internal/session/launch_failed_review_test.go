@@ -391,3 +391,24 @@ func TestOnlyAFreshChannelStartWaitsForItsFirstTask(t *testing.T) {
 type madeUpChannelBackend bool
 
 func (b madeUpChannelBackend) ChannelEnabled() bool { return bool(b) }
+
+// A declined dialog explains an exit only for a short while. With the task on
+// the command line, a later exit ends as it did before.
+func TestAnExitLongAfterADeclinedDialogEndsAsBefore(t *testing.T) {
+	mgr, fake, sess, seen := launchFixture(t, func(s *Session) { s.DaemonDeliversTask = false; s.OneShot = true })
+	declineAndExit(t, mgr, fake, sess)
+	s, _ := mgr.GetSession(sess.FullID)
+	if mgr.store.Snapshot(s).StartupDecline == nil || !mgr.EndedBeforeTask(sess.FullID) {
+		t.Fatal("the dialog was not recorded")
+	}
+	later := time.Now().Add(declineExitWindow + time.Minute)
+	mgr.clock = func() time.Time { return later }
+	ctx, cancel := context.WithCancel(context.Background())
+	mgr.StartScreenCapture(ctx, sess.FullID, 20)
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+	mgr.bg.Wait()
+	if got := mgr.store.Snapshot(s).State; got != StateComplete {
+		t.Fatalf("state = %s, want complete as before; transitions %v", got, seen.list())
+	}
+}
