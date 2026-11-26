@@ -1,10 +1,12 @@
 // Cleanup of datawatch-specific scratch files written into a project
 // directory during an autonomous run (decompose/verify outputs). Called at
 // the end of a PRD's run; unlike CleanupArtifacts (third-party backend
-// files), it never deletes anything that git tracks, never touches
-// anything outside the project directory, and degrades safely — reporting
-// unremovable candidates as leftovers — when git is unavailable or the
-// project directory is not in a repository.
+// files), it keeps a candidate that git reports as tracked, asked from the
+// project directory and from the file's own folder (a repository neither
+// query reaches is not consulted). It never touches anything outside the
+// project directory, and degrades safely — reporting unremovable candidates
+// as leftovers — when git is unavailable or the project directory is not in
+// a repository.
 package tooling
 
 import (
@@ -57,8 +59,10 @@ func projectTracks(gitBin, projectDir, rel string) bool {
 // repository knows nothing about what those track. Only git's "no such tracked
 // file" answer (exit status 1) means untracked; any other failure is unknown.
 // A file is deleted only when projectTracks says no and this says untracked.
+// core.fsmonitor is off: that folder's settings can name a command there, which
+// git would otherwise run while reading the index.
 func gitTracking(gitBin, abs string) fileTrackingState {
-	err := exec.Command(gitBin, "-C", filepath.Dir(abs),
+	err := exec.Command(gitBin, "-C", filepath.Dir(abs), "-c", "core.fsmonitor=false",
 		"--literal-pathspecs", "ls-files", "--error-unmatch", "--", filepath.Base(abs)).Run()
 	if err == nil {
 		return fileTracked

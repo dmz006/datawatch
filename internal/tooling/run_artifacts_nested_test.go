@@ -116,3 +116,47 @@ func TestCleanupRunArtifactsKeepsFileWhenGitCannotAnswer(t *testing.T) {
 		t.Fatalf("a file git could not judge was deleted: %v (removed=%v leftover=%v)", err, removed, leftover)
 	}
 }
+
+// A nested repository's settings can name a command in core.fsmonitor, which
+// git runs when it reads that repository's index. Asking whether a file there
+// is tracked must not run it.
+func TestCleanupRunArtifactsDoesNotRunNestedRepositoryFsmonitor(t *testing.T) {
+	project := t.TempDir()
+	artifactGit(t, project, "init", "-q")
+	nested := filepath.Join(project, "vendored", "clone")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifactGit(t, nested, "init", "-q")
+	tracked := filepath.Join(nested, "decompose-output.json")
+	artifactWrite(t, tracked)
+	artifactGit(t, nested, "add", "decompose-output.json")
+	artifactGit(t, nested, "commit", "-qm", "fixture")
+	scratch := filepath.Join(nested, ".verify-output-abc.json")
+	artifactWrite(t, scratch)
+
+	outside := t.TempDir()
+	marker := filepath.Join(outside, "fsmonitor-ran")
+	hook := filepath.Join(outside, "fsmonitor.sh")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\n: > '"+marker+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifactGit(t, nested, "config", "core.fsmonitor", hook)
+	// Control: without an override this git does run the command.
+	artifactGit(t, nested, "ls-files")
+	if err := os.Remove(marker); err != nil {
+		t.Fatalf("control: plain git did not run the fsmonitor command: %v", err)
+	}
+
+	removed, _ := CleanupRunArtifacts(project)
+
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("cleanup ran the nested repository's fsmonitor command (stat err=%v)", err)
+	}
+	if _, err := os.Stat(tracked); err != nil {
+		t.Errorf("a file the nested repository tracks was deleted: %v (removed=%v)", err, removed)
+	}
+	if _, err := os.Stat(scratch); !os.IsNotExist(err) {
+		t.Errorf("untracked run scratch was not removed (err=%v)", err)
+	}
+}
