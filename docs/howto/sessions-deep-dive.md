@@ -855,6 +855,47 @@ backend and which message size it affects.
        output.log (append-only, ANSI preserved)
 ```
 
+## A Claude session that exits before it gets its task
+
+**What you see.** The session ends `failed`. One alert and the session's
+`launch_failure` and `end_note` fields say why, for example:
+
+```
+launch failed: the agent exited before the task was delivered, at the start-up
+dialog "Settings Error" that datawatch declined (sent Esc); settings file(s)
+named by the dialog: /path/to/project/.claude/settings.local.json (fix or move
+them, then restart the session)
+```
+
+**Why.** Claude Code asked something at start that datawatch does not accept for
+you: anything about settings, updates or permission modes. datawatch answers
+with Esc only. It never picks "Fix with Claude" (which could rewrite your file)
+or "Continue without these settings" (your choice to make). When Claude Code
+quits on that Esc, or quits for another reason while datawatch is still waiting
+to type the task, nothing ran. The line the launch command prints afterwards
+(`DATAWATCH_COMPLETE: claude done`) is not read as finished work.
+
+**What datawatch does.** It ends the session `failed`, closes the leftover shell
+terminal, commits nothing, and never marks it `complete` or brings it back. An
+Automaton task is retried as a launch failure and then held; it is never
+verified or marked done.
+
+**What to do.** Fix or move the files the reason names (for Claude Code settings,
+plain JSON with no comments), then restart the session:
+
+```bash
+datawatch alerts --limit 5          # the alert body is the reason
+datawatch session restart a3f2
+```
+
+A restart is judged by the same rule: with the file unchanged it fails again,
+with one alert. To run once without the file's settings, move the file aside
+before the restart.
+
+**Limit.** When the Claude channel is off, the task is on Claude Code's command
+line and counts as given at launch. Such a session is a failed launch only when
+it exits within two minutes of a dialog datawatch declined.
+
 ## Claude Code interstitial prompts — recognised and dismissed for you
 
 A lane can sit blocked on a Claude Code interstitial prompt — a question, an idle notice or the autocompact threshold prompt — and look healthy the whole time. datawatch watches the terminal and takes the safe action itself instead of waiting:

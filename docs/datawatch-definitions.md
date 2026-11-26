@@ -368,7 +368,9 @@ Detects when Claude has exited but the shell is still running inside the tmux pa
 
 **Runner registry** — the daemon's in-memory list of the sessions it drives itself with a goroutine or process because they have no terminal pane. A subprocess session is added when it starts and removed when its process returns; a subprocess re-attached after a daemon restart is added again until its watcher finishes. It is not persisted, so after a restart it holds only what this daemon is driving now. Today only subprocess sessions are registered; chat-mode and other non-pane sessions are not yet.
 
-**Gone final state** — what a `gone` record is finalised as. The tail of its output log is read and terminal escape sequences are stripped. If the last non-empty line begins with `DATAWATCH_COMPLETE:` the record becomes `complete`; otherwise (no marker, a marker followed by more output, or an empty or missing log) it becomes `killed`. The record also gets `ended_at` and `end_note`.
+**Failed launch** {#failed-launch} — a claude-code session whose agent exited before it was given its task: for example, Claude Code showed a start-up dialog, datawatch declined it (Esc) and Claude Code quit, or Claude Code quit while datawatch was still waiting to type the task. The session ends `failed`, never `complete`. `launch_failure` and `end_note` say why, naming the dialog and any settings files it listed; one alert carries the same text. Its leftover shell terminal is closed, and it is not brought back by the daemon. A restart is judged afresh by the same rule. An Automaton task treats it as a launch failure: it is not verified or marked done, it is retried, and after the retries it is held. A task that Claude Code received on its command line counts as given at launch, so such a session is a failed launch only when it exits within two minutes of a dialog datawatch declined. Detail: [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#a-claude-session-that-exits-before-it-gets-its-task).
+
+**Gone final state** — what a `gone` record is finalised as. The tail of its output log is read and terminal escape sequences are stripped. If the last non-empty line begins with `DATAWATCH_COMPLETE:` the record becomes `complete`; otherwise (no marker, a marker followed by more output, or an empty or missing log) it becomes `killed`. A [failed launch](#failed-launch) is `failed` whatever its output ends with. The record also gets `ended_at` and `end_note`.
 
 **`ended_at` / `end_note`** — the only two session fields about how a record ended: when it ended and a short note saying how. Every path that moves a session to complete, failed or killed writes both, and the first end wins. Restarting a session or bringing it back clears both. Both are left out of the session JSON while a session runs and on records that ended before the fields existed. Detail: [api/sessions.md](api/sessions.md).
 
@@ -767,11 +769,13 @@ For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.
 
 | File | What is missing |
 |---|---|
-| `~/.claude/settings.json` or the data folder's `.claude/settings.json` | the flags datawatch sets at daemon start (including the ones that skip Claude's permission and MCP prompts), so an unattended Claude session may stop at a prompt |
+| `~/.claude/settings.json` or the data folder's `.claude/settings.json` | the flags datawatch sets at daemon start (including the ones that skip Claude's permission and MCP prompts); see **What a Claude session then does** below |
 | a project's `.claude/settings.local.json` | the memory save and pre-compact hooks |
 | a project's `.mcp.json` | the extra MCP servers from `session.extra_mcp_servers` and web search; a Claude session also does not load the servers listed in that file |
 | the data folder's `.mcp.json` | the current bridge entry and its token |
 | a project's `opencode.json` | the session's model and datawatch's tool denials, so the launch **fails** with the reason ([LLM backends](llm-backends.md#when-datawatch-cannot-safely-add-its-settings-to-opencodejson)) |
+
+**What a Claude session then does** — it depends on whether Claude Code can read the file. When it cannot (seen with a comment in a project's Claude settings files), Claude Code shows an invalid-settings dialog at start. datawatch declines it with Esc, Claude Code exits, and the session ends as a [failed launch](#failed-launch) naming the dialog and the files; fix or move them and restart the session. When Claude Code can read a file datawatch could not change (one it may not write, for example), the session starts without datawatch's flags and may stop at one of Claude Code's own prompts. The user-level file has not been tried with a real Claude Code.
 
 **Memory hooks and user-level settings** — the memory hook installer also installs nothing for a home folder or user-level settings, or for a linked `.claude` folder or settings file ([Memory](memory.md#claude-code-auto-hooks-bl65bl66)).
 
