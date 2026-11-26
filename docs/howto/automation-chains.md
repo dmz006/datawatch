@@ -520,7 +520,7 @@ active again is visible in the history.
 
 ## For operator review
 
-Two things in this set of docs are not settled by the code and are left for you:
+These are not settled by the code and are left for you:
 
 - **Mobile parity.** The Android and iPhone apps do not yet show the waiting
   states (waiting for you, for a slot, for a stage) or the Run shape form
@@ -528,6 +528,14 @@ Two things in this set of docs are not settled by the code and are left for you:
 - **Decision waits need questions on.** A `decision_wait` member cannot raise its
   question while `autonomous.questions.enabled` is off. Check the setting before
   you build a plan that depends on one.
+- **Concurrency limit.** `max_parallel` is unlimited until you set it. Choose a
+  limit for any plan with a wide fork before you run it.
+- **Join rules.** A failed chain member fails its branch, and the join's
+  `on_branch_failure` decides what that means. Check each chain's join rule on
+  your own plans.
+- **Non-English wording.** The web app text for the limit, the decision wait, the
+  stage gate and the waiting states is in the German, Spanish, French and
+  Japanese bundles too. Read it once in the web app.
 
 ## Related
 
