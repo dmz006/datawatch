@@ -60,11 +60,17 @@ type MergeStepRun struct {
 
 // MergePipelineRun is one run of a merge pipeline.
 type MergePipelineRun struct {
-	ID       string   `json:"id"`
-	Project  string   `json:"project"`
-	Branches []string `json:"branches"`
-	Source   string   `json:"source"`
-	Reason   string   `json:"reason,omitempty"`
+	ID      string `json:"id"`
+	Project string `json:"project"`
+	// AutomatonID is the Automaton the run merges.
+	AutomatonID string `json:"automaton_id,omitempty"`
+	// Shadow marks a run that changed and sent nothing.
+	Shadow bool `json:"shadow,omitempty"`
+	// PushPlan is what a shadow run would have pushed.
+	PushPlan []MergePushRef `json:"push_plan,omitempty"`
+	Branches []string       `json:"branches"`
+	Source   string         `json:"source"`
+	Reason   string         `json:"reason,omitempty"`
 	// ReleaseVersion is the version the run releases, computed once by the
 	// set-release-version step and used by the later steps of the run.
 	ReleaseVersion string `json:"release_version,omitempty"`
@@ -75,6 +81,14 @@ type MergePipelineRun struct {
 	End       *time.Time            `json:"end"`
 	Result    string                `json:"result"`
 	Steps     []MergeStepRun        `json:"steps"`
+}
+
+// MergePushRef is one ref a run would push.
+type MergePushRef struct {
+	Ref     string   `json:"ref"`
+	Old     string   `json:"old,omitempty"`
+	New     string   `json:"new,omitempty"`
+	Commits []string `json:"commits,omitempty"`
 }
 
 // MergeRunRecorder receives a run each time it changes. *MergeRunRecords is

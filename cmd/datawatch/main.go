@@ -126,7 +126,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.28"
+var Version = "9.187.30"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -6214,6 +6214,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					}
 				}
 				if doneVerdict != nil {
+					// Not even a finished checkpoint and a passing script make
+					// a worker done whose task never arrived.
+					if ls, ok := mgr.GetSession(task.SessionID); ok {
+						if lerr := neverGivenTaskFailure(ls, mgr.TaskDeliveryFailure(ls.FullID)); lerr != nil {
+							log.Printf("[autonomous] launch failure: task %s/%s: %v", task.PRDID, task.ID, lerr)
+							return autonomouspkg.VerificationResult{}, lerr
+						}
+					}
 					return *doneVerdict, nil
 				}
 				if stallErr != nil {
@@ -6224,16 +6232,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					return autonomouspkg.VerificationResult{}, mapSessionStartError(stallErr)
 				}
 				// A claude-code worker is handed its task after launch (channel
-				// delivery). If it ended without the delivery ever being
-				// recorded, nothing ran: classify it as a launch failure and
-				// retry rather than verifying an untouched tree.
-				if ls, ok := mgr.GetSession(task.SessionID); ok && ls.OneShot && ls.AgentID == "" &&
-					ls.BackendFamily == "claude-code" && !mgr.TaskDelivered(ls.FullID) &&
-					!autonomouspkg.JudgeCompletedByOutput(ls.State == session.StateComplete,
-						ls.CompletionSummary != "", ls.CommitSHA, ls.LastResponse != "") {
-					log.Printf("[autonomous] launch failure: session %s task %s/%s ended (%s) with no task delivery recorded; retrying",
-						ls.FullID, task.PRDID, task.ID, ls.State)
-					return autonomouspkg.VerificationResult{}, autonomouspkg.LaunchFailureErrorWithReason(ls.FullID, ls.BackendFamily, string(ls.State), mgr.TaskDeliveryFailure(ls.FullID))
+				// delivery). If it ended with nothing to show the task arrived,
+				// nothing ran: classify it as a launch failure and retry rather
+				// than verifying an untouched tree.
+				if ls, ok := mgr.GetSession(task.SessionID); ok {
+					if lerr := undeliveredWorkerFailure(ls, mgr.TaskDelivered(ls.FullID), mgr.TaskDeliveryFailure(ls.FullID)); lerr != nil {
+						log.Printf("[autonomous] launch failure: session %s task %s/%s ended (%s) with no task delivery proven; retrying",
+							ls.FullID, task.PRDID, task.ID, ls.State)
+						return autonomouspkg.VerificationResult{}, lerr
+					}
 				}
 			}
 			// The worker wait is over: verify time counts from here.
@@ -8278,6 +8285,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			})
 			// Supervisor loop: the eight mechanical steps run once per idle
 			// tick, and an escalation raises a question in the queue.
+			wireMergeConflictModel(amgr, cfg, autonomousInferenceReg, inferenceDispatcher)
+			go server.ReconcileMergePushesAtStart(context.Background(), amgr, cfg)
 			if stopWake := wireSupervisorLoop(autoCoord, amgr, aAPI, cfg, autonomousInferenceReg, httpServer, mgr); stopWake != nil {
 				defer stopWake()
 			}

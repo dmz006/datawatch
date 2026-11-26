@@ -5119,6 +5119,11 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	sess.TaskVerifiedAt = nil
 	// The resumed conversation redraws its old completion marker.
 	sess.AwaitingInputAfterRelaunch = true
+	// What the log holds now was written by earlier launches.
+	sess.LaunchLogStart = 0
+	if st, err := os.Stat(sess.LogFile); err == nil {
+		sess.LaunchLogStart = st.Size()
+	}
 	m.mu.Lock()
 	delete(m.taskDeliveredAt, sess.FullID)
 	m.mu.Unlock()
@@ -6256,8 +6261,14 @@ func (m *Manager) awaitTaskEcho(fullID, input string) bool {
 	deadline := m.now().Add(taskEchoWindow)
 	for {
 		sess, ok := m.store.Get(fullID)
-		if !ok || sess.State.IsTerminal() {
-			return true // exit is handled by the caller's next wait
+		if !ok {
+			return false
+		}
+		if sess.State.IsTerminal() {
+			// The end is not the task arriving. A quick worker may have
+			// scrolled it up already, so the history is read too.
+			history, err := m.tmux.CapturePaneScrollback(sess.TmuxSession, claimScrollbackLines)
+			return err == nil && taskOnScreen(history, input)
 		}
 		if content, err := m.tmux.CapturePaneVisible(sess.TmuxSession); err == nil {
 			pane := strings.ToLower(strings.Join(strings.Fields(StripANSI(content)), " "))
@@ -8480,6 +8491,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						// sessions; limit to 5 for interactive ones (same rationale as
 						// the main pane-watcher site above).
 						completionFound := false
+						completionIsExit := false // the line found is the launch command's own
 						visibleScanLimitCh := 5
 						if current.OneShot {
 							visibleScanLimitCh = len(capLines)
@@ -8504,6 +8516,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							for _, pat := range m.effectiveCompletionPatterns() {
 								if isRealCompletionLine(cl, pat) {
 									completionFound = true
+									completionIsExit = isAgentExitLine(cl)
 									chEchoLocated = chEchoEnd >= 0
 									break
 								}
@@ -8551,6 +8564,29 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							if wasDelivered && m.now().Sub(deliveredAt) < 5*time.Minute {
 								m.debugf("monitorOutput structured-channel: suppressing completion within 5min task-echo window for %s", sess.FullID)
 								completionFound = false
+							}
+						}
+						// An interactive agent reporting its work done is not
+						// finished: it waits for the next instruction. Ending it
+						// here only had the reconciler bring its live terminal
+						// back, over and over. The launch command's exit line is
+						// not the agent's report and is handled as before.
+						if completionFound && !current.OneShot && !completionIsExit {
+							if paneShowsWork(nonEmptyTail(stripped, 40)) {
+								// A later turn is at work: the earlier line
+								// still on screen says nothing.
+								completionFound = false
+							} else {
+								if current.State == StateRunning {
+									m.debugf("monitorOutput: %s OneShot=false — completion line → WaitingInput", current.FullID)
+									current.State = StateWaitingInput
+									current.UpdatedAt = time.Now()
+									_ = m.store.Save(current)
+									if m.onStateChange != nil {
+										m.onStateChange(current, StateRunning)
+									}
+								}
+								continue
 							}
 						}
 						if completionFound && (current.State == StateRunning || current.State == StateWaitingInput) {

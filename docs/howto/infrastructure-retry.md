@@ -56,7 +56,7 @@ you can list in `autonomous.infra_retry.categories`.
 |---|---|
 | `spawn_error` | The worker could not be started at all. |
 | `storage_write` | A write failed because the device is full, the quota is used up, or the file system is read-only. |
-| `session_killed_before_delivery` | The worker session ended before the task was delivered to it. |
+| `session_killed_before_delivery` | The worker session ended before the task was delivered to it. For a task datawatch types itself, [no proof that it arrived](sessions-deep-dive.md#when-an-automaton-worker-never-got-its-task) counts as not delivered. |
 | `daemon_restart` | The daemon restarted or shut down while the task was running. |
 
 Everything else is not an infrastructure failure and takes the usual path: a
@@ -219,6 +219,16 @@ failure is again a retried class, what happens depends on `autonomous.infra_retr
   cause on their own.
 - Other tasks that do not depend on the held one keep running. Tasks that depend
   on it wait.
+
+**The supervisor loop retries such a hold once by itself.** Its
+[`retry_failed_infra` step](supervisor-loop.md#the-mechanical-steps-no-model),
+on by default, retries the task on its next pass, usually within a minute, and
+withdraws the question. The retry runs the task as your own retry does. A task
+held again stays held until you act. To keep every such hold for yourself:
+
+```sh
+datawatch config set autonomous.supervisor_loop.retry_failed_infra.enabled false
+```
 
 **You answer in one of two ways: retry or cancel.** Answer the operator question,
 or resolve the held task the way you resolve any held task:

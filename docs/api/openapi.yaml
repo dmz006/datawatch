@@ -14150,6 +14150,10 @@ components:
         on_failure: {type: string, enum: [stop, continue], description: "What the pipeline does when the step fails; stop by default"}
         requires_make_target: {type: string, description: "Run the step only when the project's Makefile defines this target"}
         timeout: {type: integer, description: "The step's time limit in nanoseconds; 0 uses the runner's default"}
+        tag_sizes:
+          type: array
+          items: {type: string, enum: [patch, minor, major]}
+          description: "Only on a tag_release step: the release sizes it tags. Empty tags every release"
     MergePipelineDefinition:
       type: object
       description: An ordered list of merge pipeline steps.
@@ -14158,6 +14162,15 @@ components:
         steps:
           type: array
           items: {$ref: "#/components/schemas/MergePipelineStep"}
+        conflict_rules:
+          type: array
+          description: "Per-file conflict rules; the first match wins"
+          items:
+            type: object
+            required: [path, rule]
+            properties:
+              path: {type: string, description: "A repository-relative path, or a pattern for one folder level"}
+              rule: {type: string, enum: [keep_main, keep_both, ask]}
     MergePipelineOverride:
       type: object
       description: The merge pipeline values set for one project. A key that is left out inherits the global value.
@@ -15426,6 +15439,7 @@ components:
         kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
         verification_script: {type: string}
         status: {type: string}
+        loop_retried_infra_hold: {type: boolean, description: "True once the supervisor loop has retried this task off an infrastructure hold; a later hold stays for the operator, whose own retry or reset clears it. Absent = false"}
         compute_node: {type: string, description: "Compute node the task's worker was started on; a daemon restart adopts the surviving worker onto it. Absent for a hosted backend or before the worker starts"}
         executor_source: {type: string, description: "task | story | prd | automation | global"}
     TaskProgress:
@@ -15679,6 +15693,10 @@ components:
           type: string
           format: date-time
           description: When a claimed task delivery was seen to have reached the session.
+        launch_log_start:
+          type: integer
+          format: int64
+          description: Size of the output log when the session was last restarted. Output before it belongs to an earlier start. Omitted for a session that was never restarted.
 
     SessionState:
       type: string
