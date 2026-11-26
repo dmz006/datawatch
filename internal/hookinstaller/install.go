@@ -48,6 +48,10 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 	if projectDir == "" || sessionFullID == "" {
 		return fmt.Errorf("hookinstaller: project_dir + session_id required")
 	}
+	// Before anything is written: nothing here may reach a commit.
+	if err := keepOutOfCommits(projectDir); err != nil {
+		return err
+	}
 	claudeDir := filepath.Join(projectDir, ".claude")
 	sprintDir := filepath.Join(claudeDir, "sprint")
 	if err := os.MkdirAll(sprintDir, 0o755); err != nil {
@@ -138,7 +142,12 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 #       $2 = optional tool name (PostToolUse only)
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# .dw-env names the latest session started in this folder. A session's own
+# environment names itself, and wins: two sessions can share a folder.
+OWN_SESSION_ID="${DATAWATCH_SESSION_ID:-}"
 [[ -f "$SCRIPT_DIR/.dw-env" ]] && source "$SCRIPT_DIR/.dw-env"
+SESSION_ID="${OWN_SESSION_ID:-${SESSION_ID:-}}"
+DAEMON_URL="${DAEMON_URL:-${DATAWATCH_BASE_URL:-}}"
 EVENT="${1:-}"
 TOOL="${2:-}"
 [[ -z "$EVENT" ]] && exit 0
@@ -149,6 +158,9 @@ if [[ "$EVENT" == "SessionStart" ]]; then
   [[ -f "$SCRIPT_DIR/platform-context.txt" ]] && cat "$SCRIPT_DIR/platform-context.txt"
   exit 0
 fi
+
+# No session: someone is running claude here by hand.
+[[ -z "$SESSION_ID" ]] && exit 0
 
 # Read stdin (Claude Code passes hook data as JSON for PostToolUse).
 STDIN_DATA=""
