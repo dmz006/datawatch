@@ -720,6 +720,12 @@ func (e *LifecycleSubscriptionEngine) deliverSessionOnce(target, text string) er
 	if e.cfg.SendInput == nil {
 		return fmt.Errorf("no delivery path for session %q (bridge port %d, SendInput not configured)", target, port)
 	}
+	return e.sendToSession(fullID, text)
+}
+
+// sendToSession is the engine's one place that types into a session. It always
+// sends as the automated source lifecycle-sub, so the prompt rule applies.
+func (e *LifecycleSubscriptionEngine) sendToSession(fullID, text string) error {
 	return e.cfg.SendInput(fullID, text, sessionPushSourceTag)
 }
 

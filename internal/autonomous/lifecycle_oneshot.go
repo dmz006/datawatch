@@ -336,7 +336,7 @@ func (e *LifecycleSubscriptionEngine) typeIntoSession(target, text string) error
 	if e.cfg.SendInput == nil {
 		return fmt.Errorf("no way to type into session %q: SendInput is not configured", target)
 	}
-	return e.cfg.SendInput(fullID, text, sessionPushSourceTag)
+	return e.sendToSession(fullID, text)
 }
 
 // scheduleOneShotRetry arms one retry timer for the subscription, after
