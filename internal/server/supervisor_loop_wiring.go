@@ -124,6 +124,9 @@ func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, dataDir s
 	if mgr.MergeBaseRepo() == "" {
 		return autonomous.SupervisorMergeResult{}, autonomous.ErrSupervisorStepNotConfigured
 	}
+	// What was pushed and not recorded is recorded first, so it is not
+	// listed as waiting.
+	reconcileMergePushes(ctx, mgr, dataDir, cfg)
 	return supervisorLoopMergeSelected(ctx, mgr, dataDir, cfg, mgr.MergeSelection(ctx, ""), opts...)
 }
 
@@ -159,6 +162,7 @@ func supervisorLoopMergeSelected(ctx context.Context, mgr *autonomous.Manager, d
 		if err == nil {
 			out.Merged = append(out.Merged, e.Branch)
 			if !res.Pushed {
+				out.NotMerged = append(out.NotMerged, e.Branch)
 				out.Note = "stopped after " + e.Branch + ": its push did not happen, so nothing more is merged on top of it"
 				return out, nil
 			}

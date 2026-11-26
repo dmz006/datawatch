@@ -424,6 +424,14 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			}
 		}()
 	}
+	if r.Isolate && !r.Shadow {
+		// What an earlier run pushed is accounted for before anything is
+		// selected.
+		if err := st.reconcileBeforeRun(ctx); err != nil {
+			st.run.Reason = redact(err.Error())
+			return finish(autonomous.MergeRunFailed, err)
+		}
+	}
 	if err := st.applySelection(ctx); err != nil {
 		st.run.Reason = redact(err.Error())
 		return finish(autonomous.MergeRunFailed, err)
@@ -487,7 +495,6 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		if ok {
 			// A held or skipped push is not a release: no hook, no landing.
 			if step.Action == ActionPushRelease && st.lastStepOK() {
-				st.pushReleaseOK = true
 				confirmed, moveFailed := true, false
 				// What was pushed is recorded even if the caller gives up now.
 				after := context.WithoutCancel(ctx)
@@ -496,12 +503,31 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 					if moveFailed {
 						failures++
 					}
+					if !confirmed && confirmsPush(st.r.Ship) {
+						// Nothing is released on a push the remote does not
+						// show; the journal keeps it until the remote says.
+						err := errors.New("the push is not confirmed by the remote")
+						st.run.Reason = redact(err.Error())
+						return finish(autonomous.MergeRunFailed, err)
+					}
 				}
+				// Post-ship hooks follow only a push that is confirmed.
+				st.pushReleaseOK = true
 				st.pushed = confirmed
-				st.recordLanding(after, step)
+				landed := st.recordLanding(after, step)
+				if st.isolated() && confirmed && !moveFailed && landed {
+					st.settleJournal(after)
+				}
 			}
 			i++
 			continue
+		}
+		if step.Action == ActionPushRelease && st.isolated() && st.reconcileFailedPush(context.WithoutCancel(ctx)) {
+			// The push reported an error and arrived all the same: it is
+			// recorded, and never made again.
+			st.pushed = true
+			st.run.Reason = redact("the push reported an error, but the remote holds the commit; it was recorded: " + err.Error())
+			return finish(autonomous.MergeRunFailed, fmt.Errorf("step %s failed although the remote holds the commit: %w", step.Name, err))
 		}
 		if step.Action == ActionPushRelease && errors.Is(err, ErrMainMoved) {
 			if st.redos >= maxMainMovedRedos {
@@ -538,6 +564,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 // lock. When the refusal names a holder, the reason names its run and
 // Automaton, so the record shows who is shipping.
 func lockRefusal(holder autonomous.MergeLockStatus, err error) string {
+	if errors.Is(err, autonomous.ErrMergeLockLeftovers) {
+		return "another merge holds this repository: " + err.Error()
+	}
 	if holder.RunID != "" || holder.AutomatonID != "" {
 		return fmt.Sprintf("another merge holds this repository: run %s (Automaton %s)", holder.RunID, holder.AutomatonID)
 	}
@@ -734,6 +763,9 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 			return autonomous.MergeStepSkipped, gate.skipNote, nil
 		}
 	}
+	if s.awaitsConfirmedPush(ctx, step) {
+		return autonomous.MergeStepSkipped, "held: the remote has not confirmed a push by this run, so nothing is released", nil
+	}
 	var detail string
 	var err error
 	s.skipped = false
@@ -758,6 +790,26 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 		detail = gate.approvedNote + "; " + detail
 	}
 	return autonomous.MergeStepOK, detail, nil
+}
+
+// awaitsConfirmedPush reports a release step (a deploy, or the pipeline's own
+// tag, deploy or post-ship command) that may not run yet: in an isolated run
+// nothing is released before the remote confirms the exact pushed commit,
+// wherever the step is listed and whatever on_failure says. A run with nothing
+// new deploys only when the remote's main is the commit it stands on.
+func (s *runState) awaitsConfirmedPush(ctx context.Context, step Step) bool {
+	release := step.Action == ActionDeployLatest || (step.Action == "" && leavesTheMachine(step.Kind))
+	if !release || !s.isolated() || s.shadow() || !confirmsPush(s.r.Ship) || s.iso.confirmed {
+		return false
+	}
+	if s.nothingNew && s.iso.remote != "" {
+		head, err := s.mainHead(ctx)
+		if err == nil {
+			held, herr := s.iso.remoteMainHead(ctx)
+			return herr != nil || held != head
+		}
+	}
+	return true
 }
 
 // stepLeavesMachine reports whether the step runs through the ShipRunner:

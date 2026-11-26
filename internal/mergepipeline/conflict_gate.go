@@ -33,6 +33,24 @@ func (m *Merger) runConflictGate(ctx context.Context, dir string, set ConflictSe
 		// candidate that will be pushed.
 		m.CheckEnv = func() []string { return append(env(), "MERGE_PROPOSAL=1") }
 		defer func() { m.CheckEnv = env }()
+		// What passes here is committed, so the checks must leave the
+		// proposal as it was.
+		before, err := m.treeState(ctx, dir)
+		if err != nil {
+			return false, err.Error()
+		}
+		defer func() {
+			if !passed {
+				return
+			}
+			after, err := m.treeState(ctx, dir)
+			switch {
+			case err != nil:
+				passed, output = false, err.Error()
+			case after != before:
+				passed, output = false, "the checks changed the proposal's tree: "+after.files()
+			}
+		}()
 	}
 	build, berr := m.gateBuild(ctx, dir, set)
 	if berr != "" {

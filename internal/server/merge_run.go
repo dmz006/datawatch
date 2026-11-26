@@ -103,6 +103,9 @@ type mergeRunBody struct {
 	Automaton string `json:"automaton,omitempty"`
 }
 
+// mergeReconcileTimeout bounds one pass over the push journal.
+const mergeReconcileTimeout = 5 * time.Minute
+
 // mergeRunMu allows one merge run at a time.
 var mergeRunMu sync.Mutex
 

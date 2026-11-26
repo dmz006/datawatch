@@ -63,6 +63,8 @@ type isolation struct {
 	// commit; promoted once the run works in the project's checkout again.
 	confirmed bool
 	promoted  bool
+	// journal is this run's entry in the push journal, while it has one.
+	journal *journalledPush
 }
 
 func (s *runState) isolated() bool { return s.iso != nil }
@@ -171,11 +173,7 @@ func (s *runState) openIsolation(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, n := range strings.Fields(names) {
-		if i.remote == "" || n == "origin" {
-			i.remote = n
-		}
-	}
+	i.remote = pickRemote(names)
 	base, remoteHead, err := i.baseOf(ctx)
 	if err != nil {
 		return err
@@ -187,7 +185,9 @@ func (s *runState) openIsolation(ctx context.Context) error {
 			return fmt.Errorf("make the scratch folder: %w", err)
 		}
 	}
-	if i.root, err = os.MkdirTemp(project.ScratchRoot, scratchDirName); err != nil {
+	// The folder is named for the run: whatever a killed run left running
+	// can be recognised before its merge lock is taken over.
+	if i.root, err = os.MkdirTemp(project.ScratchRoot, scratchDirName+s.run.ID+"-"); err != nil {
 		return fmt.Errorf("make the scratch folder: %w", err)
 	}
 	s.iso = i // from here close() cleans up
@@ -236,10 +236,10 @@ func (i *isolation) sweep(ctx context.Context, remoteHead string) {
 			if remoteHead != "" {
 				pushed, _ = i.isAncestor(ctx, commit, remoteHead)
 			}
-			if !pushed && !i.project.Shadow {
-				i.deleteTag(ctx, strings.TrimPrefix(ref, scratchTagMarks), commit)
+			if i.project.Shadow {
+				continue
 			}
-			if !i.project.Shadow {
+			if pushed || i.dropUnpushedTag(ctx, strings.TrimPrefix(ref, scratchTagMarks), commit) {
 				_, _ = i.git.git(ctx, repo, "update-ref", "-d", ref)
 			}
 		}
@@ -298,10 +298,9 @@ func (s *runState) closeIsolation() {
 	if s.tagMade != "" {
 		mark := scratchTagMarks + s.tagMade
 		if commit, err := i.git.revParse(ctx, i.git.Dir, mark); err == nil {
-			if !i.confirmed {
-				i.deleteTag(ctx, s.tagMade, commit)
+			if i.confirmed || i.dropUnpushedTag(ctx, s.tagMade, commit) {
+				_, _ = i.git.git(ctx, i.git.Dir, "update-ref", "-d", mark)
 			}
-			_, _ = i.git.git(ctx, i.git.Dir, "update-ref", "-d", mark)
 		}
 	}
 	if i.tree != "" {
@@ -459,6 +458,13 @@ func (s *runState) beforePush(ctx context.Context) error {
 			return fmt.Errorf("merging is no longer allowed: %w", err)
 		}
 	}
+	tree, err := s.m.treeState(ctx, i.tree)
+	if err != nil {
+		return err
+	}
+	if tree.listing != "" {
+		return fmt.Errorf("the scratch tree is not clean, so what was checked is not what would be pushed: %s", tree.files())
+	}
 	main := i.project.mainBranch()
 	ok, err := i.isAncestor(ctx, "refs/heads/"+main, s.baseHead)
 	if err != nil {
@@ -505,6 +511,9 @@ func (s *runState) pushCandidate(ctx context.Context, tag string) (string, error
 	note := "pushed " + main + " at " + shortSHA(head)
 	if tag != "" {
 		note += " and " + tag
+	}
+	if err := s.journalPush(ctx, head, tag); err != nil {
+		return "push refused: it could not be journalled first: " + err.Error(), err
 	}
 	if p, ok := s.r.Ship.(commitPusher); ok {
 		return doneOr(note, p.PushCommit(ctx, s.r.Dir, head, main, tag))
@@ -564,7 +573,12 @@ func (s *runState) promote(ctx context.Context) (confirmed, failed bool) {
 			ok, err = i.isAncestor(c, head, held)
 		}
 		if err != nil || !ok {
-			return autonomous.MergeStepSkipped, fmt.Sprintf("the remote does not show commit %s, so local %s and the branches were left as they were", shortSHA(head), main), nil
+			note := fmt.Sprintf("the remote does not show commit %s, so local %s and the branches were left as they were", shortSHA(head), main)
+			if confirmsPush(s.r.Ship) {
+				note += " and nothing is released"
+				return autonomous.MergeStepFailed, note, errors.New("the push is not confirmed: " + note)
+			}
+			return autonomous.MergeStepSkipped, note, nil
 		}
 		i.confirmed, confirmed = true, true
 		var problems []string
@@ -592,7 +606,7 @@ func (s *runState) promote(ctx context.Context) (confirmed, failed bool) {
 		}
 		return autonomous.MergeStepOK, "the remote holds " + shortSHA(head) + "; local " + main + " is at it", nil
 	})
-	return confirmed, result == autonomous.MergeStepFailed
+	return confirmed, confirmed && result == autonomous.MergeStepFailed
 }
 
 // advanceMain moves the project's main to head by fast-forward only.
@@ -727,22 +741,28 @@ func shadowRuns(k Kind) bool {
 	return k == KindTest || k == KindLint || k == KindVersionBump || k == KindChangelog
 }
 
-// guardCandidate refuses a command step that changed what would be pushed:
-// only the built-in actions, and a project's own version and changelog
-// commands, make commits.
+// guardCandidate refuses a command step after which what was checked is not
+// what would be pushed: it moved the candidate, or left the scratch tree other
+// than it found it (a changed, staged or untracked file; ignored files aside).
+// A project's own version and changelog commands may write and commit; the
+// push still needs a clean tree.
 func (s *runState) guardCandidate(ctx context.Context, step Step, run func() (string, error)) (string, error) {
 	if !s.scratch() || step.Kind == KindVersionBump || step.Kind == KindChangelog {
 		return run()
 	}
-	where := func() (string, error) {
+	where := func() (string, treeState, error) {
 		ref, err := s.m.gitOK(ctx, s.iso.tree, "symbolic-ref", "-q", "HEAD")
 		if err != nil {
-			return "", fmt.Errorf("the scratch tree left its branch: %w", err)
+			return "", treeState{}, fmt.Errorf("the scratch tree left its branch: %w", err)
 		}
 		head, err := s.mainHead(ctx)
-		return strings.TrimSpace(ref) + " " + head, err
+		if err != nil {
+			return "", treeState{}, err
+		}
+		tree, err := s.m.treeState(ctx, s.iso.tree)
+		return strings.TrimSpace(ref) + " " + head, tree, err
 	}
-	before, err := where()
+	before, treeBefore, err := where()
 	if err != nil {
 		return "", err
 	}
@@ -750,9 +770,13 @@ func (s *runState) guardCandidate(ctx context.Context, step Step, run func() (st
 	if err != nil {
 		return detail, err
 	}
-	after, aerr := where()
-	if aerr == nil && after != before {
-		aerr = errors.New("the command moved the candidate, so what it checked is not what would be pushed")
+	after, treeAfter, aerr := where()
+	switch {
+	case aerr != nil:
+	case after != before:
+		aerr = errors.New("the command moved the candidate, so what it checked is not what would be pushed from this tree")
+	case treeAfter != treeBefore:
+		aerr = fmt.Errorf("the command changed the scratch tree, so what is tested would not be what is pushed: %s", treeAfter.files())
 	}
 	if aerr != nil {
 		return aerr.Error() + "\n" + detail, aerr
