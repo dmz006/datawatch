@@ -5119,6 +5119,11 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	sess.TaskVerifiedAt = nil
 	// The resumed conversation redraws its old completion marker.
 	sess.AwaitingInputAfterRelaunch = true
+	// What the log holds now was written by earlier launches.
+	sess.LaunchLogStart = 0
+	if st, err := os.Stat(sess.LogFile); err == nil {
+		sess.LaunchLogStart = st.Size()
+	}
 	m.mu.Lock()
 	delete(m.taskDeliveredAt, sess.FullID)
 	m.mu.Unlock()
@@ -6256,8 +6261,14 @@ func (m *Manager) awaitTaskEcho(fullID, input string) bool {
 	deadline := m.now().Add(taskEchoWindow)
 	for {
 		sess, ok := m.store.Get(fullID)
-		if !ok || sess.State.IsTerminal() {
-			return true // exit is handled by the caller's next wait
+		if !ok {
+			return false
+		}
+		if sess.State.IsTerminal() {
+			// The end is not the task arriving. A quick worker may have
+			// scrolled it up already, so the history is read too.
+			history, err := m.tmux.CapturePaneScrollback(sess.TmuxSession, claimScrollbackLines)
+			return err == nil && taskOnScreen(history, input)
 		}
 		if content, err := m.tmux.CapturePaneVisible(sess.TmuxSession); err == nil {
 			pane := strings.ToLower(strings.Join(strings.Fields(StripANSI(content)), " "))

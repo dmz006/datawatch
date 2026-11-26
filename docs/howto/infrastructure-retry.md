@@ -56,7 +56,7 @@ you can list in `autonomous.infra_retry.categories`.
 |---|---|
 | `spawn_error` | The worker could not be started at all. |
 | `storage_write` | A write failed because the device is full, the quota is used up, or the file system is read-only. |
-| `session_killed_before_delivery` | The worker session ended before the task was delivered to it. |
+| `session_killed_before_delivery` | The worker session ended before the task was delivered to it. For a task datawatch types itself, [no proof that it arrived](sessions-deep-dive.md#when-an-automaton-worker-never-got-its-task) counts as not delivered. |
 | `daemon_restart` | The daemon restarted or shut down while the task was running. |
 
 Everything else is not an infrastructure failure and takes the usual path: a

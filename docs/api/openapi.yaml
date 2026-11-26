@@ -15671,6 +15671,10 @@ components:
           type: string
           format: date-time
           description: When a claimed task delivery was seen to have reached the session.
+        launch_log_start:
+          type: integer
+          format: int64
+          description: Size of the output log when the session was last restarted. Output before it belongs to an earlier start. Omitted for a session that was never restarted.
 
     SessionState:
       type: string

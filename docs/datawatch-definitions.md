@@ -3076,7 +3076,7 @@ What counts as a change is read from git alone: files the task committed, edits 
 
 - `spawn_error` — the worker could not be started at all.
 - `storage_write` — a write failed because the disk is full, the quota is used up or the file system is read-only; the script gate's **temporary folder full** reason (a no-space exit at the gate) is one of the texts this class matches, so it takes this path rather than the normal failure path.
-- `session_killed_before_delivery` — the worker session ended before the task text reached it.
+- `session_killed_before_delivery` — the worker session ended before the task text reached it. For a task datawatch types itself (a Claude channel launch), a worker with no proof that the task arrived on its current start is never verified or done, whatever it left behind; see [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#when-an-automaton-worker-never-got-its-task).
 - `daemon_restart` — the daemon restarted or shut down while the task was running.
 
 A wrong answer, a failed check, a task that went out of scope or a stall that is not a launch failure is the task's own fault and follows the normal failure path. A session that never started has its own start budget and is not classified here. A throttle or usage limit from a model provider is not an infrastructure failure either, and it is never retried by this feature.
