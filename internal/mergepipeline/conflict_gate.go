@@ -28,6 +28,30 @@ import (
 // The returned text is the tail of the failing step's output, or a summary of
 // what ran when the gate passes.
 func (m *Merger) runConflictGate(ctx context.Context, dir string, set ConflictSettings) (passed bool, output string) {
+	if env := m.CheckEnv; env != nil {
+		// A check can tell a proposal, which has no release bump yet, from the
+		// candidate that will be pushed.
+		m.CheckEnv = func() []string { return append(env(), "MERGE_PROPOSAL=1") }
+		defer func() { m.CheckEnv = env }()
+		// What passes here is committed, so the checks must leave the
+		// proposal as it was.
+		before, err := m.treeState(ctx, dir)
+		if err != nil {
+			return false, err.Error()
+		}
+		defer func() {
+			if !passed {
+				return
+			}
+			after, err := m.treeState(ctx, dir)
+			switch {
+			case err != nil:
+				passed, output = false, err.Error()
+			case after != before:
+				passed, output = false, "the checks changed the proposal's tree: "+after.files()
+			}
+		}()
+	}
 	build, berr := m.gateBuild(ctx, dir, set)
 	if berr != "" {
 		return false, berr
@@ -70,7 +94,7 @@ func (m *Merger) gateBuild(ctx context.Context, dir string, set ConflictSettings
 	}
 	tctx, cancel := context.WithTimeout(ctx, set.TestTimeout)
 	defer cancel()
-	r, err := m.run(tctx, dir, name, args...)
+	r, err := m.runCheck(tctx, dir, name, args...)
 	if err != nil {
 		return "", fmt.Sprintf("build %q did not finish: %v\n%s", desc, err, tail(r.Out, 2000))
 	}
@@ -115,7 +139,7 @@ func (m *Merger) gateSteps(ctx context.Context, dir string, set ConflictSettings
 			timeout = set.TestTimeout
 		}
 		tctx, cancel := context.WithTimeout(ctx, timeout)
-		r, err := m.run(tctx, wd, "sh", "-c", s.Command)
+		r, err := m.runCheck(tctx, wd, "sh", "-c", s.Command)
 		cancel()
 		ran++
 		if err != nil {

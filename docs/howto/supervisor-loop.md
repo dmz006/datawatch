@@ -38,7 +38,7 @@ and is not tried again in the same pass.
 | `apply_answers` | Applies the answers you already gave to the held questions that are waiting on them. An answer is never applied twice. |
 | `lane_count` | Moves the lane count toward the wanted count, never outside your minimum and maximum. With the maximum at 0 it moves nothing. |
 | `start_next_chain_step` | Starts the next Automaton in a chain when the one before it is done. |
-| `run_merge_until_conflict` | Runs the merge pipeline, one run per Automaton, over the work the [merge selection rule](landing-record.md#what-datawatch-may-merge) picks, until a merge conflicts or a run does not push; keeps the newest conflict for you to see and lists each branch it left out, with why. |
+| `run_merge_until_conflict` | Runs the merge pipeline, one run per Automaton, over the work the [merge selection rule](landing-record.md#what-datawatch-may-merge) picks, until a merge conflicts or a run does not push (a held or unpushed run is listed as not merged, never counted as merged); keeps the newest conflict for you to see and lists each branch it left out, with why. |
 
 ### The merge and deploy steps are held by default
 

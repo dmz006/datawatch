@@ -407,10 +407,19 @@ func RenderDefinitionText(d Definition) string {
 		if s.Timeout > 0 {
 			notes = append(notes, "limit "+s.Timeout.String())
 		}
+		if len(s.TagSizes) > 0 {
+			notes = append(notes, "tags only "+strings.Join(s.TagSizes, ", ")+" releases")
+		}
 		if len(notes) > 0 {
 			fmt.Fprintf(&b, " (%s)", strings.Join(notes, ", "))
 		}
 		b.WriteString("\n")
+	}
+	if len(d.ConflictRules) > 0 {
+		b.WriteString("Conflict rules (the first match wins):\n")
+		for _, r := range d.ConflictRules {
+			fmt.Fprintf(&b, "  %s: %s\n", r.Path, r.Rule)
+		}
 	}
 	return b.String()
 }
