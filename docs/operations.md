@@ -4005,6 +4005,15 @@ On daemon startup, stale MCP channel registrations (from deleted sessions) are
 automatically removed from Claude's MCP config. This prevents the MCP server list from
 growing unboundedly over time.
 
+The cleanup runs beside the start, so the daemon answers while it is still running.
+It uses `claude mcp list`, which connects to every MCP server in that list: one
+unreachable server holds the command for its whole connect timeout.
+
+Claude's MCP list is shared by every daemon that runs as the same user. A daemon
+removes only `datawatch-<hostname>-<id>` entries for its own `hostname`, and only
+when it has no session with that id. Entries left by a different or earlier
+`hostname` stay; remove one with `claude mcp remove <name> -s user`.
+
 ### MCP config files the daemon writes
 
 The daemon maintains the `.mcp.json` files a session's MCP host reads, so every
