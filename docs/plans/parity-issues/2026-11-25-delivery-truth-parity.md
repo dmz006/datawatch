@@ -12,6 +12,11 @@ Draft for the datawatch-app mobile client. File only; no issue has been filed.
 - The supervisor wake status gains `pass_count` (passes event wakes ran).
   `event_count` and `last_event` now cover only wakes whose line was typed; the
   web status line shows both counts (`supervisor_wake_status_passes`).
+- A one-time subscription to a session is typed, not bridged, and kept until
+  typed. The subscription record gains `delivery` (`state`, `reason`, `target`,
+  `text`, `event_id`, `fired_at`, `notified`); the web row shows
+  `lifecycle_sub_delivery_waiting` or `lifecycle_sub_delivery_review`. New
+  alert title *Subscription delivery not typed yet*.
 - New alerts through the existing alert list: *Automaton decision not
   delivered yet*, *Automaton decision: review needed*, *Supervisor wake not
   delivered yet*, *Supervisor wake: review needed*, *Subscription delivery:

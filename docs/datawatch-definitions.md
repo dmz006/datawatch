@@ -2319,11 +2319,15 @@ lifecycle event (PRD/task status changes, `task.session_started` /
 `task.session_cleared`, `prd.updated`, the question kinds, the opt-in
 warning kinds `scope_warning` and `guardrail_warn`, and the opt-in
 *supervisor event kinds* above) to a delivery sink: a comm router,
-a datawatch session (bridge `POST /send` preferred, `SendInput` fallback
-tagged `lifecycle-sub`), a push topic, the in-app alert store, or a named
+a datawatch session (for a repeating rule, bridge `POST /send` preferred,
+`SendInput` fallback tagged `lifecycle-sub`; a one-shot is only typed), a push topic, the in-app alert store, or a named
 **pending events queue** (`mcp_queue` sink) that a client polls. Options:
-`one_shot` (removed after first *successful* delivery — one retry, then
-log + drop), `expires_at` TTL (pruned by the engine's janitor),
+`one_shot` (removed after first *successful* delivery; a one-time message to
+a session is kept in the rule's `delivery` field and retried until typed, or
+listed as `review_needed` when it may or may not have arrived, and is not sent
+again: see [one-time messages](howto/automaton-lifecycle-subscriptions.md#one-time-messages-to-a-session)),
+`expires_at` TTL (pruned by the engine's janitor, except while a one-time
+message waits),
 `coalesce` quiet-window batching for human-facing sinks. Delivery: each
 subscription consumes from its own bounded in-memory queue on its own
 goroutine; emitting an event never waits on any subscriber, and a

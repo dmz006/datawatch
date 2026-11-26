@@ -8837,11 +8837,11 @@ Full walkthrough with examples for CLI, comm, MCP, REST and PWA: the how-to [how
 
 ### Session-sink delivery order (what the operator should expect)
 
-Bridge first, then typed text: if the target session has a channel bridge with a local port, the daemon POSTs the message to `http://127.0.0.1:<port>/send` (5 s timeout). On port 0, POST error, or no bridge, it types the text into the session via `SendInput` with source tag **`lifecycle-sub`** — visible in the session input history so you can distinguish daemon-typed text from operator-typed text. The `send_input` action (up to 4096 chars) applies only to session sinks.
+A one-shot is different: it is typed, never sent over the bridge, kept and retried until it is typed, and listed for review if its outcome is unknown. See [one-time messages to a session](howto/automaton-lifecycle-subscriptions.md#one-time-messages-to-a-session). For a repeating subscription it is bridge first, then typed text: if the target session has a channel bridge with a local port, the daemon POSTs the message to `http://127.0.0.1:<port>/send` (5 s timeout). On port 0, POST error, or no bridge, it types the text into the session via `SendInput` with source tag **`lifecycle-sub`** — visible in the session input history so you can distinguish daemon-typed text from operator-typed text. The `send_input` action (up to 4096 chars) applies only to session sinks.
 
 ### Semantics
 
-- **One-shot** — removed only after *successful* delivery; failure → one retry → log + drop (the daemon never blocks on a dead target).
+- **One-shot** — removed only after *successful* delivery. A session one-shot keeps its message and retries (30 s, then up to every 5 minutes) until typed; a failed webhook or peer one-shot stays armed. The daemon never blocks on a dead target.
 - **Expiry** — `expires_at` is enforced by the janitor; the record stops matching once the timestamp elapses.
 - **Coalesce** — human-facing sink deliveries (comm/alert) are batched in quiet windows rather than one message per event.
 - **Delivery** — each subscription has its own bounded in-memory queue (depth 256) and goroutine; emitting an event never blocks on a subscriber. A subscriber whose queue is full misses events of its own (per-subscriber dropped counter, at most one rate-limited log warning per subscriber per 10 seconds: `lifecycle subscriber <id> queue full: dropped <kind> …`); every other subscriber keeps receiving, and the emitting Automaton is unaffected.

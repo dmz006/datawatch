@@ -79,7 +79,7 @@ Every subscription is **filter → sink → optional action**:
 | **Filter** | `kinds` (event kinds; repeatable) and/or `level` (`prd` or `task`), plus optional scope to one Automaton (`prd_id`), one task (`task_id`) or one federation peer (`peer`, see [Events from a federation peer](#events-from-a-federation-peer)). At least one of `kinds` / `level` is required. |
 | **Sink** | One of: `comm` (router fan-out), `session` (a datawatch session), `topic` (SSE / mobile-push topic bus), `alert` (in-app alert store), `mcp_queue` (a named pending-events queue that a client polls). Each has a `target`; for `mcp_queue` it is the queue name. |
 | **Action** *(optional)* | `send_input` with text (max 4096 chars), only with a `session` sink — the text is typed into the target session on every match. |
-| **Flags** | `one_shot` (delete after first *successful* delivery), `expires_at` (TTL), `coalesce` (batch human-facing deliveries in quiet windows). |
+| **Flags** | `one_shot` (delete after first *successful* delivery; to a session it is [typed and kept until it is](#one-time-messages-to-a-session)), `expires_at` (TTL), `coalesce` (batch human-facing deliveries in quiet windows). |
 
 Event kinds are a closed set held in one in-daemon **event kind
 registry**: every Automaton status kind (`prd.draft`, `prd.planning`,
@@ -252,7 +252,9 @@ The message text starts with `[test] ` and describes a synthetic
 `prd.updated` event, so you can see it arrive in the comm channel,
 session, topic, alert list or queue (in a queue it appears as an event
 with `"test": true`). A test never types the
-subscription's `send_input` action text and never uses up a one-shot, so
+subscription's `send_input` action text and never uses up a one-shot (a
+one-shot session sink is tested by typing, once, and the answer says whether
+typing worked), so
 it is safe on a live rule. The answer is `ok` with the sink type, or an
 error such as `sink not available` when that delivery path is not wired
 in this daemon.
@@ -455,7 +457,7 @@ Example create body:
 
 ## Delivery to a session: bridge preferred, SendInput fallback
 
-When a subscription with a `session` sink fires, the daemon:
+When a **repeating** subscription with a `session` sink fires, the daemon:
 
 1. **Bridge first** — if the target session has a channel bridge with a
    local port (a live Signal/Telegram/etc. bridge for that session),
@@ -466,18 +468,54 @@ When a subscription with a `session` sink fires, the daemon:
    `lifecycle-sub` (visible in the session's input history so you can
    tell daemon-typed text from operator-typed text).
 
-A failed one-shot delivery is retried once; after that the failure is
-logged and the subscription stays armed for a later matching event. There
-is no retry when keys may already have reached the session (the send failed
-part-way, a prompt appeared while the text was being typed, or the session
-could not be saved afterwards): the text is not sent twice, the subscription
-stays armed, and an error alert says *review needed* with the subscription
-and session ids. This holds for repeating subscriptions too.
+A failed delivery is tried twice, then logged. It is not retried when keys may
+already have reached the session (the send failed part-way, a prompt appeared
+while the text was being typed, or the session could not be saved afterwards):
+the text is not sent twice, and an error alert says *review needed* with the
+subscription and session ids.
+
+## One-time messages to a session
+
+A `one_shot` subscription with a `session` sink works differently, because its
+message must not be lost.
+
+- It is **typed** into the session, never sent over the channel bridge: a
+  bridge reply does not show that the session got it. Typing follows the same
+  prompt rule as every automated send, so a prompt waiting for your decision is
+  never answered.
+- The message is saved on the subscription before any key is sent. The
+  subscription is deleted only when typing worked.
+- **Nothing was typed** (a prompt is on screen, the screen cannot be read, the
+  session is not found or cannot take input): after two tries you get one
+  warning alert. datawatch keeps the message and tries again after 30 seconds,
+  then less often, at most every 5 minutes, with no limit. The subscription has
+  fired, so later matching events do nothing.
+- **It may or may not have arrived** (the failures listed above, or the daemon
+  stopped during the send): it is never sent again. You get an error alert that
+  says *review needed*, and the subscription stays listed. Check the session,
+  then delete the subscription. To use the rule again, create it again.
+
+The subscription's `delivery` field shows this: `state` is `waiting`,
+`sending`, `not_typed` or `review_needed`; `reason` is `prompt_on_screen`,
+`session_unavailable`, `send_error` or `interrupted`; `text` and `target` are
+the saved message and its session. Alerts and logs never carry the text.
+
+- A waiting message **survives a daemon restart** and **outlasts
+  `expires_at`**: expiry stops a subscription from firing, it does not discard
+  a message that already fired.
+- **Deleting** the subscription cancels the message. **Editing** it keeps the
+  waiting message, still for the session it fired for; if the edit made the
+  subscription repeating or changed its sink, typing that message does not
+  delete it.
+- If the message cannot even be saved, nothing is typed, you get a warning,
+  and it is held in memory until a save works. Only then would a restart lose
+  it.
 
 ## One-shot, expiry, coalesce, and how delivery works
 
-- **`one_shot`** — deleted only after *successful* delivery; see above
-  for the failure behavior.
+- **`one_shot`** — deleted only after *successful* delivery. For a session
+  sink see [one-time messages](#one-time-messages-to-a-session); a webhook or
+  peer one-shot stays armed after a failed delivery.
 - **`expires_at`** — a janitor prunes expired subscriptions
   continuously; they stop matching as soon as the timestamp elapses.
 - **`coalesce`** — for human-facing sinks (comm/alert) deliveries are
@@ -756,6 +794,9 @@ the whole walkthrough is in
   `burn_guard.rung_changed` only the global `default_events` list counts.
   The condition kinds fire once per episode — a condition that already
   held when you subscribed fires again only after it clears.
+- **A one-time message did not arrive** — list the subscriptions and read its
+  `delivery` field. `not_typed` waits for the session; `review_needed` needs
+  you to check the session.
 - **Session sink never fires** — the event kind or task scope doesn't
   match what actually happens (e.g. subscribed to
   `task.session_cleared` instead of `session_started`), or the
