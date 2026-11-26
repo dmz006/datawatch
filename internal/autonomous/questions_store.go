@@ -685,6 +685,13 @@ func (s *QuestionStore) Withdraw(id, actor, reason string) (Question, error) {
 	return out, nil
 }
 
+// withdrawnBy returns who withdrew question id ("" when not recorded).
+func (s *QuestionStore) withdrawnBy(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.withdrawMeta[id].actor
+}
+
 // QuestionPatch is a change to an open question. A nil pointer or nil slice
 // leaves the field as it is; anything else replaces it. Options replaces the
 // whole option list. Recommendation set to a pointer to the zero value (an
