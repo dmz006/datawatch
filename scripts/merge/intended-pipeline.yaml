@@ -1,0 +1,37 @@
+# The merge pipeline this project means to run once the operator turns merging
+# on. It is NOT read by datawatch from this path: the live pipeline is the
+# daemon's record, and applying this is a separate, deliberate step
+#   datawatch autonomous merge-pipeline set-record --from-file scripts/merge/intended-pipeline.yaml
+#
+# The checks run after the release bump, so they test the exact commit that is
+# pushed. There is no tag step while tags are on hold. When tagging resumes,
+# add the tag-release step before validate-release-bump with tag_sizes, so
+# that not every point release is tagged.
+steps:
+  - {name: rebase-onto-main, kind: custom, action: rebase_onto_main, timeout: 5m}
+  - {name: check-branch-versions, kind: custom, action: check_branch_versions, timeout: 2m}
+  - {name: check-internal-refs, kind: lint, command: make check-internal-refs, requires_make_target: check-internal-refs, timeout: 10m}
+  - {name: merge-branches, kind: ship, action: merge_branches, timeout: 5m}
+  - {name: set-release-version, kind: version_bump, action: set_release_version, timeout: 1m}
+  - {name: insert-changelog-heading, kind: changelog, action: insert_changelog_heading, timeout: 1m}
+  - {name: set-readme-release-line, kind: version_bump, action: set_readme_release_line, timeout: 1m}
+  - {name: commit-release-bump, kind: ship, action: commit_release_bump, timeout: 1m}
+  - {name: validate-release-bump, kind: custom, action: validate_release_bump, timeout: 2m}
+  - {name: lint, kind: lint, command: bash scripts/merge/lint.sh, timeout: 40m}
+  - {name: build, kind: test, command: bash scripts/merge/build.sh, timeout: 20m}
+  - {name: go-test, kind: test, command: bash scripts/merge/go-test.sh, timeout: 45m}
+  - {name: node-test, kind: test, command: bash scripts/merge/node-test.sh, timeout: 15m}
+  - {name: release-smoke, kind: test, command: bash scripts/merge/release-smoke.sh, timeout: 45m}
+  - {name: parity-gates, kind: test, command: bash scripts/merge/parity-gates.sh, timeout: 30m}
+  - {name: push-release, kind: ship, action: push_release, timeout: 15m}
+  - {name: deploy-latest, kind: deploy, action: deploy_latest, on_failure: continue, timeout: 10m}
+# The hand merge's file rules: main's side for the shared reference documents,
+# both sides for plan notes. Every other conflict keeps the built-in handling
+# or asks.
+conflict_rules:
+  - {path: docs/datawatch-definitions.md, rule: keep_main}
+  - {path: docs/README.md, rule: keep_main}
+  - {path: docs/api-mcp-mapping.md, rule: keep_main}
+  - {path: CHANGELOG.md, rule: keep_main}
+  - {path: docs/testing-tracker.md, rule: keep_both}
+  - {path: "docs/plans/*.md", rule: keep_both}
