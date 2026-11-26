@@ -104,7 +104,7 @@ func (m *MergeLocks) Acquire(repo string, h MergeLockHolder) (MergeLockStatus, e
 		sameRun := h.RunID != "" && cur.RunID == h.RunID
 		same := sameRun ||
 			(h.AutomatonID != "" && cur.AutomatonID == h.AutomatonID && sameBranches(cur.Branches, h.Branches))
-		if left := processesOfRun(cur.RunID); same && !sameRun && len(left) > 0 {
+		if left, _ := processesOfRun(cur.RunID); same && !sameRun && len(left) > 0 {
 			return cloneStatus(cur), fmt.Errorf("%w: %w: process(es) %v that run %s started are still running",
 				ErrMergeLockHeld, ErrMergeLockLeftovers, left, cur.RunID)
 		}
@@ -114,9 +114,15 @@ func (m *MergeLocks) Acquire(repo string, h MergeLockHolder) (MergeLockStatus, e
 				return cloneStatus(cur), fmt.Errorf("%w: repo %s held by run %s (automaton %s)",
 					ErrMergeLockHeld, repo, cur.RunID, cur.AutomatonID)
 			}
-			if left := processesOfRun(cur.RunID); !rebooted && len(left) > 0 {
+			left, checked := processesOfRun(cur.RunID)
+			switch {
+			case rebooted:
+			case len(left) > 0:
 				return cloneStatus(cur), fmt.Errorf("%w: %w: the process of run %s is gone, but process(es) %v it started are still running",
 					ErrMergeLockHeld, ErrMergeLockLeftovers, cur.RunID, left)
+			case !checked:
+				return cloneStatus(cur), fmt.Errorf("%w: %w: the process of run %s is gone, but this system cannot show whether anything it started is still running, so its lock stays",
+					ErrMergeLockHeld, ErrMergeLockLeftovers, cur.RunID)
 			}
 			log.Printf("[autonomous] merge lock on %s: run %s is gone, so its lock is taken over", repo, cur.RunID)
 			ok = false

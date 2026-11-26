@@ -1,8 +1,8 @@
 // Who holds a merge lock, and when that holder is provably gone. A lock a
 // killed run left behind is taken over only then: its process no longer
 // exists (or the machine restarted since), and nothing the run started is
-// still working in its scratch folder. Anything that cannot be proven leaves
-// the lock held.
+// still working in its scratch folder. Anything that cannot be proven, such as
+// on a system whose processes cannot be listed, leaves the lock held.
 package autonomous
 
 import (
@@ -17,9 +17,9 @@ import (
 	"time"
 )
 
-// ErrMergeLockLeftovers means the holder's own process is gone but processes
-// its run started are still running.
-var ErrMergeLockLeftovers = errors.New("the run that held the merge lock has processes still running")
+// ErrMergeLockLeftovers means what the holding run started is still running,
+// or cannot be shown to have ended.
+var ErrMergeLockLeftovers = errors.New("the run that held the merge lock is not proven to have ended")
 
 // mergeScratchMark is the start of a run's scratch folder name, followed by
 // the run id and a dash.
@@ -107,14 +107,15 @@ func ownerGone(o *MergeLockOwner) (gone, rebooted bool) {
 
 // processesOfRun lists the processes still working in the scratch folder of
 // run runID: by their working folder, or by the environment a check was given.
-func processesOfRun(runID string) []int {
+// checked is false where processes cannot be listed.
+func processesOfRun(runID string) (found []int, checked bool) {
 	if runID == "" {
-		return nil
+		return nil, false
 	}
 	mark := mergeScratchMark + runID + "-"
 	entries, err := os.ReadDir(processTable)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	var out []int
 	for _, e := range entries {
@@ -133,5 +134,5 @@ func processesOfRun(runID string) []int {
 			out = append(out, pid)
 		}
 	}
-	return out
+	return out, true
 }

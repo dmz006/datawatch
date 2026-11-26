@@ -55,3 +55,29 @@ func TestMergeLockIsTakenOverOnlyFromAProvenGoneOwner(t *testing.T) {
 		})
 	}
 }
+
+// Where processes cannot be listed, nothing shows that what a gone run started
+// has ended too, so its lock stays.
+func TestMergeLockStaysWhenLeftoversCannotBeChecked(t *testing.T) {
+	ended := exec.Command("true")
+	if err := ended.Run(); err != nil {
+		t.Fatal(err)
+	}
+	was := processTable
+	processTable = filepath.Join(t.TempDir(), "no-process-table")
+	t.Cleanup(func() { processTable = was })
+	dir := t.TempDir()
+	body := `{"/repo":{"repo":"/repo","run_id":"run-old","automaton_id":"a-old","branches":["b"],"since":"2026-01-01T00:00:00Z","owner":{"pid":` +
+		strconv.Itoa(ended.Process.Pid) + `}}}`
+	if err := os.WriteFile(filepath.Join(dir, mergeLocksFile), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	locks, err := NewMergeLocks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = locks.Acquire("/repo", MergeLockHolder{RunID: "run-new", AutomatonID: "a-new", Branches: []string{"c"}})
+	if !errors.Is(err, ErrMergeLockHeld) || !errors.Is(err, ErrMergeLockLeftovers) {
+		t.Fatalf("err = %v, want the lock kept because nothing can be checked", err)
+	}
+}

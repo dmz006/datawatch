@@ -571,7 +571,8 @@ whatever the result. The glossary entry is [Merge lock](../datawatch-definitions
   restarted; and nothing that run started is still working in its scratch
   folder. While something of it still runs, the refusal says so and names the
   process ids. A lock that records no owning process (written by an earlier
-  version), or any case that cannot be proven, stays held.
+  version), or any case that cannot be proven, stays held: that includes a
+  system with no `/proc`, where the run's leftover processes cannot be listed.
 - **A broken lock file refuses merges; it never lets them run unlocked.** If
   `merge-locks.json` is unreadable or corrupt, every merge run is refused with a
   message that the lock store is unavailable. Repair the file or restore it from
