@@ -4001,9 +4001,31 @@ Supported commands: `help`, `list`, `status <id>`, `tail <id>`, `send <id>: <msg
 
 ### MCP Channel Cleanup
 
-On daemon startup, stale MCP channel registrations (from deleted sessions) are
-automatically removed from Claude's MCP config. This prevents the MCP server list from
-growing unboundedly over time.
+On daemon startup, old MCP channel registrations are removed from Claude's MCP
+config. This keeps the MCP server list from growing without bound.
+
+Claude's user-scope MCP list is shared by everything that runs as the same user,
+including other daemons with the same `hostname`. The daemon records each
+registration it makes in `<data_dir>/channel-mcp-registrations.json`. The
+cleanup removes an entry only when that record names it and no session start or
+resume has registered it in this daemon run:
+
+- the legacy global `datawatch` entry;
+- with the native bridge, a `datawatch*` entry that still runs `channel.js`;
+- a `datawatch-<session>` entry whose session the daemon does not know.
+
+**Entries the record does not name stay.** That includes every entry made before
+the daemon kept a record, an old global `datawatch` entry among them, and entries
+made with another data folder. Remove one by hand:
+`claude mcp remove <name> -s user`.
+
+The cleanup runs beside the start, so the daemon answers while it is still
+running. It uses `claude mcp list`, which connects to every MCP server in that
+list: one unreachable server holds the command for its whole connect timeout. A
+list call is ended after 2 minutes and a removal after 30 seconds; a stop or
+restart of the daemon ends the running call and the processes it started. What
+was not removed is tried again at the next start. A daemon that is killed
+outright (SIGKILL or a crash) cannot end a running call.
 
 ### MCP config files the daemon writes
 

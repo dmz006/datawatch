@@ -1095,6 +1095,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Without this, `exec.Command("claude", ...)` fails when the binary is in a
 	// non-standard location (e.g. ~/.local/bin) that isn't in the daemon's PATH.
 	channel.SetClaudeBin(claudeBin)
+	// Registrations this daemon makes are recorded in its data folder: its
+	// startup cleanup removes only those.
+	channel.SetRegistrationRecord(expandHome(cfg.DataDir))
 	// GH#128 v8.12.0 — MCP bridge registrations go to ~/.claude/ (default).
 	// Injecting a datawatch-scoped CLAUDE_CONFIG_DIR caused auth credential
 	// and first-run onboarding issues in spawned sessions.
@@ -1284,12 +1287,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			channel.SetBinaryHint(bridgeBin)
 			fmt.Printf("[channel] using native Go bridge: %s\n", bridgeBin)
 			usingGoBridge = true
-			// BL288 (v5.4.0) — purge stale `datawatch*` entries in claude's
-			// MCP list that still point at `node + channel.js` from before
-			// the Go-bridge migration. Runs once per daemon start.
-			if cleaned := channel.CleanupStaleJSRegistrations(); len(cleaned) > 0 {
-				fmt.Printf("[channel] removed stale JS-bridge MCP registration(s): %s\n", strings.Join(cleaned, ", "))
-			}
 			// One-time migration notice — operator can clean up the
 			// legacy node_modules with `datawatch setup channel --cleanup`.
 			if legacy := channel.LegacyJSArtifacts(dataDirExpanded); len(legacy) > 0 {
@@ -1311,13 +1308,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] channel setup: %v\n", err)
 			}
 		}
-		// Remove stale global "datawatch" MCP if it exists (replaced by per-session servers)
-		channel.UnregisterGlobalMCP()
-		// Clean up MCP registrations for sessions that no longer exist
-		channel.CleanupStaleMCP(func(sessionID string) bool {
+		// Old registrations are cleaned up beside the start, never before it.
+		startChannelMCPCleanup(usingGoBridge, func(sessionID string) bool {
 			_, ok := mgr.GetSession(sessionID)
 			return ok
 		})
+		defer stopChannelMCPCleanup()
 	}
 
 	// Re-register claude-code with config-driven options (skip_permissions, channel_enabled).
@@ -3276,6 +3272,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
 			flushBackoff(autonomousBackoff)
+			stopChannelMCPCleanup()
 			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -9790,6 +9787,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// shutdowncause.Capture) before either exit path below.
 			recordShutdownCause(nil)
 			flushBackoff(autonomousBackoff)
+			stopChannelMCPCleanup()
 			_ = mgr.Close()
 			// Under systemd, let its own Restart= policy bring the service
 			// back up — exiting non-zero so Restart=on-failure fires —
@@ -10095,6 +10093,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
 			flushBackoff(autonomousBackoff)
+			stopChannelMCPCleanup()
 			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -10987,6 +10986,7 @@ func runAutoUpdater(ctx context.Context, cfg *config.Config) {
 				}
 				fmt.Printf("[updater] installed v%s, restarting daemon...\n", latest)
 				time.Sleep(500 * time.Millisecond)
+				stopChannelMCPCleanup()
 				selfPath, execErr := os.Executable()
 				if execErr == nil {
 					selfPath, _ = filepath.EvalSymlinks(selfPath)
