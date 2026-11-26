@@ -759,6 +759,24 @@ For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.
 
 ---
 
+## Tool settings files {#tool-settings-files}
+
+**Tool settings files** — datawatch changes only its own keys in the settings files of the tools it launches: Claude Code `settings.json` and `settings.local.json`, `.mcp.json` and `opencode.json`. A file it cannot read and parse in full (a comment, a trailing comma, a key written twice, bytes that are not UTF-8, an unexpected shape) is left byte for byte, and so is a file it may not write. A file it does rewrite keeps every setting and number; it is replaced whole, with its keys sorted and its indentation standardised (`.mcp.json` files are always set to owner-only access, other files keep their mode).
+
+**When a file is left alone** — what datawatch would have set is then missing, and the daemon log says so:
+
+| File | What is missing |
+|---|---|
+| `~/.claude/settings.json` or the data folder's `.claude/settings.json` | the flags datawatch sets at daemon start (including the ones that skip Claude's permission and MCP prompts), so an unattended Claude session may stop at a prompt |
+| a project's `.claude/settings.local.json` | the memory save and pre-compact hooks |
+| a project's `.mcp.json` | the extra MCP servers from `session.extra_mcp_servers` and web search; a Claude session also does not load the servers listed in that file |
+| the data folder's `.mcp.json` | the current bridge entry and its token |
+| a project's `opencode.json` | the session's model and datawatch's tool denials, so the launch **fails** with the reason ([LLM backends](llm-backends.md#when-datawatch-cannot-safely-add-its-settings-to-opencodejson)) |
+
+**Memory hooks and user-level settings** — the memory hook installer also installs nothing for a home folder or user-level settings, or for a linked `.claude` folder or settings file ([Memory](memory.md#claude-code-auto-hooks-bl65bl66)).
+
+---
+
 ## Classification verdicts and the publisher allowlist
 
 > Flow: [flow/classification-verdict-flow.md](flow/classification-verdict-flow.md) · How-to: [howto/classification-verdicts.md](howto/classification-verdicts.md)
