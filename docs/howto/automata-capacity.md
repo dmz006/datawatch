@@ -339,7 +339,8 @@ not a rate limit.
 
 A task holds at most one capacity lease at a time. While its worker runs, that
 is the worker's lease. A task shows `verifying` from the moment its worker has
-started, and the lease stays held while that session runs. When the session
+started, and the lease stays held while that session runs (except while the task
+is parked, see below). When the session
 ends, the lease is released, so its slot is free for other work while the
 verification runs or waits. The verifier then takes its
 own lease, holder `verify:<task>`, on the pools it needs: the node's verifier
@@ -356,7 +357,29 @@ The guardrail judge works the same way. Its lease is `judge:<task>`. A worker
 lease still present when the judge starts is released, not handed over, and the
 judge then waits for its own slot like the verifier does.
 
-**Exceptions and known limits.** A task parked for a question releases its slot while it waits. A worker resumed after a question or an outside wait can lose its slot after about 10 minutes while still running. A resume still queued when its session ends can hold a slot for about 10 minutes. Resuming or adopting a session can put a pool over its limit.
+**Parked and resumed workers.** A task parked for a question or an outside wait
+releases its slot while its session stays open. The same rules apply to every
+way a session is resumed:
+
+- A resume waits for a slot like any new work. This also covers a retry that
+  continues the same session after a failed verification (nothing is sent into
+  the session before it has a slot), and a worker parked on an outside wait that
+  the daemon finds again after a restart with no slot free (it is prompted once
+  it has one).
+- The slot a resume gets is tied to its session, so it is held while the session
+  runs and freed when the session ends.
+- A resume whose session ends while it waits leaves the queue and takes no slot.
+  A retry in that case starts a new session instead.
+- A task does not wait for the project tree while it holds a slot. When another
+  task has the tree, it gives its slot back, waits for the tree, and is admitted
+  again. Without this, two tasks that share one tree could block each other on a
+  small pool.
+
+**Known limit.** Workers still running when the daemon restarts are counted
+again at once, without waiting, because they are already using their slots. If
+more are running than a pool allows (for example after the limit was lowered),
+the pool reads over its limit until some of them end, and no new work starts on
+it in the meantime.
 
 
 ## Verifying tasks in the capacity view

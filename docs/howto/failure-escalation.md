@@ -317,6 +317,12 @@ one that fails sends the attempt to a fresh session, and the record says why:
 5. **The session's context is at or under that limit.** A size the daemon
    could not measure passes when the other checks do.
 
+A resumed retry takes a capacity slot like any new work. When the pools are
+full, the task waits as `waiting_capacity` and nothing is sent into the session
+until it has a slot. If the session ends during that wait, the attempt starts a
+fresh session. If the wait reaches `autonomous.capacity_wait_timeout_seconds`,
+the task fails the same way a new start would.
+
 When it resumes, the attempt spawns nothing: it waits on the same session,
 and the worktree is whatever the failed attempt left behind — the worker fixes
 in place. The daemon types one line into the session: a marker naming this as
