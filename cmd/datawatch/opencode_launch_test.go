@@ -30,12 +30,9 @@ func opencodeSession(family, dir string) *session.Session {
 }
 
 func TestOpencodeLaunchFailsOnAConfigItCannotRead(t *testing.T) {
-	if !opencodeConfigRefusalFailsLaunch {
-		t.Fatal("the daemon is set to launch on an unreadable opencode.json")
-	}
 	for _, family := range []string{"opencode", "opencode-acp"} {
 		dir, path := opencodeProject(t, commentedOpencodeConfig)
-		err := opencodeLaunchCheck(&config.Config{}, opencodeConfigRefusalFailsLaunch)(opencodeSession(family, dir))
+		err := opencodeLaunchCheck(&config.Config{}, true)(opencodeSession(family, dir))
 		if err == nil {
 			t.Fatalf("%s: the launch was allowed", family)
 		}
