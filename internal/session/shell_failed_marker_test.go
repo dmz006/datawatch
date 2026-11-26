@@ -39,7 +39,7 @@ func newShellSession(t *testing.T, mgr *Manager, f *FakeTmux, id string, oneShot
 	return sess, &ends
 }
 
-func setPane(f *FakeTmux, sess *Session, text string) {
+func setShellPane(f *FakeTmux, sess *Session, text string) {
 	f.mu.Lock()
 	f.Pane[sess.TmuxSession] = text
 	f.mu.Unlock()
@@ -61,7 +61,7 @@ func TestShellScriptVerdictOnScreen(t *testing.T) {
 		t.Run(label, func(t *testing.T) {
 			mgr, f := newTestManagerWithFake(t)
 			sess, ends := newShellSession(t, mgr, f, "sh01", true)
-			setPane(f, sess, "indexing\n"+tc.line+"\ndatawatch:~$ \n")
+			setShellPane(f, sess, "indexing\n"+tc.line+"\ndatawatch:~$ \n")
 			stop := startCapture(t, mgr, sess)
 			pollUntil(t, 10*time.Second, func() bool { return mgr.store.Snapshot(sess).State.IsTerminal() },
 				"the verdict line did not end the session")
@@ -100,7 +100,7 @@ func TestShellFailureSeenByManyWatchersEndsOnce(t *testing.T) {
 		sess, ends := newShellSession(t, mgr, f, "sh03", true)
 		var changes atomic.Int32
 		mgr.SetStateChangeHandler(func(*Session, State) { changes.Add(1) })
-		setPane(f, sess, shellFailedOut+"\n")
+		setShellPane(f, sess, shellFailedOut+"\n")
 		start := make(chan struct{})
 		var wg sync.WaitGroup
 		for j := 0; j < 12; j++ {
@@ -138,7 +138,7 @@ func TestShellFailureIsRecordedOnce(t *testing.T) {
 	mgr.mu.Lock()
 	mgr.trackers[sess.FullID] = tracker
 	mgr.mu.Unlock()
-	setPane(f, sess, shellFailedOut+"\n")
+	setShellPane(f, sess, shellFailedOut+"\n")
 	logLine(t, mgr, sess, shellFailedOut)
 	logLine(t, mgr, sess, shellFailedOut)
 	mgr.ReapFinishedOneShots()
@@ -158,7 +158,7 @@ func TestShellFailureIsRecordedOnce(t *testing.T) {
 func TestShellFailureDoesNotEndAnInteractiveSession(t *testing.T) {
 	mgr, f := newTestManagerWithFake(t)
 	sess, ends := newShellSession(t, mgr, f, "sh04", false)
-	setPane(f, sess, shellFailedOut+"\ndatawatch:~$ \n")
+	setShellPane(f, sess, shellFailedOut+"\ndatawatch:~$ \n")
 	stop := startCapture(t, mgr, sess)
 	scanTicks(t, sess, f, 3)
 	stop()
@@ -181,7 +181,7 @@ func TestNothingElseReadsAsAShellFailure(t *testing.T) {
 			mgr, f := newTestManagerWithFake(t)
 			sess, ends := newShellSession(t, mgr, f, "sh05", true)
 			mgr.store.Mutate(func() { sess.BackendFamily = tc.backend })
-			setPane(f, sess, tc.line+"\n")
+			setShellPane(f, sess, tc.line+"\n")
 			stop := startCapture(t, mgr, sess)
 			scanTicks(t, sess, f, 3)
 			stop()
@@ -211,11 +211,11 @@ func TestWrappedShellCommandNeverReadsAsAVerdict(t *testing.T) {
 func TestReaperDoesNotCompleteAFailedShellScript(t *testing.T) {
 	mgr, f := newTestManagerWithFake(t)
 	sess, _ := newShellSession(t, mgr, f, "sh06", true)
-	setPane(f, sess, "DATAWATCH_COMPLETE: step one\n"+shellFailedOut+"\ndatawatch:~$ \n")
+	setShellPane(f, sess, "DATAWATCH_COMPLETE: step one\n"+shellFailedOut+"\ndatawatch:~$ \n")
 	if got := mgr.FinishedOneShots(); len(got) != 0 {
 		t.Fatalf("listed as finished: %s", got[0].FullID)
 	}
-	setPane(f, sess, shellOKOut+"\ndatawatch:~$ \n")
+	setShellPane(f, sess, shellOKOut+"\ndatawatch:~$ \n")
 	if got := mgr.FinishedOneShots(); len(got) != 1 {
 		t.Fatalf("a finished script is not listed: %v", got)
 	}
@@ -226,7 +226,7 @@ func TestReaperDoesNotCompleteAFailedShellScript(t *testing.T) {
 func TestReaperFailsAShellScriptNoWatcherSaw(t *testing.T) {
 	mgr, f := newTestManagerWithFake(t)
 	sess, ends := newShellSession(t, mgr, f, "sh07", true)
-	setPane(f, sess, shellFailedOut+"\ndatawatch:~$ \n")
+	setShellPane(f, sess, shellFailedOut+"\ndatawatch:~$ \n")
 	for i := 0; i < 2; i++ {
 		if reaped := mgr.ReapFinishedOneShots(); len(reaped) != 0 {
 			t.Fatalf("completed %v", reaped)
