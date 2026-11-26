@@ -126,6 +126,10 @@ type QuestionStore struct {
 	// Withdraw and Expire after the store lock is released (SetChangeHook).
 	changeHook func(QuestionChange)
 
+	// raisedFn is told of each new question before changeHook. It is the
+	// Manager's own report, apart from the hook the daemon sets.
+	raisedFn func(Question)
+
 	// writeFn writes one chunk to the open append file; a test replaces it
 	// to simulate a write that fails part way.
 	writeFn func(f *os.File, b []byte) (int, error)
@@ -545,6 +549,12 @@ func (s *QuestionStore) raise(q Question, dedupe raiseDedupe) (Question, bool, e
 		"default":      q.Default,
 		"text":         q.Text,
 	})
+	s.mu.Lock()
+	raisedFn := s.raisedFn
+	s.mu.Unlock()
+	if raisedFn != nil {
+		raisedFn(q)
+	}
 	s.emitChange(QuestionChange{Kind: QuestionChangeRaised, Question: q})
 	return q, true, nil
 }

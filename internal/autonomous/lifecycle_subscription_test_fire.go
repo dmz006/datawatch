@@ -60,7 +60,13 @@ func (e *LifecycleSubscriptionEngine) FireTest(id string) (TestResult, error) {
 	var err error
 	switch sub.Sink.Type {
 	case SinkSession:
-		err = e.deliverSessionOnce(sub.Sink.Target, text)
+		// Tested the way a real event is delivered: a one-time message is
+		// typed, never bridged. The test does not wait or retry.
+		if sub.OneShot {
+			err = e.typeIntoSession(sub.Sink.Target, text)
+		} else {
+			err = e.deliverSessionOnce(sub.Sink.Target, text)
+		}
 	case SinkComm:
 		if e.cfg.Comm.Send == nil {
 			err = errSinkUnavailable(sub.Sink.Type)

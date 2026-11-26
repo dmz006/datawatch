@@ -177,6 +177,23 @@ asynchronously. The sync uses the peer's registered URL and token. Each entry in
 records `origin_peer` and `origin_wal_seq` so the receiving peer can detect and skip
 re-syncing entries it originally produced.
 
+A write answers with an error when its WAL entry cannot be saved, and peers are
+not sent it. When the memory copy was already saved, the error says so with its
+id. A peer answers an error when it cannot save an entry it received, and
+resolving a conflict fails when a marker cannot be saved.
+
+When a peer does not take an entry (it is not registered, cannot be reached or
+answers anything but 2xx), you get one warning alert naming the discussion, the
+peer, the entry number and the reason. Later failures for the same discussion
+and peer are only logged until a send works. **Entries are not sent again.**
+
+On a daemon running in secure mode, content goes only to a peer that says it
+seals what it receives. Before each send the daemon asks
+`GET /api/memory/discussion/{id}/receive` with the same token and requires
+`{"sealed": true}`. A peer that is not in secure mode, or that runs a version
+too old to answer, is sent nothing, and the alert says why. No redirect is
+followed. A daemon that is not in secure mode sends as before.
+
 ---
 
 ## Understanding the WAL and conflict resolution

@@ -230,6 +230,10 @@ type commSubRecord struct {
 	SecretRef string // the reference text only; the daemon never returns a value
 	Owner     string
 	Coalesce  bool
+	// DeliveryState and DeliveryReason are set while a one-time message has
+	// not been typed. The message text is not read.
+	DeliveryState  string
+	DeliveryReason string
 }
 
 // decodeCommSubRecord parses one record from the daemon (the 201 body of
@@ -249,6 +253,10 @@ func decodeCommSubRecord(body string) (commSubRecord, error) {
 			Target    string `json:"target"`
 			SecretRef string `json:"secret_ref"`
 		} `json:"sink"`
+		Delivery *struct {
+			State  string `json:"state"`
+			Reason string `json:"reason"`
+		} `json:"delivery"`
 	}
 	if err := json.Unmarshal([]byte(body), &raw); err != nil {
 		return commSubRecord{}, err
@@ -256,16 +264,22 @@ func decodeCommSubRecord(body string) (commSubRecord, error) {
 	if raw.ID == "" {
 		return commSubRecord{}, fmt.Errorf("record has no id")
 	}
+	var state, reason string
+	if raw.Delivery != nil {
+		state, reason = raw.Delivery.State, raw.Delivery.Reason
+	}
 	return commSubRecord{
-		id:        raw.ID,
-		kindList:  raw.Filter.Kinds,
-		PRDID:     raw.Filter.PRDID,
-		TaskID:    raw.Filter.TaskID,
-		SinkType:  raw.Sink.Type,
-		Target:    raw.Sink.Target,
-		SecretRef: raw.Sink.SecretRef,
-		Owner:     raw.Owner,
-		Coalesce:  raw.Coalesce,
+		DeliveryState:  state,
+		DeliveryReason: reason,
+		id:             raw.ID,
+		kindList:       raw.Filter.Kinds,
+		PRDID:          raw.Filter.PRDID,
+		TaskID:         raw.Filter.TaskID,
+		SinkType:       raw.Sink.Type,
+		Target:         raw.Sink.Target,
+		SecretRef:      raw.Sink.SecretRef,
+		Owner:          raw.Owner,
+		Coalesce:       raw.Coalesce,
 	}, nil
 }
 
@@ -286,6 +300,12 @@ func renderCommSubLine(rec commSubRecord) string {
 		parts = append(parts, "secret_ref="+rec.SecretRef)
 	}
 	parts = append(parts, fmt.Sprintf("coalesce=%t", rec.Coalesce))
+	if rec.DeliveryState != "" {
+		parts = append(parts, "delivery="+rec.DeliveryState)
+		if rec.DeliveryReason != "" {
+			parts = append(parts, "reason="+rec.DeliveryReason)
+		}
+	}
 	return strings.Join(parts, " ")
 }
 

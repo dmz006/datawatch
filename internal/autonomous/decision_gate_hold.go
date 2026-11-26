@@ -47,6 +47,9 @@ func (m *Manager) SetDecisionGate(store *QuestionStore, cfg func() config.Autono
 	// tags under the live tags.placement block.
 	if store != nil {
 		store.SetObjectTagDeriver(m)
+		store.mu.Lock()
+		store.raisedFn = m.noteRaisedQuestion
+		store.mu.Unlock()
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -9,9 +9,10 @@ import (
 // before Status reports the event path as silent.
 const DefaultEventsSilentAfter = time.Hour
 
-// WakeRecord remembers when the supervisor last woke for an event and when it
-// last ran a scheduled check, plus how many of each, so a silent event path is
-// visible. It holds only times and counts.
+// WakeRecord remembers when an event wake last typed its line and when the
+// last scheduled check ran, plus how many of each, so a silent event path is
+// visible. It counts the supervisor passes event wakes ran apart from the
+// typed lines. It holds only times and counts.
 type WakeRecord struct {
 	mu          sync.Mutex
 	clock       Clock
@@ -20,6 +21,7 @@ type WakeRecord struct {
 	lastCheck   time.Time
 	events      int
 	checks      int
+	passes      int
 }
 
 // NewWakeRecord returns a record using clock for every timestamp. A silentAfter
@@ -31,12 +33,20 @@ func NewWakeRecord(clock Clock, silentAfter time.Duration) *WakeRecord {
 	return &WakeRecord{clock: clock, silentAfter: silentAfter}
 }
 
-// MarkEvent records one delivered event wake.
+// MarkEvent records one event wake whose line was typed.
 func (r *WakeRecord) MarkEvent() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.lastEvent = r.clock.Now()
 	r.events++
+}
+
+// MarkPass records one supervisor pass that an event wake ran, whether or not
+// its line was typed.
+func (r *WakeRecord) MarkPass() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.passes++
 }
 
 // MarkScheduledCheck records one scheduled check.
@@ -53,6 +63,7 @@ type WakeStatus struct {
 	LastScheduledCheck time.Time `json:"last_scheduled_check"`
 	EventCount         int       `json:"event_count"`
 	ScheduledCount     int       `json:"scheduled_count"`
+	PassCount          int       `json:"pass_count"`
 	// EventsSilentFor is set when the last event is older than the threshold,
 	// or when none has arrived yet but a scheduled check has run for longer
 	// than the threshold.
@@ -65,7 +76,7 @@ func (r *WakeRecord) Status() WakeStatus {
 	defer r.mu.Unlock()
 	s := WakeStatus{
 		LastEvent: r.lastEvent, LastScheduledCheck: r.lastCheck,
-		EventCount: r.events, ScheduledCount: r.checks,
+		EventCount: r.events, ScheduledCount: r.checks, PassCount: r.passes,
 	}
 	now := r.clock.Now()
 	switch {

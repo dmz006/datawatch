@@ -255,7 +255,10 @@ func newAutonomousSubscriptionsCmd() *cobra.Command {
 		Long: `List the daemon's persisted Automaton lifecycle-event subscriptions,
 optionally filtered by owner (e.g. operator). Each record carries the
 id to pass to autonomous unsubscribe, its filter (kinds/level/prd/task),
-sink, optional send_input action, coalesce, one_shot and expires_at.`,
+sink, optional send_input action, coalesce, one_shot and expires_at. A
+one-time message to a session that has not been typed shows a delivery
+object: not_typed is kept and tried again; review_needed may or may not
+have arrived and is not sent again. Unsubscribe cancels it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := "/api/autonomous/subscriptions"

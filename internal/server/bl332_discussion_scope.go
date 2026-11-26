@@ -26,6 +26,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -353,11 +354,17 @@ func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, i
 		}
 	}
 
-	// Append to WAL and capture the entry for sync.
+	// Append to WAL and capture the entry for sync. Without the log entry the
+	// write has failed: it is what peers are sent and what the log serves.
 	walEntry, err := s.discussionAppendWALEntry(id, body.Content, body.Role, body.OriginPeer, s.encKey)
 	if err != nil {
-		// WAL failure is non-fatal.
-		_ = err
+		log.Printf("[discussion] %s: entry not saved to the log: %v", id, err)
+		saved := "nothing was saved"
+		if s.memoryBackend != nil {
+			saved = fmt.Sprintf("the memory copy was saved (memory_id %d)", memID)
+		}
+		http.Error(w, "save: the discussion log entry was not saved; "+saved+" and peers were not sent the entry", http.StatusInternalServerError)
+		return
 	}
 
 	// T42b: push-on-write sync to participant peers (skip if this write
@@ -489,8 +496,11 @@ func (s *Server) discussionAppendWALEntry(id, content, role, originPeer string, 
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close() //nolint:errcheck
 	if _, err = fmt.Fprintf(f, "%s\n", lineStr); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if err := f.Close(); err != nil {
 		return nil, err
 	}
 	return &entry, nil

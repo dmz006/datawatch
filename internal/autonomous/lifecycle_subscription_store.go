@@ -31,6 +31,9 @@ type SubscriptionStore struct {
 	changed       func() // resync hook (engine re-attaches sinks after mutations)
 	tester        func(id string) (TestResult, error)
 	sinkValidator func(Subscription) error
+	// deliverySaveHook is test-only: it runs before setDelivery saves, with
+	// the new message state.
+	deliverySaveHook func(next *OneTimeDelivery)
 }
 
 // ErrSubscriptionNotFound is returned (wrapped) when an operation names
@@ -166,6 +169,7 @@ func (s *SubscriptionStore) Add(sub Subscription) (Subscription, error) {
 		if _, exists := s.subs[sub.ID]; exists {
 			return fmt.Errorf("subscription ID %s already exists", sub.ID)
 		}
+		sub.Delivery = nil // a caller never supplies a message to type
 		if sub.CreatedAt.IsZero() {
 			sub.CreatedAt = now
 		}
@@ -209,6 +213,35 @@ func (s *SubscriptionStore) Update(id string, sub Subscription) (Subscription, e
 		return nil
 	})
 	return out, err
+}
+
+// setDelivery saves a new one-time message state for the subscription: f
+// returns it (nil clears it) and whether to change anything. When the save
+// fails the old state is kept and the error returned. It is not a change to
+// the subscription itself, so the changed callback does not fire. The record
+// is replaced, not changed in place: listed copies share it.
+func (s *SubscriptionStore) setDelivery(id string, f func(cur Subscription) (*OneTimeDelivery, bool)) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur, ok := s.subs[id]
+	if !ok {
+		return false, nil
+	}
+	next, change := f(cur)
+	if !change {
+		return false, nil
+	}
+	prev := cur
+	cur.Delivery = next
+	s.subs[id] = cur
+	if s.deliverySaveHook != nil {
+		s.deliverySaveHook(next)
+	}
+	if err := s.saveLocked(); err != nil {
+		s.subs[id] = prev
+		return false, err
+	}
+	return true, nil
 }
 
 // SetTestFirer registers the function FireTest delegates to (the engine's
@@ -273,8 +306,9 @@ func (s *SubscriptionStore) Delete(id string) error {
 }
 
 // DeleteExpired removes every subscription whose ExpiresAt is at or
-// before now and returns the removed IDs (for logging/audit). It is a
-// no-op (nil, nil) when nothing is expired.
+// before now and returns the removed IDs (for logging/audit). One that holds
+// a fired one-time message is kept: expiry stops it firing, it does not
+// throw the message away. It is a no-op (nil, nil) when nothing is expired.
 func (s *SubscriptionStore) DeleteExpired(now time.Time) ([]string, error) {
 	var (
 		removed  []string
@@ -283,7 +317,7 @@ func (s *SubscriptionStore) DeleteExpired(now time.Time) ([]string, error) {
 	)
 	s.mu.Lock()
 	for id, sub := range s.subs {
-		if sub.ExpiresAt != nil && !sub.ExpiresAt.After(now) {
+		if sub.ExpiresAt != nil && !sub.ExpiresAt.After(now) && sub.Delivery == nil {
 			delete(s.subs, id)
 			removed = append(removed, id)
 		}
