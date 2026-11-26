@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## v9.187.21 — Checked pushes; datawatch merges only finished work
 
 ### Added
-- One check on everything datawatch is about to push: every added line, including lines made while resolving a merge, file names, commit and tag messages, and author addresses. A project can add its own check with a `check-outgoing` make target, read from the remote default branch. If a check cannot run, nothing is pushed.
+- One check on everything datawatch is about to push: every added line, including lines made while resolving a merge, file names, commit and tag messages, and author addresses. The built-in check is the secret scan. A project adds its own rules, such as allowed author addresses or private words, with a `check-outgoing` make target read from the remote default branch; with the secret scan off and no such target, nothing is checked. If a check cannot run, nothing is pushed. The `datawatch test --pr` command still pushes without these checks.
 - Merge selection: only finished work is selected, every exclusion says why, and work whose review is pending can be accepted for one exact commit with a reason (web app, REST, MCP, command line and chat).
 
 ### Changed
@@ -23,6 +23,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - In `shadow` and `enforce` modes, a secret scan that fails to run refuses the push. In `shadow` or `off` mode a detected secret is still pushed: use `enforce` for automatic pushes.
 - A project that adds a `check-outgoing` target needs that target on the remote default branch before datawatch will push; push it once by hand.
 - Container workers: rebuild worker images, because older images still push without these checks. Removing a container no longer pushes its unfinished work, so unpushed commits in it are lost.
+- Container workers now obey `git.push_on_complete`. With `never` or `default_branch` they push nothing, finished work included, so removing the container loses it.
+- A project whose own outgoing check needs a file that is not committed (this repository needs its private pattern list in the main checkout) refuses the push where that file is missing, including inside containers.
+- A `merge_step` shipped record is refused until the commit is on the remote, and the post-ship completion step needs the same.
+- A review block on a part whose check never runs again, such as a cancelled task or a removed check, keeps the work from being selected for merging, and accepting it does not lift the block.
 
 ### Documentation
 - How-tos, definitions, operations and API reference cover the outgoing check, merge selection and acceptance.
