@@ -3278,6 +3278,12 @@ With the checks passing, the mode decides: `auto` lets the leaving steps run; `a
 
 The four settings that tune the [shadow merge plan](#shadow-merge-plan), under `autonomous.merge_shadow`. All four are single values — there is no per-project override for this block — and a value they refuse is refused with the problem named and nothing written on every surface: a 400 on `PUT /api/config`, an error line on `datawatch config set`, on comm `configure`, and the same message on the Settings card.
 
+**Shadow of a hand merge** — what the daemon builds when an Automaton's shipped state is recorded with source `merge_step` (`autonomous shipped record <id> --source merge_step --commit C --hand-check name=pass`): the same merge, made by the same merge engine in shadow mode, from the hand merge's own base and branch tip, in a disposable copy of the project with a bare remote of its own. It changes and sends nothing. It has seven results (selection, content, version, checks, conflicts, leak, side effects). A merge matches only when all seven do; nothing missing or skipped ever matches; "would ask about a conflict" neither counts nor breaks the run of matches. See [howto/merge-shadow.md](howto/merge-shadow.md#shadowing-a-hand-merge).
+
+**Turn-on report** — what you read before turning merging on: the run of matched hand merges against `autonomous.merge_shadow.agreement_streak`, seven results per merge, what is eligible and excluded with why, the next push, everything merging would do outside a run, what is still to apply and how to turn it off. `datawatch autonomous merge-shadow report`. A change to the merge pipeline, the merge settings or a check file restarts the count, and so does any merge that does not match.
+
+**Merge shadow settings in a pipeline** (`shadow` in a merge pipeline) — `private_files` (never committed files the checks read), `check_files` (a change restarts the count; default `scripts` and `Makefile`) and `release_text` (`strict`, the default, or `ignore`).
+
 **Merge shadow enabled** (`autonomous.merge_shadow.enabled`, on by default) — the master switch for the plan. Absent or `true` keeps it on; `false` is the only spelling that turns it off, from then on the plan is no longer written when an Automaton's finish is handled.
 
 **Merge shadow gate timeout** (`autonomous.merge_shadow.gate_timeout`, `20m`) — the budget each gate of the throwaway trial merge may wait before giving up: a Go duration string (`20m`, `90s`, `2h`), at least one nanosecond, and a positive value per gate, not a cap across all of them.

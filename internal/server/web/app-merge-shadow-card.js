@@ -2,8 +2,9 @@
 //
 // window.mergeShadowCardHtml(view) turns the view from mergeShadowFetch into
 // the Merge shadow card: the matched and different comparison counts for each
-// release size (patch, minor, major, none), summed over every project. The
-// card is not rendered at all (an empty string) when the shadow is disabled
+// release size (patch, minor, major, none), summed over every project, and the
+// turn-on report once a hand merge has been shadowed. The card is not rendered
+// at all (an empty string) when the shadow is disabled
 // or when there are zero comparisons, so the Setup sub-tab shows nothing for
 // it. Every value is escaped.
 //
@@ -36,7 +37,12 @@ window.mergeShadowCardHtml = function(view) {
       total += m + d;
     });
   });
-  if (total === 0) return '';
+  const turnOn = window.mergeShadowTurnOnHtml(view.turn_on);
+  if (total === 0) {
+    if (!turnOn) return '';
+    return `<div class="prd-capacity-card merge-shadow-card" style="min-width:0;">` +
+      `<div class="cap-title">${escHtml(t('merge_shadow_card_title'))}</div>${turnOn}</div>`;
+  }
   const rows = MERGE_SHADOW_SIZES.map(([s, key]) =>
     `<tr class="merge-shadow-row merge-shadow-row-${s}">` +
     `<th scope="row" style="text-align:left;font-weight:600;padding:2px 4px 2px 0;">${escHtml(t(key))}</th>` +
@@ -49,7 +55,24 @@ window.mergeShadowCardHtml = function(view) {
     `<thead><tr><th></th>` +
     `<th style="text-align:right;color:var(--text2);padding:2px 4px;">${escHtml(t('merge_shadow_matched'))}</th>` +
     `<th style="text-align:right;color:var(--text2);padding:2px 0 2px 4px;">${escHtml(t('merge_shadow_different'))}</th>` +
-    `</tr></thead><tbody>${rows}</tbody></table></div>`;
+    `</tr></thead><tbody>${rows}</tbody></table>${turnOn}</div>`;
+};
+
+// window.mergeShadowTurnOnHtml renders the turn-on report once a hand merge has
+// been shadowed: the matched run against the target, whether merging is on, and
+// the daemon's report text behind a disclosure.
+window.mergeShadowTurnOnHtml = function(r) {
+  if (!r || typeof r !== 'object' || !Array.isArray(r.merges) || r.merges.length === 0) return '';
+  const length = Math.max(0, Number(r.streak && r.streak.length) || 0);
+  const target = Math.max(0, Number(r.target) || 0);
+  const lines = Array.isArray(r.lines) ? r.lines.map(String).join('\n') : '';
+  const merging = r.merging_on === true ? 'merge_shadow_turn_on_merging_on' : 'merge_shadow_turn_on_merging_off';
+  return `<div class="merge-shadow-turn-on" style="font-size:12px;margin-top:6px;">` +
+    `<div class="merge-shadow-turn-on-streak">${escHtml(t('merge_shadow_turn_on_streak', [String(length), String(target)]))}</div>` +
+    `<div style="color:var(--text2);">${escHtml(t(merging))}</div>` +
+    `<details><summary>${escHtml(t('merge_shadow_turn_on_report'))}</summary>` +
+    `<pre class="merge-shadow-turn-on-report" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;">${escHtml(lines)}</pre>` +
+    `</details></div>`;
 };
 
 window.mergeShadowFetch = function() {
@@ -58,6 +81,7 @@ window.mergeShadowFetch = function() {
     return {
       enabled: !!(ms && ms.enabled === true),
       projects: (shadow && Array.isArray(shadow.projects)) ? shadow.projects : [],
+      turn_on: (shadow && shadow.turn_on) || null,
     };
   });
 };

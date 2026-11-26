@@ -31,15 +31,112 @@ agreement streak read from them — are read — never acted on — from the RES
 route, the MCP tool, the CLI and the comm channel; see "Where the shadow state
 is read" below.
 
+There are two shadows. The **finish-time plan** (most of this page) is a quick
+estimate made when an Automaton finishes. The **shadow of a hand merge** is the
+one that counts before you turn datawatch's merging on:
+[Shadowing a hand merge](#shadowing-a-hand-merge).
+
+## Shadowing a hand merge
+
+While merging is off you merge by hand. Record the shipped state with source
+`merge_step`, the **release commit** that holds the work, and the result of each
+lint and test step of the merge pipeline as your hand merge ran it:
+
+```bash
+datawatch autonomous shipped record <id> --source merge_step \
+  --release v1.2.4 --commit <release commit> \
+  --hand-check lint=pass --hand-check build=pass --hand-check go-test=pass
+```
+
+MCP `autonomous_shipped_record` takes `hand_checks`, the comm verb takes
+`hand_checks=lint=pass,build=pass`, and REST takes a `hand_checks` map. Each
+result is `pass`, `fail` or `skip`.
+
+The daemon then builds the same merge with **the engine its own merge runs
+use**, in shadow mode:
+
+- from the hand merge's own base and branch tip, read from the recorded commit
+  (along main, the merge commit that brought the branch in; the commit before it
+  is the base). A fast-forwarded merge, or a release that carried a second merge,
+  cannot be rebuilt, and the stored shadow says so;
+- in a disposable copy of the project under the data directory, with a bare
+  remote of its own. The copy's git settings name neither your repository nor
+  its remote. git over ssh is switched off for its commands;
+- running every command step of the recorded pipeline's checks. They take as
+  long as a real run's. One shadow runs at a time.
+
+It asks, sends, deploys, records and calls nothing, and runs whether or not
+merging is switched on. `autonomous.merge_shadow.enabled: false` stops it.
+
+**It is not a sandbox.** The checks come from the work being merged. A command
+that already knows your remote's address, or finds credentials on disk, can
+still reach out. A push, tag or removed branch that reaches your repository or
+remote is reported; other ways out are not seen.
+
+### The seven results
+
+| # | Result | Matches when |
+|---|---|---|
+| 1 | selection | the merge selection rule would have merged exactly the commit you merged, with its acceptance or review pass recorded **before** your merge (an operator pause and your own shipped record are set aside) |
+| 2 | content | the two final trees are the same, apart from the date on the README release line, changelog heading dates and the generated docs index |
+| 3 | version | same number and size, and neither side made a tag |
+| 4 | checks | the pipeline has a lint and a test step; every one ran in the shadow, and each has your recorded result and agrees with it. A skipped or missing check never matches; a datawatch pass where yours failed is serious |
+| 5 | conflicts | the same files conflicted and the results are equal. When datawatch **would ask** you, the merge neither counts nor breaks the run of matches (results 2, 3, 4 and 6 are then not compared) |
+| 6 | leak | the push would move main only, with no tag; the secret scan (enforced here whatever its mode) finds nothing; the project's `check-outgoing` target, taken from the base commit, ran and passed and reported a private pattern count above zero in the form `N private pattern(s) loaded` |
+| 7 | side effects | no command pushed, tagged, moved a ref or wrote into the project; nothing reached your repository or remote; no process was left running. Changes others made meanwhile are listed apart |
+
+A merge **matches** only when all seven do. It is **waiting** when everything
+compared matches and your check results are not recorded yet, and **running**
+until the shadow ends. Anything else **differs**, including a shadow that could
+not run or that a daemon restart interrupted. Recording the same commit again
+stores new hand results; it also runs an interrupted or failed shadow again. A
+finished shadow is never run again.
+
+### Release wording
+
+A hand merge usually writes its own changelog text and README release sentence.
+By default (`release_text: strict`) that is a content difference. With
+`release_text: ignore` in the pipeline's `shadow` block, the one changelog
+section added for the release and the wording of the README release line are
+left out; everything else is still compared. Changing it restarts the count.
+
+### The count, and the turn-on report
+
+```bash
+datawatch autonomous merge-shadow report
+```
+
+The count is the newest shadowed hand merges that matched, in a row, against
+`autonomous.merge_shadow.agreement_streak`. "Would ask" is passed over. Any
+other result ends it. So does a change to the merge pipeline (record or file),
+to the conflict policy or any `autonomous.merge_pipeline` setting, or to the
+pipeline's check files on main. Only shadows of hand merges count; finish-time
+plans and earlier comparisons never do.
+
+The report shows the count, one block per merge with the seven results, what is
+eligible now and every excluded branch with its reason, what the next run would
+push, everything merging would do outside a run, what is still to apply, the
+planted faults the product's tests require to be held, and how to turn merging
+off. It is the same text on the CLI, the comm channel
+(`autonomous merge-shadow report`), MCP (`autonomous_merge_shadow_status`,
+`turn_on.lines`), REST (`turn_on` on `GET /api/autonomous/merge/shadow`) and the
+web **Merge shadow** card. **Turning merging on is your decision**; nothing
+turns it on for you.
+
 ## What the merge shadow does — and what it never does
 
 **Does:**
 
 - Write one shadow merge plan per finished Automaton at the supervisor's release:
-  the release size (`patch`, `minor`, `major` or `none`), the version the bump step
-  would set, the changelog heading and body drawn only from the Automaton's own
-  changelog entry task (strict format, empty otherwise — nothing is invented), the
-  README line, the registry row, and the parity-issue flag.
+  the release size (`patch`, `minor`, `major` or `none`, from the Automaton's own
+  release size or its kind), the next version computed from the base ref's
+  version, the changelog heading and body from the Automaton's changelog draft
+  file in its branch, else from its changelog entry task (strict format, empty
+  otherwise — nothing is invented), with the source named in the plan, the README
+  line, the registry row, and the parity-issue flag. An Automaton with neither a
+  release size nor a kind takes both from the changelog heading.
+- When no plan can be made, store one that says why (`plan_not_made`). A base
+  version that cannot be read blocks the plan with `base_version_unread`.
 - Settle merge conflicts in a **throwaway trial worktree** outside the project
   tree, uncommitted (`--no-commit --no-ff`), then remove the scratch tree; the
   conflicts, each with its file class, resolution and resolver, are recorded in
@@ -199,7 +296,12 @@ therefore cannot move the version twice.
 
 ## Where the shadow state is read
 
-All five surfaces proxy one daemon endpoint and read — none of them writes:
+All five surfaces proxy one daemon endpoint and read — none of them writes.
+Each also carries the [turn-on report](#the-count-and-the-turn-on-report) on
+shadowed hand merges (REST `turn_on`, CLI `merge-shadow report`, comm
+`autonomous merge-shadow report`). The per-size counts and the `streak` field in
+the table below are the older finish-time comparisons, which never count toward
+turning merging on:
 
 | Surface | What it reads |
 | --- | --- |
@@ -229,7 +331,7 @@ to its defaults are indistinguishable.
 
 | Key | Type | Default | What it does |
 | --- | --- | --- | --- |
-| `autonomous.merge_shadow.enabled` | bool | `true` (when unset) | Master switch: when `true` the supervisor's release step runs the shadow plan; when `false` no plan is recorded at all. It is not a mode — there is no `on` state. |
+| `autonomous.merge_shadow.enabled` | bool | `true` (when unset) | Master switch: when `true` the supervisor's release step runs the shadow plan and a `merge_step` shipped record [shadows the hand merge](#shadowing-a-hand-merge); when `false` neither happens. It is not a mode — there is no `on` state. |
 | `autonomous.merge_shadow.gate_timeout` | duration | `20m` | The wait budget each gate of the throwaway trial merge may use before giving up — a per-gate budget, not a cap across all gates. When the budget ends, the gate's whole process group is killed (unix), so a hung suite leaves no children behind (see "Hung gate suite" in the checks section). A value that is not a positive Go duration is refused with the problem named on every write surface (nothing is written); a stored value that fails to parse falls back to the default at read time. |
 | `autonomous.merge_shadow.plan_keep` | int | `200` | How many shadow merge plans are kept per project; anything older than the newest N is pruned. Values below `1` fall back to the default. |
 | `autonomous.merge_shadow.agreement_streak` | int | `5` | The agreement streak threshold: the number of most-recent consecutive stored comparisons a project needs — with **no major difference** in any of them — before its streak reads `met`. It is the machine-readable form of the handover evidence bar, counted continuously. A value below `1` is refused on write; a stored value below `1` falls back to the default at read time. |
@@ -320,6 +422,9 @@ never as failures. Count these as known blind spots when you grade a merge by
 hand.
 
 ## Switching from shadow to on
+
+What you read before turning datawatch's merging on is the
+[turn-on report](#the-count-and-the-turn-on-report).
 
 The shadow itself has no `on` state: `autonomous.merge_shadow.enabled` is only a
 switch for writing the plan. The shadow-to-on decision belongs to the **release

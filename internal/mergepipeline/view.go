@@ -421,7 +421,22 @@ func RenderDefinitionText(d Definition) string {
 			fmt.Fprintf(&b, "  %s: %s\n", r.Path, r.Rule)
 		}
 	}
+	if sh := d.Shadow; sh != nil {
+		text := sh.ReleaseText
+		if text == "" {
+			text = ReleaseTextStrict
+		}
+		fmt.Fprintf(&b, "Merge shadow: private files %s; check files %s; release wording %s\n",
+			listOr(sh.PrivateFiles, "none"), strings.Join(d.checkFiles(), ", "), text)
+	}
 	return b.String()
+}
+
+func listOr(l []string, none string) string {
+	if len(l) == 0 {
+		return none
+	}
+	return strings.Join(l, ", ")
 }
 
 // RenderValidationText says whether a pipeline is valid and lists every
