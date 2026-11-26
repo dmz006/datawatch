@@ -5,6 +5,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.21 — Checked pushes; datawatch merges only finished work
+
+### Added
+- One check on everything datawatch is about to push: every added line, including lines made while resolving a merge, file names, commit and tag messages, and author addresses. A project can add its own check with a `check-outgoing` make target, read from the remote default branch. If a check cannot run, nothing is pushed.
+- Merge selection: only finished work is selected, every exclusion says why, and work whose review is pending can be accepted for one exact commit with a reason (web app, REST, MCP, command line and chat).
+
+### Changed
+- When work finishes, datawatch pushes work branches only. It never moves the remote default branch, `main` or `master`, and never creates or pushes a tag.
+- A merge is recorded as landed only after the remote's default branch holds the commit.
+- Failed, blocked, cancelled, archived and review-blocked work is never selected for merging. A review block is lifted only by the same check passing on the same unit.
+- A merge run takes one finished Automaton at a time.
+- The full release smoke runs on every minor and major release; other releases run a targeted pass.
+
+### Before you upgrade
+- The `default_branch` push policy now pushes nothing, and work done directly on the default branch is not pushed by datawatch.
+- In `shadow` and `enforce` modes, a secret scan that fails to run refuses the push. In `shadow` or `off` mode a detected secret is still pushed: use `enforce` for automatic pushes.
+- A project that adds a `check-outgoing` target needs that target on the remote default branch before datawatch will push; push it once by hand.
+- Container workers: rebuild worker images, because older images still push without these checks. Removing a container no longer pushes its unfinished work, so unpushed commits in it are lost.
+
+### Documentation
+- How-tos, definitions, operations and API reference cover the outgoing check, merge selection and acceptance.
+
 ## v9.187.20 — Commit guard reaches workers; merge and deploy off; rules changes held
 
 ### Fixed
