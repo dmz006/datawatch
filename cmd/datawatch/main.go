@@ -247,8 +247,22 @@ func claudeDisclaimerResponse(line string) string {
 //
 // It reports whether a keystroke was answered. A "no keystroke" outcome
 // returns false so caller loops may re-capture later within their window.
+//
+// It chooses the key for whatever the pane's text names. Live responders call
+// answerLiveStartupDialog, which first requires the dialog to be on screen.
 func respondStartupDialog(m *session.Manager, sessID string) bool {
-	a := m.ActiveStartupDialog(sessID)
+	return answerStartupDialog(m, sessID, m.ActiveStartupDialog(sessID))
+}
+
+// answerLiveStartupDialog answers the start-up dialog on the live screen, if
+// there is one: words in output or in a task send nothing.
+func answerLiveStartupDialog(m *session.Manager, sessID string) bool {
+	a, ok := m.LiveStartupDialog(sessID)
+	return ok && answerStartupDialog(m, sessID, a)
+}
+
+// answerStartupDialog sends the answer to dialog a.
+func answerStartupDialog(m *session.Manager, sessID string, a session.StartupDialogAction) bool {
 	switch a.Kind {
 	case session.StartupDialogNone:
 		return false
@@ -2685,7 +2699,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// answer per appearance; a few re-captures in case the TUI is
 				// still rendering.
 				for i := 0; i < 5; i++ {
-					if respondStartupDialog(mgr, sessID) {
+					if answerLiveStartupDialog(mgr, sessID) {
 						break
 					}
 					time.Sleep(500 * time.Millisecond)
@@ -2735,7 +2749,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				deadline := time.Now().Add(45 * time.Second)
 				for time.Now().Before(deadline) {
 					time.Sleep(500 * time.Millisecond)
-					if respondStartupDialog(mgr, sessID) {
+					if answerLiveStartupDialog(mgr, sessID) {
 						return
 					}
 				}
@@ -10463,7 +10477,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// re-capture a few times in case the TUI is still
 					// rendering.
 					for i := 0; i < 5; i++ {
-						if respondStartupDialog(mgr, sessID) {
+						if answerLiveStartupDialog(mgr, sessID) {
 							break
 						}
 						time.Sleep(500 * time.Millisecond)
