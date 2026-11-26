@@ -5,6 +5,8 @@ package autonomous
 import (
 	"context"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // MergeSelection forwards the selection read.
@@ -26,3 +28,14 @@ func (a *API) AcceptForMerge(ctx context.Context, id, commit, actor, reason stri
 func (a *API) RecordMergeLanding(ctx context.Context, id, release, commit string, at time.Time) (*PRD, error) {
 	return a.M.RecordMergeLanding(ctx, id, release, commit, at)
 }
+
+// MergeReleaseFacts forwards the release facts of one Automaton.
+func (a *API) MergeReleaseFacts(id string, kindMap map[string]string, majorTrigger string) (MergeReleaseFacts, bool) {
+	return a.M.MergeReleaseFacts(id, kindMap, majorTrigger)
+}
+
+// MergeModelLookup forwards the merge conflict model registry.
+func (a *API) MergeModelLookup() config.LLMLookup { return a.M.MergeModelLookup() }
+
+// MergePauseMessage forwards the operator pause check of a merge run.
+func (a *API) MergePauseMessage() (string, bool) { return a.M.MergePauseMessage() }

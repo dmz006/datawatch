@@ -39,12 +39,7 @@ func NewSupervisorLoopHooks(mgr *autonomous.Manager, cfg *config.Config, setting
 	// registry file as before.
 	// The configured git hosts are read from the live config on every run, so
 	// a host added later is seen by the next merge.
-	popt := func(r *mergepipeline.Runner) {
-		if len(planStore) > 0 && planStore[0] != nil {
-			withPlanRecords(planStore[0](), cfg.Autonomous.PlanRecords.EffectiveWriteThrough())(r)
-		}
-		withGitHosts(cfg.Git.Hosts)(r)
-	}
+	popt := supervisorMergeOption(cfg, planStore...)
 	h.Deploy = func(ctx context.Context) (string, error) { return supervisorLoopDeploy(ctx, mgr, dataDir, mergeCfg()) }
 	// A configured health check (autonomous.deploy.health_check) runs after a
 	// successful deploy and its result goes on the deploy record.
@@ -158,7 +153,7 @@ func supervisorLoopMergeSelected(ctx context.Context, mgr *autonomous.Manager, d
 	for _, e := range sel.Eligible {
 		runCtx, cancel := context.WithTimeout(ctx, mergeRunTimeout)
 		res, err := newMergeRunner(mgr, cfg, repo, filepath.Base(repo), dataDir, mergepipeline.ExecShipRunner{}, opts...).Run(runCtx, mergepipeline.RunRequest{
-			Title: "supervisor loop merge", Branches: []string{e.Branch}, AutomatonID: e.AutomatonID,
+			Title: supervisorMergeTitle(mgr, e.AutomatonID), Branches: []string{e.Branch}, AutomatonID: e.AutomatonID,
 		})
 		cancel()
 		if err == nil {
@@ -182,6 +177,28 @@ func supervisorLoopMergeSelected(ctx context.Context, mgr *autonomous.Manager, d
 		return out, err
 	}
 	return out, nil
+}
+
+// supervisorMergeOption is what the daemon adds to each runner of a loop
+// merge: the plan record store, the git hosts as configured now, and the
+// merge run and deploy run switch, asked again before the push.
+func supervisorMergeOption(cfg *config.Config, planStore ...func() *planrecords.Store) mergeRunnerOption {
+	return func(r *mergepipeline.Runner) {
+		if len(planStore) > 0 && planStore[0] != nil {
+			withPlanRecords(planStore[0](), cfg.Autonomous.PlanRecords.EffectiveWriteThrough())(r)
+		}
+		withGitHosts(cfg.Git.Hosts)(r)
+		withMergeSwitch(func() bool { return cfg.Autonomous.MergeDeployRunEnabled })(r)
+	}
+}
+
+// supervisorMergeTitle is the release title of a loop merge: the Automaton's
+// own, so the changelog says what shipped.
+func supervisorMergeTitle(mgr *autonomous.Manager, id string) string {
+	if f, ok := mgr.MergeReleaseFacts(id, nil, ""); ok && f.Title != "" {
+		return f.Title
+	}
+	return "supervisor loop merge"
 }
 
 // supervisorLaneControl moves the Claude lane count (autonomous.lane_fill
