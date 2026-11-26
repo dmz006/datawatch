@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.32 — Work recovered from older branches
+
+### Changed
+- A plan being stored or repaired is now refused when a `depends_on` entry names a title shared by two or more of its stories (story entries) or tasks (task entries); before, the last one was picked silently. IDs, positions and unique titles work as before. Stored plans are not re-checked unless repaired. In planning it is handled like other bad dependencies: a retry if the retry budget allows (one by default), then back to draft with the reason.
+- The release smoke, with no `DATAWATCH_BIN` and no `datawatch` file at the top of the source tree, now runs `make build` and stops if that fails, instead of using a `datawatch` from PATH. A binary already at the top of the tree is still used, even if old.
+
+### Fixed
+- Usage advice: when no reading had a usable lane stamp, a what-if lane count changed the measured burn per lane. It no longer does. Command, MCP and API-mapping references now say a lane count sent with a reading is ignored; an unused web text for the removed input is gone.
+
+### Added
+- Guard tests for parallel chains, stalled pi sessions, default task routing and the built-in docs index (needs `make docs-index` first); a smoke binary-choice test in `make test`. Recovered dated notes (voice, smoke failures, plan merge review; not all rechecked) and how-to additions on parallel chains, failure-escalation upgrades and plan records.
+
 ## v9.187.31 — The pi launch check no longer sends pi's provider prefix to the node
 
 ### Fixed
