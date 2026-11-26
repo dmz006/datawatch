@@ -16,8 +16,9 @@ const (
 	oldDialog     = " Quick safety check: is this a project you trust?\n\n ❯ 1. Yes, I trust this folder\n   2. No, exit\n\n Enter to confirm · Esc to cancel\n"
 )
 
-// runWatchers drives every watcher of a live session for a few seconds: the
-// pane monitor, the screen watcher, the reconciler and the reaper.
+// runWatchers drives every watcher of a live session in turn: the pane
+// monitor, the screen watcher, the reaper and the reconciler. One at a time:
+// older watcher paths write session fields without the store's lock.
 func runWatchers(t *testing.T, mgr *Manager, fullID string) {
 	t.Helper()
 	s, ok := mgr.GetSession(fullID)
@@ -26,14 +27,23 @@ func runWatchers(t *testing.T, mgr *Manager, fullID string) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	mgr.goBG(func() { mgr.monitorOutput(ctx, s, NewProjectGit(s.ProjectDir)) })
-	mgr.StartScreenCapture(ctx, fullID, 20)
-	time.Sleep(2500 * time.Millisecond)
-	mgr.ReapFinishedOneShots()
-	mgr.reconcileSessions(ctx)
-	time.Sleep(2500 * time.Millisecond)
-	mgr.reconcileSessions(ctx)
+	time.Sleep(4500 * time.Millisecond) // two of its 2 s pane reads
 	cancel()
 	mgr.WaitBackground()
+
+	ctx, cancel = context.WithCancel(context.Background())
+	mgr.StartScreenCapture(ctx, fullID, 20)
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+	mgr.bg.Wait()
+
+	mgr.ReapFinishedOneShots()
+	for i := 0; i < 2; i++ {
+		ctx, cancel = context.WithCancel(context.Background())
+		mgr.reconcileSessions(ctx)
+		cancel()
+		mgr.WaitBackground() // a monitor the reconciler restarted
+	}
 }
 
 // assertLeftAlone: not failed, its pane open, and no complete/running flapping.

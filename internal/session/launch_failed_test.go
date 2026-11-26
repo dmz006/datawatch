@@ -110,11 +110,23 @@ func fakeProcs(fake *FakeTmux, extra ...paneProc) func(string) (int, string, []p
 	}
 }
 
-// watchScreen runs the screen watcher until the session ends or d passes.
+// watchScreen runs the screen watcher until the failed launch has closed the
+// pane or d passes. It waits on the fake terminal: older watcher paths write
+// session fields without the store's lock, so the record is read only once the
+// watcher has stopped.
 func watchScreen(mgr *Manager, fullID string, d time.Duration) {
+	s, ok := mgr.GetSession(fullID)
+	if !ok {
+		return
+	}
+	fake, _ := mgr.tmux.(*FakeTmux)
+	name := s.TmuxSession
 	ctx, cancel := context.WithCancel(context.Background())
 	mgr.StartScreenCapture(ctx, fullID, 20)
-	awaitState(mgr, fullID, StateFailed, d)
+	for deadline := time.Now().Add(d); time.Now().Before(deadline) && fake.SessionExists(name); {
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
 	cancel()
 	mgr.bg.Wait()
 }
