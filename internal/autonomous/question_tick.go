@@ -73,7 +73,10 @@ func ReadQuestionsForTick(l QuestionLister, state QuestionState) []Question {
 
 // questionTickState guards the resumes in flight: one per task at a time.
 type questionTickState struct {
-	mu       sync.Mutex
+	mu sync.Mutex
+	// parkMu makes "may this task be parked" and the park one step: the wait
+	// loops and the tick both park.
+	parkMu   sync.Mutex
 	inflight map[string]bool
 	wg       sync.WaitGroup
 }
@@ -215,17 +218,32 @@ func (m *Manager) QuestionTick(ctx context.Context) {
 		}
 	}
 
-	if len(answered) == 0 && len(withdrawn) == 0 {
+	// Open questions are owed from now on, also those no wait loop parked on.
+	open := map[string][]Question{}
+	for _, q := range ReadQuestionsForTick(store, QuestionOpen) {
+		if owedQuestion(&q) {
+			open[q.TaskID] = append(open[q.TaskID], q)
+		}
+	}
+
+	if len(answered) == 0 && len(withdrawn) == 0 && len(open) == 0 {
 		return
 	}
 
 	for _, p := range m.store.ListPRDs() {
 		prd, ok := m.store.SnapshotPRD(p.ID)
-		if !ok || prd.Status == PRDHeld || closedRecordReason(prd) != "" {
-			continue // a held or closed Automaton's tasks are not resumed by an answer
+		if !ok || prd.Status == PRDHeld {
+			continue // a held Automaton's tasks are not resumed by an answer
 		}
+		closed := closedRecordReason(prd) != ""
 		for _, st := range prd.Story {
 			for _, tk := range st.Tasks {
+				if closed {
+					// Nothing is typed; what was never delivered is listed.
+					m.listUndeliveredDecisions(store, tk.ID)
+					continue
+				}
+				m.noteOwedDecisions(tk.ID, parkedQuestionID(tk), open[tk.ID])
 				m.questionTickTask(ctx, store, tk, answered, withdrawn)
 			}
 		}
@@ -243,6 +261,7 @@ func indexQuestions(qs []Question) map[string]Question {
 // questionTickTask handles one task snapshot.
 func (m *Manager) questionTickTask(ctx context.Context, store *QuestionStore, tk Task, answered, withdrawn map[string]Question) {
 	if isTaskTerminal(tk.Status) {
+		m.listUndeliveredDecisions(store, tk.ID)
 		return
 	}
 	// A task already resumed for a question follows the question's newest
@@ -263,6 +282,7 @@ func (m *Manager) questionTickTask(ctx context.Context, store *QuestionStore, tk
 	}
 
 	if tk.Status != TaskWaitingCapacity || !IsAwaitDecisionWaitReason(tk.WaitReason) {
+		m.settleOwedDecisions(ctx, store, tk.ID)
 		return
 	}
 	qid := AwaitDecisionQuestionID(tk.WaitReason)
@@ -282,8 +302,10 @@ func (m *Manager) questionTickTask(ctx context.Context, store *QuestionStore, tk
 	}
 	if q, ok := withdrawn[qid]; ok {
 		m.startQuestionResume(ctx, tk, q, nil)
+		return
 	}
 	// Open (or unknown): the task stays parked.
+	m.settleOwedDecisions(ctx, store, tk.ID)
 }
 
 // recordCurrentAnswer notes the newest answer on a task already resumed for
@@ -407,6 +429,7 @@ func (m *Manager) finishResume(prd *PRD, taskID string, q Question, ans *Answer,
 		next := *c.DecisionResume
 		next.Delivery, next.DeliverySessionID = "", ""
 		c.DecisionResume = &next
+		c.OwedDecisions = withoutOwed(c.OwedDecisions, q.ID)
 	})
 	m.emitDecisionResumeAudit(prd, taskID, rec)
 	recordWorkerQuestion(WorkerQuestionOutcomeResumed)

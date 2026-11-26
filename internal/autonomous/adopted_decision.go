@@ -91,11 +91,15 @@ func (d *adoptedDecision) hold() bool {
 		return d.m.decisionParkPending(snap)
 	}
 	if q.ID != d.handled {
-		d.handled = q.ID
-		if snap.Status != TaskWaitingCapacity || AwaitDecisionQuestionID(snap.WaitReason) != q.ID {
-			log.Printf("[autonomous] adopted worker of task %s raised blocking question %s: parking it for the decision", d.task.ID, q.ID)
-			d.m.ParkForDecision(d.prd, d.task, q.ID)
+		switch {
+		case snap.Status == TaskWaitingCapacity && AwaitDecisionQuestionID(snap.WaitReason) == q.ID:
+			d.handled = q.ID
+		case d.m.ParkForDecision(d.prd, d.task, q.ID):
+			d.handled = q.ID
+			log.Printf("[autonomous] adopted worker of task %s raised blocking question %s: parked for the decision", d.task.ID, q.ID)
 		}
+		// A refused park is tried again: the task still has a decision to be
+		// typed first.
 	}
 	return true
 }

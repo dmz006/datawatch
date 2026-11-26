@@ -101,9 +101,11 @@ func (m *Manager) setDelivery(taskID, questionID string, change func(*DecisionRe
 		change(&n)
 		c.DecisionResume, next = &n, &n
 		// Only an end to the delivery counts as activity on the task: a
-		// retry that types nothing must not hide a task that is stuck.
+		// retry that types nothing must not hide a task that is stuck. At
+		// that end the question is no longer owed.
 		if !n.deliveryOpen() {
 			c.UpdatedAt = time.Now()
+			c.OwedDecisions = withoutOwed(c.OwedDecisions, n.QuestionID)
 		}
 		return true
 	})

@@ -53,17 +53,32 @@ func (m *Manager) OpenBlockingQuestionForTask(taskID string) (Question, bool) {
 // retry or records a failure.
 //
 // It is idempotent: a task already parked on the same question is left as it
-// is, with no second audit event. It reports whether this call parked the
-// task.
+// is, with no second audit event. A task parked with a decision that is not
+// typed yet is left as it is too (decision_owed.go). It reports whether this
+// call parked the task.
 func (m *Manager) ParkForDecision(prd *PRD, t *Task, questionID string) bool {
 	if prd == nil || t == nil || questionID == "" {
 		return false
 	}
-	reason := AwaitDecisionWaitReasonFor(questionID)
-	if cur, ok := m.store.TaskSnapshot(t.ID); ok &&
-		cur.Status == TaskWaitingCapacity && cur.WaitReason == reason {
-		return false
+	m.questionTick.parkMu.Lock()
+	defer m.questionTick.parkMu.Unlock()
+	// Whatever this call decides, every open question of the task is owed.
+	m.noteOwedDecisions(t.ID, questionID, m.openBlockingQuestionsForTask(t.ID))
+	if cur, ok := m.store.TaskSnapshot(t.ID); ok {
+		if cur.Status == TaskWaitingCapacity && cur.WaitReason == AwaitDecisionWaitReasonFor(questionID) {
+			return false
+		}
+		if m.parkedDecisionUntyped(cur) {
+			return false
+		}
 	}
+	m.parkOnDecision(prd, t, questionID)
+	return true
+}
+
+// parkOnDecision makes the park ParkForDecision describes.
+func (m *Manager) parkOnDecision(prd *PRD, t *Task, questionID string) {
+	reason := AwaitDecisionWaitReasonFor(questionID)
 
 	// Visible wait state (the reason carries the question id).
 	m.setWaiting(t, reason)
@@ -89,5 +104,4 @@ func (m *Manager) ParkForDecision(prd *PRD, t *Task, questionID string) bool {
 	recordWorkerQuestion(WorkerQuestionOutcomeParked)
 	log.Printf("[autonomous] %s: parked on decision %s: released pools=%v tree lock kept=%v",
 		t.ID, questionID, releasedPools, keepTree)
-	return true
 }
