@@ -16,9 +16,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A repair for tag IDs with no record. It changes tags or assignments only with `datawatch autonomous tags repair --apply`, chat `autonomous tags repair apply`, or REST `/api/autonomous/tags/repair` with `dry_run` false; otherwise it is a dry run. Nothing runs it automatically. It restores records or moves assignments to a replacement, leaves what it cannot decide, and deletes or overwrites no tag record. No MCP tool or web button.
 
 ### Not covered
-- Repair limits: a merge has no simple undo. An auto tag rebuilt from Automations gets today's name template and creation time and cannot be renamed or deleted. After a missing parent is merged, its child tags keep the old ID and later runs list the merge again.
+- Repair limits: a merge has no simple undo. An auto tag rebuilt from Automations gets today's name template and creation time, and you cannot rename or delete it. After a missing parent is merged, child tags that still had a record keep the old parent ID, and later runs list the merge again.
 - Installing does not restore tags already lost, and the repair may leave some unresolved. A deleted tag can return after a restart if the daemon stopped partway through the delete, or deleted it while the registry was not running.
-- On peers: a sync can still delete automatic tags, with assignments, that a copy saved by an earlier version already lists; a daemon with no saved copy that becomes a peer can still lose its own non-automatic tags the keeper lacks.
+- On peers: a sync can still delete automatic tags, with assignments, that a copy saved by an earlier version already lists; a daemon that becomes a peer can still lose its own non-automatic tags the keeper lacks.
 
 ## v9.187.32 — Work recovered from older branches
 
