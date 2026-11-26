@@ -18,7 +18,6 @@
 package hookinstaller
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,6 +28,9 @@ import (
 // Install writes the .claude/sprint/* files into projectDir. Returns
 // nil even if individual writes fail (best-effort; hook-installer
 // failures must not block session spawn).
+//
+// It installs nothing, and says why, for a home folder or user-level settings,
+// and for a settings file it cannot read and parse in full.
 //
 // CHAINABLE: if settings.json already declares hooks, the daemon's
 // hook entry (the one whose command path ends in
@@ -48,6 +50,15 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 	if projectDir == "" || sessionFullID == "" {
 		return fmt.Errorf("hookinstaller: project_dir + session_id required")
 	}
+	// Everything that can refuse comes before the first write: never the
+	// user's own settings, and never a settings file that was not read in full.
+	if err := refuseUserSettings(projectDir); err != nil {
+		return err
+	}
+	doc, settingsMode, err := readSettings(filepath.Join(projectDir, settingsFile))
+	if err != nil {
+		return err
+	}
 	claudeDir := filepath.Join(projectDir, ".claude")
 	sprintDir := filepath.Join(claudeDir, "sprint")
 	if err := os.MkdirAll(sprintDir, 0o755); err != nil {
@@ -57,10 +68,6 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 	// settings.json — chain into existing hooks dict.
 	settingsPath := filepath.Join(claudeDir, "settings.json")
 	hookCmdBase := filepath.Join(sprintDir, "post-event.sh")
-	doc := map[string]any{}
-	if existing, err := os.ReadFile(settingsPath); err == nil && len(existing) > 0 {
-		_ = json.Unmarshal(existing, &doc)
-	}
 	hooks, _ := doc["hooks"].(map[string]any)
 	if hooks == nil {
 		hooks = map[string]any{}
@@ -97,6 +104,7 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 		}
 		return false
 	}
+	changed := false
 	addIfMissing := func(eventName, cmd string, matcher ...string) {
 		var arr []any
 		switch v := hooks[eventName].(type) {
@@ -116,6 +124,7 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 		}
 		arr = append(arr, group)
 		hooks[eventName] = arr
+		changed = true
 	}
 	addIfMissing("Stop", hookCmdBase+" Stop")
 	addIfMissing("PostToolUse", hookCmdBase+" PostToolUse $TOOL_NAME")
@@ -127,8 +136,11 @@ func Install(projectDir, sessionFullID, daemonURL, _ string) error {
 	// stdout of a SessionStart hook is added to the session context.
 	addIfMissing("SessionStart", hookCmdBase+" SessionStart", "compact|clear")
 	doc["hooks"] = hooks
-	body, _ := json.MarshalIndent(doc, "", "  ")
-	_ = os.WriteFile(settingsPath, body, 0o644)
+	if changed {
+		if err := writeSettings(settingsPath, doc, settingsMode); err != nil {
+			return err
+		}
+	}
 
 	// post-event.sh — deterministic; always rewrite.
 	// BL303 S1: extended to parse TodoWrite stdin into structured tasks[].

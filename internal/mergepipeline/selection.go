@@ -33,6 +33,11 @@ func (s *runState) applySelection(ctx context.Context) error {
 		return fmt.Errorf("merge refused: %w", err)
 	}
 	s.req.AutomatonID = e.AutomatonID
+	// From here on git gets the branch name the rule checked, never the text
+	// of the request.
+	if e.Branch != "" {
+		s.req.Branches = []string{e.Branch}
+	}
 	s.pins = map[string]string{s.req.Branches[0]: e.Tip}
 	return nil
 }

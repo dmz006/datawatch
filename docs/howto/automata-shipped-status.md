@@ -166,6 +166,11 @@ Content-Type: application/json
 ```
 
 `source` must be `merge_step` or `backfill`; the commit must be non-empty.
+A `merge_step` record for a branch in the merge repository is checked: the
+commit must be a commit id (full, or its first 7 or more hex characters; the
+full id is stored), contain the Automaton's branch and, when there is a remote,
+be on the remote's default branch. See
+[What gets recorded after a push](landing-record.md#what-gets-recorded-after-a-push).
 The 200 body is the record as stored. The Automation form is the same body
 on `POST /api/automations/<id>/shipped`. A repeat with the same commit
 returns 200 and changes nothing.
