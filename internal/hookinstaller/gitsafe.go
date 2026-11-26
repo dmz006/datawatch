@@ -15,6 +15,21 @@ var installedFiles = []string{".claude/sprint/post-event.sh", ".claude/sprint/.d
 
 const settingsFile = ".claude/settings.json"
 
+// gitFolderAbove is the nearest folder at or above dir that holds .git, or "".
+func gitFolderAbove(dir string) string {
+	dir = filepath.Clean(dir)
+	for {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
 func gitOut(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -31,6 +46,9 @@ func gitOut(dir string, args ...string) (string, error) {
 // not in a repository needs nothing.
 func keepOutOfCommits(projectDir string) error {
 	if _, err := gitOut(projectDir, "rev-parse", "--is-inside-work-tree"); err != nil {
+		if repo := gitFolderAbove(projectDir); repo != "" {
+			return notInstalled("%s looks like a git folder but git could not be asked about it: %w", repo, err)
+		}
 		return nil
 	}
 	for _, f := range append([]string{settingsFile}, installedFiles...) {
