@@ -5,6 +5,7 @@ package session
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -47,9 +48,29 @@ func (m *Manager) ReportBootEnded() {
 	hook(fmt.Sprintf("%d session(s) found dead at daemon start", len(lines)), strings.Join(lines, "\n"))
 }
 
+// lastSign is the latest sign of life of a session: a change of its record, a
+// channel event, or output written to its log. Steady output on a running
+// session changes nothing in the record.
+func lastSign(snap Session) time.Time {
+	at := snap.UpdatedAt
+	if snap.LastChannelEventAt.After(at) {
+		at = snap.LastChannelEventAt
+	}
+	if snap.LogFile != "" {
+		// The second name is where output goes when it is sealed.
+		for _, p := range []string{snap.LogFile, snap.LogFile + ".enc"} {
+			if info, err := os.Stat(p); err == nil && info.ModTime().After(at) {
+				at = info.ModTime()
+			}
+		}
+	}
+	return at
+}
+
 // CheckSilentSessions sends one notice for the running sessions of this host
-// that have shown nothing for longer than threshold and have not been reported
-// for this silence yet.
+// that have shown no sign of life for longer than threshold and have not been
+// reported for this silence yet. A threshold of 0 or less turns it off: set
+// session.stale_timeout_seconds negative (0 in the file means the default).
 func (m *Manager) CheckSilentSessions(now time.Time, threshold time.Duration) {
 	m.mu.Lock()
 	hook := m.sessionNotice
@@ -60,7 +81,11 @@ func (m *Manager) CheckSilentSessions(now time.Time, threshold time.Duration) {
 	var lines []string
 	for _, sess := range m.store.List() {
 		snap := m.store.Snapshot(sess)
-		if snap.Hostname != m.hostname || !IsStale(&snap, threshold, now) {
+		if snap.Hostname != m.hostname || snap.State != StateRunning {
+			continue
+		}
+		sign := lastSign(snap)
+		if now.Sub(sign) <= threshold {
 			continue
 		}
 		m.mu.Lock()
@@ -68,9 +93,9 @@ func (m *Manager) CheckSilentSessions(now time.Time, threshold time.Duration) {
 			m.silentNoticed = map[string]time.Time{}
 		}
 		last, told := m.silentNoticed[snap.FullID]
-		if !told || !last.Equal(snap.UpdatedAt) {
-			m.silentNoticed[snap.FullID] = snap.UpdatedAt
-			lines = append(lines, noticeLine(snap, fmt.Sprintf("running, no change since %s", snap.UpdatedAt.Local().Format("2006-01-02 15:04"))))
+		if !told || !last.Equal(sign) {
+			m.silentNoticed[snap.FullID] = sign
+			lines = append(lines, noticeLine(snap, fmt.Sprintf("running, no output or event since %s", sign.Local().Format("2006-01-02 15:04"))))
 		}
 		m.mu.Unlock()
 	}
