@@ -499,3 +499,18 @@ func TestTwoQuestionsAnotherSessionsAnswerIsListedNotTyped(t *testing.T) {
 		t.Fatalf("typed %v alerts %q, want it listed once and not typed", got, f.raised())
 	}
 }
+
+// A closed Automaton's tasks are never typed into, even one left running; what
+// was decided for them is listed once.
+func TestTwoQuestionsClosedAutomatonListsAndTypesNothing(t *testing.T) {
+	f, q2 := runningWithOwedQuestion(t)
+	prd, _ := f.m.Store().GetPRD(f.prd.ID)
+	f.m.store.WithLock(func() { prd.Status = PRDCancelled })
+	f.answerID(t, q2)
+	for i := 0; i < 3; i++ {
+		f.tick()
+	}
+	if n, al := f.sends(), f.reviewAlerts(q2); n != 1 || len(al) != 1 {
+		t.Fatalf("sends=%d alerts=%q, want nothing more typed and one listing", n, f.raised())
+	}
+}
