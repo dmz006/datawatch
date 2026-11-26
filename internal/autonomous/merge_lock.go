@@ -1,13 +1,15 @@
 // Merge lock store. One lock per repository path keeps two merge runs from
 // shipping into the same repository at once. Locks persist in
 // merge-locks.json so a daemon restart still shows them held, and a resumed
-// run takes its own lock back.
+// run takes its own lock back. Another run takes a lock over only when its
+// holder is provably gone (merge_lock_owner.go).
 package autonomous
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,6 +37,9 @@ type MergeLockStatus struct {
 	AutomatonID string    `json:"automaton_id"`
 	Branches    []string  `json:"branches"`
 	Since       time.Time `json:"since"`
+	// Owner is the process that holds the lock; a lock without one is never
+	// taken over.
+	Owner *MergeLockOwner `json:"owner,omitempty"`
 }
 
 // MergeLocks is the persistent lock store.
@@ -81,22 +86,44 @@ func sameBranches(a, b []string) bool {
 
 func cloneStatus(s MergeLockStatus) MergeLockStatus {
 	s.Branches = append([]string(nil), s.Branches...)
+	if s.Owner != nil {
+		owner := *s.Owner
+		s.Owner = &owner
+	}
 	return s
 }
 
-// Acquire takes the lock for repo. It succeeds when the repo is free or the
-// holder already owns it (same run, or same automaton with the same branches).
+// Acquire takes the lock for repo. It succeeds when the repo is free, the
+// holder already owns it (same run, or same automaton with the same branches)
+// or the run that held it is provably gone.
 func (m *MergeLocks) Acquire(repo string, h MergeLockHolder) (MergeLockStatus, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if cur, ok := m.locks[repo]; ok {
-		same := (h.RunID != "" && cur.RunID == h.RunID) ||
+	cur, ok := m.locks[repo]
+	if ok {
+		sameRun := h.RunID != "" && cur.RunID == h.RunID
+		same := sameRun ||
 			(h.AutomatonID != "" && cur.AutomatonID == h.AutomatonID && sameBranches(cur.Branches, h.Branches))
-		if !same {
-			return cloneStatus(cur), fmt.Errorf("%w: repo %s held by run %s (automaton %s)",
-				ErrMergeLockHeld, repo, cur.RunID, cur.AutomatonID)
+		if left := processesOfRun(cur.RunID); same && !sameRun && len(left) > 0 {
+			return cloneStatus(cur), fmt.Errorf("%w: %w: process(es) %v that run %s started are still running",
+				ErrMergeLockHeld, ErrMergeLockLeftovers, left, cur.RunID)
 		}
-		cur.RunID = h.RunID
+		if !same {
+			gone, rebooted := ownerGone(cur.Owner)
+			if !gone {
+				return cloneStatus(cur), fmt.Errorf("%w: repo %s held by run %s (automaton %s)",
+					ErrMergeLockHeld, repo, cur.RunID, cur.AutomatonID)
+			}
+			if left := processesOfRun(cur.RunID); !rebooted && len(left) > 0 {
+				return cloneStatus(cur), fmt.Errorf("%w: %w: the process of run %s is gone, but process(es) %v it started are still running",
+					ErrMergeLockHeld, ErrMergeLockLeftovers, cur.RunID, left)
+			}
+			log.Printf("[autonomous] merge lock on %s: run %s is gone, so its lock is taken over", repo, cur.RunID)
+			ok = false
+		}
+	}
+	if ok {
+		cur.RunID, cur.Owner = h.RunID, currentMergeLockOwner()
 		m.locks[repo] = cur
 		if err := m.saveLocked(); err != nil {
 			return MergeLockStatus{}, err
@@ -109,10 +136,15 @@ func (m *MergeLocks) Acquire(repo string, h MergeLockHolder) (MergeLockStatus, e
 		AutomatonID: h.AutomatonID,
 		Branches:    append([]string(nil), h.Branches...),
 		Since:       time.Now().UTC(),
+		Owner:       currentMergeLockOwner(),
 	}
+	old, had := m.locks[repo]
 	m.locks[repo] = st
 	if err := m.saveLocked(); err != nil {
 		delete(m.locks, repo)
+		if had {
+			m.locks[repo] = old
+		}
 		return MergeLockStatus{}, err
 	}
 	return cloneStatus(st), nil
