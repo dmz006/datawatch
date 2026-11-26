@@ -645,17 +645,32 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	// One resume per task at a time, so the tick's delivery retry never runs
+	// beside this send.
+	if !m.questionTick.begin(t.ID) {
+		return fmt.Errorf("task %s is no longer parked under a decision", t.ID)
+	}
+	defer m.questionTick.end(t.ID)
+	if cur, ok := m.store.TaskSnapshot(t.ID); !ok ||
+		(cur.Status == TaskWaitingCapacity && IsAwaitDecisionWaitReason(cur.WaitReason) && !m.closeReplacedDelivery(p, cur, q.ID)) {
+		return fmt.Errorf("task %s: the unsent decision before this one could not be saved for review", t.ID)
+	}
 	rec := &DecisionResume{QuestionID: q.ID, AnswerID: ans.ID, CurrentAnswerID: ans.ID, ResumedAt: time.Now().UTC()}
+	others := m.otherOpenQuestionIDs(t.ID, q.ID)
 	var claimed bool
 	var prev *DecisionResume
 	m.store.MutateTask(t.ID, func(c *Task) {
 		if c.Status != TaskWaitingCapacity || !IsAwaitDecisionWaitReason(c.WaitReason) {
 			return
 		}
-		if c.DecisionResume != nil && c.DecisionResume.QuestionID == q.ID {
+		// A record still waiting was never typed (the daemon stopped while
+		// the task was queued), so it may be claimed again.
+		if cur := c.DecisionResume; cur != nil && cur.QuestionID == q.ID && cur.Delivery != DecisionWaiting {
 			return
 		}
 		prev = c.DecisionResume
+		rec.open(c.SessionID)
+		rec.OpenAtResume = others
 		c.DecisionResume = rec
 		claimed = true
 	})
@@ -670,7 +685,7 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 	}
 	if err := m.resumeSlotAndTree(ctx, p, t, prefix, t.ComputeNode, true, releasedTree, box); err != nil {
 		if errors.Is(err, errResumeSessionGone) {
-			log.Printf("[autonomous] %s: held-decision release: %v; nothing to prompt", t.ID, err)
+			m.listDroppedResume(p, t.ID, rec)
 			return nil
 		}
 		if !m.taskCancelled(t.ID) {
@@ -686,16 +701,7 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 	if m.taskCancelled(t.ID) {
 		return nil
 	}
-	sessionID := t.SessionID
-	if cur, ok := m.store.TaskSnapshot(t.ID); ok && cur.SessionID != "" {
-		sessionID = cur.SessionID
-	}
-	if fn := m.sessionContinueLineFnLocked(); fn != nil && sessionID != "" {
-		if err := fn(sessionID, BuildDecisionResumeLine(q, ans)); err != nil {
-			log.Printf("[autonomous] %s: held-decision resume prompt to session %s failed: %v", t.ID, sessionID, err)
-		}
-	}
-	m.emitDecisionResumeAudit(p, t.ID, rec)
+	m.finishResume(p, t.ID, q, ans, rec)
 	return nil
 }
 

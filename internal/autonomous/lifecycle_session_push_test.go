@@ -316,8 +316,8 @@ func TestSessionPushOneShotDeletedOnlyAfterSuccess(t *testing.T) {
 		_, ok := store.Get(sub.ID)
 		return !ok
 	})
-	if rec.bridgeCount() != 1 {
-		t.Errorf("one-shot delivered via bridge %d times, want 1", rec.bridgeCount())
+	if rec.inputCount() != 1 || rec.bridgeCount() != 0 {
+		t.Errorf("one-shot typed %d times and sent over the bridge %d times, want 1 and 0", rec.inputCount(), rec.bridgeCount())
 	}
 
 	// A second matching event must not re-deliver. Deterministic bound:
@@ -331,8 +331,8 @@ func TestSessionPushOneShotDeletedOnlyAfterSuccess(t *testing.T) {
 	})
 	m.emit(startedEvent())
 	time.Sleep(100 * time.Millisecond) // bounded assert-not-happens window after the verified deregistration
-	if got := rec.bridgeCount(); got != 1 {
-		t.Errorf("deleted one-shot fired again (bridge calls now %d), want 1 total", got)
+	if got := rec.inputCount() + rec.bridgeCount(); got != 1 {
+		t.Errorf("deleted one-shot fired again (deliveries now %d), want 1 total", got)
 	}
 
 	auditMu.Lock()

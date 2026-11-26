@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/dmz006/datawatch/internal/capacity"
 )
@@ -142,11 +144,117 @@ type resumeRules struct {
 	dropEnded bool
 }
 
+// resumeBook tracks the resumes under way, so the wait loops can tell a worker
+// is still parked and a new attempt can remove an old resume from the queue
+// first. It has its own lock.
+type resumeBook struct {
+	mu sync.Mutex
+	// pending counts the resumes of a parked task that have not finished.
+	pending map[string]int
+	// queued is the task's resume that is asking for a slot.
+	queued map[string]*queuedResume
+}
+
+type queuedResume struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func (b *resumeBook) begin(taskID string) (end func()) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.pending == nil {
+		b.pending = map[string]int{}
+	}
+	b.pending[taskID]++
+	return func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.pending[taskID]--; b.pending[taskID] <= 0 {
+			delete(b.pending, taskID)
+		}
+	}
+}
+
+func (b *resumeBook) isPending(taskID string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.pending[taskID] > 0
+}
+
+// enter registers a resume that is about to ask for a slot. leave must be
+// called once it holds the slot or has given up.
+func (b *resumeBook) enter(ctx context.Context, taskID string) (rctx context.Context, leave func()) {
+	rctx, cancel := context.WithCancel(ctx)
+	q := &queuedResume{cancel: cancel, done: make(chan struct{})}
+	b.mu.Lock()
+	if b.queued == nil {
+		b.queued = map[string]*queuedResume{}
+	}
+	b.queued[taskID] = q
+	b.mu.Unlock()
+	return rctx, func() {
+		b.mu.Lock()
+		if b.queued[taskID] == q {
+			delete(b.queued, taskID)
+		}
+		b.mu.Unlock()
+		cancel()
+		close(q.done)
+	}
+}
+
+// supersede ends the task's queued resume and returns once it has left the
+// capacity queue. The ledger knows a request by its holder, so a resume left
+// queued beside a new attempt could take, or give back, that attempt's slot.
+func (b *resumeBook) supersede(taskID string) {
+	b.mu.Lock()
+	q := b.queued[taskID]
+	b.mu.Unlock()
+	if q != nil {
+		q.cancel()
+		<-q.done
+	}
+}
+
+// DecisionResumeWaiting reports that the task's worker is still parked although
+// nothing may be open: its decision is made but the line is not typed yet, or a
+// resume is waiting for its slot or the project tree. A wait loop must not
+// nudge, stall or type into such a worker.
+func (m *Manager) DecisionResumeWaiting(taskID string) bool {
+	if m.resumes.isPending(taskID) {
+		return true
+	}
+	snap, ok := m.store.TaskSnapshot(taskID)
+	return ok && m.decisionParkPending(snap)
+}
+
+// verificationTookOver reports that the turn of a parked task's worker is over:
+// the task is being verified, or its verifier or judge asks for or holds a
+// slot. A worker resume must give way, or the task would take a second slot and
+// could leave its own verifier waiting behind it.
+func (m *Manager) verificationTookOver(led *capacity.Ledger, taskID string) bool {
+	if cur, ok := m.store.TaskSnapshot(taskID); ok && (cur.Status == TaskVerifying || cur.Status == TaskRunningTests) {
+		return true
+	}
+	verify, judge := VerifyHolder(taskID), JudgeHolder(taskID)
+	if led.Held(verify) || led.Held(judge) {
+		return true
+	}
+	for _, w := range led.Snapshot().Waiting {
+		if w.Holder == verify || w.Holder == judge {
+			return true
+		}
+	}
+	return false
+}
+
 // readmitSession waits for the slot of a resumed worker session and binds the
 // slot to that session, so it is held exactly as long as the session runs. The
-// wait ends as soon as the session ends (errResumeSessionGone), and a slot
-// granted to a session that has ended is given back at once. prefix starts the
-// task's wait reason; empty shows the pool reason alone.
+// wait ends as soon as the session ends or, for a parked task, its
+// verification takes over (errResumeSessionGone), and a slot granted too late
+// is given back at once. prefix starts the task's wait reason; empty shows the
+// pool reason alone.
 func (m *Manager) readmitSession(ctx context.Context, prd *PRD, t *Task, prefix, prefer string, rules resumeRules) error {
 	if !m.capacityOn() {
 		return nil
@@ -158,10 +266,22 @@ func (m *Manager) readmitSession(ctx context.Context, prd *PRD, t *Task, prefix,
 		return errResumeSessionGone
 	}
 	unwatched := first == resumeTargetEnded
+	// A retry in the same session starts from a finished verification, so only
+	// a task that is parked now can be overtaken by one.
+	snap, found := m.store.TaskSnapshot(t.ID)
+	parked := found && snap.Status == TaskWaitingCapacity
+	var overtaken atomic.Bool
 	state := func() resumeTarget {
+		if overtaken.Load() {
+			return resumeTargetEnded
+		}
 		s := m.resumeTargetState(t.ID, sessionID)
 		if s == resumeTargetEnded && unwatched {
-			return resumeTargetLive
+			s = resumeTargetLive
+		}
+		if s == resumeTargetLive && parked && m.verificationTookOver(led, t.ID) {
+			overtaken.Store(true)
+			return resumeTargetEnded
 		}
 		return s
 	}
@@ -172,13 +292,24 @@ func (m *Manager) readmitSession(ctx context.Context, prd *PRD, t *Task, prefix,
 	cancelled := func() bool {
 		return m.taskCancelled(t.ID) || state() != resumeTargetLive
 	}
-	err = led.Acquire(ctx, req, m.capacityWait(), cancelled, func(reason string) {
+	rctx, leave := m.resumes.enter(ctx, t.ID)
+	defer leave()
+	err = led.Acquire(rctx, req, m.capacityWait(), cancelled, func(reason string) {
+		if state() != resumeTargetLive {
+			return // the task has moved on; leave its status alone
+		}
 		if prefix != "" {
 			reason = prefix + " — " + reason
 		}
 		m.setWaiting(t, reason)
 	})
+	superseded := rctx.Err() != nil && ctx.Err() == nil
 	switch {
+	case superseded:
+		if err == nil {
+			releaseResumeGrant(led, t.ID, sessionID)
+		}
+		return errResumeSessionGone
 	case err == nil:
 	case errors.Is(err, context.Canceled) && m.taskCancelled(t.ID):
 		return errCancelledWhileWaiting
@@ -232,6 +363,7 @@ func (m *Manager) endDroppedResume(t *Task, prefix string) {
 // the tree lock is still re-claimed so what follows runs under it. dropEnded
 // is resumeRules.dropEnded.
 func (m *Manager) resumeSlotAndTree(ctx context.Context, prd *PRD, t *Task, prefix, prefer string, dropEnded, releasedTree bool, box *func()) error {
+	defer m.resumes.begin(t.ID)()
 	rules := resumeRules{dropEnded: dropEnded}
 	// A session running now and gone after the tree wait is an end seen here.
 	runningAtStart := m.resumeTargetState(t.ID, m.resumeSessionID(t)) == resumeTargetLive
@@ -383,7 +515,8 @@ func (m *Manager) restartOrder(prd *PRD, order []string) []string {
 				rest = append(rest, id)
 			case t.Status == TaskInProgress || t.Status == TaskVerifying || t.Status == TaskRunningTests:
 				running = append(running, id)
-			case t.Status == TaskWaitingCapacity && IsAwaitExternalWaitReason(t.WaitReason):
+			case t.Status == TaskWaitingCapacity && (IsAwaitExternalWaitReason(t.WaitReason) ||
+				(t.AdoptedSession && IsAwaitDecisionWaitReason(t.WaitReason))):
 				parked = append(parked, id)
 			default:
 				rest = append(rest, id)

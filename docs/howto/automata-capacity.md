@@ -369,7 +369,13 @@ way a session is resumed:
 - The slot a resume gets is tied to its session, so it is held while the session
   runs and freed when the session ends.
 - A resume whose session ends while it waits leaves the queue and takes no slot.
-  A retry in that case starts a new session instead.
+  A retry in that case starts a new session instead. The resume of a parked task
+  also leaves the queue when the task's verification takes over, so a task never
+  holds a worker slot and a verifier slot for one turn. An answer that can no
+  longer be typed this way is listed for review
+  ([worker questions](operator-questions-workers.md#did-the-worker-get-the-line)).
+- While a decided answer waits, the worker is not nudged or ended as stalled.
+  A running worker that is only owed a further decision keeps its slot.
 - A task that is starting or resuming does not wait for the project tree while it
   holds a slot. When another task has the tree, it gives its slot back, waits for
   the tree, and is admitted again. Without this, two tasks that share one tree
@@ -378,8 +384,10 @@ way a session is resumed:
 **After a restart or a resume.** Running work is taken up first. Every running
 worker is counted before a parked worker is looked at, so a parked worker is not
 prompted into the slot a running one uses. Within one Automaton, tasks get lanes
-in this order: running tasks, then parked tasks, then the rest. Tasks that still
-wait for a slot therefore cannot fill the lanes while a running task has none.
+in this order: running tasks, then parked tasks (an outside wait, or a question
+kept across the restart), then the rest. Tasks that still wait for a slot
+therefore cannot fill the lanes while a running task has none. No decision line
+is typed until the restart has counted the running workers.
 
 **Known limits.**
 
@@ -731,7 +739,9 @@ restarts.
    force is needed — the reset keeps its place in the capacity queue,
    retargeting its target pool if the worker resolution changed, with
    a fresh wait budget); cancelling removes it from the queue outright.
-5. After a daemon restart, waiting tasks are put back in the queue.
+5. After a daemon restart, waiting tasks are put back in the queue. A task
+   parked on a worker question is different: it keeps its live worker. See
+   [questions from workers](operator-questions-workers.md#how-the-coordinator-tick-reads-and-resumes).
 
 An alert is raised when a task has waited 30 minutes.
 

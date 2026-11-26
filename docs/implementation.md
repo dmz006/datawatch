@@ -332,7 +332,11 @@ for a slot, binds the slot to the session and is dropped when the session ends; 
 never waits for the tree lock while holding a slot (`resumeSlotAndTree`, and the same
 rule for a new start in `executeOne`). After a restart or a resume, parked workers are
 reconciled last (`parkedLast`) and the run walks running tasks, then parked tasks, then
-the rest (`restartOrder`). Ending the session frees the lease bound to it
+the rest (`restartOrder`). A queued resume of a parked task is dropped when its
+verification takes over (`verificationTookOver`), and a new worker admission removes
+the task's queued resume first (`resumeBook.supersede`). The daemon's wait loop and
+the adopted wait hold while `DecisionResumeWaiting` is true, and `sendDecisionLine`
+types nothing while the ledger's restart hold is on (`AdoptionPending`). Ending the session frees the lease bound to it
 (`releaseLeasesOfEndedSession`, `cmd/datawatch/capacity_reap.go`); a session adopted
 after a restart releases it when its wait ends (`releaseWorkerLeaseForVerify`,
 `internal/autonomous/capacity.go`). A `JudgeAdmit.WorkerHolder` lease still present when

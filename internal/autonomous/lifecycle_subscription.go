@@ -125,6 +125,9 @@ type Subscription struct {
 	CreatedAt time.Time           `json:"created_at"`
 	ExpiresAt *time.Time          `json:"expires_at,omitempty"`
 	OneShot   bool                `json:"one_shot,omitempty"` // fire once, then delete
+	// Delivery is set while a one-time message to a session has fired and is
+	// not typed yet (lifecycle_oneshot.go). Only datawatch writes it.
+	Delivery *OneTimeDelivery `json:"delivery,omitempty"`
 }
 
 // ValidateSubscription checks a subscription for acceptance (called by

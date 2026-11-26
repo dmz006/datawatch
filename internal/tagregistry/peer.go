@@ -170,6 +170,9 @@ func unreachableErr(op, keeper string) error {
 func (r *Registry) checkEditLocal(w Write) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.refreshLocked(); err != nil {
+		return err
+	}
 	if w.Kind == WriteRename && strings.TrimSpace(w.Name) == "" {
 		return fmt.Errorf("%w: name is required", ErrTagInvalid)
 	}
@@ -187,6 +190,9 @@ func (r *Registry) checkEditLocal(w Write) error {
 func (r *Registry) checkDeleteLocal(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.refreshLocked(); err != nil {
+		return err
+	}
 	_, err := r.checkDeleteLocked(id)
 	return err
 }
@@ -375,7 +381,7 @@ func (r *Registry) adoptPush(pendingID string, res WriteResult) error {
 }
 
 // applySnapshot replaces the keeper's tags with the snapshot and keeps the
-// pending tags. A tag the keeper no longer has is removed from this daemon's
+// pending and the local tags. A tag the keeper no longer has is removed from this daemon's
 // assignments, and a note records it when there were any. A pending tag whose
 // parent is removed moves to the root.
 //
@@ -433,7 +439,7 @@ func (r *Registry) applySnapshotLocked(snap Snapshot, steps *[]storeStep) error 
 	before := copyTags(r.st.Tags)
 	gone := map[string]bool{}
 	for _, t := range before {
-		if t.PendingSync || known[t.ID] {
+		if t.PendingSync || t.Local || known[t.ID] {
 			continue
 		}
 		gone[t.ID] = true
@@ -462,11 +468,11 @@ func (r *Registry) applySnapshotLocked(snap Snapshot, steps *[]storeStep) error 
 	}
 	tags := make([]Tag, 0, len(snap.Tags))
 	for _, t := range snap.Tags {
-		t.PendingSync = false
+		t.PendingSync, t.Local = false, false
 		tags = append(tags, t)
 	}
 	for _, t := range before {
-		if t.PendingSync && !known[t.ID] {
+		if (t.PendingSync || t.Local) && !known[t.ID] {
 			if gone[t.ParentID] {
 				t.ParentID = ""
 			}
@@ -499,9 +505,9 @@ func (r *Registry) dropTagLocked(id, repointTo string) {
 }
 
 // upsertLocked stores a keeper tag, replacing one with the same id. A keeper
-// tag is never pending. Callers hold mu.
+// tag is never pending, and never local to this daemon. Callers hold mu.
 func (r *Registry) upsertLocked(t Tag) {
-	t.PendingSync = false
+	t.PendingSync, t.Local = false, false
 	if i := r.indexLocked(t.ID); i >= 0 {
 		r.st.Tags[i] = t
 		return

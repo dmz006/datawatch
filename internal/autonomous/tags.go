@@ -295,9 +295,23 @@ func (m *Manager) SetPRDTags(prdID string, tagIDs []string) error {
 // tags, or empty to clear it; anything else is refused with ErrTagInvalid and
 // nothing is written.
 func (m *Manager) SetPRDTagsAndPrimary(prdID string, tagIDs []string, primary *string) error {
+	return m.setPRDTags(prdID, tagIDs, primary, false)
+}
+
+// setPRDTags is SetPRDTagsAndPrimary. With keepCarried an ID the Automaton
+// already carries needs no record. The engine's own tag writes use it: they
+// run after a membership change is saved, so they must not be refused over an
+// ID whose record was lost, and they keep that ID so a repair can restore it.
+func (m *Manager) setPRDTags(prdID string, tagIDs []string, primary *string, keepCarried bool) error {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
+	}
+	carried := map[string]bool{}
+	if keepCarried {
+		for _, id := range prd.TagIDs {
+			carried[id] = true
+		}
 	}
 	seen := map[string]bool{}
 	var out []string
@@ -305,7 +319,7 @@ func (m *Manager) SetPRDTagsAndPrimary(prdID string, tagIDs []string, primary *s
 		if seen[id] {
 			continue
 		}
-		if _, err := m.requireTag(id); err != nil {
+		if _, err := m.requireTag(id); err != nil && !carried[id] {
 			return err
 		}
 		seen[id] = true
@@ -456,5 +470,6 @@ func (m *Manager) SetTagDescription(id, description string) (*Tag, error) {
 	if err := m.store.SaveTag(t); err != nil {
 		return nil, err
 	}
+	m.tagRecordsChanged()
 	return t, nil
 }

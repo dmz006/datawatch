@@ -127,7 +127,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.32"
+var Version = "9.187.34"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5703,6 +5703,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									autonomousMgrRef.ParkForDecision(prd, task, q.ID)
 									decisionHandledID = q.ID
 								}
+								waitingInputTicks = 0
+								idleSince = time.Time{}
+								if exitSilenceTracker != nil {
+									exitSilenceTracker.Reset(time.Now())
+								}
+								if descendantStallTracker != nil {
+									descendantStallTracker.Reset(time.Now())
+									descendantOutputObs.reset()
+								}
+								continue
+							}
+							// A decision that is made but not typed yet (it waits for a
+							// capacity slot or the project tree): the worker is still
+							// parked, so nothing is typed into it and no stall detector
+							// runs. Its session ending is seen above.
+							if autonomousMgrRef.DecisionResumeWaiting(task.ID) {
 								waitingInputTicks = 0
 								idleSince = time.Time{}
 								if exitSilenceTracker != nil {

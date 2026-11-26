@@ -1646,7 +1646,10 @@ type Manager struct {
 	// name of the Automation that takes kind-bug filings lives in
 	// m.cfg.DefectIntakeAutomation (autonomous.defect_intake_automation).
 	// Guarded by mu.
-	tagEventFn   func(TagEvent)
+	tagEventFn    func(TagEvent)
+	tagRecordHook func()
+	// tagRepairMu allows one tag repair at a time (tags_repair.go).
+	tagRepairMu  sync.Mutex
 	defectIntake DefectIntake
 	// autoTagsDaemon supplies the daemon-level autonomous.auto_tags block
 	// that the engine-tag sync resolves against (auto_tags.go). Wired by
@@ -2092,6 +2095,12 @@ type Manager struct {
 	// the alert it recorded ("" when it cannot name one) so an emitter
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
+	// resumes are the resumes of worker sessions under way (resume_slot.go).
+	// It has its own lock.
+	resumes resumeBook
+	// notices are the delivery notices the sink has not taken yet
+	// (delivery_notices.go). It has its own lock.
+	notices noticeBox
 
 	// daemonRulesTextFn — the daemon's session- and config-dependent
 	// rules-file blocks for a directory (SetDaemonRulesTextFn). Guarded
@@ -2784,11 +2793,14 @@ func (m *Manager) budgetsSummary() []BudgetStatus {
 
 // SetAlertSink wires the operator-facing alert callback. Nil disables.
 // The sink returns the id of the alert it recorded ("" when it cannot
-// name one).
+// name one). Delivery notices raised before it are handed to it here.
 func (m *Manager) SetAlertSink(fn func(level, title, body string) (id string)) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.alertSink = fn
+	m.mu.Unlock()
+	if fn != nil {
+		m.flushNotices()
+	}
 }
 
 // AlertSink returns the configured alert callback, or nil when unset.
@@ -3000,12 +3012,12 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 							log.Printf("[autonomous] boot-resume: await-external task %s on live session %s for prd=%s waits for a capacity slot before it is prompted (no retry counted)", t.ID, t.SessionID, prd.ID)
 							continue
 						}
+						m.adoptCapacity(prd, t)
 						if contFn := m.sessionContinueFnLocked(); contFn != nil {
 							if cerr := contFn(t.SessionID); cerr != nil {
 								log.Printf("[autonomous] boot-resume: await-external continue prompt to session %s: %v", t.SessionID, cerr)
 							}
 						}
-						m.adoptCapacity(prd, t)
 						m.store.WithLock(func() {
 							t.Status = TaskInProgress
 							t.AdoptedSession = true
@@ -3017,6 +3029,9 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 						continue
 					}
 					log.Printf("[autonomous] boot-resume: await-external task %s for prd=%s has no live session; re-queueing a fresh attempt", t.ID, prd.ID)
+				}
+				if m.keepDecisionPark(prd, t, aliveFn, agentStartedFn) {
+					continue
 				}
 			case TaskInProgress:
 				switch decideInProgressResume(aliveFn, agentStartedFn, outputFn, t.SessionID) {

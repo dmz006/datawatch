@@ -440,6 +440,9 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 // capacity off), the gate has no opinion and admission is unchanged: the
 // ledger picks the node and loadWorkerNode makes the model resident on it.
 func (m *Manager) admitPreferring(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role, prefer string) error {
+	if role == capacity.RoleWorker {
+		m.resumes.supersede(t.ID)
+	}
 	// A cancelled task takes nothing: no budget wait, no placement question,
 	// no model load on a node and no lease. The ledger only checks the cancel
 	// flag while a request waits, so without this a free pool admitted the
