@@ -5301,7 +5301,7 @@ paths:
                   fallback_interval_minutes: {type: integer}
                   last_event: {type: string, format: date-time}
                   last_scheduled_check: {type: string, format: date-time}
-                  event_count: {type: integer}
+                  event_count: {type: integer, description: "Event wakes whose line was typed. With no designated session, a wake whose pass ran is counted too."}
                   scheduled_count: {type: integer}
                   events_silent_for: {type: string}
                   session: {type: string}

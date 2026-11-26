@@ -22,10 +22,11 @@
 // text may already be in the session: it is not typed twice, and the operator
 // gets an alert.
 //
-// Import cycle: session lookup, the bridge POST and SendInput are
-// injected as function values (SessionPushConfig), so this package
-// still does not import internal/session or internal/server (see
-// SinkConfig). The daemon wires them next to InstallLifecycleSinks.
+// Wiring: session lookup, the bridge POST and SendInput are injected as
+// function values (SessionPushConfig), so this file calls no session manager
+// and nothing of internal/server (see SinkConfig); it uses internal/session
+// only to read what a SendInput error proves. The daemon wires them next to
+// InstallLifecycleSinks.
 //
 // Webhook-sink subscriptions (SinkWebhook) are delivered by WebhookSink on the
 // same per-subscriber goroutine, so a stalled receiver delays only its own
@@ -94,8 +95,8 @@ type CommSinkConfig struct {
 }
 
 // SessionPushConfig is the dependency set for the session-push adapter.
-// Every entry is an injected function value — internal/autonomous must
-// not import internal/session or internal/server (import cycle). Nil
+// Every entry is an injected function value, wired by the daemon
+// (internal/autonomous must not import internal/server: import cycle). Nil
 // entries degrade delivery to the next fallback: no FindSession means
 // the target is unresolvable (an error), no PostBridge means no bridge
 // path (SendInput only), no SendInput means the session sink fails.

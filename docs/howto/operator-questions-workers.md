@@ -147,7 +147,19 @@ When a task has an open blocking question, the daemon:
 5. Leaves the worker session running and suppresses the stall detectors for it
    while the question is open: the worker is waiting on you by design.
 
-It parks the task once per question.
+It parks the task once per question. This also applies to a worker that a
+restarted daemon took over: its new blocking question parks the task, and it is
+not nudged or ended as stalled while it waits for you.
+
+**Across a daemon restart.** A parked task stays parked on its worker when the
+worker's session is still alive and its agent had started. It takes no capacity
+slot, the session is not ended, and your answer is typed into that session. The
+task is put back in the queue, with a new worker, when the session is gone or is
+a bare shell, when the question has expired, or when the resume for that
+question was already recorded. The restart age limit
+(`autonomous.resume_max_age_seconds`) does not count a parked worker as recent
+activity, so a long wait can still leave the whole Automaton parked until you
+resume it.
 
 ## How the coordinator tick reads and resumes
 
@@ -184,7 +196,7 @@ rules apply to a task released by an answer to a held-Automaton question.
 
 | `delivery` | Meaning | What happens next |
 |---|---|---|
-| `waiting` | The resume is recorded and nothing is typed yet | The line is typed once the task runs again, also after a daemon restart |
+| `waiting` | The resume is recorded and nothing is typed yet | The line is typed once the task runs again. After a daemon restart it is typed if the same worker session survived; if not, the task is queued again and the line becomes `review_needed` |
 | `sending` | Saved just before the keystrokes | If the daemon stops here, it becomes `review_needed` |
 | `sent` | The send returned no error | Nothing. It does not prove the model acted on the line |
 | `not_typed` | The session shows a prompt, or its screen cannot be read, so nothing was typed (`delivery_reason` `prompt_on_screen`) | One warning alert, then a new try on each coordinator tick into the same session. If you supersede your answer meanwhile, the newest one is typed |
@@ -194,7 +206,15 @@ rules apply to a task released by an answer to a held-Automaton question.
 after it may have typed, including a prompt that appeared while the text was
 being typed), `interrupted` (the daemon stopped during the send),
 `session_changed` (the task has another worker session), `task_moved_on` (the
-task left the running state before the line could be typed) or `no_session`.
+task left the running state before the line could be typed), `replaced` (the
+task was resumed for another question before this line could be typed) or
+`no_session`.
+
+If the worker asks a second blocking question while the first line is still
+unsent, the task parks on the second one. When that one is decided, the first
+line is marked `review_needed` (`replaced`) with an alert, and the second line
+is typed. The task's `decision_resume` then describes the second question; the
+alert and the audit log keep the first.
 
 Nothing is typed unless the `sending` state could be saved first. Alerts carry
 ids and these codes, not your words. A record with no `delivery` field was

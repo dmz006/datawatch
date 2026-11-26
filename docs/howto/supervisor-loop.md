@@ -152,8 +152,13 @@ A wake line counts as delivered only when the send worked.
 
 The waiting list is kept in memory. It survives a change of the wake settings,
 including turning the wake off and on, and is lost when the daemon restarts; the
-scheduled check still runs. The wake status's last event time still counts a
-wake whose pass ran, even while its line waits.
+scheduled check still runs.
+
+The wake status's event count and last event time record a wake once its line is
+typed. A refused line is counted when a retry types it. A send that needs review,
+and a repeat that types nothing, are not counted. One exception: while no
+supervisor session is designated, a wake whose pass ran is counted although no
+line is typed, and it is not counted again if typed later.
 
 ### Which session a wake types into
 

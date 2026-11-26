@@ -687,7 +687,9 @@ restarts.
    force is needed — the reset keeps its place in the capacity queue,
    retargeting its target pool if the worker resolution changed, with
    a fresh wait budget); cancelling removes it from the queue outright.
-5. After a daemon restart, waiting tasks are put back in the queue.
+5. After a daemon restart, waiting tasks are put back in the queue. A task
+   parked on a worker question is different: it keeps its live worker. See
+   [questions from workers](operator-questions-workers.md#how-the-coordinator-tick-reads-and-resumes).
 
 An alert is raised when a task has waited 30 minutes.
 
