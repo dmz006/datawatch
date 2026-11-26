@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.35 — End-of-run cleanup keeps files tracked by a nested repository
+
+### Fixed
+- The cleanup at the end of an Automaton run now also keeps a scratch file (`decompose-output.json`, `decompose-output.json.failed`, `.decompose-output-*.json`, `.verify-output-*.json`) that git, run in the file's own folder, reports as tracked, for example by a clone, submodule or linked work tree inside the project folder; before, it could delete such a file. It also keeps such a file when git, run in that folder, cannot say whether it is tracked. These kept files are listed under *Files left behind*. It deletes no file that the earlier cleanup would have kept.
+
+### Before you upgrade
+- The cleanup can now run git in subfolders of the project, with `core.fsmonitor` turned off for that new check. As before, git commands it runs in the project folder follow that repository's settings, so a command set in `core.fsmonitor` there, or in a submodule's settings, can still run with datawatch's permissions.
+
+### Not covered
+- As before, it can delete a tracked file if neither the project folder's repository nor the one git finds from the file's own folder tracks it, for example after `git init` was run over the file in a folder below the repository that tracks it. Only this end-of-run cleanup changed.
+
 ## v9.187.34 — Answers, wake-ups and one-time messages say whether they were typed
 
 ### Fixed
