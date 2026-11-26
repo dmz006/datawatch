@@ -35,6 +35,12 @@ exec_steps:
       value: "{{params.mode}}"
     read_only: false
   - tool: config_set
+    description: Switch the shared temp cache sweep on or off (off by default; it removes caches made by any program)
+    args:
+      key: autonomous.automation.cleanup_shared_cache_sweep
+      value: "{{params.shared_cache_sweep}}"
+    read_only: false
+  - tool: config_set
     description: Set how many hours a finished Automaton's work is kept before it can be removed
     args:
       key: autonomous.automation.cleanup_retention_hours
@@ -77,13 +83,13 @@ is that project's own default branch, whatever it is called.
 
 ## What it removes
 
-Three safety nets. Two of them — the worktrees pass and the temp sweep — each have their own mode, counts and last-run record. The third, the **cache folders sweep**, removes stale `go-build` and Trivy scan-cache folders directly in your temp directory; it has no row of its own in the status and you read it in the log and audit stream (**The cache folders sweep** below).
+Three safety nets. Two of them — the worktrees pass and the temp sweep — each have their own mode, counts and last-run record. The third, the **cache folders sweep**, is **off by default**: switched on, it removes stale `go-build` and Trivy scan-cache folders directly in your temp directory, whichever program made them; it has no row of its own in the status and you read it in the log and audit stream (**The cache folders sweep** below).
 
 | Pass | What it removes | When |
 |---|---|---|
 | **Worktrees** | A finished Automaton's work branch and its worktree | When the Automaton completes or is cancelled, and again on a periodic sweep for anything that was held back or missed |
 | **Temp files** | The scratch files and directories the daemon's own worker sessions created in the temporary directory | When the session ends, and again on a periodic sweep for anything that refused to go the first time |
-| **Cache folders** | Stale Go build cache (`go-build`) and Trivy scan-cache (`trivy-scan-cache*`) folders directly under your temp directory, at least 60 minutes old, that no live process holds | Not at all on the owner path: once at daemon start, and again on a periodic sweep beside the temp sweep — the sweep is their only cleanup |
+| **Cache folders** | Stale Go build cache (`go-build`) and Trivy scan-cache (`trivy-scan-cache*`) folders directly under your temp directory, at least 60 minutes old, that no live process holds, made by any program. Only with `cleanup_shared_cache_sweep` on | Not at all on the owner path: once at daemon start, and again on a periodic sweep beside the temp sweep |
 
 The first time something is removed is the **owner** path: the Automaton or
 session cleans up after itself the moment it ends. The periodic sweep is the
@@ -169,8 +175,9 @@ the same for another remote if there is no `origin`). It never assumes a name:
 a project whose default branch is `master`, `trunk` or anything else is judged
 against that branch.
 
-**The temp sweep** is stricter still. It looks only inside the daemon's
-temporary directory, only at names carrying the daemon's own `datawatch-` prefix,
+**The temp sweep** is stricter still. It lists only the daemon's temporary
+directory itself, where the daemon creates its scratch files and folders, and
+never lists what is inside the other folders there. It looks only at names carrying the daemon's own `datawatch-` prefix,
 and removes a path only if the daemon **recorded creating that exact path for a
 session that is no longer alive and ended more than the retention window ago**.
 A prefixed name the daemon has no record of is skipped as foreign. A session
@@ -183,17 +190,31 @@ record of what the daemon created is kept in memory, scratch left behind by an
 earlier daemon process (one that crashed, or ran before a restart) is not
 attributed and is left alone; remove those by hand if you want them gone.
 
-**The cache folders sweep.** A build or scan runs under the Automaton's
-worktree, but its cache folders land in **your temp directory**, not in the
-Automaton's directory or worktree: Go's build cache folders (`go-build`) and
-Trivy's scan-cache folders (`trivy-scan-cache*`). The temp sweep does not cover
-them — the daemon never recorded creating them, and they do not carry the
-`datawatch-` prefix — and nothing on the worktree side ever does. Left alone,
-they outlive every Automaton that made them and the temp directory grows until
-builds and tests start failing. The sweep is the only thing that removes them.
+**The cache folders sweep.** A build or scan can leave cache folders in
+**your temp directory**: Go's build cache folders (`go-build`) and Trivy's
+scan-cache folders (`trivy-scan-cache*`). The temp sweep does not cover them —
+the daemon never recorded creating them, and they do not carry the `datawatch-`
+prefix.
 
-It runs once when the daemon starts, before the first poll, and on every
-coordinator poll beside the temp sweep, in every mode. It looks only at entries
+**This sweep is off by default, and `cleanup_mode` alone does not run it.**
+The daemon does not create these folders and has no way to tell who did: the
+sweep removes them **whichever program made them**, including your own builds
+and other users' tools that share the temp directory. A program that is only
+running from such a folder, without an open file or a working directory in it,
+does not hold it. Switch it on only when everything that shares the temp
+directory may lose these caches:
+
+```sh
+datawatch config set autonomous.automation.cleanup_shared_cache_sweep true
+```
+
+With the switch off the daemon does not look at these folders at all: no
+removal, no report line and no audit event. With it off they can fill the temp
+directory; the disk alert still names the biggest folders there.
+
+With the switch on it runs once when the daemon starts, before the first poll,
+and on every coordinator poll beside the temp sweep, unless the mode is `off`.
+It looks only at entries
 directly under the temp directory (a symbolic link there is counted as skipped
 and never followed; a folder inside a subfolder is outside the pass), and
 removes one only if all of these hold:
@@ -471,7 +492,12 @@ key:
 | MCP | `config_set` with `key: autonomous.automation.cleanup_mode` and `value: on` |
 | CLI | `datawatch config set autonomous.automation.cleanup_mode on` |
 | Comm channel | `configure autonomous.automation.cleanup_mode=on` |
-| PWA | Settings → General → the Automata settings: **Automaton cleanup**, **Automaton cleanup retention**, **Automaton cleanup limit** and **Automata disk alert** |
+| PWA | Settings → General → the Automata settings: **Automaton cleanup**, **Sweep shared temp caches**, **Automaton cleanup retention**, **Automaton cleanup limit** and **Automata disk alert** |
+
+The shared cache switch is `autonomous.automation.cleanup_shared_cache_sweep`
+(`true` or `false`, default `false`; any other value is refused). It is set the
+same ways; the MCP `autonomous_config_set` tool calls it
+`automation_cleanup_shared_cache_sweep`.
 
 `GET /api/config` shows the keys under `autonomous.automation`. A key that was
 never set is not shown; it is running on its default.
@@ -487,8 +513,9 @@ threshold the daemon raises one warning alert that names every over-threshold
 disk with its usage. When the temp disk is the one over, the alert body also
 lists the **biggest folders directly in the temp folder** — the top five —
 each with its approximate size and whether a **running process** holds it — its **ownership**, judged by the same `/proc` liveness probe the sweep uses (an open handle into it, or a process working out of it). That list
-is what points you at what is eating the space; in practice it is the stale
-`go-build` and Trivy scan-cache folders the sweep above was added for.
+is what points you at what is eating the space; often it is stale `go-build`
+and Trivy scan-cache folders, which the daemon removes only with the shared
+cache sweep switched on.
 
 - The alert is **rate limited**: while a disk stays above its threshold it
   fires at most once an hour, not once per poll. The time it last fired is kept
@@ -627,7 +654,8 @@ readable `/proc`, that is all of them — and the disk alert never removes
 anything, in any mode. The no-space gate reason (temporary folder full) is
 only a label on a gate failure plus an infra-retry path; it removes nothing,
 either. In `off` it does not even run git for the
-cleanup, and it does not scan the cache folders either. The only thing that
+cleanup, and it does not scan the cache folders either. In no mode does it
+scan or remove the shared cache folders unless you switched that sweep on. The only thing that
 still runs in `off` is the disk reading and its alert. Its status record is
 guarded the same way: the status file path is resolved once inside the data
 directory, a data directory that is not usable leaves the status recorder

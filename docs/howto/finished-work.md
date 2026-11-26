@@ -96,6 +96,21 @@ and raises one open question with three answers:
 An unanswered question never lands, drops or loses anything. When the work lands
 the finding goes away and the question is withdrawn.
 
+**Withdrawing the question.** You can also settle the question without
+answering it, by withdrawing it (`datawatch question withdraw <id> --reason "..."`,
+or the same action on the other surfaces). A withdrawn finished-work question is
+not raised again until one of these happens:
+
+- the branch **moves** to another commit; or
+- the **re-ask date** passes, 14 days after the withdrawal.
+
+The date is written on the Automaton's decision log and shown on its finding
+(`datawatch autonomous finished-work --json`). The work stays in the list and
+the daily digest, because it is still not merged. A withdrawal is **not** a
+keep or drop decision: archive and cancel still refuse. To record a decision,
+answer the question or archive with `keep` or `drop` instead. A git read that
+fails does not count as a move.
+
 **Code done, the rest stuck.** When every code task of an Automaton is complete
 and only docs or gate tasks remain (a docs task stalled on an infrastructure
 failure, a final gate waiting), the sweep treats the rest as separately
