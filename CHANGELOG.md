@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.35 — End-of-run cleanup keeps files tracked by a nested repository
+## v9.187.35 — End-of-run cleanup keeps more tracked scratch files
 
 ### Fixed
 - The cleanup at the end of an Automaton run now also keeps a scratch file (`decompose-output.json`, `decompose-output.json.failed`, `.decompose-output-*.json`, `.verify-output-*.json`) that git, run in the file's own folder, reports as tracked, for example by a clone, submodule or linked work tree inside the project folder; before, it could delete such a file. It also keeps such a file when git, run in that folder, cannot say whether it is tracked. These kept files are listed under *Files left behind*. It deletes no file that the earlier cleanup would have kept.
