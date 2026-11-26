@@ -5,10 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.25 — A worker keeps its capacity slot while it runs
+## v9.187.25 — A worker keeps its capacity slot while it works
 
 ### Fixed
-- An Automaton worker now keeps its capacity slot while its session runs. Before, the slot was freed as soon as the session started, so a one-slot pool could run several workers at once.
+- An Automaton worker now keeps its capacity slot while its session runs, except while it is parked on a question or an outside wait: its session stays open and the slot is free. Before, the slot was freed as soon as the session started, so a one-slot pool could run several workers at once.
 
 ### Before you upgrade
 - Expect fewer workers in parallel and more tasks waiting for capacity.
@@ -20,6 +20,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Resuming or adopting a session can put a pool over its limit.
 - Two tasks sharing one project tree can block each other until the capacity wait expires (default 4 hours); this also happened before.
 - A task shows "verifying" while its worker is still running.
+- Verification or guardrail checks that use classify mode take a node slot with no time limit. On a one-slot node they can wait on themselves (read in the code, not run). Keep classify mode off.
 
 ## v9.187.24 — Tests stop scanning the shared temporary folder
 

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.25 (2026-11-26).** An Automaton worker now keeps its capacity slot while its session runs, so fewer workers run in parallel; the release notes list known limits. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.25 (2026-11-26).** An Automaton worker now keeps its capacity slot while its session runs, except while parked on a question or an outside wait, so fewer workers run in parallel; the release notes list known limits. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
