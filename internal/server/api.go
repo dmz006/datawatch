@@ -7099,6 +7099,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// defaults; the alert percent reads 85 when unset and is
 				// clamped to 1..100 otherwise.
 				"cleanup_mode":                  s.cfg.Autonomous.Automation.EffectiveCleanupMode(),
+				"cleanup_archived":              s.cfg.Autonomous.Automation.EffectiveCleanupArchived(),
 				"cleanup_retention_hours":       s.cfg.Autonomous.Automation.EffectiveCleanupRetentionHours(),
 				"cleanup_max_removals_per_pass": s.cfg.Autonomous.Automation.EffectiveCleanupMaxRemovalsPerPass(),
 				"disk_alert_percent":            s.cfg.Autonomous.Automation.EffectiveDiskAlertPercent(),
@@ -7626,6 +7627,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.automation.child_inherit"]; ok {
 		if _, isBool := v.(bool); !isBool {
 			http.Error(w, "autonomous.automation.child_inherit: must be true or false", http.StatusBadRequest)
+			return
+		}
+	}
+	// Cleanup of archived Automata: a boolean. Any other type rejects the whole
+	// PUT.
+	if v, ok := patch["autonomous.automation.cleanup_archived"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.automation.cleanup_archived: must be true or false", http.StatusBadRequest)
 			return
 		}
 	}
@@ -10492,6 +10501,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated above in handlePutConfig; a non-bool is left unchanged.
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.Automation.ChildInherit = &b
+			}
+		case "autonomous.automation.cleanup_archived":
+			// Validated above in handlePutConfig; a non-bool is left unchanged.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Automation.CleanupArchived = &b
 			}
 		case "autonomous.automation.merge_pending_mode":
 			// Validated above in handlePutConfig; a value that fails the
