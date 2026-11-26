@@ -158,12 +158,18 @@ branch once and looks again. If it is still not found, the refusal says that the
 fetch failed (record it again once the fetch works) or that the commit is
 unknown.
 
-**A `backfill` record is stored as given, with no check**, and `backfill` is
-what the CLI, MCP and chat send unless you choose `merge_step`. So such a
+**A `backfill` record is stored without being checked against git**, and
+`backfill` is what the CLI, MCP and chat send unless you choose `merge_step`. So such a
 record can mark work that was never pushed as shipped. The landing stays
 `pending`, and the selection rule then leaves the work out as already shipped.
 Record a shipped record only after the push, or choose `merge_step` to have the
 daemon check it.
+
+For every source, on an Automaton or an Automation, a commit that starts with
+`-` is refused: git would read it as an option. When the daemon later gives a
+stored commit to git (the completed migration, finishing merged work after a
+restart, the unlanded-work list), it does so only for a commit id. A stored
+`HEAD`, branch name or option is not used, and the record is left as it is.
 
 ## Reading the record
 

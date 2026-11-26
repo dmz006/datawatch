@@ -75,11 +75,15 @@ func setAutomationShipped(a *Automation, release string, mergedAt time.Time, com
 }
 
 // validateShippedRecordArgs checks the shared parts of the two record
-// signatures: a non-empty merge commit and a known source.
+// signatures: a non-empty merge commit that no git command could read as an
+// option, and a known source. It checks new writes only.
 func validateShippedRecordArgs(commit, source string) (string, error) {
 	commit = strings.TrimSpace(commit)
 	if commit == "" {
 		return "", fmt.Errorf("shipped: merge commit must not be empty")
+	}
+	if strings.HasPrefix(commit, "-") {
+		return "", fmt.Errorf("shipped: merge commit %q is not a commit id: it starts with \"-\", which git would read as an option", commit)
 	}
 	if !validShippedSource(source) {
 		return "", fmt.Errorf("shipped: source must be %q or %q, got %q", ShippedSourceMergeStep, ShippedSourceBackfill, source)

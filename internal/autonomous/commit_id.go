@@ -1,4 +1,4 @@
-// Commit ids that arrive in a request.
+// Commit ids that arrive in a request, and the ones already stored from one.
 package autonomous
 
 import (
@@ -113,4 +113,45 @@ func fetchedCommit(ctx context.Context, git MergeGitRunner, repo, remote, id str
 		return "", fmt.Errorf("%w, also after fetching %s from remote %s", err, base, remote)
 	}
 	return full, err
+}
+
+// storedCommitText is what a stored commit may look like when it is not a full
+// id: hex, no shorter than git's own minimum abbreviation.
+var storedCommitText = regexp.MustCompile(`^[0-9a-f]{4,64}$`)
+
+// storedCommitArg is the only way a stored shipped-record commit becomes a git
+// argument. A stored value is text someone sent, and records written without a
+// check keep whatever that was. A 40 character id is used as it is. Shorter
+// or longer hex is used only when git reads it as an object and not as the name
+// of a ref, and then as the full id git gives for it. Anything else, such as
+// an option, HEAD or a branch name, is refused. It only reads.
+func storedCommitArg(ctx context.Context, git MergeGitRunner, repo, stored string) (string, error) {
+	refuse := func(why string) (string, error) {
+		return "", fmt.Errorf("stored shipped-record commit %q %s", stored, why)
+	}
+	id := strings.ToLower(strings.TrimSpace(stored))
+	if len(id) == 40 && fullCommitID.MatchString(id) {
+		return id, nil
+	}
+	if !storedCommitText.MatchString(id) {
+		return refuse("is not a commit id")
+	}
+	// Prints the ref's full name for a ref, and nothing for an object id.
+	out, err := git.Run(ctx, repo, "rev-parse", "--symbolic-full-name", id)
+	switch {
+	case err != nil:
+		return refuse(fmt.Sprintf("names no commit git can read: %v", err))
+	case strings.TrimSpace(out) != "":
+		return refuse("is read by git as the name of a ref")
+	}
+	full, ok := commitObject(ctx, git, repo, id)
+	if !ok || !fullCommitID.MatchString(full) {
+		// No full id came back. The text is hex and names no ref, so git can
+		// read it only as an object id.
+		return id, nil
+	}
+	if !strings.HasPrefix(full, id) {
+		return refuse("names another commit")
+	}
+	return full, nil
 }
