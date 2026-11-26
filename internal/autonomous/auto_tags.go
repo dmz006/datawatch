@@ -158,6 +158,12 @@ func RenderAutoTag(resolved ResolvedAutoTags, what string, vars map[string]strin
 // operator-owned and the engine never rewrites it.
 const autoTagMarkerPrefix = "datawatch:auto-tag:"
 
+// IsAutoTagRecord reports whether a tag with this description is one of the
+// daemon's auto tags.
+func IsAutoTagRecord(description string) bool {
+	return strings.HasPrefix(description, autoTagMarkerPrefix)
+}
+
 func autoTagMarkerAutomation(automationID string) string {
 	return autoTagMarkerPrefix + "automation " + automationID
 }
@@ -407,8 +413,8 @@ func (m *Manager) createAutoTag(name, marker string) (*Tag, error) {
 // (their own sync owns them), engine kind tags outside desired are
 // stripped (the kind slot is the shared vocabulary, and the PRD carries
 // one kind only), and the desired set is added. It is a no-op when the
-// result equals prd.TagIDs, and it goes through SetPRDTagsAndPrimary so
-// the assignment event fires like any operator tagging does.
+// result equals prd.TagIDs, and it goes through setPRDTags so the
+// assignment event fires like any operator tagging does.
 func (m *Manager) applyAutoTags(prd *PRD, automationID string, desired []string) error {
 	if prd == nil {
 		return nil
@@ -436,7 +442,7 @@ func (m *Manager) applyAutoTags(prd *PRD, automationID string, desired []string)
 	if sameStringSlices(out, prd.TagIDs) {
 		return nil
 	}
-	return m.SetPRDTagsAndPrimary(prd.ID, out, nil)
+	return m.setPRDTags(prd.ID, out, nil, true)
 }
 
 // stripAutomationAutoTags removes one Automation's engine tags — its
@@ -466,7 +472,7 @@ func (m *Manager) stripAutomationAutoTags(automationID string, prd *PRD) error {
 	if !changed {
 		return nil
 	}
-	return m.SetPRDTagsAndPrimary(prd.ID, kept, nil)
+	return m.setPRDTags(prd.ID, kept, nil, true)
 }
 
 // migrateAutoStageTag moves the record the stage from used (marker

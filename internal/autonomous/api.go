@@ -2724,6 +2724,12 @@ func (a *API) SweepTags(dryRun bool) SweepResult {
 	return a.M.SweepTags(dryRun)
 }
 
+// RepairTags plans the repair of tag IDs that have no record and, when dryRun
+// is false, does it (see Manager.RepairTags).
+func (a *API) RepairTags(copies []*Tag, dryRun bool) (TagRepairReport, error) {
+	return a.M.RepairTags(copies, dryRun)
+}
+
 func (a *API) SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {
 	prd, err := a.M.SetPRDRetryPolicy(prdID, profile, policy, ceilingTotal, contentAutoFixEnabled, autoFixSkipApproval)
 	if err != nil {

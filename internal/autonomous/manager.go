@@ -1646,7 +1646,10 @@ type Manager struct {
 	// name of the Automation that takes kind-bug filings lives in
 	// m.cfg.DefectIntakeAutomation (autonomous.defect_intake_automation).
 	// Guarded by mu.
-	tagEventFn   func(TagEvent)
+	tagEventFn    func(TagEvent)
+	tagRecordHook func()
+	// tagRepairMu allows one tag repair at a time (tags_repair.go).
+	tagRepairMu  sync.Mutex
 	defectIntake DefectIntake
 	// autoTagsDaemon supplies the daemon-level autonomous.auto_tags block
 	// that the engine-tag sync resolves against (auto_tags.go). Wired by
