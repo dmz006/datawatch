@@ -5,10 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.30 — A task that never reached its worker no longer reads done
+## v9.187.30 — A stricter task delivery check for Automaton workers
 
 ### Fixed
-- A local claude-code Automaton worker whose task datawatch types is no longer marked done unless datawatch has recorded the task as delivered. A commit, a saved screen, a checkpoint with a passing script or the launch command's exit line is not enough; the attempt is a launch failure (retried, then held).
+- datawatch's check of a local claude-code Automaton worker whose task datawatch types no longer passes it unless the task is recorded as delivered. A commit, a saved screen, a checkpoint with a passing script or the launch command's exit line is not enough; the attempt is a launch failure (by default retried, then held).
 - An interactive claude-code session reporting finished work now waits for input instead of switching between complete and running. If Claude Code quits and the terminal stays open, it can still switch.
 
 ### Changed
