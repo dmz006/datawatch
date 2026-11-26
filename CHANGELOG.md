@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.36 — The test isolation check covers the settings file tests
+
+### Changed
+- The two test packages the check flagged for looking up files in the home folder now use their own folders. Fixed a timing fault that made an older stop-command test fail at times. This is developer tooling and one internal refactor: how datawatch behaves does not change.
+### Not covered
+- `make check-test-isolation` can pass, but it is not a reliable release check and is not part of the release steps: another older test, for session-end process cleanup, sometimes fails, with or without the check.
+- The check misses some outside access, such as a started program writing below an existing home subfolder, or writes to `/var/tmp`. Tests can still leave their own files in the shared temporary folder.
+
 ## v9.187.35 — End-of-run cleanup keeps more tracked scratch files
 
 ### Fixed
