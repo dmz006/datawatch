@@ -482,3 +482,56 @@ func TestCapacityGap_ResumedWorkerHoldsNoSlotWhileWaitingForTree(t *testing.T) {
 		t.Fatalf("lease = %+v, want a resumed with a bound slot", ls)
 	}
 }
+
+// The daemon's own order after a restart: the ledger holds every new request
+// until the surviving work is adopted, then the boot pass ends the hold. A
+// parked worker takes that path, in the sequential and the parallel walk.
+func TestCapacityGap_BootPassResumesParkedTaskAfterAdoption(t *testing.T) {
+	for _, conc := range []int{1, 2} {
+		t.Run(fmt.Sprintf("concurrency %d", conc), func(t *testing.T) {
+			m, api, led := capFixture(t, 1)
+			prd := newPRDWithTasks(t, m, 1)
+			cur, _ := m.Store().GetPRD(prd.ID)
+			cur.Status, cur.ProjectDir, cur.MaxConcurrentTasks = PRDRunning, t.TempDir(), conc
+			_ = m.Store().SavePRD(cur)
+			tk := &cur.Story[0].Tasks[0]
+			tk.Status, tk.SessionID = TaskWaitingCapacity, "parked-sess"
+			tk.WaitReason = "await_external: CI run #42"
+			_ = m.Store().SaveTask(tk)
+			newGapSessions(m)
+			var prompts, spawns int32
+			var leaseAtPrompt atomic.Value
+			m.SetSessionContinueFn(func(string) error {
+				if ls := led.LeaseOf(tk.ID); ls != nil {
+					leaseAtPrompt.Store(*ls)
+				}
+				atomic.AddInt32(&prompts, 1)
+				return nil
+			})
+			m.SetSessionWaitFn(func(context.Context, AdoptedWait) error { return nil })
+			led.BeginAdoption()
+			api.SetExecutors(func(context.Context, SpawnRequest) (SpawnResult, error) {
+				atomic.AddInt32(&spawns, 1)
+				return SpawnResult{SessionID: "new"}, nil
+			}, func(context.Context, *PRD, *Task) (VerificationResult, error) {
+				return VerificationResult{OK: true}, nil
+			})
+			pollPRDTerminal(t, m, cur.ID, 10*time.Second)
+			if err := api.WaitIdle(10 * time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if p, s := atomic.LoadInt32(&prompts), atomic.LoadInt32(&spawns); p != 1 || s != 0 {
+				t.Fatalf("prompts=%d spawns=%d, want one prompt and no new session", p, s)
+			}
+			if ls, ok := leaseAtPrompt.Load().(capacity.Lease); !ok || ls.SessionID != "parked-sess" {
+				t.Fatalf("lease at prompt = %+v, want one bound to parked-sess", ls)
+			}
+			if got := testTaskAt(t, m, prd.ID, 0); got.Status != TaskCompleted {
+				t.Fatalf("task = %s (%s), want completed", got.Status, got.Error)
+			}
+			if n := len(led.Leases()); n != 0 {
+				t.Fatalf("%d lease(s) left", n)
+			}
+		})
+	}
+}
