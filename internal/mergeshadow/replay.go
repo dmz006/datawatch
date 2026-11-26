@@ -47,6 +47,17 @@ type ReplayCheck struct {
 	Kind string `json:"kind"`
 	// Result is ok, failed, skipped or not_run.
 	Result string `json:"result"`
+	// Why is the first line of a failed step's account, such as the limit
+	// that ended it.
+	Why string `json:"why,omitempty"`
+}
+
+// ReplayStepNotRun is a command step of the pipeline, other than a lint or
+// test step, that the shadow did not run.
+type ReplayStepNotRun struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	Why  string `json:"why"`
 }
 
 // ReplayPushRef is one ref the shadow run would have pushed.
@@ -68,7 +79,10 @@ type DaemonMerge struct {
 	Candidate string          `json:"candidate,omitempty"`
 	Push      []ReplayPushRef `json:"push,omitempty"`
 	Checks    []ReplayCheck   `json:"checks"`
-	Conflicts []string        `json:"conflicts"`
+	// NotRun are the other command steps the shadow did not run. A merge
+	// with one never matches.
+	NotRun    []ReplayStepNotRun `json:"not_run,omitempty"`
+	Conflicts []string           `json:"conflicts"`
 	// Asked says a conflict would have been put to the operator.
 	Asked   bool   `json:"asked,omitempty"`
 	AskNote string `json:"ask_note,omitempty"`
@@ -122,7 +136,9 @@ type Replay struct {
 	Error       string    `json:"error,omitempty"`
 	// SettingsHash covers the pipeline and merge settings the shadow ran with;
 	// ChecksHash the check files of the merge it built.
-	SettingsHash string   `json:"settings_hash,omitempty"`
+	SettingsHash string `json:"settings_hash,omitempty"`
+	// CommandLimit is the memory limit the shadow's commands ran under.
+	CommandLimit string   `json:"command_limit,omitempty"`
 	ChecksHash   string   `json:"checks_hash,omitempty"`
 	CheckFiles   []string `json:"check_files,omitempty"`
 

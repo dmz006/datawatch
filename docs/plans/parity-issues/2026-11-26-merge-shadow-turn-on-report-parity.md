@@ -13,6 +13,11 @@
 - A merge pipeline definition has an optional `shadow` block (`private_files`,
   `check_files`, `release_text`).
 
+- `streak.length` is 0 when `main` holds anything after the newest shadowed
+  merge, and the run ends at any gap between two shadowed merges;
+  `stopped_by` says which. `lines[]` also states what the count covers and the
+  memory limit a shadow's commands run under.
+
 ## What the app should show
 - On the merge shadow screen: the matched run against the target, whether merging
   is on, and the report text (`lines`). Show it once `merges` is not empty, also

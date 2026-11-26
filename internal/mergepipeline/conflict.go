@@ -15,6 +15,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/git"
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // ConflictPolicy says what happens when merging a branch conflicts.
@@ -323,6 +324,9 @@ func within(root, dir string) bool {
 type cmdResult struct {
 	Out  string
 	Code int
+	// Limit says why the command is read as failed because of the limit it
+	// ran under; Out ends with it too.
+	Limit string
 }
 
 // runCheck is run with the environment of a project command.
@@ -362,11 +366,22 @@ func (m *Merger) runEnv(ctx context.Context, env []string, contained bool, dir s
 	cmd.Stdout, cmd.Stderr = &out, &out
 	var err error
 	if contained {
-		err = runContained(cmd, &out, m.checkLogDir)
+		err = runContained(ctx, cmd, &out, m.checkLogDir)
 	} else {
-		err = cmd.Run()
+		err = proclimit.Run(ctx, cmd)
 	}
 	res := cmdResult{Out: out.String()}
+	var over *proclimit.LimitError
+	if errors.As(err, &over) && ctx.Err() == nil {
+		// Failed with that reason, whatever status the command itself left.
+		res.Limit, res.Code = over.Why, 137
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() > 0 {
+			res.Code = ee.ExitCode()
+		}
+		res.Out = strings.TrimRight(res.Out, "\n") + "\n" + over.Why
+		return res, nil
+	}
 	if err == nil {
 		return res, nil
 	}
@@ -471,7 +486,7 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 
 	r, err := m.git(ctx, m.Dir, "merge", "--no-ff", "-m", msg, req.ref())
 	if err != nil {
-		m.abortQuietly(m.Dir)
+		m.abortQuietly(ctx, m.Dir)
 		return out, err
 	}
 	if r.Code == 0 {
@@ -481,7 +496,7 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 	}
 	files, ferr := m.unmergedFiles(ctx, m.Dir)
 	if ferr != nil || len(files) == 0 {
-		m.abortQuietly(m.Dir)
+		m.abortQuietly(ctx, m.Dir)
 		if ferr != nil {
 			return out, ferr
 		}
@@ -493,12 +508,12 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 	if set.Policy != PolicyStopAndAsk {
 		resolvedTexts, out.Resolved, out.Remaining, err = m.mechanical(ctx, m.Dir, files)
 		if err != nil {
-			m.abortQuietly(m.Dir)
+			m.abortQuietly(ctx, m.Dir)
 			return out, err
 		}
 		if len(out.Remaining) == 0 {
 			if cerr := m.commitResolved(ctx, m.Dir, resolvedTexts, msg); cerr != nil {
-				m.abortQuietly(m.Dir)
+				m.abortQuietly(ctx, m.Dir)
 				return out, cerr
 			}
 			out.Status = StatusResolvedMechanical
@@ -577,10 +592,10 @@ func (m *Merger) abort(ctx context.Context, dir string) error {
 	return nil
 }
 
-// abortQuietly aborts after a failure, with its own short context so a
-// cancelled caller still gets the tree put back.
-func (m *Merger) abortQuietly(dir string) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+// abortQuietly aborts after a failure, with a short time limit of its own so
+// a cancelled caller still gets the tree put back.
+func (m *Merger) abortQuietly(parent context.Context, dir string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), time.Minute)
 	defer cancel()
 	_, _ = m.git(ctx, dir, "merge", "--abort")
 }

@@ -6,9 +6,12 @@
 // "remote" of its own, both at the hand merge's base. The pipeline's check
 // commands come from the work being merged and are not sandboxed; in the copy
 // neither the project's remote nor its folder appears in any git setting, so a
-// command that pushes, tags or moves a ref reaches only the copy, where it is
-// seen and reported. The project and its remote are only read, before and
-// after, so a change that reaches them all the same is reported too.
+// command that pushes to its remote, tags or moves a ref reaches the copy,
+// where it is seen and reported. A command that knows or finds another path or
+// address can reach it. datawatch only reads the project and its remote,
+// before and after, so a change to their refs that reaches them is reported.
+// Every command runs, with everything it starts, under one hard memory limit
+// (package proclimit); without that limit none is started.
 package mergepipeline
 
 import (
@@ -32,6 +35,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/mergeshadow"
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // ReplayInput is one hand merge to shadow.
@@ -57,6 +61,10 @@ type ReplayInput struct {
 	// Settings is added to the settings fingerprint: the project's merge
 	// settings as they are written.
 	Settings []byte
+	// Limit is what every command of the shadow, with everything it starts,
+	// runs under. Nil is this system's own, proclimit.Host. A shadow whose
+	// limit cannot be had starts no command.
+	Limit proclimit.Starter
 }
 
 // maxHandHistory bounds how far back along main the hand merge is looked for.
@@ -81,8 +89,25 @@ func ShadowHandMerge(ctx context.Context, in ReplayInput) *mergeshadow.Replay {
 	if _, ok := git.ProcessLimitOf(ctx); !ok {
 		ctx = git.WithProcessLimit(ctx, git.ShadowProcessLimit)
 	}
-	if err := shadowHandMerge(ctx, in, &rec); err != nil {
+	limit := in.Limit
+	if limit == nil {
+		limit = proclimit.Host()
+	}
+	rec.CommandLimit = limit.Describe()
+	left := &proclimit.Tally{}
+	ctx = proclimit.With(ctx, limit, left)
+	err := limit.Available(ctx)
+	if err != nil {
+		err = fmt.Errorf("no hard memory limit for the shadow's commands can be had here, so none of them was started: %w", err)
+	} else {
+		err = shadowHandMerge(ctx, in, &rec)
+	}
+	if err != nil {
 		rec.State, rec.Error = mergeshadow.ReplayError, redact(err.Error())
+	}
+	if n := left.Count(); n > 0 {
+		rec.SideEffects.Found = append(rec.SideEffects.Found,
+			fmt.Sprintf("%d process(es) the run started were still running when their command ended; they were stopped", n))
 	}
 	rec.UpdatedAt = time.Now().UTC()
 	return &rec
@@ -130,8 +155,8 @@ func shadowHandMerge(ctx context.Context, in ReplayInput, rec *mergeshadow.Repla
 		return err
 	}
 	mainBranch := runner.mainBranch()
-	// A shadow run asks, sends, records and calls nothing. The engine drops
-	// these itself too.
+	// A shadow run asks, sends and calls nothing, and records only its own
+	// run, marked as a shadow. The engine drops the rest itself too.
 	runner.Shadow, runner.Isolate, runner.Dir, runner.ScratchRoot = true, true, c.dir, filepath.Join(work, "scratch")
 	runner.Ship, runner.Model, runner.Questions, runner.ReleaseAnswers, runner.Notifier = nil, nil, nil, nil, nil
 	runner.Landing, runner.Completer, runner.Counter, runner.Pending, runner.PlanRecords = nil, nil, nil, nil, nil
@@ -510,7 +535,7 @@ func (m *Merger) gitStream(ctx context.Context, dir string, in io.Reader, out io
 	defer done()
 	var stderr bytes.Buffer
 	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = dir, scrubbedEnv(), in, out, &stderr
-	if err := cmd.Run(); err != nil {
+	if err := proclimit.Run(ctx, cmd); err != nil {
 		if cerr := ctx.Err(); cerr != nil {
 			return cerr
 		}
@@ -820,15 +845,7 @@ func realSideEffects(ctx context.Context, src *Merger, rec *mergeshadow.Replay, 
 		return err == nil && r.Code == 0
 	}
 	madeByRun := func(id string) bool {
-		if !has(id) {
-			return false
-		}
-		for _, k := range append(known, rec.Hand.Commit) {
-			if r, err := c.git.git(ctx, c.dir, "merge-base", "--is-ancestor", id, k); err == nil && r.Code == 0 {
-				return false
-			}
-		}
-		return true
+		return has(id) && !reachedBy(ctx, c.git, c.dir, id, append(append([]string(nil), known...), rec.Hand.Commit))
 	}
 	// projectHad reports whether the refs read before the run already reached
 	// id: such a commit may not be in the copy, yet a command could send it.
@@ -837,15 +854,7 @@ func realSideEffects(ctx context.Context, src *Merger, rec *mergeshadow.Replay, 
 		if err != nil || r.Code != 0 {
 			return false
 		}
-		var in strings.Builder
-		in.WriteString(id + "\n")
-		for _, k := range known {
-			in.WriteString("^" + k + "\n")
-		}
-		var out bytes.Buffer
-		// Nothing is listed when what is known already reaches id.
-		err = src.gitStream(ctx, src.Dir, strings.NewReader(in.String()), &out, "rev-list", "--max-count=1", "--ignore-missing", "--stdin")
-		return err == nil && out.Len() == 0
+		return reachedBy(ctx, src, src.Dir, id, known)
 	}
 	classify := func(where string, remote bool, changes []refChange) {
 		for _, ch := range changes {
@@ -870,6 +879,21 @@ func realSideEffects(ctx context.Context, src *Merger, rec *mergeshadow.Replay, 
 		}
 	}
 	rec.SideEffects.Checked = true
+}
+
+// reachedBy reports whether the history of any of from holds the commit id,
+// which the repository at dir must have. Those of from it does not have are
+// passed over. One git command answers it however many there are.
+func reachedBy(ctx context.Context, g *Merger, dir, id string, from []string) bool {
+	var in strings.Builder
+	in.WriteString(id + "\n")
+	for _, k := range from {
+		in.WriteString("^" + k + "\n")
+	}
+	var out bytes.Buffer
+	// Nothing is listed when one of from already reaches id.
+	err := g.gitStream(ctx, dir, strings.NewReader(in.String()), &out, "rev-list", "--max-count=1", "--ignore-missing", "--stdin")
+	return err == nil && out.Len() == 0
 }
 
 // processSettle is how long a stopped command's processes get to leave.
@@ -909,22 +933,38 @@ func daemonSide(rec *mergeshadow.Replay, r *Runner, def Definition, out RunResul
 		}
 	}
 	d.Size = mergeshadow.ReleaseSize(size)
-	results := map[string]string{}
+	results, details := map[string]string{}, map[string]string{}
 	for _, s := range run.Steps {
-		results[s.Step] = s.Result
+		results[s.Step], details[s.Step] = s.Result, s.Detail
 		if s.Result == autonomous.MergeStepFailed && d.StoppedAt == "" {
 			d.StoppedAt = s.Step + ": " + firstLine(s.Detail)
 		}
 	}
 	for _, s := range def.Steps {
-		if s.Action != "" || (s.Kind != KindLint && s.Kind != KindTest) {
+		if s.Action != "" {
 			continue
 		}
 		result := results[s.Name]
-		if result == "" {
-			result = "not_run"
+		if s.Kind == KindLint || s.Kind == KindTest {
+			check := mergeshadow.ReplayCheck{Name: s.Name, Kind: string(s.Kind), Result: result}
+			switch result {
+			case "":
+				check.Result = "not_run"
+			case autonomous.MergeStepFailed:
+				check.Why = firstLine(details[s.Name])
+			}
+			d.Checks = append(d.Checks, check)
+			continue
 		}
-		d.Checks = append(d.Checks, mergeshadow.ReplayCheck{Name: s.Name, Kind: string(s.Kind), Result: result})
+		// Any other command step that did not run is listed, whatever left
+		// it out, so that the merge cannot read as matched.
+		if result != autonomous.MergeStepOK && result != autonomous.MergeStepFailed {
+			why := firstLine(details[s.Name])
+			if why == "" {
+				why = "the run did not reach it"
+			}
+			d.NotRun = append(d.NotRun, mergeshadow.ReplayStepNotRun{Name: s.Name, Kind: string(s.Kind), Why: why})
+		}
 	}
 	for _, c := range run.Conflicts {
 		d.Conflicts = append(d.Conflicts, c.Files...)

@@ -7,9 +7,11 @@ package server
 // "remote", a made-up private list and a scripted hand merge.
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,6 +21,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 	"github.com/dmz006/datawatch/internal/mergeshadow"
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 const handCheckScript = `#!/bin/sh
@@ -41,6 +44,12 @@ func newHandRig(t *testing.T) *handRig {
 	t.Setenv("GIT_COMMITTER_NAME", "Test")
 	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.invalid")
 	s, mgr, repo, _, _, _ := switchServer(t)
+	// Where this system cannot give the limit, a stand-in lets the rest of
+	// the shadow be tested.
+	if proclimit.Host().Available(context.Background()) != nil {
+		handShadowLimit = noTreeLimit{}
+		t.Cleanup(func() { handShadowLimit = nil })
+	}
 	for name, body := range map[string]string{
 		"Makefile": "check-outgoing:\n\t@sh scripts/check-outgoing.sh\n", "scripts/check-outgoing.sh": handCheckScript,
 		".gitignore": ".leak-patterns.local\n",
@@ -318,6 +327,38 @@ func TestHandShipRecordMakesOneSavedShadowAndTwoAutomataMakeAStreakOfTwo(t *test
 	}
 }
 
+// The count never runs across a hand merge that got no shadow, and claims
+// nothing when main has moved since the newest shadowed merge.
+func TestHandShadowStreakDoesNotCrossAHandMergeWithNoShadow(t *testing.T) {
+	g := newHandRig(t)
+	merge := func(name, from, to string, shadowed bool) {
+		p := g.automaton(name, "bug")
+		commit := g.handMerge(p, from, to)
+		if shadowed {
+			g.ship(p, commit, map[string]any{"hand_checks": handChecks})
+		}
+	}
+	streak := func(when string, want int, why string) {
+		t.Helper()
+		rep := g.turnOn().TurnOn
+		if rep.Streak.Length != want || (why != "" && !strings.Contains(rep.Streak.StoppedBy, why)) {
+			t.Errorf("%s: streak %d (%q), want %d mentioning %q", when, rep.Streak.Length, rep.Streak.StoppedBy, want, why)
+		}
+	}
+	merge("one", "1.2.3", "1.2.4", true)
+	merge("two", "1.2.4", "1.2.5", true)
+	streak("two in a row", 2, "")
+	merge("unshadowed", "1.2.5", "1.2.6", false)
+	streak("a hand merge with no shadow after the newest shadow", 0, "cannot be told")
+	merge("four", "1.2.6", "1.2.7", true)
+	streak("a shadowed merge after the unshadowed one", 1, "cannot be told")
+	merge("five", "1.2.7", "1.2.8", true)
+	streak("two after the gap", 2, "cannot be told")
+	if all := strings.Join(g.turnOn().TurnOn.Lines, "\n"); !strings.Contains(all, "has not fetched") {
+		t.Errorf("the report does not say what the count cannot see:\n%s", all)
+	}
+}
+
 func TestHandShipShadowOnlyForHandMergeRecords(t *testing.T) {
 	g := newHandRig(t)
 	p := g.automaton("one", "bug")
@@ -380,5 +421,82 @@ func TestHandShipShadowInterruptedOrUnrunnable(t *testing.T) {
 	}
 	if len(g.replays()) != 2 {
 		t.Errorf("replays = %d, want the failed one stored too", len(g.replays()))
+	}
+}
+
+// noTreeLimit stands in where this system cannot give the limit.
+type noTreeLimit struct{}
+
+func (noTreeLimit) Available(context.Context) error { return nil }
+
+func (noTreeLimit) Prepare(*exec.Cmd, time.Duration) (func() proclimit.Result, error) {
+	return func() proclimit.Result { return proclimit.Result{} }, nil
+}
+
+func (noTreeLimit) Describe() string { return "no limit: a test on a system without one" }
+
+// Every command the daemon's shadow starts, the selection rule's among them,
+// runs inside a scope. Stand-ins for the commands note the control group they
+// were started in.
+func TestHandShadowStartsEveryCommandUnderTheLimit(t *testing.T) {
+	if err := proclimit.Host().Available(context.Background()); err != nil {
+		t.Skipf("no systemd scope here: %v", err)
+	}
+	g := newHandRig(t)
+	p := g.automaton("one", "bug")
+	commit := g.handMerge(p, "1.2.3", "1.2.4")
+	g.ship(p, commit, map[string]any{"hand_checks": handChecks})
+	got := g.replays()
+	if len(got) != 1 || got[0].Verdict() != mergeshadow.VerdictMatch {
+		t.Fatalf("replays %+v", got)
+	}
+
+	shims, log := t.TempDir(), filepath.Join(t.TempDir(), "commands")
+	for _, name := range []string{"git", "make", "sh", "bash"} {
+		real, err := exec.LookPath(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// One line a command, whatever its arguments hold.
+		script := "#!/bin/sh\nread -r cg </proc/self/cgroup\nline=$(printf '%s %s %s' \"$cg\" " + name + " \"$*\" | tr '\\n' ' ' | head -c 400)\nprintf '%s\\n' \"$line\" >>'" + log + "'\nexec " + real + " \"$@\"\n"
+		if err := os.WriteFile(filepath.Join(shims, name), []byte(script), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", shims+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// The same shadow again, run directly, so that only its commands are noted.
+	src, ok := g.s.autonomousMgr.(mergeShadowSource)
+	if !ok {
+		t.Fatal("no shadow source")
+	}
+	subject, ok := src.MergeShadowSubject(context.Background(), p.ID)
+	if !ok {
+		t.Fatal("no subject")
+	}
+	rec := *got[0]
+	rec.State, rec.Selection, rec.HandChecks = mergeshadow.ReplayQueued, nil, nil
+	if err := os.WriteFile(log, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runHandShadow(src, g.s.mergePipelineConfig(), src.MergeBaseRepo(), g.s.statePath(), rec, subject, nil)
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		cg, rest, _ := strings.Cut(line, " ")
+		name, _, _ := strings.Cut(rest, " ")
+		seen[name]++
+		if !strings.Contains(cg, proclimit.UnitPrefix) {
+			t.Errorf("started outside the limit: %s", rest)
+		}
+	}
+	if seen["git"] == 0 || seen["sh"] == 0 || seen["make"] == 0 {
+		t.Errorf("commands noted: %v", seen)
+	}
+	if after := g.replays(); len(after) != 1 || after[0].State != mergeshadow.ReplayDone || after[0].Selection == nil {
+		t.Errorf("the second run: %+v", after)
 	}
 }

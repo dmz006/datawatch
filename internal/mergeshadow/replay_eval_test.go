@@ -1,18 +1,26 @@
 package mergeshadow
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
 // matchedReplay is a replay in which all seven results match.
+// handAt is the commit of the made-up hand merge of one hour: each merge starts
+// at the commit of the hour before.
+func handAt(at time.Time) string { return "h" + strconv.FormatInt(at.Unix()/3600, 10) }
+
+// nothingSince says main holds nothing after the newest shadowed merge.
+func nothingSince(string) string { return "" }
+
 func matchedReplay(id string, at time.Time) *Replay {
 	return &Replay{
 		Key: id + "-aaaaaaaaaaaa", AutomatonID: id, Project: "proj", Kind: "bug", State: ReplayDone,
 		SettingsHash: "s1", ChecksHash: "c1", CreatedAt: at,
 		Selection: &PlanSelection{Eligible: true, Basis: "review_passed", Tip: "t"},
-		Hand:      HandMerge{Commit: "h", Base: "b", Tip: "t", At: at, Version: "1.2.4", Size: ReleaseSizePatch, Conflicts: []string{}},
+		Hand:      HandMerge{Commit: handAt(at), Base: handAt(at.Add(-time.Hour)), Tip: "t", At: at, Version: "1.2.4", Size: ReleaseSizePatch, Conflicts: []string{}},
 		Daemon: DaemonMerge{Result: "ok", Version: "1.2.4", Size: ReleaseSizePatch, Candidate: "c",
 			Push: []ReplayPushRef{{Ref: "refs/heads/main", New: "c", Commits: 3}}, Conflicts: []string{},
 			Checks: []ReplayCheck{{Name: "lint", Kind: "lint", Result: "ok"}, {Name: "go-test", Kind: "test", Result: "ok"}}},
@@ -171,12 +179,12 @@ func TestReplayStreak(t *testing.T) {
 	one := matchedReplay("a", at)
 	two := matchedReplay("b", at.Add(time.Hour))
 	two.Kind, two.Hand.Conflicts, two.Daemon.Conflicts = "feature", []string{"x"}, []string{"x"}
-	if s := ReplayStreak([]*Replay{two, one}, "proj", "s1", same); s.Length != 2 || s.Total != 2 || s.Bugs != 1 || s.Features != 1 || s.WithConflict != 1 {
+	if s := ReplayStreak([]*Replay{two, one}, "proj", "s1", same, nothingSince); s.Length != 2 || s.Total != 2 || s.Bugs != 1 || s.Features != 1 || s.WithConflict != 1 {
 		t.Fatalf("two Automata of one project: %+v", s)
 	}
 	// "Would ask" is passed over.
 	ask := askedReplay("q", at.Add(2*time.Hour))
-	if s := ReplayStreak([]*Replay{one, two, ask}, "proj", "s1", same); s.Length != 2 || s.Asked != 1 {
+	if s := ReplayStreak([]*Replay{one, two, ask}, "proj", "s1", same, nothingSince); s.Length != 2 || s.Asked != 1 {
 		t.Errorf("after a would-ask: %+v", s)
 	}
 	for name, miss := range map[string]func(r *Replay){
@@ -188,31 +196,58 @@ func TestReplayStreak(t *testing.T) {
 	} {
 		bad := matchedReplay("z", at.Add(3*time.Hour))
 		miss(bad)
-		if s := ReplayStreak([]*Replay{one, two, bad}, "proj", "s1", same); s.Length != 0 || s.StoppedBy == "" {
+		if s := ReplayStreak([]*Replay{one, two, bad}, "proj", "s1", same, nothingSince); s.Length != 0 || s.StoppedBy == "" {
 			t.Errorf("%s: %+v, want a streak of 0", name, s)
 		}
 		// A later match counts again, from the miss on.
 		after := matchedReplay("y", at.Add(4*time.Hour))
-		if s := ReplayStreak([]*Replay{one, two, bad, after}, "proj", "s1", same); s.Length != 1 {
+		if s := ReplayStreak([]*Replay{one, two, bad, after}, "proj", "s1", same, nothingSince); s.Length != 1 {
 			t.Errorf("%s, then a match: %+v", name, s)
 		}
 	}
 	// A pipeline or conflict setting change, and a check file change, reset it.
-	if s := ReplayStreak([]*Replay{one, two}, "proj", "s2", same); s.Length != 0 || !strings.Contains(s.StoppedBy, "settings") {
+	if s := ReplayStreak([]*Replay{one, two}, "proj", "s2", same, nothingSince); s.Length != 0 || !strings.Contains(s.StoppedBy, "settings") {
 		t.Errorf("settings changed: %+v", s)
 	}
-	if s := ReplayStreak([]*Replay{one, two}, "proj", "s1", func([]string) string { return "c2" }); s.Length != 0 || !strings.Contains(s.StoppedBy, "check") {
+	if s := ReplayStreak([]*Replay{one, two}, "proj", "s1", func([]string) string { return "c2" }, nothingSince); s.Length != 0 || !strings.Contains(s.StoppedBy, "check") {
 		t.Errorf("check files changed: %+v", s)
 	}
 	older := matchedReplay("o", at.Add(-time.Hour))
 	older.ChecksHash = "c0"
-	if s := ReplayStreak([]*Replay{older, one, two}, "proj", "s1", same); s.Length != 2 {
+	if s := ReplayStreak([]*Replay{older, one, two}, "proj", "s1", same, nothingSince); s.Length != 2 {
 		t.Errorf("a match before a check change must not count: %+v", s)
 	}
 	other := matchedReplay("p", at.Add(5*time.Hour))
 	other.Project = "elsewhere"
 	other.Content.Differences = []string{"x"}
-	if s := ReplayStreak([]*Replay{one, two, other}, "proj", "s1", same); s.Length != 2 || s.Total != 2 {
+	if s := ReplayStreak([]*Replay{one, two, other}, "proj", "s1", same, nothingSince); s.Length != 2 || s.Total != 2 {
 		t.Errorf("another project's miss: %+v", s)
+	}
+}
+
+// The count does not run across a hand merge with no shadow.
+func TestReplayStreakStopsAtAGap(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	same := func([]string) string { return "c1" }
+	one, two := matchedReplay("a", at), matchedReplay("b", at.Add(time.Hour))
+	// An hour is missing between the second and the third.
+	three := matchedReplay("c", at.Add(3*time.Hour))
+	if s := ReplayStreak([]*Replay{one, two, three}, "proj", "s1", same, nothingSince); s.Length != 1 || !strings.Contains(s.StoppedBy, "cannot be told") {
+		t.Errorf("a gap: %+v", s)
+	}
+	// A would-ask merge is passed over, and still has to be in the chain.
+	ask := askedReplay("q", at.Add(2*time.Hour))
+	if s := ReplayStreak([]*Replay{one, two, ask, three}, "proj", "s1", same, nothingSince); s.Length != 3 {
+		t.Errorf("the chain whole: %+v", s)
+	}
+	three.Hand.Base = ""
+	if s := ReplayStreak([]*Replay{two, ask, three}, "proj", "s1", same, nothingSince); s.Length != 1 {
+		t.Errorf("a merge whose base is not known: %+v", s)
+	}
+	// Main holding more than the newest shadowed merge leaves nothing to claim.
+	var asked string
+	s := ReplayStreak([]*Replay{one, two}, "proj", "s1", same, func(c string) string { asked = c; return "main holds more" })
+	if s.Length != 0 || s.Total != 2 || !strings.Contains(s.StoppedBy, "main holds more") || asked != two.Hand.Commit {
+		t.Errorf("main moved: %+v (asked about %q)", s, asked)
 	}
 }

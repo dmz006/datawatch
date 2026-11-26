@@ -15,6 +15,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 	"github.com/dmz006/datawatch/internal/mergeshadow"
 )
@@ -87,6 +88,39 @@ func gitLines(ctx context.Context, repo string, args ...string) ([]string, error
 	return lines, nil
 }
 
+// mainHoldsMore says why main may hold a hand merge that came after commit:
+// "" when neither main here nor its remote-tracking copy holds anything that
+// commit does not. It asks the remote nothing.
+func mainHoldsMore(ctx context.Context, repo, commit string) string {
+	const cannot = "whether a hand merge that got no shadow is among them cannot be told"
+	if commit == "" || strings.HasPrefix(commit, "-") {
+		return "the commit it recorded is not known, so whether a hand merge with no shadow followed cannot be told"
+	}
+	for _, ref := range []string{"refs/heads/main", "refs/remotes/origin/main"} {
+		tip, err := gitLines(ctx, repo, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+		if err != nil && ref != "refs/heads/main" {
+			continue
+		}
+		if err != nil || len(tip) != 1 {
+			return "main cannot be read, so whether a hand merge with no shadow followed cannot be told"
+		}
+		more, err := gitLines(ctx, repo, "rev-list", "--count", commit+".."+tip[0])
+		if err != nil || len(more) != 1 {
+			return "what " + ref + " holds after it cannot be read, so whether a hand merge with no shadow followed cannot be told"
+		}
+		if more[0] != "0" {
+			return fmt.Sprintf("%s holds %s commit(s) it does not; %s", ref, more[0], cannot)
+		}
+	}
+	return ""
+}
+
+// streakScope says what the count covers.
+const streakScope = "What the count covers: stored shadows of hand merges only. It runs only where each shadowed merge starts at the very commit " +
+	"the one before it recorded, and only while main here and its remote-tracking copy hold nothing after the newest; anything else on main " +
+	"ends it, because it cannot be told whether that was a hand merge with no shadow. So record each hand merge after its release's last " +
+	"commit on main. Commits on the remote that this checkout has not fetched are not seen. A check that skips itself and exits successfully counts as passed."
+
 // mergeTurnOnReport builds the report for the merge repository; nil when none
 // is configured or the Manager cannot answer.
 func (s *Server) mergeTurnOnReport(ctx context.Context, threshold int) *mergeTurnOn {
@@ -126,7 +160,7 @@ func (s *Server) mergeTurnOnReport(ctx context.Context, threshold int) *mergeTur
 			return ""
 		}
 		return h
-	})
+	}, func(commit string) string { return mainHoldsMore(ctx, repo, commit) })
 	rep.Met = rep.Streak.Length >= threshold && len(rep.Problems) == 0
 	var lastPush []mergeshadow.ReplayPushRef
 	for _, r := range replays {
@@ -298,6 +332,9 @@ func turnOnStillToApply(rep *mergeTurnOn, def mergepipeline.Definition, cfg conf
 			break
 		}
 	}
+	if left := def.StepsAShadowDoesNotRun(); len(left) > 0 {
+		add("the pipeline has command step(s) a shadow does not run (%s): no hand merge can match while it does", strings.Join(left, ", "))
+	}
 	if !rep.Met {
 		add("matched hand merges: %d of %d", rep.Streak.Length, rep.Target)
 	}
@@ -334,6 +371,9 @@ func turnOnLines(rep *mergeTurnOn, selectionNote string) []string {
 	if rep.Streak.StoppedBy != "" {
 		add("The count stops at %s.", rep.Streak.StoppedBy)
 	}
+	add("%s", streakScope)
+	add("Every command a shadow starts runs under: %s. Without that limit a shadow starts nothing. Git has in addition %d GiB per process and %d minutes per command.",
+		shadowCommandLimit().Describe(), git.ShadowProcessLimit.MemoryBytes>>30, int(git.ShadowProcessLimit.Time.Minutes()))
 	var merges []string
 	for _, m := range rep.Merges {
 		merges = append(merges, fmt.Sprintf("%s %s at %s: %s", m.At.UTC().Format("2006-01-02 15:04"), m.AutomatonID, shortID(m.HandCommit), m.Verdict))

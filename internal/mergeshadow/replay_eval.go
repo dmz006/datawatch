@@ -154,12 +154,23 @@ func orNone(s string) string {
 }
 
 func (r *Replay) checksRow(set rowSetter) {
+	if len(r.Daemon.NotRun) > 0 {
+		var left []string
+		for _, s := range r.Daemon.NotRun {
+			left = append(left, fmt.Sprintf("%s (%s step): %s", s.Name, s.Kind, s.Why))
+		}
+		set(RowChecks, RowDiffers, "the shadow did not run %d command step(s) of the pipeline, so nothing shows they would pass: %s", len(left), strings.Join(left, "; "))
+		return
+	}
 	lint, test := false, false
-	daemon := map[string]string{}
+	daemon, why := map[string]string{}, map[string]string{}
 	var order []string
 	for _, c := range r.Daemon.Checks {
 		lint, test = lint || c.Kind == "lint", test || c.Kind == "test"
 		daemon[c.Name] = c.Result
+		if c.Why != "" {
+			why[c.Name] = " (" + c.Why + ")"
+		}
 		order = append(order, c.Name)
 	}
 	if !lint || !test {
@@ -170,7 +181,7 @@ func (r *Replay) checksRow(set rowSetter) {
 		var ran []string
 		failed := false
 		for _, n := range order {
-			ran = append(ran, n+" "+daemon[n])
+			ran = append(ran, n+" "+daemon[n]+why[n])
 			failed = failed || daemon[n] != "ok"
 		}
 		if failed {
@@ -198,7 +209,7 @@ func (r *Replay) checksRow(set rowSetter) {
 		case d == "ok" && h == HandCheckFail:
 			misses = append(misses, n+": serious, datawatch passed what failed by hand")
 		default:
-			misses = append(misses, fmt.Sprintf("%s: datawatch %s, hand %s", n, d, h))
+			misses = append(misses, fmt.Sprintf("%s: datawatch %s%s, hand %s", n, d, why[n], h))
 		}
 	}
 	for _, n := range extra {
@@ -330,7 +341,28 @@ type StreakResult struct {
 // else that is not a match ends the run, and so does a replay made with other
 // merge settings or other check files: checksHash answers what the check files
 // a replay lists hash to now.
-func ReplayStreak(replays []*Replay, project, settingsHash string, checksHash func(files []string) string) StreakResult {
+//
+// Only hand merges with a stored shadow are seen here, and one without a
+// shadow must not be counted across. So the run goes on only where a shadowed
+// merge starts at the very commit the one before it recorded, and it counts
+// only while main holds nothing after the newest: sinceNewest answers why main
+// may hold more than the commit given, "" when it holds nothing more. Whether
+// what came between was a hand merge cannot be told, so anything ends the run.
+func ReplayStreak(replays []*Replay, project, settingsHash string, checksHash func(files []string) string, sinceNewest func(commit string) string) StreakResult {
+	out, newest := matchedRun(replays, project, settingsHash, checksHash)
+	if out.Length == 0 {
+		return out // nothing is claimed, and the reason found stands
+	}
+	if why := sinceNewest(newest.Hand.Commit); why != "" {
+		return StreakResult{Total: out.Total, StoppedBy: fmt.Sprintf("Automaton %s (%s), the newest shadowed hand merge: %s",
+			newest.AutomatonID, shortCommit(newest.Hand.Commit), why)}
+	}
+	return out
+}
+
+// matchedRun counts the run of matches among the stored shadows alone, and
+// returns the newest of them.
+func matchedRun(replays []*Replay, project, settingsHash string, checksHash func(files []string) string) (StreakResult, *Replay) {
 	var mine []*Replay
 	for _, r := range replays {
 		if r.Project == project {
@@ -339,12 +371,23 @@ func ReplayStreak(replays []*Replay, project, settingsHash string, checksHash fu
 	}
 	SortReplays(mine)
 	out := StreakResult{Total: len(mine)}
+	if len(mine) == 0 {
+		return out, nil
+	}
+	newest := mine[0]
 	now := map[string]string{}
-	for _, r := range mine {
+	for i, r := range mine {
+		if i > 0 {
+			if newer := mine[i-1]; r.Hand.Commit == "" || newer.Hand.Base != r.Hand.Commit {
+				out.StoppedBy = fmt.Sprintf("a gap before Automaton %s (%s): its merge starts at %s, not at %s, which Automaton %s recorded; whether a hand merge that got no shadow is in between cannot be told",
+					newer.AutomatonID, shortCommit(newer.Hand.Commit), orNone(shortCommit(newer.Hand.Base)), orNone(shortCommit(r.Hand.Commit)), r.AutomatonID)
+				return out, newest
+			}
+		}
 		verdict := r.Verdict()
-		stop := func(why string) StreakResult {
+		stop := func(why string) (StreakResult, *Replay) {
 			out.StoppedBy = fmt.Sprintf("Automaton %s (%s): %s", r.AutomatonID, shortCommit(r.Hand.Commit), why)
-			return out
+			return out, newest
 		}
 		if verdict != VerdictMatch && verdict != VerdictAsked {
 			return stop("its verdict is " + verdict)
@@ -376,7 +419,7 @@ func ReplayStreak(replays []*Replay, project, settingsHash string, checksHash fu
 			out.WithConflict++
 		}
 	}
-	return out
+	return out, newest
 }
 
 // SortReplays orders replays newest hand merge first.

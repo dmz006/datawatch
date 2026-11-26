@@ -7,6 +7,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 	"github.com/dmz006/datawatch/internal/mergeshadow"
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // mergeShadowSource is the Manager surface the shadow of a hand merge and the
@@ -94,6 +96,18 @@ func listHandShadows(dataDir string) ([]*mergeshadow.Replay, error) {
 // handShadowRoot holds the disposable copies, under the data directory.
 func handShadowRoot(dataDir string) string { return filepath.Join(dataDir, "merge-pipeline", "shadow") }
 
+// handShadowLimit replaces the limit a hand-merge shadow's commands run under.
+// It is nil, meaning this system's own, except where a test sets it.
+var handShadowLimit proclimit.Starter
+
+// shadowCommandLimit is the limit a shadow's commands run under.
+func shadowCommandLimit() proclimit.Starter {
+	if handShadowLimit != nil {
+		return handShadowLimit
+	}
+	return proclimit.Host()
+}
+
 // repoCommit reads a commit of the repository at repo: its full id and commit
 // time.
 func repoCommit(ctx context.Context, repo, rev string) (string, time.Time, bool) {
@@ -102,11 +116,18 @@ func repoCommit(ctx context.Context, repo, rev string) (string, time.Time, bool)
 	}
 	cmd := exec.CommandContext(ctx, "git", "log", "-1", "--format=%H %cI", "--end-of-options", rev+"^{commit}", "--") // #nosec G204 -- fixed binary, rev cannot be an option
 	cmd.Dir = repo
-	out, err := cmd.Output()
-	if err != nil {
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	// This reads one commit as the shadow is queued. Where there is no limit
+	// to be had it is read all the same, so that the shadow is stored and
+	// says why it could not run.
+	if l := shadowCommandLimit(); l.Available(ctx) == nil {
+		ctx = proclimit.With(ctx, l, nil)
+	}
+	if err := proclimit.Run(ctx, cmd); err != nil {
 		return "", time.Time{}, false
 	}
-	id, when, ok := strings.Cut(strings.TrimSpace(string(out)), " ")
+	id, when, ok := strings.Cut(strings.TrimSpace(out.String()), " ")
 	at, terr := time.Parse(time.RFC3339, when)
 	return id, at, ok && terr == nil
 }
@@ -223,7 +244,7 @@ func runHandShadow(src mergeShadowSource, cfg config.MergePipelineConfig, repo, 
 	mergedAt := rec.Hand.At
 	out := mergepipeline.ShadowHandMerge(ctx, mergepipeline.ReplayInput{
 		Replay: rec, Repo: repo, WorkDir: filepath.Join(root, rec.Key), BranchHead: subject.BranchHead,
-		Title: title, Settings: settings,
+		Title: title, Settings: settings, Limit: shadowCommandLimit(),
 		Select: func(c context.Context, tip string) *mergeshadow.ReplaySelection {
 			if selected != nil && selected.Tip == tip {
 				return selected

@@ -65,38 +65,69 @@ use**, in shadow mode:
   tip and the tags the base already had (a tag of a tag is left out); no other
   branch or tag. The copy's git settings name neither your repository nor its
   remote. git over ssh is switched off for its commands;
-- running every command step of the recorded pipeline's checks. They take as
-  long as a real run's. One shadow runs at a time.
+- running the recorded pipeline's **lint, test, version and changelog**
+  command steps, and the base commit's `check-outgoing` target. They take as
+  long as a real run's. One shadow of a hand merge runs at a time.
+
+**Command steps of any other kind** (`custom`, `ship`, `deploy`, `tag`,
+`post_ship_hook`) are not run, and neither is a step left out for a missing
+make target. A merge whose pipeline has such a step **never matches**: result 4
+names the step and why it did not run.
 
 #### Memory and time limit
 
-Every git process datawatch starts for a hand-merge shadow is held to **2 GiB**
-of data memory (heap), and every git command to **10 minutes**, after which it
-and everything it started are stopped. A process git starts itself, such as the
-receiving side of a push, gets the same memory limit. A command that needs more
-fails, and the shadow is stored as one that could not run, with git's message.
-The memory limit is set with `ulimit -d`, which the Linux kernel enforces; it
-counts each process on its own and does not count mapped pack files. On other
-systems only the time limit is certain. The pipeline's own check commands are
-not held to this limit: they keep their own time limits.
+Every command a shadow starts runs in a **systemd scope of its own**: the
+merge engine's git, the copy, the push checks, the selection rule's git, the
+pipeline's check commands and the base commit's `check-outgoing`.
 
-Why it matters: in a **shallow clone with very many tags**, pushing every tag
-into a repository that is not cut at the same place makes git's receiving side
-use memory that grows with the square of the number of tags times the length of
-the history. The copy is therefore built without any push: the commits are
-fetched by id, the tags are written as refs over copied tag objects, and the
-copy's remote is a file copy that is cut at the same place, so a push from the
-copy to it, such as one a check command makes, has nothing to work out. A check
-command that pushes from the copy into a **new** repository of its own is not
-protected by this.
+| What | Limit |
+|---|---|
+| Memory | **16 GiB** and no swap for one command **together with everything it starts**, whatever process group or session that moves to |
+| Over the memory limit | the kernel stops processes of that command, and the command **reads as failed with that reason**, even if it then exits 0 |
+| At its time limit | the whole tree of the command is stopped: a git command after 10 minutes, a check after its step's `timeout`, `check-outgoing` after 10 minutes. If datawatch itself is gone, systemd ends the scope shortly after the longest time the command could have had |
+| Left running | what a check leaves running when it ends is stopped, and reported under result 7 |
+| Git also | **2 GiB** of data memory for each git process of the merge engine, the copy and the push checks (`ulimit -d`) |
 
-It asks, sends, deploys, records and calls nothing, and runs whether or not
-merging is switched on. `autonomous.merge_shadow.enabled: false` stops it.
+The 16 GiB is set to hold this project's own whole `go test`, four packages at
+once; MEASURED.
 
-**It is not a sandbox.** The checks come from the work being merged. A command
-that already knows your remote's address, or finds credentials on disk, can
-still reach out. A push, tag or removed branch that reaches your repository or
-remote is reported; other ways out are not seen.
+**It needs Linux with systemd 254 or newer** and a systemd user manager (the
+system manager when datawatch runs as root). Where the limit cannot be put in
+force, **a shadow starts no command**: it is stored as one that could not run,
+with the reason, and so never matches.
+
+What the limit does **not** cover:
+
+- it is per command, not a total for a shadow, the daemon or the machine;
+- the daemon's own memory, which holds what some git commands print;
+- **disk**: there is no quota or free-space check. The copy holds the fetched
+  history and its checkouts, and a check's output goes to a file with no cap
+  until the step ends;
+- work a command asks something else to do for it, such as another systemd
+  unit, a container engine, a scheduler or a login to this machine, and a
+  command that moves itself into another control group it is allowed to write;
+- the reads the turn-on report makes when you open it;
+- merge runs that are not shadows.
+
+Why the copy is made as it is: in a **shallow clone with very many tags**,
+pushing every tag into a repository that is not cut at the same place makes
+git's receiving side use memory that grows with the square of the number of
+tags times the length of the history. The copy is therefore built without any
+push: the commits are fetched by id, the tags are written as refs over copied
+tag objects, and the copy's remote is a file copy that is cut at the same
+place, so a push from the copy to it, such as one a check command makes, has
+nothing to work out. A check command that pushes from the copy into a **new**
+repository of its own can still meet this; the memory limit then stops it.
+
+The merge engine asks, sends, deploys and calls nothing in a shadow. The
+shadow's run is kept with the merge run records, marked as a shadow. A shadow
+runs whether or not merging is switched on.
+`autonomous.merge_shadow.enabled: false` stops it.
+
+**It is not a sandbox.** The checks come from the work being merged. They run as
+the daemon's user and can read or change whatever that user can, by any path or
+address they know or find. A push, tag or removed branch that reaches your
+repository or its remote is reported; other changes are not seen.
 
 ### The seven results
 
@@ -105,10 +136,10 @@ remote is reported; other ways out are not seen.
 | 1 | selection | the merge selection rule would have merged exactly the commit you merged, with its acceptance or review pass recorded **before** your merge (an operator pause and your own shipped record are set aside) |
 | 2 | content | the two final trees are the same, apart from the date on the README release line, changelog heading dates and the generated docs index |
 | 3 | version | same number and size, and neither side made a tag |
-| 4 | checks | the pipeline has a lint and a test step; every one ran in the shadow, and each has your recorded result and agrees with it. A skipped or missing check never matches; a datawatch pass where yours failed is serious |
+| 4 | checks | the pipeline has a lint and a test step; every one ran in the shadow, and each has your recorded result and agrees with it. A skipped or missing check never matches; neither does a pipeline with a command step the shadow does not run; a datawatch pass where yours failed is serious. A check that skips itself and exits successfully counts as passed |
 | 5 | conflicts | the same files conflicted and the results are equal. When datawatch **would ask** you, the merge neither counts nor breaks the run of matches (results 2, 3, 4 and 6 are then not compared) |
 | 6 | leak | the push would move main only, with no tag; the secret scan (enforced here whatever its mode) finds nothing; the project's `check-outgoing` target, taken from the base commit, ran and passed and reported a private pattern count above zero in the form `N private pattern(s) loaded` |
-| 7 | side effects | no command pushed, tagged, moved a ref or wrote into the project; nothing reached your repository or remote; no process was left running. Changes others made meanwhile are listed apart |
+| 7 | side effects | no command pushed, tagged or moved a ref in the copy or wrote into its checkout; no change to branches, tags, added worktrees or remote refs of your repository is laid to the shadow; no process was left running. Changes others made meanwhile are listed apart. Other writes to your files are not seen |
 
 A merge **matches** only when all seven do. It is **waiting** when everything
 compared matches and your check results are not recorded yet, and **running**
@@ -138,6 +169,21 @@ to the conflict policy or any `autonomous.merge_pipeline` setting, or to the
 pipeline's check files on main. Only shadows of hand merges count; finish-time
 plans and earlier comparisons never do.
 
+datawatch sees only hand merges that have a stored shadow. A hand merge with
+none (the shadow switched off, the state never recorded as `merge_step`, or the
+shadow not stored) must not be counted across, so:
+
+- the run goes on only where a shadowed merge **starts at the very commit the
+  one before it recorded**;
+- it counts only while `main` here, and its remote-tracking copy, hold
+  **nothing after the newest recorded commit**; otherwise the count is 0.
+
+Any other commit in between ends the run, because it cannot be told whether it
+was a hand merge with no shadow. **So record each hand merge after its
+release's last commit on `main`, naming that commit.** Commits on the remote
+that your checkout has not fetched are not seen: check the list against your
+releases before you turn merging on.
+
 The report shows the count, one block per merge with the seven results, what is
 eligible now and every excluded branch with its reason, what the next run would
 push, everything merging would do outside a run, what is still to apply, the
@@ -166,6 +212,11 @@ turns it on for you.
   tree, uncommitted (`--no-commit --no-ff`), then remove the scratch tree; the
   conflicts, each with its file class, resolution and resolver, are recorded in
   the plan. No branch, tag or ref is ever created or moved and nothing is pushed.
+- Run each gate under the same memory limit as a hand-merge shadow's commands
+  ([Memory and time limit](#memory-and-time-limit)). A gate over it fails with
+  that reason. Where the limit cannot be put in force, the gates are recorded
+  `skipped` with the reason and their commands are not run; the plan is still
+  made.
 - Record each gate of the trial merge with its status — `pass`, `fail`,
   `timeout`, `skipped`, or `intermittent` (a test gate that failed first and
   passed when rerun) — and its duration, and each finding with a code and

@@ -403,7 +403,7 @@ func (m *Merger) applyConfirmedProposal(ctx context.Context, set ConflictSetting
 // again. On any failure the merge is aborted and the attempt says why.
 func (m *Merger) applyStoredProposal(ctx context.Context, req MergeRequest, msg string, p PendingConfirmation) ModelAttempt {
 	fail := func(result, detail string) ModelAttempt {
-		m.abortQuietly(m.Dir)
+		m.abortQuietly(ctx, m.Dir)
 		return ModelAttempt{Result: result, Detail: detail, Hunks: p.Hunks}
 	}
 	r, err := m.git(ctx, m.Dir, "merge", "--no-ff", "--no-commit", req.ref())

@@ -29,7 +29,9 @@ type ProcessLimit struct {
 	Time time.Duration
 }
 
-// ShadowProcessLimit holds every git step of a merge shadow.
+// ShadowProcessLimit holds the git steps of a merge shadow's engine, copy and
+// push checks. The limit over each command's whole process tree, those of the
+// shadow's other commands included, is package proclimit's.
 var ShadowProcessLimit = ProcessLimit{MemoryBytes: 2 << 30, Time: 10 * time.Minute}
 
 type processLimitKey struct{}

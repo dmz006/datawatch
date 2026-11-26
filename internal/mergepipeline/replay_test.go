@@ -147,6 +147,7 @@ func (g *replayRig) input(hand string) ReplayInput {
 		},
 		Repo: g.dir, WorkDir: filepath.Join(t.TempDir(), "work"), Title: "Add the feature",
 		BranchHead: runGit(t, g.dir, "rev-parse", "feature"),
+		Limit:      testLimit(t),
 		Select: func(_ context.Context, tip string) *mergeshadow.ReplaySelection {
 			return &mergeshadow.ReplaySelection{Eligible: true, Basis: "review_passed", Tip: tip}
 		},
@@ -548,6 +549,34 @@ func TestShadowThatCannotRunSaysWhy(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A command step the shadow does not run is never counted as matched,
+// whatever its kind and whatever it would have done.
+func TestShadowStepNotRunNeverMatches(t *testing.T) {
+	for _, kind := range []Kind{KindCustom, KindShip, KindDeploy, KindTag, KindPostShipHook} {
+		t.Run(string(kind), func(t *testing.T) {
+			g := newReplayRig(t)
+			g.setChecks(Step{Name: "lint", Kind: KindLint, Command: "true"}, check("go-test", "true"),
+				Step{Name: "extra-step", Kind: kind, Command: "false"})
+			r := g.shadow(g.handMerge(handOptions{}))
+			allPass(r)
+			if v := r.Verdict(); v == mergeshadow.VerdictMatch || v == mergeshadow.VerdictWaiting {
+				t.Errorf("verdict %s with a step the shadow did not run: %+v", v, r.Rows())
+			}
+			wantMiss(t, r, mergeshadow.RowChecks, "extra-step")
+			wantMiss(t, r, mergeshadow.RowChecks, "did not run")
+		})
+	}
+	// A step left out for a missing make target did not run either.
+	t.Run("no make target", func(t *testing.T) {
+		g := newReplayRig(t)
+		g.setChecks(Step{Name: "lint", Kind: KindLint, Command: "true"}, check("go-test", "true"),
+			Step{Name: "extra-step", Kind: KindCustom, Command: "false", RequiresMakeTarget: "no-such-target"})
+		r := g.shadow(g.handMerge(handOptions{}))
+		allPass(r)
+		wantMiss(t, r, mergeshadow.RowChecks, "extra-step")
+	})
 }
 
 // A project that is a shallow clone is shadowed all the same.

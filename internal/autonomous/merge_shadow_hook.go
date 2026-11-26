@@ -29,6 +29,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/genartifacts"
 	"github.com/dmz006/datawatch/internal/mergeshadow"
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // mergeShadowGitAllowance is the time the run gets for git work on top of the
@@ -92,7 +93,13 @@ func (m *Manager) startMergeShadow(prd *PRD) <-chan struct{} {
 			sel := m.MergeEligibility(ctx, in.AutomatonID)
 			in.Selection = &mergeshadow.PlanSelection{Eligible: sel.Eligible, Basis: sel.Basis, Tip: sel.Tip, Reasons: sel.Reasons}
 		}
-		plan, err := mergeShadowRun(ctx, in)
+		// The plan's gates run the project's own commands: each runs, with
+		// everything it starts, under a hard memory limit, or not at all.
+		limit := proclimit.Host()
+		if err := limit.Available(ctx); err != nil {
+			limit = proclimit.None(err)
+		}
+		plan, err := mergeShadowRun(proclimit.With(ctx, limit, nil), in)
 		if err != nil {
 			log.Printf("[autonomous] merge shadow: automaton %s: %v", prd.ID, err)
 			m.recordNoShadowPlan(prd.ID, in, err.Error())

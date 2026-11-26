@@ -270,6 +270,9 @@ func (r *Runner) scriptDir() string {
 
 // runState is one run in progress.
 type runState struct {
+	// base is the run's context without its cancellation, for the reads made
+	// where no context is passed: it keeps what that context carries.
+	base   context.Context
 	r      *Runner
 	m      *Merger
 	req    RunRequest
@@ -390,7 +393,7 @@ func (s *runState) record() {
 // always carries the steps that ran.
 func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	res, rerr := r.resolve()
-	st := &runState{r: r, req: req, source: string(res.Source)}
+	st := &runState{base: context.WithoutCancel(ctx), r: r, req: req, source: string(res.Source)}
 	st.run = autonomous.MergePipelineRun{
 		ID: newRunID(), Project: r.Project, Branches: append([]string{}, req.Branches...),
 		Source: st.source, Reason: redact(res.Reason), Start: r.now(),
@@ -451,7 +454,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			st.run.Reason = redact(err.Error())
 			return finish(autonomous.MergeRunFailed, err)
 		}
-		defer st.closeIsolation()
+		defer st.closeIsolation(ctx)
 		if err := st.openIsolation(ctx); err != nil {
 			st.run.Reason = redact(err.Error())
 			return finish(autonomous.MergeRunFailed, err)
@@ -853,6 +856,9 @@ func (s *runState) command(ctx context.Context, step Step) (string, error) {
 	if err != nil {
 		return tail(res.Out, 2000), fmt.Errorf("did not finish: %w", err)
 	}
+	if res.Limit != "" {
+		return res.Limit + "\n" + tail(res.Out, 2000), errors.New(res.Limit)
+	}
 	if res.Code != 0 {
 		return fmt.Sprintf("exit %d\n%s", res.Code, tail(res.Out, 2000)), fmt.Errorf("exit %d", res.Code)
 	}
@@ -1007,16 +1013,16 @@ func (s *runState) rebaseBranch(ctx context.Context, branch, old, main string) e
 		return err
 	}
 	defer func() {
-		_, _ = s.m.git(context.Background(), s.r.Dir, "worktree", "remove", "--force", tmp)
+		_, _ = s.m.git(context.WithoutCancel(ctx), s.r.Dir, "worktree", "remove", "--force", tmp)
 		_ = os.RemoveAll(tmp)
-		_, _ = s.m.git(context.Background(), s.r.Dir, "worktree", "prune")
+		_, _ = s.m.git(context.WithoutCancel(ctx), s.r.Dir, "worktree", "prune")
 	}()
 	if _, err := s.m.gitOK(ctx, s.r.Dir, "worktree", "add", "--quiet", "--detach", tmp, old); err != nil {
 		return err
 	}
 	res, err := s.m.git(ctx, tmp, "rebase", "refs/heads/"+main)
 	if err != nil || res.Code != 0 {
-		_, _ = s.m.git(context.Background(), tmp, "rebase", "--abort")
+		_, _ = s.m.git(context.WithoutCancel(ctx), tmp, "rebase", "--abort")
 		if err != nil {
 			return err
 		}

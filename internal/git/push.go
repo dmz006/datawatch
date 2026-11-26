@@ -22,13 +22,17 @@
 package git
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // PushPolicy is the wire format of a push-on-complete policy. It is
@@ -160,8 +164,14 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	defer done()
 	cmd.Dir = dir
 	cmd.Env = gitEnv()
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := proclimit.Run(ctx, cmd)
+	var over *proclimit.LimitError
+	if errors.As(err, &over) {
+		out.WriteString("\n" + over.Why)
+	}
+	return out.String(), err
 }
 
 // redactCreds strips embedded user:pass pairs from any URL in text,

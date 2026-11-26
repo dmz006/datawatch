@@ -42,6 +42,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // OutgoingCheckTarget is the make target a project declares to check what is
@@ -169,7 +171,7 @@ func readGit(ctx context.Context, dir, stdin string, args ...string) (string, er
 	out := &limitedBuffer{max: outgoingMaxDiffBytes}
 	var stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = out, &stderr
-	err := cmd.Run()
+	err := proclimit.Run(ctx, cmd)
 	if out.overflow {
 		return "", fmt.Errorf("git %s: more than %d bytes of output, too much to check", args[0], outgoingMaxDiffBytes)
 	}
@@ -352,6 +354,11 @@ func materialize(ctx context.Context, dir, commit, dest string) error {
 		ids.WriteString(e.id + "\n")
 	}
 	cmd.Stdin = strings.NewReader(ids.String())
+	finish, err := proclimit.Prepare(ctx, cmd)
+	if err != nil {
+		return err
+	}
+	defer finish() // after the command has been waited for
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -564,7 +571,17 @@ func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest,
 	cmd.Env = checkEnv(manifestDir, project)
 	cmd.WaitDelay = 10 * time.Second
 	configureCheckProcessGroup(cmd)
+	finish, err := proclimit.Prepare(ctx, cmd)
+	if err != nil {
+		return "", fmt.Errorf("the project's %s target was not run: %w", OutgoingCheckTarget, err)
+	}
 	out, err := cmd.CombinedOutput()
+	limit := finish()
+	proclimit.NoteLeft(ctx, limit.Left)
+	if limit.Failed != "" && ctx.Err() == nil {
+		out = append(out, "\n"+limit.Failed...)
+		err = errors.Join(&proclimit.LimitError{Why: limit.Failed}, err)
+	}
 	text, _ := RedactSecrets(redactCreds(strings.TrimSpace(string(out))))
 	if len(text) > outgoingOutputTail {
 		text = text[len(text)-outgoingOutputTail:]
