@@ -35,7 +35,10 @@ migration** moves it there:
   read-only merge proof finds its branch (`automaton/<id>`) merged on the
   default branch. A cancelled record with neither is **left cancelled**.
 - Completion time: the shipped record's merge time, or the merge commit's
-  commit time — **never the time you ran the migration**.
+  commit time — **never the time you ran the migration**. For a shipped record
+  with no merge time, its stored commit must be a commit id (full, or hex that
+  names no ref); otherwise the report lists an error for that record, which is
+  left as it is.
 - An Automation moves when every non-skipped member is merged or completed.
 - Each changed record gets a `completed_migration` decision with the reason
   and commit, so the history shows why the status changed — and its landing

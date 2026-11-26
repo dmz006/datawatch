@@ -127,7 +127,7 @@ for real.`,
 		},
 	}
 	record.Flags().StringVar(&rec.release, "release", "", "Release the work was merged into, e.g. v1.2.0")
-	record.Flags().StringVar(&rec.commit, "commit", "", "Merge commit (required)")
+	record.Flags().StringVar(&rec.commit, "commit", "", "Merge commit (required); merge_step needs a commit id, full or 7+ hex characters, that holds the Automaton's branch")
 	record.Flags().StringVar(&rec.at, "at", "", "Merge time, RFC 3339 (default now)")
 	record.Flags().StringVar(&rec.source, "source", "", "merge_step or backfill (default backfill)")
 	record.Flags().BoolVar(&rec.automation, "automation", false, "Record an Automation instead of a PRD")
