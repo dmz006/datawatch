@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.33 — A daemon start or a tag registry change no longer drops daemon-written tags
+
+### Fixed
+- Tag records the daemon writes itself, such as automatic tags, could be deleted by a daemon start, a tag registry change (also one running while they were written) or a peer's sync. A start and a registry change no longer drop them, a sync keeps those marked as this daemon's own, and the registry now sees them. A keeper therefore shares its automatic tags with peers.
+- A start no longer undoes the daemon's tag renames, or deletes made while the registry was running. The daemon's own tag updates no longer fail with "tag not found" after saving a membership change because the Automaton carries an ID with no record; setting an unknown ID yourself is still refused.
+- Merging or removing a tag no longer moves archived sessions back to the active list.
+
+### Added
+- A repair for tag IDs with no record. It changes tags or assignments only with `datawatch autonomous tags repair --apply`, chat `autonomous tags repair apply`, or REST `/api/autonomous/tags/repair` with `dry_run` false; otherwise it is a dry run. Nothing runs it automatically. It restores records or moves assignments to a replacement, leaves what it cannot decide, and deletes or overwrites no tag record. No MCP tool or web button.
+
+### Not covered
+- Repair limits: a merge has no simple undo. An auto tag rebuilt from Automations gets today's name template and creation time and cannot be renamed or deleted. After a missing parent is merged, its child tags keep the old ID and later runs list the merge again.
+- Installing does not restore tags already lost, and the repair may leave some unresolved. A deleted tag can return after a restart if the daemon stopped partway through the delete, or deleted it while the registry was not running.
+- On peers: a sync can still delete automatic tags, with assignments, that a copy saved by an earlier version already lists; a daemon with no saved copy that becomes a peer can still lose its own non-automatic tags the keeper lacks.
+
 ## v9.187.32 — Work recovered from older branches
 
 ### Changed
