@@ -71,6 +71,7 @@ claude-code launch), the record carries:
 | `task_delivered_at` | RFC 3339 time | When delivery was claimed. It is saved before anything is typed, so on its own it proves nothing about arrival. |
 | `task_delivery_unverified` | bool | True until the task is seen to have reached the session. |
 | `task_verified_at` | RFC 3339 time | When it was seen to have arrived. |
+| `launch_log_start` | integer | Size of the output log at the last restart. A restart appends to the same log; only what follows counts as this start's output. |
 
 The launch counts as started only once delivery is verified, or the recorded
 output holds an answer. If the daemon restarts while a claim is unverified, it
