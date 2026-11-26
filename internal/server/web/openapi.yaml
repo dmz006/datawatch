@@ -8062,6 +8062,15 @@ paths:
         afterwards); the release name and the time are optional (the time may
         be left unset).
 
+        For every source a commit that starts with `-` is refused.
+        A `merge_step` record for a branch in the merge repository is checked.
+        The commit must be hex only: the full id (the repository's hash
+        length) or its first 7 or more characters, which are resolved and
+        stored as the full id. It must contain the Automaton's branch and,
+        when the repository has a remote, be on the remote's default branch.
+        A commit the repository does not have is looked for again after one
+        fetch of that branch.
+
         The call is idempotent per commit: a repeat with the same commit is a
         no-op that leaves the stored fields, the revision and the updated
         time alone, while a different commit overwrites all four fields.
@@ -8080,7 +8089,7 @@ paths:
           content:
             application/json:
               schema: {type: object}
-        "400": {description: "Empty commit, unknown source, unparseable time, or a store save failure"}
+        "400": {description: "Empty commit or one starting with -, unknown source, unparseable time, a merge_step commit that is not a commit id, is unknown (also after a fetch, or the fetch failed), does not contain the branch or is not on the remote, or a store save failure"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {description: "Federated peer lacks the autonomous write capability"}
         "404": {description: "Unknown Automaton id"}
@@ -8113,7 +8122,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Automation"
-        "400": {description: "Empty commit, unknown source, unparseable time, or a store write failure"}
+        "400": {description: "Empty commit or one starting with -, unknown source, unparseable time, or a store write failure"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {description: "Unknown Automation id"}
         "503": {description: "autonomous disabled"}
