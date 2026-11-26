@@ -3736,6 +3736,11 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							}
 						}
 					}
+					// A one-shot shell script that exited with an error.
+					if failsOnShellFailureLine(current) && showsShellScriptFailure(capLines) &&
+						m.failShellScript(current.FullID) {
+						return
+					}
 					// Check for completion. For one-shot sessions scan ALL visible
 					// lines — TUI footers (opencode spinner, status bar) push the
 					// marker above the bottom 5 lines before the watcher fires.
@@ -8943,6 +8948,18 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				return
 			}
 		}
+	}
+
+	// A shell script that exited with an error. The same post-restart grace as
+	// below applies; the pane watcher or the reaper sees the line after it.
+	if failsOnShellFailureLine(sess) && isShellScriptFailureLine(line) {
+		m.mu.Lock()
+		restartTime, wasRestarted := m.restartedAt[sess.FullID]
+		m.mu.Unlock()
+		if !wasRestarted || m.now().Sub(restartTime) >= m.restartGraceWindow() {
+			m.failShellScript(sess.FullID)
+		}
+		return
 	}
 
 	// Check for explicit completion pattern — must be at start of line

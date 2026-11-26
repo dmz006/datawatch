@@ -99,7 +99,12 @@ func (m *Manager) oneShotFinishReason(sess *Session) string {
 	// and an instruction placeholder are not the worker's own completion.
 	// BL468 — the pi non-zero-exit failure marker is a failure signal, not a
 	// completion: even a malformed marker line must never satisfy this check.
-	for _, line := range strings.Split(StripANSI(out), "\n") {
+	lines := strings.Split(StripANSI(out), "\n")
+	// A script that failed is not finished work, whatever else it printed.
+	if sess.BackendFamily == "shell" && showsShellScriptFailure(lines) {
+		return ""
+	}
+	for _, line := range lines {
 		l := strings.TrimSpace(line)
 		if strings.HasPrefix(l, piFailureMarker) {
 			continue
@@ -133,6 +138,7 @@ func (m *Manager) FinishedOneShots() []*Session {
 // recorded failure is left alone — its pane and scratch are the failure
 // path's problem, not the completion reaper's.
 func (m *Manager) ReapFinishedOneShots() []string {
+	m.failMissedShellScripts()
 	var reaped []string
 	for _, sess := range m.FinishedOneShots() {
 		oldState := sess.State
