@@ -8,6 +8,7 @@ Draft only; no issue filed.
   `one_step_above_base`.
 - A merge pipeline definition gains `tag_sizes` on a `tag_release` step and a top-level
   `conflict_rules` list (`path`, `rule`: `keep_main`, `keep_both` or `ask`).
+- A step `reconcile-push` reports a repaired push, and the merge lock status gains `owner`.
 - No new endpoint, setting, MCP tool, CLI command or chat verb.
 
 ## Wanted in the mobile client

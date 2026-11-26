@@ -213,8 +213,15 @@ matches wins. `keep_main` takes main's side of each conflicting hunk,
 you. Lines that did not conflict keep both sides' changes. A file no rule
 matches keeps the handling of its [class](#conflict-classes), and anything left
 unsettled asks. Rules apply under `mechanical` and `mechanical_and_model`;
-`stop_and_ask` ignores them. A file that was deleted or renamed on one side is
-never settled by a rule.
+**`stop_and_ask` ignores them, so under it they do nothing.** That includes a
+`mechanical_and_model` setting that is acting as `stop_and_ask` because its model
+is not available. A file that was deleted or renamed on one side is never
+settled by a rule.
+
+**`keep_main` silently drops the branch's side of every conflicting hunk.** For
+a `CHANGELOG.md` rule, a line the branch added where main also added one is
+gone from the result, with no question and no warning. Use it only for files
+where losing the branch's side is acceptable.
 
 ## Conflict classes
 
@@ -556,7 +563,15 @@ whatever the result. The glossary entry is [Merge lock](../datawatch-definitions
   that held the lock starts its merge again for the same branches (the case
   after a daemon restart), the lock is handed back to it and the run is not
   refused by its own earlier lock. A different Automaton, or the same one with
-  different branches, is refused like any other second run.
+  different branches, is refused like any other second run, unless the holder
+  is provably gone.
+- **A killed run does not keep the lock.** Another run takes it over only when
+  the run that held it is provably gone: its process no longer exists, the
+  daemon has replaced its own program since (a restart), or the machine has
+  restarted; and nothing that run started is still working in its scratch
+  folder. While something of it still runs, the refusal says so and names the
+  process ids. A lock that records no owning process (written by an earlier
+  version), or any case that cannot be proven, stays held.
 - **A broken lock file refuses merges; it never lets them run unlocked.** If
   `merge-locks.json` is unreadable or corrupt, every merge run is refused with a
   message that the lock store is unavailable. Repair the file or restore it from
@@ -597,13 +612,48 @@ Every merge run the daemon makes is isolated, whatever its pipeline says:
   main (by fast-forward) and a rebased branch move. The run records this as the
   `update-local-main` step. The later steps, the deploy and the post-ship hooks
   among them, then work in your checkout.
-- A run that fails, is held, is refused or is killed leaves your main, your
-  branches and your tags as they were. A tag it made is removed. What a killed
+- **Nothing is released before that confirmation.** The deploy step, the
+  pipeline's own `tag`, `deploy` and post-ship-hook commands (wherever they are
+  listed), the post-ship hooks and `mark_completed` all wait for it, whatever
+  `on_failure` says. If the push reports success but the remote does not show
+  the commit, or cannot be asked, the run fails and none of them runs. The
+  built-in `tag_release` step makes a local tag that leaves together with main.
+  (A run with nothing new still deploys, when the remote's main is the commit
+  it stands on.)
+- A run that fails before its push, is held or is refused leaves your main,
+  your branches and your tags as they were. A tag it made is removed, but never
+  one the remote has, and not while the remote cannot be asked. What a killed
   run left behind (worktree, temporary branches, an unpushed tag) is cleared by
   the next run.
 
 If the push succeeded but local main cannot be moved (you edited the checkout
 meanwhile), the step says so; your main is then only behind the remote.
+
+### When the outcome of a push is lost
+
+Before anything leaves, the run writes what the push will send (the commit, the
+tag, the Automaton and where each merged branch goes) to
+`datawatch-merge-pushes/` in the repository's git directory. When the push
+reports an error, when the remote cannot be asked, or when the run or the
+daemon dies, that entry is compared with the remote: right after a push error,
+before the next merge run, before the supervisor loop lists what is waiting,
+and when the daemon starts.
+
+- **The remote has the commit:** the rebased branch and local main are moved to
+  what was pushed, the local tag is made to match the remote's, and the landing
+  is recorded. The deploy and post-ship hooks are **not** run afterwards; run
+  them yourself if you need them. The same work is never released again: a run
+  for it is refused, saying it was already pushed.
+- **It does not, and the remote's main has not moved:** the push may still
+  arrive, so the entry is kept (for up to a day). An unpushed tag is removed.
+- **It does not, and main has moved:** it can no longer arrive; the entry goes.
+- **The remote cannot be asked:** nothing is changed, and the tag is kept.
+
+If a repair cannot be finished (for example the branch has new commits since the
+push, or your checkout blocks the fast-forward), the entry stays, the run record
+shows the `reconcile-push` step with the reason, and it is tried again. Until
+then a run for that work is refused. Reconciling records only what the remote
+already holds, so it runs even while merge runs are switched off.
 
 ### What a check step can see and do
 
@@ -627,11 +677,15 @@ A model's conflict proposal must pass every `lint` and `test` step of the
 pipeline, and they run inside the merge step: give that step a `timeout` long
 enough for all of them.
 
-A command step must not change what is pushed: one that commits, or leaves the
-scratch branch, fails (steps of kind `version_bump` and `changelog` may
-commit). Processes a command leaves running are stopped when it ends or times
-out. A command step that needs your credentials must be a `tag`, `deploy` or
-post-ship hook step; the release gate decides about those.
+A command step must not change what is pushed. It fails if it commits, leaves
+the scratch branch, or leaves the scratch tree other than it found it: a
+changed, staged or untracked file counts, files your `.gitignore` ignores do
+not. This holds for the checks of a model's conflict proposal too. Steps of
+kind `version_bump` and `changelog` may write and commit; **the push still
+needs a clean tree.** Processes a command leaves running are stopped when it
+ends or times out. A command step that needs your credentials must be a `tag`,
+`deploy` or post-ship hook step; the release gate decides about those, and they
+run only after the push is confirmed.
 
 Put checks of the finished candidate after `commit-release-bump` and before
 `push-release`, so they test exactly what is pushed. Each step has its own

@@ -29,6 +29,12 @@ steps:
 # The hand merge's file rules: main's side for the shared reference documents,
 # both sides for plan notes. Every other conflict keeps the built-in handling
 # or asks.
+# TWO WARNINGS before applying them. (1) Under the stop_and_ask policy, which
+# is what runs while the configured conflict model is not available, these
+# rules do nothing at all. (2) Under a mechanical policy, keep_main silently
+# drops the branch's side of a conflicting hunk: a branch's CHANGELOG line, or
+# its edit of the definitions, docs README or API map, is lost without a
+# question. The conflict policy is the operator's choice.
 conflict_rules:
   - {path: docs/datawatch-definitions.md, rule: keep_main}
   - {path: docs/README.md, rule: keep_main}
