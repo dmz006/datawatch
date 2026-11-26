@@ -68,6 +68,14 @@ func (s *runState) repin(branch, at string) {
 	}
 }
 
+// releasedCommit is the commit the run pushed.
+func (s *runState) releasedCommit(ctx context.Context) (string, error) {
+	if s.pushedCommit != "" {
+		return s.pushedCommit, nil
+	}
+	return s.mainHead(ctx)
+}
+
 // lastStepOK says the newest recorded step ran and succeeded.
 func (s *runState) lastStepOK() bool {
 	n := len(s.run.Steps)
@@ -81,23 +89,25 @@ const landingStepName = "record-landing"
 // push step the release gate held (or that was skipped) records nothing; the
 // recorder itself refuses unless the remote contains the commit. A failure is
 // shown on the step and leaves the landing pending.
-func (s *runState) recordLanding(ctx context.Context, push Step) {
+// It reports whether nothing is left to record.
+func (s *runState) recordLanding(ctx context.Context, push Step) bool {
 	if s.r.Landing == nil || s.req.AutomatonID == "" {
-		return
+		return true
 	}
 	step := Step{Name: landingStepName, Kind: push.Kind, OnFailure: OnFailureContinue}
-	_, _, _ = s.recordStep(ctx, "landing", step, DefaultStepTimeout, func(c context.Context) (string, string, error) {
-		commit, err := s.mainHead(c)
+	result, _, _ := s.recordStep(ctx, "landing", step, DefaultStepTimeout, func(c context.Context) (string, string, error) {
+		commit, err := s.releasedCommit(c)
 		if err != nil {
 			return hookOutcome("", err)
 		}
 		version, err := s.releaseVersionOf()
-		if err != nil {
-			version = "" // no version file: the landing is still a fact
+		if err != nil || s.noRelease {
+			version = "" // no version: the landing is still a fact
 		}
 		if _, err := s.r.Landing.RecordMergeLanding(c, s.req.AutomatonID, version, commit, s.r.now()); err != nil {
 			return hookOutcome("", err)
 		}
 		return autonomous.MergeStepOK, "recorded landed, completed and shipped at commit " + commit, nil
 	})
+	return result == autonomous.MergeStepOK
 }

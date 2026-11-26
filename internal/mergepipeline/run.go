@@ -178,6 +178,33 @@ type Runner struct {
 	// existing ShipRunner (gh) path.
 	Hosts     []git.GitHostConfig
 	RemoteURL string
+
+	// Isolate builds the merge in a scratch worktree on a temporary branch.
+	// The main branch and the merged branches of the project move only after
+	// the remote is confirmed to hold the pushed commit, and a run that
+	// fails or is held leaves them as they were. The daemon always sets it.
+	Isolate bool
+	// ScratchRoot is the folder scratch worktrees are made in; empty means
+	// the system temporary folder.
+	ScratchRoot string
+	// Shadow makes a full run that changes and sends nothing: it implies
+	// Isolate, and the push step records what it would send.
+	Shadow bool
+	// ReleaseFor reports the release facts of the run's Automaton. When it
+	// is set and answers ok, its size and approval replace ReleaseSize and
+	// ReleaseApproval.
+	ReleaseFor func(automatonID string) (ReleaseFacts, bool)
+	// StillAllowed is asked just before an isolated run pushes; an error
+	// stops the push.
+	StillAllowed func(ctx context.Context) error
+}
+
+// ReleaseFacts is the release one Automaton's merge makes.
+type ReleaseFacts struct {
+	// Size is patch, minor, major or none.
+	Size string
+	// Approval is the release approval mode for this release.
+	Approval string
 }
 
 // configuredHost returns the configured git host the project's remote belongs
@@ -281,6 +308,42 @@ type runState struct {
 	pushed bool
 	// pins holds each selected branch to the commit it must point at.
 	pins map[string]string
+	// iso is the scratch side of an isolated run; nil for an in-place run.
+	iso *isolation
+	// tagForPush is the tag the tag step left on the commit being released,
+	// and tagLeftOut says the step was limited to other release sizes.
+	tagForPush string
+	tagLeftOut bool
+	// pushedCommit is the commit an isolated run pushed.
+	pushedCommit string
+	// noRelease is set when the Automaton's release size is none: the work is
+	// merged and pushed with no version, changelog or tag.
+	noRelease bool
+}
+
+// releaseNone is the release size of work that makes no release.
+const releaseNone = "none"
+
+// noReleaseNote is the detail on a release step such a run skips.
+const noReleaseNote = "this Automaton's work makes no release, so there is no version, changelog or tag"
+
+// applyReleaseFacts takes the release size and approval from the run's
+// Automaton. It works on a copy of the Runner, never the caller's.
+func (s *runState) applyReleaseFacts() {
+	if s.r.ReleaseFor == nil || s.req.AutomatonID == "" {
+		return
+	}
+	facts, ok := s.r.ReleaseFor(s.req.AutomatonID)
+	if !ok {
+		return
+	}
+	inner := *s.r
+	inner.ReleaseSize = facts.Size
+	if inner.ReleaseApproval != "" && facts.Approval != "" {
+		inner.ReleaseApproval = facts.Approval
+	}
+	s.r = &inner
+	s.noRelease = facts.Size == releaseNone
 }
 
 // releaseSteps are the actions a run with nothing new to merge skips. They
@@ -361,22 +424,48 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			}
 		}()
 	}
+	if r.Isolate && !r.Shadow {
+		// What an earlier run pushed is accounted for before anything is
+		// selected.
+		if err := st.reconcileBeforeRun(ctx); err != nil {
+			st.run.Reason = redact(err.Error())
+			return finish(autonomous.MergeRunFailed, err)
+		}
+	}
 	if err := st.applySelection(ctx); err != nil {
 		st.run.Reason = redact(err.Error())
 		return finish(autonomous.MergeRunFailed, err)
 	}
+	st.run.AutomatonID = st.req.AutomatonID
+	st.applyReleaseFacts()
 	st.m = &Merger{
 		Dir: r.Dir, Pipeline: res.Definition, Settings: r.ConflictSettings, Model: r.Model, Questions: r.Questions,
 		VersionFiles: r.VersionFiles, Project: r.Project, Counter: r.Counter, Pending: r.Pending,
+	}
+	if r.Isolate || r.Shadow {
+		st.run.Shadow = r.Shadow
+		// The project's checkout must be on main and clean, so it can be
+		// brought up to what was pushed.
+		if err := st.preflight(ctx); err != nil {
+			st.run.Reason = redact(err.Error())
+			return finish(autonomous.MergeRunFailed, err)
+		}
+		defer st.closeIsolation()
+		if err := st.openIsolation(ctx); err != nil {
+			st.run.Reason = redact(err.Error())
+			return finish(autonomous.MergeRunFailed, err)
+		}
 	}
 	if err := st.startTracking(ctx); err != nil {
 		st.run.Reason = redact(err.Error())
 		return finish(autonomous.MergeRunFailed, err)
 	}
 	st.record()
-	if err := st.preflight(ctx); err != nil {
-		st.run.Reason = redact(err.Error())
-		return finish(autonomous.MergeRunFailed, err)
+	if !st.isolated() {
+		if err := st.preflight(ctx); err != nil {
+			st.run.Reason = redact(err.Error())
+			return finish(autonomous.MergeRunFailed, err)
+		}
 	}
 
 	steps := res.Definition.Steps
@@ -384,9 +473,16 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	failures := 0
 	for i := 0; i < len(steps); {
 		step := steps[i]
-		if st.nothingNew && releaseSteps[step.Action] {
+		skip := ""
+		switch {
+		case st.nothingNew && releaseSteps[step.Action]:
+			skip = nothingNewNote
+		case st.noRelease && releaseSteps[step.Action] && step.Action != ActionPushRelease:
+			skip = noReleaseNote
+		}
+		if skip != "" {
 			_, _, _ = st.recordStep(ctx, st.source, step, DefaultStepTimeout, func(context.Context) (string, string, error) {
-				return autonomous.MergeStepSkipped, nothingNewNote, nil
+				return autonomous.MergeStepSkipped, skip, nil
 			})
 			i++
 			continue
@@ -397,15 +493,41 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			return finish(autonomous.MergeRunFailed, oerr)
 		}
 		if ok {
-			if step.Action == ActionPushRelease {
+			// A held or skipped push is not a release: no hook, no landing.
+			if step.Action == ActionPushRelease && st.lastStepOK() {
+				confirmed, moveFailed := true, false
+				// What was pushed is recorded even if the caller gives up now.
+				after := context.WithoutCancel(ctx)
+				if st.isolated() {
+					confirmed, moveFailed = st.promote(after)
+					if moveFailed {
+						failures++
+					}
+					if !confirmed && confirmsPush(st.r.Ship) {
+						// Nothing is released on a push the remote does not
+						// show; the journal keeps it until the remote says.
+						err := errors.New("the push is not confirmed by the remote")
+						st.run.Reason = redact(err.Error())
+						return finish(autonomous.MergeRunFailed, err)
+					}
+				}
+				// Post-ship hooks follow only a push that is confirmed.
 				st.pushReleaseOK = true
-				if st.lastStepOK() {
-					st.pushed = true
-					st.recordLanding(ctx, step)
+				st.pushed = confirmed
+				landed := st.recordLanding(after, step)
+				if st.isolated() && confirmed && !moveFailed && landed {
+					st.settleJournal(after)
 				}
 			}
 			i++
 			continue
+		}
+		if step.Action == ActionPushRelease && st.isolated() && st.reconcileFailedPush(context.WithoutCancel(ctx)) {
+			// The push reported an error and arrived all the same: it is
+			// recorded, and never made again.
+			st.pushed = true
+			st.run.Reason = redact("the push reported an error, but the remote holds the commit; it was recorded: " + err.Error())
+			return finish(autonomous.MergeRunFailed, fmt.Errorf("step %s failed although the remote holds the commit: %w", step.Name, err))
 		}
 		if step.Action == ActionPushRelease && errors.Is(err, ErrMainMoved) {
 			if st.redos >= maxMainMovedRedos {
@@ -442,6 +564,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 // lock. When the refusal names a holder, the reason names its run and
 // Automaton, so the record shows who is shipping.
 func lockRefusal(holder autonomous.MergeLockStatus, err error) string {
+	if errors.Is(err, autonomous.ErrMergeLockLeftovers) {
+		return "another merge holds this repository: " + err.Error()
+	}
 	if holder.RunID != "" || holder.AutomatonID != "" {
 		return fmt.Sprintf("another merge holds this repository: run %s (Automaton %s)", holder.RunID, holder.AutomatonID)
 	}
@@ -617,6 +742,15 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 	// recorded on the steps it holds back.
 	gate, gerr := gateVerdict{}, error(nil)
 	applies := stepLeavesMachine(step)
+	if s.shadow() {
+		// A shadow run asks nobody and runs nothing that leaves the machine;
+		// its tag and push actions only record what they would send.
+		ownReport := step.Action == ActionTagRelease || step.Action == ActionPushRelease
+		if (applies && !ownReport) || (step.Action == "" && !shadowRuns(step.Kind)) {
+			return autonomous.MergeStepSkipped, "shadow run: this step was not run", nil
+		}
+		applies = false
+	}
 	if applies {
 		gate, gerr = s.gateForLeaving()
 		if gerr != nil {
@@ -629,6 +763,9 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 			return autonomous.MergeStepSkipped, gate.skipNote, nil
 		}
 	}
+	if s.awaitsConfirmedPush(ctx, step) {
+		return autonomous.MergeStepSkipped, "held: the remote has not confirmed a push by this run, so nothing is released", nil
+	}
 	var detail string
 	var err error
 	s.skipped = false
@@ -638,7 +775,7 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 	case leavesTheMachine(step.Kind):
 		detail, err = s.hook(ctx, step)
 	default:
-		detail, err = s.command(ctx, step)
+		detail, err = s.guardCandidate(ctx, step, func() (string, error) { return s.command(ctx, step) })
 	}
 	if err != nil {
 		if detail == "" {
@@ -653,6 +790,26 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 		detail = gate.approvedNote + "; " + detail
 	}
 	return autonomous.MergeStepOK, detail, nil
+}
+
+// awaitsConfirmedPush reports a release step (a deploy, or the pipeline's own
+// tag, deploy or post-ship command) that may not run yet: in an isolated run
+// nothing is released before the remote confirms the exact pushed commit,
+// wherever the step is listed and whatever on_failure says. A run with nothing
+// new deploys only when the remote's main is the commit it stands on.
+func (s *runState) awaitsConfirmedPush(ctx context.Context, step Step) bool {
+	release := step.Action == ActionDeployLatest || (step.Action == "" && leavesTheMachine(step.Kind))
+	if !release || !s.isolated() || s.shadow() || !confirmsPush(s.r.Ship) || s.iso.confirmed {
+		return false
+	}
+	if s.nothingNew && s.iso.remote != "" {
+		head, err := s.mainHead(ctx)
+		if err == nil {
+			held, herr := s.iso.remoteMainHead(ctx)
+			return herr != nil || held != head
+		}
+	}
+	return true
 }
 
 // stepLeavesMachine reports whether the step runs through the ShipRunner:
@@ -691,7 +848,7 @@ func (s *runState) command(ctx context.Context, step Step) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	res, err := s.m.run(ctx, dir, "sh", "-c", step.Command)
+	res, err := s.m.runCheck(ctx, dir, "sh", "-c", step.Command)
 	if err != nil {
 		return tail(res.Out, 2000), fmt.Errorf("did not finish: %w", err)
 	}
@@ -740,7 +897,12 @@ func (s *runState) action(ctx context.Context, step Step) (string, error) {
 		return s.commitBump(ctx)
 	case ActionValidateReleaseBump:
 		return s.validateReleaseBump(ctx)
-	case ActionTagRelease, ActionPushRelease, ActionDeployLatest:
+	case ActionTagRelease:
+		if s.r.Ship == nil && !s.shadow() {
+			return s.ship(ctx, step.Action) // refuses: no ship runner
+		}
+		return s.tagStep(ctx, step.TagSizes)
+	case ActionPushRelease, ActionDeployLatest:
 		return s.ship(ctx, step.Action)
 	}
 	return "", fmt.Errorf("unknown action %q", step.Action)
@@ -753,6 +915,9 @@ func (s *runState) action(ctx context.Context, step Step) (string, error) {
 // then moved to the result. A conflict aborts that rebase, leaves the branch
 // where it was and fails the step; branches rebased before it stay rebased.
 func (s *runState) rebaseOntoMain(ctx context.Context) (string, error) {
+	if s.scratch() {
+		return s.rebaseCandidates(ctx)
+	}
 	main := s.r.mainBranch()
 	var notes []string
 	remote, err := s.fetchMain(ctx, main)
@@ -874,7 +1039,7 @@ func (s *runState) checkBranchVersions(ctx context.Context) (string, error) {
 		if strings.HasPrefix(b, "-") {
 			return "", fmt.Errorf("invalid branch name %q", b)
 		}
-		res, err := s.m.run(ctx, s.r.Dir, "env", "MAIN_BRANCH="+s.r.mainBranch(), "bash", script, b)
+		res, err := s.m.runCheck(ctx, s.r.Dir, "env", "MAIN_BRANCH="+s.r.mainBranch(), "bash", script, s.candidateRef(b))
 		if err != nil {
 			return tail(res.Out, 1500), fmt.Errorf("version check of %s did not finish: %w", b, err)
 		}
@@ -895,7 +1060,8 @@ func (s *runState) mergeBranches(ctx context.Context) (string, error) {
 		if err := s.checkPinnedBranch(ctx, b); err != nil {
 			return s.mergeStopNote(merged, b, err.Error()), err
 		}
-		in, err := s.branchInMain(ctx, b)
+		ref := s.candidateRef(b)
+		in, err := s.branchInMain(ctx, ref)
 		if err != nil {
 			return "", err
 		}
@@ -903,7 +1069,18 @@ func (s *runState) mergeBranches(ctx context.Context) (string, error) {
 			already = append(already, b)
 			continue
 		}
-		out, err := s.m.MergeBranch(ctx, MergeRequest{Branch: b, AutomatonID: s.req.AutomatonID})
+		req := MergeRequest{Branch: b, AutomatonID: s.req.AutomatonID}
+		if ref != b {
+			// The rebased copy is merged; the branch's own commit identifies it.
+			req.Ref = ref
+			if req.Tip, err = s.m.revParse(ctx, s.r.Dir, "refs/heads/"+b); err != nil {
+				return s.mergeStopNote(merged, b, err.Error()), err
+			}
+		}
+		out, err := s.m.MergeBranch(ctx, req)
+		if err != nil && s.shadow() && errors.Is(err, ErrNoQuestionChannel) {
+			err = fmt.Errorf("shadow run: this conflict would be put to the operator. %s", out.Summary)
+		}
 		if err != nil {
 			return s.mergeStopNote(merged, b, err.Error()), fmt.Errorf("merge of %q failed: %w", b, err)
 		}
@@ -983,6 +1160,23 @@ func (s *runState) commitBump(ctx context.Context) (string, error) {
 	return "committed " + msg, nil
 }
 
+// baseVersion reads the version the commit the run builds on carries.
+func (s *runState) baseVersion(ctx context.Context) (string, error) {
+	files := s.r.versionFiles()
+	if len(files) == 0 {
+		return "", errNoVersionFiles
+	}
+	out, err := s.m.gitOK(ctx, s.r.Dir, "show", s.baseHead+":"+files[0])
+	if err != nil {
+		return "", fmt.Errorf("read the version the release starts from: %w", err)
+	}
+	m := versionLine.FindStringSubmatch(out)
+	if m == nil || !semver3.MatchString(m[1]) {
+		return "", fmt.Errorf("could not read an X.Y.Z version from %s at %s", files[0], shortSHA(s.baseHead))
+	}
+	return m[1], nil
+}
+
 // validateReleaseBump runs the release-bump validator over the repository as
 // the earlier steps left it: the bump is committed and the release tag is
 // made, but nothing is pushed yet. The result is stored on the run record
@@ -993,12 +1187,24 @@ func (s *runState) validateReleaseBump(ctx context.Context) (string, error) {
 	if s.run.ReleaseVersion != "" {
 		exclude = "v" + s.run.ReleaseVersion
 	}
+	// An isolated run measures the version from the commit it builds on: most
+	// releases carry no tag, so the newest tag says nothing about it.
+	baseVersion, remote := "", ""
+	if s.isolated() {
+		v, err := s.baseVersion(ctx)
+		if err != nil {
+			return "", err
+		}
+		baseVersion, remote = v, s.iso.remote
+	}
 	res := ValidateReleaseBump(ctx, ValidateInput{
 		Dir:           s.r.Dir,
 		VersionFiles:  s.r.versionFiles(),
 		ChangelogFile: s.r.changelog(),
 		ReadmeFile:    s.r.readme(),
 		ExcludeTag:    exclude,
+		BaseVersion:   baseVersion,
+		Remote:        remote,
 	})
 	s.run.Validator = &res
 	var failed []string
@@ -1018,23 +1224,132 @@ func (s *runState) validateReleaseBump(ctx context.Context) (string, error) {
 }
 
 func (s *runState) ship(ctx context.Context, action string) (string, error) {
-	if s.r.Ship == nil {
+	if s.r.Ship == nil && !s.shadow() {
 		return "", errors.New("no ship runner is wired, so the step was not run")
 	}
 	if action == ActionDeployLatest {
 		return s.deploy(ctx)
+	}
+	if action == ActionTagRelease {
+		return s.tagStep(ctx, nil)
+	}
+	tag, err := s.tagToPush(ctx)
+	if err != nil {
+		return "", err
+	}
+	if s.scratch() {
+		return s.pushCandidate(ctx, tag)
+	}
+	note := "pushed " + s.r.mainBranch()
+	if tag != "" {
+		note += " and " + tag
+	}
+	return doneOr(note, s.r.Ship.Push(ctx, s.r.Dir, s.r.mainBranch(), tag))
+}
+
+// tagStep tags the release unless the step is limited to other sizes.
+func (s *runState) tagStep(ctx context.Context, sizes []string) (string, error) {
+	if len(sizes) > 0 {
+		size := s.r.ReleaseSize
+		listed := false
+		for _, want := range sizes {
+			listed = listed || want == size
+		}
+		if !listed {
+			if size == "" {
+				size = "unread-size"
+			}
+			s.skipped, s.tagLeftOut = true, true
+			return fmt.Sprintf("no tag: this is a %s release and only %s releases are tagged", size, strings.Join(sizes, ", ")), nil
+		}
 	}
 	v, err := s.releaseVersionOf()
 	if err != nil {
 		return "", err
 	}
 	tag := "v" + v
-	switch action {
-	case ActionTagRelease:
-		return s.tagRelease(ctx, tag)
-	default:
-		return doneOr("pushed "+s.r.mainBranch()+" and "+tag, s.r.Ship.Push(ctx, s.r.Dir, s.r.mainBranch(), tag))
+	if s.shadow() {
+		s.tagForPush, s.skipped = tag, true
+		return "shadow run: no tag was made; the release would be tagged " + tag, nil
 	}
+	if s.scratch() {
+		// Tags are shared with the project: mark the one about to be made, so
+		// a run that is killed before its push does not leave it behind.
+		if err := s.markTag(ctx, tag); err != nil {
+			return "", err
+		}
+	}
+	note, err := s.tagRelease(ctx, tag)
+	if err == nil {
+		s.tagForPush = tag
+	}
+	return note, err
+}
+
+// markTag records, before the tag exists, the commit this run is about to
+// tag. A tag that already exists is not this run's, so it is not marked.
+func (s *runState) markTag(ctx context.Context, tag string) error {
+	res, err := s.m.git(ctx, s.r.Dir, "rev-parse", "--verify", "--quiet", "refs/tags/"+tag)
+	if err != nil || res.Code == 0 {
+		return err
+	}
+	head, err := s.m.revParse(ctx, s.r.Dir, "HEAD^{commit}")
+	if err != nil {
+		return err
+	}
+	_, err = s.m.gitOK(ctx, s.r.Dir, "update-ref", scratchTagMarks+tag, head)
+	return err
+}
+
+// tagToPush is the tag that goes out with main: the one the tag step left on
+// this release, or, for a pipeline that tags with its own command, the
+// release's tag when it is on the commit being pushed. A pipeline that does
+// not tag sends main only. A run that is not isolated names the release tag
+// as it always has, unless its tag step was limited to other sizes.
+func (s *runState) tagToPush(ctx context.Context) (string, error) {
+	if s.tagForPush != "" {
+		return s.tagForPush, nil
+	}
+	if !s.isolated() {
+		if s.tagLeftOut {
+			return "", nil
+		}
+		v, err := s.releaseVersionOf()
+		if err != nil {
+			return "", err
+		}
+		return "v" + v, nil
+	}
+	if s.noRelease {
+		return "", nil
+	}
+	ownCommand := false
+	for _, st := range s.pipelineSteps() {
+		ownCommand = ownCommand || (st.Kind == KindTag && st.Action == "")
+	}
+	if !ownCommand {
+		return "", nil
+	}
+	v, err := s.releaseVersionOf()
+	if err != nil {
+		return "", err
+	}
+	res, err := s.m.git(ctx, s.r.Dir, "rev-parse", "--verify", "--quiet", "refs/tags/v"+v+"^{commit}")
+	if err != nil || res.Code != 0 {
+		return "", err
+	}
+	head, err := s.m.revParse(ctx, s.r.Dir, "HEAD^{commit}")
+	if err != nil || strings.TrimSpace(res.Out) != head {
+		return "", err
+	}
+	return "v" + v, nil
+}
+
+func (s *runState) pipelineSteps() []Step {
+	if s.m == nil {
+		return nil
+	}
+	return s.m.Pipeline.Steps
 }
 
 // tagRelease makes the release tag on HEAD, unless it is already there. A tag
@@ -1201,7 +1516,21 @@ func (s *runState) redoFromRebase(ctx context.Context) (string, error) {
 			}
 		}
 		notes = append(notes, "deleted the local tag "+tag)
+		if s.isolated() {
+			_, _ = s.m.git(ctx, s.r.Dir, "update-ref", "-d", scratchTagMarks+tag)
+		}
 		s.tagMade = ""
+	}
+	s.tagForPush = ""
+	if s.scratch() {
+		head, err := s.resetCandidate(ctx)
+		if err != nil {
+			return "", err
+		}
+		s.restartFrom(head)
+		notes = append(notes, "moved the candidate to "+shortSHA(head)+", the remote's "+s.iso.project.mainBranch(),
+			"the run starts again from the rebase step")
+		return strings.Join(notes, "; "), nil
 	}
 	if _, err := s.m.gitOK(ctx, s.r.Dir, "reset", "--hard", "--quiet", s.baseHead); err != nil {
 		return "", fmt.Errorf("reset %s to %s: %w", main, shortSHA(s.baseHead), err)
@@ -1221,15 +1550,21 @@ func (s *runState) redoFromRebase(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	s.restartFrom(head)
+	notes = append(notes, "brought "+main+" up to "+remote+"/"+main+" at "+shortSHA(head),
+		"the run starts again from the rebase step")
+	return strings.Join(notes, "; "), nil
+}
+
+// restartFrom makes head the base of the next attempt and clears what the
+// run computed from the old one.
+func (s *runState) restartFrom(head string) {
 	s.baseHead, s.observedMain = head, head
 	s.ownCommits = map[string]bool{}
 	s.foreignMain = false
 	s.run.ReleaseVersion = ""
 	s.run.Validator = nil
 	s.pushReleaseOK = false
-	notes = append(notes, "brought "+main+" up to "+remote+"/"+main+" at "+shortSHA(head),
-		"the run starts again from the rebase step")
-	return strings.Join(notes, "; "), nil
 }
 
 // recordRedo runs one redo as a recorded step, so the run record names every
@@ -1526,6 +1861,16 @@ var ErrMainMoved = errors.New("remote main moved")
 // it can only fast-forward the remote. A project with no remote skips the
 // guard and fails at the push.
 func (e ExecShipRunner) Push(ctx context.Context, dir, branch, tag string) error {
+	return e.push(ctx, dir, "refs/heads/"+branch, "HEAD", branch, tag)
+}
+
+// PushCommit pushes exactly commit to the remote's branch, with the same
+// guard, outgoing check and atomic tag push as Push.
+func (e ExecShipRunner) PushCommit(ctx context.Context, dir, commit, branch, tag string) error {
+	return e.push(ctx, dir, commit, commit, branch, tag)
+}
+
+func (e ExecShipRunner) push(ctx context.Context, dir, src, headRev, branch, tag string) error {
 	m := &Merger{Dir: dir}
 	remote := e.Remote
 	if remote == "" {
@@ -1534,11 +1879,11 @@ func (e ExecShipRunner) Push(ctx context.Context, dir, branch, tag string) error
 	if hasRemote, err := e.hasRemotes(ctx, m, dir); err != nil {
 		return err
 	} else if hasRemote {
-		if err := e.checkFastForward(ctx, m, dir, remote, branch); err != nil {
+		if err := e.checkFastForward(ctx, m, dir, remote, branch, headRev); err != nil {
 			return err
 		}
 	}
-	refs := []git.OutgoingRef{{Src: "refs/heads/" + branch, Dst: "refs/heads/" + branch}}
+	refs := []git.OutgoingRef{{Src: src, Dst: "refs/heads/" + branch}}
 	if tag != "" {
 		refs = append(refs, git.OutgoingRef{Src: "refs/tags/" + tag, Dst: "refs/tags/" + tag})
 	}
@@ -1560,7 +1905,7 @@ func (e ExecShipRunner) hasRemotes(ctx context.Context, m *Merger, dir string) (
 // checkFastForward fetches branch from remote and returns ErrMainMoved,
 // naming both heads, unless the fetched head is an ancestor of HEAD. A
 // remote with no such branch has nothing to overwrite, so it passes.
-func (e ExecShipRunner) checkFastForward(ctx context.Context, m *Merger, dir, remote, branch string) error {
+func (e ExecShipRunner) checkFastForward(ctx context.Context, m *Merger, dir, remote, branch, headRev string) error {
 	ls, err := m.gitOK(ctx, dir, "ls-remote", "--heads", remote, "refs/heads/"+branch)
 	if err != nil {
 		return fmt.Errorf("list %s on %s: %w", branch, remote, err)
@@ -1573,7 +1918,7 @@ func (e ExecShipRunner) checkFastForward(ctx context.Context, m *Merger, dir, re
 	if _, err := m.gitOK(ctx, dir, "fetch", "--quiet", remote, branch); err != nil {
 		return fmt.Errorf("fetch %s from %s: %w", branch, remote, err)
 	}
-	head, err := m.gitOK(ctx, dir, "rev-parse", "HEAD")
+	head, err := m.gitOK(ctx, dir, "rev-parse", headRev)
 	if err != nil {
 		return err
 	}
