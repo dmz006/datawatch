@@ -7,6 +7,8 @@ package autonomous
 // the single line that is typed into the session.
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -76,14 +78,19 @@ func (m *Manager) executionFallbackFor(prd *PRD) string {
 // returns false when the session should not be resumed or the send fails, and
 // the caller starts a fresh session as it always has.
 //
+// Before anything is sent, the retry takes a capacity slot like any new work
+// and waits for one when the pools are full (admitRetryResume). An error means
+// that wait failed (cancelled, or the capacity wait ran out) and the task goes
+// no further; a session that ends while waiting is a fresh attempt instead.
+//
 // The reason is the outcome the attempt carries onto its record: the
 // decideRetryResume reason, or the fallback reason when a decision to resume
 // could not be carried out. A task with no session has nothing to resume, so
 // that case reports the same reason decideRetryResume gives for a dead one.
-func (m *Manager) tryRetryResume(prd *PRD, t *Task, hint string) (resumed bool, reason string) {
+func (m *Manager) tryRetryResume(ctx context.Context, prd *PRD, t *Task, hint string) (resumed bool, reason string, err error) {
 	sessionID := t.SessionID
 	if sessionID == "" {
-		return false, sessionEndedResumeReason
+		return false, sessionEndedResumeReason, nil
 	}
 	m.mu.Lock()
 	aliveFn, contextFn := m.sessionAliveFn, m.sessionContextTokensFn
@@ -105,19 +112,29 @@ func (m *Manager) tryRetryResume(prd *PRD, t *Task, hint string) (resumed bool, 
 	})
 	if !resume {
 		log.Printf("[autonomous] %s/%s retry: session %s not resumed: %s", prd.ID, t.ID, sessionID, reason)
-		return false, reason
+		return false, reason, nil
 	}
 	if sendFn == nil {
 		log.Printf("[autonomous] %s/%s retry: session %s not resumed: no send-input hook; starting a fresh attempt", prd.ID, t.ID, sessionID)
-		return false, resumeFallbackNoSendReason
+		return false, resumeFallbackNoSendReason, nil
+	}
+	if aerr := m.admitRetryResume(ctx, prd, t); aerr != nil {
+		if errors.Is(aerr, errResumeSessionGone) {
+			log.Printf("[autonomous] %s/%s retry: session %s ended while waiting for a slot; starting a fresh attempt", prd.ID, t.ID, sessionID)
+			return false, sessionEndedResumeReason, nil
+		}
+		return false, "", aerr
 	}
 	line := retryResumeLine(m.escalationRetryHint(prd, t, hint))
 	if err := sendFn(sessionID, line); err != nil {
 		log.Printf("[autonomous] %s/%s retry: send into session %s failed, starting a fresh attempt: %v", prd.ID, t.ID, sessionID, err)
-		return false, resumeFallbackSendFailedReason
+		if led := m.Capacity(); led != nil {
+			releaseResumeGrant(led, t.ID, sessionID)
+		}
+		return false, resumeFallbackSendFailedReason, nil
 	}
 	log.Printf("[autonomous] %s/%s retry: resumed session %s with the failure summary", prd.ID, t.ID, sessionID)
-	return true, reason
+	return true, reason, nil
 }
 
 // retryResumeLine joins the resume framing and the retry prompt text into one

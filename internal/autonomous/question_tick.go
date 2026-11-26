@@ -9,8 +9,8 @@ package autonomous
 //
 //   - It makes no HTTP call and never reads session output.
 //   - An open question leaves its task parked.
-//   - Resume = re-admit through awaitReAdmitAs, re-claim the tree lock if the
-//     park released it, then prompt the session with one line carrying the
+//   - Resume = re-admit and re-claim the tree lock if the park released it
+//     (resumeSlotAndTree), then prompt the session with one line carrying the
 //     decision (BuildDecisionResumeLine).
 //   - Each resume runs in its own goroutine behind a per-task in-flight guard,
 //     so the ticker never waits on a question, a session or capacity.
@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -346,7 +347,12 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 	box := m.treeLockBoxLocked(snap.ID)
 	releasedTree := box != nil && *box == nil
 
-	if err := m.awaitReAdmitAs(ctx, prd, t, AwaitDecisionWaitReasonFor(q.ID), snap.ComputeNode); err != nil {
+	if err := m.resumeSlotAndTree(ctx, prd, t, AwaitDecisionWaitReasonFor(q.ID), snap.ComputeNode, true, releasedTree, box); err != nil {
+		if errors.Is(err, errResumeSessionGone) {
+			// The record stays, so no later tick queues the ended session again.
+			log.Printf("[autonomous] %s: resume after decision %s dropped: %v", snap.ID, q.ID, err)
+			return
+		}
 		if !m.taskCancelled(snap.ID) {
 			m.store.MutateTask(snap.ID, func(c *Task) {
 				if c.DecisionResume == rec {
@@ -361,7 +367,6 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 	if m.taskCancelled(snap.ID) {
 		return
 	}
-	m.reclaimTreeLock(prd, t, releasedTree, box)
 
 	sessionID := snap.SessionID
 	if cur, ok := m.store.TaskSnapshot(snap.ID); ok && cur.SessionID != "" {

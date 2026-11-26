@@ -16,8 +16,6 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-
-	"github.com/dmz006/datawatch/internal/capacity"
 )
 
 // AwaitExternalMarker is the parsable line the worker emits when it parks
@@ -192,9 +190,13 @@ func (m *Manager) treeLockBoxLocked(taskID string) *func() {
 //  4. emits the autonomous_idle_wait_release audit event,
 //  5. re-admits the task (bounded by the normal capacity wait). Success does
 //     NOT count a retry and does NOT record a failure; the task is the same
-//     attempt resuming,
+//     attempt resuming. The slot it gets is bound to the parked session,
 //  6. re-claims the tree lock (if released) and prompts the parked session
-//     to continue, so it resumes WITHOUT a fresh spawn.
+//     to continue, so it resumes WITHOUT a fresh spawn. No slot is held
+//     while waiting for the tree (resumeSlotAndTree).
+//
+// A session that ends while the task waits takes no slot and gets no prompt:
+// the cycle returns nil so the caller sees the session end as usual.
 //
 // On a re-admission error (timeout/cancelled) the task is left lease-free in
 // waiting state; the surrounding retry machinery takes over from the returned
@@ -241,13 +243,16 @@ func (m *Manager) AwaitExternal(ctx context.Context, prd *PRD, t *Task, conditio
 		return nil
 	}
 
-	// 5. Bounded re-admission.
-	if err := m.awaitReAdmit(ctx, prd, t, condition, releasedNode); err != nil {
+	// 5 and 6. Bounded re-admission and the tree lock (if released).
+	err := m.resumeSlotAndTree(ctx, prd, t, AwaitExternalWaitReasonFor(condition), releasedNode, false, releasedTree, box)
+	switch {
+	case errors.Is(err, errResumeSessionGone):
+		log.Printf("[autonomous] %s: await-external: the parked session ended before it had a slot; the resume is dropped", t.ID)
+		return nil
+	case err != nil:
 		return fmt.Errorf("task %s: await-external re-admission: %w", t.ID, err)
 	}
-
-	// 6. Re-claim the lock (if released) and resume the worker.
-	m.resumeAwaitExternal(prd, t, releasedTree, box)
+	m.promptAwaitResume(t)
 	log.Printf("[autonomous] %s: await-external cycle complete: released pools=%v tree lock kept=%v; worker resumed",
 		t.ID, releasedPools, keepTree)
 	return nil
@@ -257,6 +262,11 @@ func (m *Manager) AwaitExternal(ctx context.Context, prd *PRD, t *Task, conditio
 // it) and prompts the parked session to continue the task.
 func (m *Manager) resumeAwaitExternal(prd *PRD, t *Task, releasedTree bool, box *func()) {
 	m.reclaimTreeLock(prd, t, releasedTree, box)
+	m.promptAwaitResume(t)
+}
+
+// promptAwaitResume prompts a parked session to continue its task.
+func (m *Manager) promptAwaitResume(t *Task) {
 	if contFn := m.sessionContinueFnLocked(); contFn != nil && t.SessionID != "" {
 		if cerr := contFn(t.SessionID); cerr != nil {
 			log.Printf("[autonomous] %s: await-external continue prompt to session %s failed: %v", t.ID, t.SessionID, cerr)
@@ -285,61 +295,19 @@ func (m *Manager) reclaimTreeLock(prd *PRD, t *Task, releasedTree bool, box *fun
 	}
 }
 
-// awaitReAdmit is the bounded re-admission for an await-external task.
-// Structured like admit() but the wait reason KEEPS the await_external
-// prefix — the status JSON must show the task queued FOR the external
-// condition (plus the pool it is parked behind), not a bare pool-reason
-// string. prefer is the node the task released for the wait: placement still
-// picks the least loaded node, and that node only wins a tie.
-func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition, prefer string) error {
-	return m.awaitReAdmitAs(ctx, prd, t, AwaitExternalWaitReasonFor(condition), prefer)
-}
-
-// awaitReAdmitAs is awaitReAdmit with the wait reason prefix chosen by the
-// caller: an await-external cycle keeps "await_external: <condition>", a task
-// resumed after a worker question keeps its "await_decision: <question id>"
-// reason, so the status JSON names what the task is queued for.
-func (m *Manager) awaitReAdmitAs(ctx context.Context, prd *PRD, t *Task, prefix, prefer string) error {
-	if !m.capacityOn() {
-		return nil
-	}
-	m.mu.Lock()
-	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
-	fallback := executionFallbackBackend(m.cfg, prd)
-	m.mu.Unlock()
-	story := findStory(prd, t.StoryID)
-	backend, model := admittedWorker(t, story, prd, m.AutomationForPRD(prd), fallback)
-	pools, node := keysFn(backend, model)
-	if len(pools) == 0 {
-		return nil
-	}
-	req := capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), PreferNode: prefer, Model: model, Role: capacity.RoleWorker, Consumer: consumerSessionSpawn,
-	}
-	// A pinned worker resumes on its pinned node only.
-	pin := m.workerNodePin(prd, t, capacity.RoleWorker)
-	if pin != "" {
-		pinned, perr := applyNodePin(req, pin, nil)
-		if perr != nil {
-			return perr
-		}
-		req = pinned
-	}
-	req.Refresh = m.placementRefreshPinned(req, backend, model, nil, pin, nil)
-	err := led.Acquire(ctx, req, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
-		m.setWaiting(t, prefix+" — "+reason)
-	})
+// tryReclaimTreeLock is reclaimTreeLock without the wait. It reports true
+// only when another writer holds the tree, so the caller has to wait for it.
+func (m *Manager) tryReclaimTreeLock(prd *PRD, t *Task, box *func()) (busy bool) {
+	rel, rerr := m.tryTreeWritersLock(context.Background(), prd, t)
 	switch {
-	case err == nil:
-		m.clearWaiting(t)
-		return nil
-	case errors.Is(err, context.Canceled) && m.taskCancelled(t.ID):
-		return errCancelledWhileWaiting
-	case errors.Is(err, capacity.ErrWaitTimeout):
-		return fmt.Errorf("capacity: %w (await-external re-admission)", err)
-	default:
-		return err
+	case errors.Is(rerr, errTreeBusy):
+		return true
+	case rerr != nil:
+		log.Printf("[autonomous] %s: resume: tree re-claim failed: %v", t.ID, rerr)
+	case box != nil:
+		*box = rel
 	}
+	return false
 }
 
 // treeHasUnpushedWork reports whether the task's project tree has work a

@@ -668,7 +668,11 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 	if prefix == "" {
 		prefix = AwaitDecisionWaitReasonFor(q.ID)
 	}
-	if err := m.awaitReAdmitAs(ctx, p, t, prefix, t.ComputeNode); err != nil {
+	if err := m.resumeSlotAndTree(ctx, p, t, prefix, t.ComputeNode, true, releasedTree, box); err != nil {
+		if errors.Is(err, errResumeSessionGone) {
+			log.Printf("[autonomous] %s: held-decision release: %v; nothing to prompt", t.ID, err)
+			return nil
+		}
 		if !m.taskCancelled(t.ID) {
 			m.store.MutateTask(t.ID, func(c *Task) {
 				if c.DecisionResume == rec {
@@ -682,7 +686,6 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 	if m.taskCancelled(t.ID) {
 		return nil
 	}
-	m.reclaimTreeLock(p, t, releasedTree, box)
 	sessionID := t.SessionID
 	if cur, ok := m.store.TaskSnapshot(t.ID); ok && cur.SessionID != "" {
 		sessionID = cur.SessionID

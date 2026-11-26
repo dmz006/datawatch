@@ -2985,6 +2985,18 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				// the task resumes without having counted a retry.
 				if IsAwaitExternalWaitReason(t.WaitReason) {
 					if t.SessionID != "" && aliveFn != nil && aliveFn(t.SessionID) {
+						// A parked worker holds no slot. When one is not free now, the
+						// run waits for it before prompting the session
+						// (resumeParkedAtRestart); the wait reason stays as it is.
+						if !m.resumeFitsNow(prd, t) {
+							m.store.WithLock(func() {
+								t.AdoptedSession = true
+								t.UpdatedAt = time.Now()
+							})
+							reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+							log.Printf("[autonomous] boot-resume: await-external task %s on live session %s for prd=%s waits for a capacity slot before it is prompted (no retry counted)", t.ID, t.SessionID, prd.ID)
+							continue
+						}
 						if contFn := m.sessionContinueFnLocked(); contFn != nil {
 							if cerr := contFn(t.SessionID); cerr != nil {
 								log.Printf("[autonomous] boot-resume: await-external continue prompt to session %s: %v", t.SessionID, cerr)
