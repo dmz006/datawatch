@@ -133,6 +133,12 @@ func (m *Manager) folderUpdate(id, dir string, saved *Session, terminals map[str
 		return folderEnd{}, false
 	}
 	state, note := GoneFinalState(ReadOutputTail(own.LogFile, goneTailBytes))
+	// The saved record says whether the agent ever had its task.
+	if saved.LaunchFailure != "" {
+		state, note = StateFailed, saved.LaunchFailure
+	} else if reason, never := m.exitWouldBeLaunchFailure(saved); never {
+		state, note = StateFailed, reason
+	}
 	ended := now
 	return folderEnd{state: state, endedAt: &ended, note: note}, true
 }

@@ -60,6 +60,13 @@ func (m *Manager) FinaliseGoneSessions(now time.Time) FinaliseResult {
 			res.Skipped++
 			continue
 		}
+		if m.failIfNeverStarted(current.FullID) {
+			res.Finalised = append(res.Finalised, current.FullID)
+			if info, err := os.Stat(current.ProjectDir); err == nil && info.IsDir() {
+				res.Folders++
+			}
+			continue
+		}
 		snap := *current
 		oldState := snap.State
 		state, note := GoneFinalState(ReadOutputTail(snap.LogFile, goneTailBytes))

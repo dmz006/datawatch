@@ -73,6 +73,11 @@ func (m *Manager) CloseFinishedIdle() []string {
 	for _, sess := range m.store.List() {
 		fullID := sess.FullID
 		screen, pane, proven := m.finishedIdleProof(sess)
+		// A shell's completion line from an agent that never had its task
+		// proves nothing.
+		if proven && paneShowsAgentExit(strings.Split(StripANSI(pane), "\n")) && m.EndedBeforeTask(fullID) {
+			proven = false
+		}
 		now := m.now()
 		m.mu.Lock()
 		if !proven {
