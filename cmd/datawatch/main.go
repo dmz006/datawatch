@@ -5652,10 +5652,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							// the operator by design.
 							if q, ok := autonomousMgrRef.OpenBlockingQuestionForTask(task.ID); ok {
 								if q.ID != decisionHandledID {
-									log.Printf("[autonomous] verifier: task %s/%s raised blocking question %s — parking it for the decision",
-										task.PRDID, task.ID, q.ID)
-									autonomousMgrRef.ParkForDecision(prd, task, q.ID)
-									decisionHandledID = q.ID
+									switch {
+									case autonomousMgrRef.ParkForDecision(prd, task, q.ID):
+										log.Printf("[autonomous] verifier: task %s/%s raised blocking question %s — parked for the decision",
+											task.PRDID, task.ID, q.ID)
+										decisionHandledID = q.ID
+									case autonomousMgrRef.ParkedOnDecision(task.ID, q.ID):
+										decisionHandledID = q.ID
+									}
+									// A refused park is tried again on the next poll: a
+									// decision is still to be typed first.
 								}
 								waitingInputTicks = 0
 								idleSince = time.Time{}

@@ -35,41 +35,43 @@ type WakeBatch struct {
 	Events []WakeEvent
 }
 
-// Coalescer folds a burst of wake events into one batch and never redelivers
-// a condition that has not changed until Clear is called for its key.
+// Coalescer folds a burst of wake events into one batch and never hands out
+// again a condition that has not changed until Clear is called for its key.
+// Handing a condition out is not delivering it: whether its line was typed is
+// tracked by WakeSendMemory.
 type Coalescer struct {
 	clock   WakeClock
 	window  time.Duration
 	deliver func(WakeBatch)
 
-	mu        sync.Mutex
-	pending   []WakeEvent
-	pendingK  map[string]bool
-	delivered map[string]bool
-	stop      func() bool
+	mu       sync.Mutex
+	pending  []WakeEvent
+	pendingK map[string]bool
+	taken    map[string]bool
+	stop     func() bool
 }
 
 // NewCoalescer builds a Coalescer. A window of zero or less delivers each new
 // condition at once.
 func NewCoalescer(clock WakeClock, window time.Duration, deliver func(WakeBatch)) *Coalescer {
 	return &Coalescer{
-		clock:     clock,
-		window:    window,
-		deliver:   deliver,
-		pendingK:  map[string]bool{},
-		delivered: map[string]bool{},
+		clock:    clock,
+		window:   window,
+		deliver:  deliver,
+		pendingK: map[string]bool{},
+		taken:    map[string]bool{},
 	}
 }
 
 // Offer accepts an event. It reports false when the condition was already
-// delivered or is already waiting in the open window.
+// handed out or is already waiting in the open window.
 func (c *Coalescer) Offer(ev WakeEvent) bool {
 	key := ev.Key()
 	if ev.At.IsZero() {
 		ev.At = c.clock.Now()
 	}
 	c.mu.Lock()
-	if c.delivered[key] || c.pendingK[key] {
+	if c.taken[key] || c.pendingK[key] {
 		c.mu.Unlock()
 		return false
 	}
@@ -93,7 +95,7 @@ func (c *Coalescer) Offer(ev WakeEvent) bool {
 func (c *Coalescer) Clear(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.delivered, key)
+	delete(c.taken, key)
 	if !c.pendingK[key] {
 		return
 	}
@@ -116,12 +118,12 @@ func (c *Coalescer) flush() {
 	}
 }
 
-// takeLocked moves the pending events into a batch and marks them delivered.
+// takeLocked moves the pending events into a batch and marks them handed out.
 func (c *Coalescer) takeLocked() WakeBatch {
 	batch := WakeBatch{Events: c.pending}
 	for _, ev := range c.pending {
 		k := ev.Key()
-		c.delivered[k] = true
+		c.taken[k] = true
 		delete(c.pendingK, k)
 	}
 	c.pending = nil

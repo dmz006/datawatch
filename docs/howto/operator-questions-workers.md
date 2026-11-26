@@ -147,7 +147,19 @@ When a task has an open blocking question, the daemon:
 5. Leaves the worker session running and suppresses the stall detectors for it
    while the question is open: the worker is waiting on you by design.
 
-It parks the task once per question.
+It parks the task once per question. This also applies to a worker that a
+restarted daemon took over: its new blocking question parks the task, and it is
+not nudged or ended as stalled while it waits for you.
+
+**Across a daemon restart.** A parked task stays parked on its worker when the
+worker's session is still alive and its agent had started. It takes no capacity
+slot, the session is not ended, and your answer is typed into that session. The
+task is put back in the queue, with a new worker, when the session is gone or is
+a bare shell, when the question has expired, or when the resume for that
+question was already recorded. The restart age limit
+(`autonomous.resume_max_age_seconds`) does not count a parked worker as recent
+activity, so a long wait can still leave the whole Automaton parked until you
+resume it.
 
 ## How the coordinator tick reads and resumes
 
@@ -176,6 +188,85 @@ does not depend on it, and raises a new question if it is still blocked.
 The task records which answer it resumed for. If you later *supersede* your
 answer, that becomes the new current answer on the question, and the task is not
 resumed a second time.
+
+### Did the worker get the line?
+
+The task's `decision_resume.delivery` field says what datawatch knows. The same
+rules apply to a task released by an answer to a held-Automaton question.
+
+| `delivery` | Meaning | What happens next |
+|---|---|---|
+| `waiting` | The resume is recorded and nothing is typed yet | The line is typed once the task runs again. After a daemon restart it is typed if the same worker session survived; if not, the task is queued again and the line becomes `review_needed` |
+| `sending` | Saved just before the keystrokes | If the daemon stops here, it becomes `review_needed` |
+| `sent` | The send returned no error | Nothing. It does not prove the model acted on the line |
+| `not_typed` | The session shows a prompt, or its screen cannot be read, so nothing was typed (`delivery_reason` `prompt_on_screen`) | One warning alert, then a new try on each coordinator tick into the same session while the task stays with that worker and no later question takes over. Retries pause while the Automaton is held or the autonomous loop is off. If they stop, you get a `review_needed` alert. If you supersede your answer meanwhile, the newest one is typed |
+| `review_needed` | datawatch cannot tell that the worker got the line, or must not type it now | One error alert. **It is never typed again.** Check the session and send the decision yourself if it is missing |
+
+`delivery_reason` for `review_needed` is one of `send_error` (the send failed
+after it may have typed, including a prompt that appeared while the text was
+being typed), `interrupted` (the daemon stopped during the send),
+`session_changed` (the task has another worker session), `task_moved_on` (the
+task left the running state before the line could be typed), `replaced` (the
+task was resumed, or parked on a later question, before this line could be
+typed), `question_missing` (the question or its answer can no longer be read)
+or `no_session`.
+
+**An unfinished line keeps its task.** While a line is `waiting`, `sending` or
+`not_typed`:
+
+- The task is not re-parked behind another question that was already open when
+  the line was recorded (`decision_resume.open_at_resume`). That question's
+  turn comes after the line is typed.
+- It is not re-parked while the line is being sent.
+- A question the worker asks **later** can take over a refused or waiting line:
+  the worker has moved on. The old line is marked `review_needed` (`replaced`)
+  with an alert **at that moment**, and is never typed. The audit log keeps it.
+
+### More than one open question
+
+Every blocking question the task's worker asks is owed one line, from the
+moment it is raised. The task's `owed_decisions` lists the ones whose line is
+not yet sent or listed for review. The daemon's own questions about a task, such
+as held or retry questions, are not part of this. A question another session
+asked about the task, such as its verifier, is never typed into the worker
+unless the task is parked on it; otherwise its answer is listed.
+
+- The task is not re-parked while the question it is parked on has a decision
+  that is not typed yet.
+- While an earlier line cannot be typed, another decision waits behind it. You
+  get one warning (`earlier_line_unfinished`) naming both.
+- A decided question the task is not parked on is typed once the task runs: the
+  coordinator tick parks the task on it and resumes it.
+- If the task is parked on another question that is still open, the decision
+  waits for that one. You get one warning alert (`other_question_open`) naming
+  both. Answer or withdraw the open one. If it expires instead, the waiting
+  decision is typed.
+- Nothing in datawatch expires a question today: no screen, command, API call
+  or timer does it. What follows is how a task behaves if a question is expired.
+- A question that **expires** releases the task parked on it, also while another
+  question is still open: the task is parked on that one only after the line
+  below is typed. If another decision is already waiting, that one is typed
+  instead, and the expired question gets no line and no alert. If none is
+  waiting, the worker gets one line saying the question expired, that no default
+  was applied and that no decision was made.
+- If the worker can no longer get a decision (the task ended or was queued
+  again, it has another worker session, the session ended, or verification has
+  started), an answer is listed with a `review_needed` alert and not typed.
+  This includes an unsent line left on a task that ended. A withdrawn question
+  that no worker can take is dropped without an alert.
+
+For a freshly started worker, the task may show as running, and keep its
+capacity slot, while the worker still waits for an earlier question. Its answer
+is typed as described above.
+
+Nothing is typed unless the `sending` state could be saved first. Alerts carry
+ids and these codes, not your words. A record with no `delivery` field was
+written before delivery was tracked and is never typed or alerted. The field is
+part of the task record, so REST, MCP and CLI task output show it; the web app
+shows the alerts.
+
+A `not_typed` line does not hold the worker's stall checks off. If the worker is
+ended as stalled while the prompt stays up, the line becomes `review_needed`.
 
 ## Answering from each surface
 

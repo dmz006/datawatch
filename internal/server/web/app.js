@@ -43930,6 +43930,7 @@ window.supervisorWakeStatusText = function (v) {
   let text = t('supervisor_wake_status_line', [
     supervisorWakeTimeText(v.last_event), Number(v.event_count) || 0,
     supervisorWakeTimeText(v.last_scheduled_check), Number(v.scheduled_count) || 0]);
+  text += ' ' + t('supervisor_wake_status_passes', [Number(v.pass_count) || 0]);
   if (v.events_silent_for) text += ' ' + t('supervisor_wake_status_silent', [String(v.events_silent_for)]);
   const target = _supervisorWakeTargetText(v);
   if (target) text += ' ' + target;
@@ -47169,6 +47170,13 @@ function _renderLifecycleSubRow(prdId, sub) {
     flags.push(t('lifecycle_sub_flag_expires', [when])||('expires '+when));
   }
   const flagHtml = flags.map(fl => `<span style="font-size:10px;color:var(--text2);border:1px solid var(--border,#444);padding:0 5px;border-radius:8px;margin-right:4px;">${escHtml(fl)}</span>`).join('');
+  // A one-time message that has not been typed. Its text is not shown here.
+  const state = (sub.delivery && sub.delivery.state) || '';
+  const deliveryTxt = !state ? '' : state === 'review_needed'
+    ? t('lifecycle_sub_delivery_review') : t('lifecycle_sub_delivery_waiting');
+  const deliveryHtml = deliveryTxt
+    ? `<div style="font-size:12px;color:${state === 'review_needed' ? 'var(--error)' : 'var(--warning,#d97706)'};margin-bottom:4px;">${escHtml(deliveryTxt)}</div>`
+    : '';
   const owner = sub.owner ? `<span style="font-size:11px;color:var(--text2);">${escHtml(t('lifecycle_sub_owner', [sub.owner])||('owner: '+sub.owner))}</span>` : '';
   const prdJ = escHtml(JSON.stringify(prdId));
   const subJ = escHtml(JSON.stringify(sub.id || ''));
@@ -47176,6 +47184,7 @@ function _renderLifecycleSubRow(prdId, sub) {
     <div style="margin-bottom:4px;">${what}${level}${scopeBadge}</div>
     <div style="font-size:12px;margin-bottom:4px;">${actionBadge}<span style="color:var(--text2);">${escHtml(t('lifecycle_sub_sink')||'Sink')}:</span> ${sinkTxt}</div>
     <div style="margin-bottom:4px;">${flagHtml}${owner}</div>
+    ${deliveryHtml}
     <div style="display:flex;gap:6px;align-items:center;">
       <button class="btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="_lifecycleSubOpenForm(${prdJ}, ${subJ})">${escHtml(t('lifecycle_sub_edit')||'Edit')}</button>
       <button class="btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="_lifecycleSubTest(${prdJ}, ${subJ})">${escHtml(t('lifecycle_sub_test')||'Test')}</button>

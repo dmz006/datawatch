@@ -1457,6 +1457,9 @@ type Task struct {
 	// resumed this task for (question_tick.go), so a later tick never resumes
 	// it twice for the same answer. Nil = never resumed for a question.
 	DecisionResume *DecisionResume `json:"decision_resume,omitempty"`
+	// OwedDecisions are the blocking questions of this task's worker whose
+	// decision line has not been sent or listed for review (decision_owed.go).
+	OwedDecisions []OwedDecision `json:"owed_decisions,omitempty"`
 	// EscalationFailures counts failed attempts since the last operator
 	// action; it indexes the policy's steps and is compared with
 	// max_failures.
