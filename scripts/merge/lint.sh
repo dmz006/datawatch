@@ -19,10 +19,17 @@ fi
 export LEAK_CHECK_LOCAL="$MERGE_PROJECT_DIR/.leak-patterns.local"
 export LEAK_CHECK_REQUIRE_LOCAL=1
 
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+# A lint cache of this run's own. Every merge works in a new scratch folder,
+# and a cache shared with other checkouts replays their findings under their
+# paths, where this checkout's exclusions do not apply. MERGE_LINT_CACHE names
+# another one for a run by hand.
+export GOLANGCI_LINT_CACHE="${MERGE_LINT_CACHE:-$work/lint-cache}"
+
 make sync-docs docs-index
 # The linter takes a lock for the whole machine: wait for another run.
-log=$(mktemp)
-trap 'rm -f "$log"' EXIT
+log="$work/lint.log"
 for _ in $(seq 1 60); do
     if PATH="$tools:$PATH" GOTOOLCHAIN="$gotool" nice -n 10 make lint >"$log" 2>&1; then
         cat "$log"

@@ -207,7 +207,7 @@ func (d Definition) Validate() error {
 		if strings.TrimSpace(r.Path) == "" {
 			problems = append(problems, label+": empty path")
 		} else if err := checkDir(r.Path); err != nil {
-			problems = append(problems, label+": "+strings.Replace(err.Error(), "dir", "path", -1))
+			problems = append(problems, label+": "+strings.ReplaceAll(err.Error(), "dir", "path"))
 		} else if _, err := path.Match(r.Path, "x"); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: invalid pattern %q", label, r.Path))
 		}

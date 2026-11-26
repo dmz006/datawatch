@@ -8,7 +8,9 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
@@ -89,7 +91,7 @@ func withMergeSwitch(on func() bool) mergeRunnerOption {
 		before := r.StillAllowed
 		r.StillAllowed = func(ctx context.Context) error {
 			if !on() {
-				return errors.New(config.MergeDeployRunRefusal)
+				return fmt.Errorf("merge run switch: %s", strings.TrimSuffix(config.MergeDeployRunRefusal, "."))
 			}
 			if before != nil {
 				return before(ctx)

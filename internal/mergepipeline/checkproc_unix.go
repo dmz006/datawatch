@@ -16,7 +16,7 @@ func ownProcessGroup(cmd *exec.Cmd) func() {
 		if cmd.Process == nil {
 			return nil
 		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // end-reason-ok: stops a check command's own process group, not a session
 	}
 	cmd.Cancel = kill
 	return func() { _ = kill() }
