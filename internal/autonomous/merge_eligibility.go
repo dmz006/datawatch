@@ -637,6 +637,22 @@ func onTrackedRemote(ctx context.Context, git MergeGitRunner, repo, base, commit
 // during the run to another one, the state is left alone and the landing and
 // shipped facts are still recorded.
 func (m *Manager) RecordMergeLanding(ctx context.Context, id, release, commit string, at time.Time) (*PRD, error) {
+	return m.recordMergeLanding(ctx, id, release, commit, "", at)
+}
+
+// RecordMergeLandingOfPushedTip is RecordMergeLanding for a push whose branch
+// has changed since: tip is the commit of the branch the merge run journalled
+// before it pushed, and commit must contain it. The remote must still hold
+// commit. The branch is not touched, and work on it that tip does not hold was
+// not part of this release.
+func (m *Manager) RecordMergeLandingOfPushedTip(ctx context.Context, id, release, commit, tip string, at time.Time) (*PRD, error) {
+	if !fullCommitID.MatchString(tip) {
+		return nil, fmt.Errorf("landing of Automaton %q not recorded: the pushed branch tip is not a full commit id", id)
+	}
+	return m.recordMergeLanding(ctx, id, release, commit, tip, at)
+}
+
+func (m *Manager) recordMergeLanding(ctx context.Context, id, release, commit, pushedTip string, at time.Time) (*PRD, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -660,9 +676,16 @@ func (m *Manager) RecordMergeLanding(ctx context.Context, id, release, commit st
 	if err := confirmOnRemote(gctx, git, repo, commit); err != nil {
 		return nil, fmt.Errorf("landing of Automaton %q not recorded: %w", id, err)
 	}
-	tip, ok := branchCommit(gctx, git, repo, branch)
+	tip, ok := pushedTip, pushedTip != ""
+	if !ok {
+		tip, ok = branchCommit(gctx, git, repo, branch)
+	}
 	if !ok || !isAncestor(gctx, git, repo, tip, commit) {
 		return nil, fmt.Errorf("landing of Automaton %q not recorded: commit %s does not contain its branch %s", id, commit, branch)
+	}
+	newer := ""
+	if pushedTip != "" {
+		newer = fmt.Sprintf("; the branch changed after the push of %s, so any newer work on it was not part of this release", pushedTip)
 	}
 	if at.IsZero() {
 		at = m.holdNow()
@@ -687,7 +710,7 @@ func (m *Manager) RecordMergeLanding(ctx context.Context, id, release, commit st
 		}
 		p.UpdatedAt = m.holdNow()
 		p.Decisions = trimDecisions(append(p.Decisions, Decision{At: at, Kind: DecisionMergeLanded, Actor: mergePipelineActor,
-			Note: fmt.Sprintf("landed, shipped in %s: the remote's default branch contains commit %s (branch %s; state was %s)", release, commit, branch, finished)}))
+			Note: fmt.Sprintf("landed, shipped in %s: the remote's default branch contains commit %s (branch %s; state was %s)%s", release, commit, branch, finished, newer)}))
 	})
 	if changed {
 		if err := m.store.SavePRD(p); err != nil {

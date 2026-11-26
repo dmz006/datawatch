@@ -39,3 +39,9 @@ func (a *API) MergeModelLookup() config.LLMLookup { return a.M.MergeModelLookup(
 
 // MergePauseMessage forwards the operator pause check of a merge run.
 func (a *API) MergePauseMessage() (string, bool) { return a.M.MergePauseMessage() }
+
+// RecordMergeLandingOfPushedTip forwards the landing record of a repaired push
+// whose branch changed afterwards.
+func (a *API) RecordMergeLandingOfPushedTip(ctx context.Context, id, release, commit, tip string, at time.Time) (*PRD, error) {
+	return a.M.RecordMergeLandingOfPushedTip(ctx, id, release, commit, tip, at)
+}
