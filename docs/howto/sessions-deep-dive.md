@@ -113,6 +113,24 @@ datawatch config set session.finalise_interval_minutes 2
 
 The details of how a record is judged and what each run covers follow below.
 
+## An interactive session that reports its work done
+
+A completion line such as `DATAWATCH_COMPLETE: wrote the report` ends a
+one-shot session. It does not end an interactive one: that session goes to
+`waiting_input` and takes your next instruction. While it works on a later turn
+it reads `running`, even with the earlier line still on screen. The report
+never turns it `complete`.
+
+This is about Claude Code's own report. When Claude Code **quits**, the line its
+launch command prints afterwards (`DATAWATCH_COMPLETE: claude done`) still
+reads as before: with the terminal left open the session can switch between
+`complete` and `running`, with an alert each time. End or restart it:
+
+```bash
+datawatch session kill a3f2
+datawatch session restart a3f2
+```
+
 ## Gone session records
 
 A session record can be left in `running` (or another non-final state)

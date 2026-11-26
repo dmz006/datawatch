@@ -1462,7 +1462,7 @@ The per-provider billing profile a cost-report row is read against, keyed by a p
 
 #### Detection filters
 
-Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt patterns** trigger `WaitingInput` when matched (e.g. `❯`, `$ `). **Completion patterns** trigger `Complete` (e.g. `DATAWATCH_COMPLETE:`). Per-deployment overrides; the global defaults work for most setups.
+Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt patterns** trigger `WaitingInput` when matched (e.g. `❯`, `$ `). **Completion patterns** trigger `Complete` (e.g. `DATAWATCH_COMPLETE:`) for a one-shot session. An interactive agent's own completion line does not end its session: it goes to `WaitingInput` and stays a live session. The line a launch command prints after Claude Code quits is the exception; see [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#an-interactive-session-that-reports-its-work-done). Per-deployment overrides; the global defaults work for most setups.
 
 #### Compute Nodes
 
