@@ -370,16 +370,32 @@ way a session is resumed:
   runs and freed when the session ends.
 - A resume whose session ends while it waits leaves the queue and takes no slot.
   A retry in that case starts a new session instead.
-- A task does not wait for the project tree while it holds a slot. When another
-  task has the tree, it gives its slot back, waits for the tree, and is admitted
-  again. Without this, two tasks that share one tree could block each other on a
-  small pool.
+- A task that is starting or resuming does not wait for the project tree while it
+  holds a slot. When another task has the tree, it gives its slot back, waits for
+  the tree, and is admitted again. Without this, two tasks that share one tree
+  could block each other on a small pool.
 
-**Known limit.** Workers still running when the daemon restarts are counted
-again at once, without waiting, because they are already using their slots. If
-more are running than a pool allows (for example after the limit was lowered),
-the pool reads over its limit until some of them end, and no new work starts on
-it in the meantime.
+**After a restart or a resume.** Running work is taken up first. Every running
+worker is counted before a parked worker is looked at, so a parked worker is not
+prompted into the slot a running one uses. Within one Automaton, tasks get lanes
+in this order: running tasks, then parked tasks, then the rest. Tasks that still
+wait for a slot therefore cannot fill the lanes while a running task has none.
+
+**Known limits.**
+
+- Workers still running when the daemon restarts are counted again at once,
+  without waiting, because they are already using their slots. If more are
+  running than a pool allows (for example after the limit was lowered), the pool
+  reads over its limit until enough of them end.
+- If the restart hold (`autonomous.capacity_adopt_before_admit`) is off or times
+  out, a parked worker can be prompted before another Automaton's running worker
+  is counted.
+- A task whose work is being verified, and that does not have the shared project
+  tree, can keep a slot while it waits for the tree. If the task that has the
+  tree needs that slot, both wait until the capacity wait runs out.
+- A parked worker found again after a restart is prompted without taking the
+  project tree again. It waits only for the compute node it used, even when
+  another node is free, and fails if no slot comes there in time.
 
 
 ## Verifying tasks in the capacity view

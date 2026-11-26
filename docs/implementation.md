@@ -330,7 +330,9 @@ that session runs, except while it is parked on a question or an outside wait. E
 of a session goes through `readmitSession` (`internal/autonomous/resume_slot.go`): it waits
 for a slot, binds the slot to the session and is dropped when the session ends; a resume
 never waits for the tree lock while holding a slot (`resumeSlotAndTree`, and the same
-rule in `executeOne`). Ending the session frees the lease bound to it
+rule for a new start in `executeOne`). After a restart or a resume, parked workers are
+reconciled last (`parkedLast`) and the run walks running tasks, then parked tasks, then
+the rest (`restartOrder`). Ending the session frees the lease bound to it
 (`releaseLeasesOfEndedSession`, `cmd/datawatch/capacity_reap.go`); a session adopted
 after a restart releases it when its wait ends (`releaseWorkerLeaseForVerify`,
 `internal/autonomous/capacity.go`). A `JudgeAdmit.WorkerHolder` lease still present when
