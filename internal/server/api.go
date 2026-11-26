@@ -14414,7 +14414,8 @@ func (s *Server) handlePostSchedule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.audit(r.Context(), "create", "schedule", sc.ID, map[string]any{"session_id": sessionID, "command": req.Command}) // GH#201 Phase 4
+	// The command itself stays out of the audit log; the schedule store has it.
+	s.audit(r.Context(), "create", "schedule", sc.ID, map[string]any{"session_id": sessionID, "command_length": len(req.Command)}) // GH#201 Phase 4
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(sc) //nolint:errcheck
@@ -14607,7 +14608,8 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		s.audit(r.Context(), "create", "schedule", sc.ID, map[string]any{"type": req.Type, "command": req.Command}) // GH#201 Phase 4
+		// The command itself stays out of the audit log; the schedule store has it.
+		s.audit(r.Context(), "create", "schedule", sc.ID, map[string]any{"type": req.Type, "command_length": len(req.Command)}) // GH#201 Phase 4
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(sc) //nolint:errcheck
