@@ -424,6 +424,22 @@ type Session struct {
 	// restarted daemon judges the session the same way.
 	DaemonDeliversTask bool `json:"daemon_delivers_task,omitempty"`
 
+	// StartupDecline is a start-up dialog datawatch declined on this launch,
+	// recorded only when the live screen showed a dialog with its footer and
+	// numbered choices at the bottom. Dropped when the agent is seen past it,
+	// and on a restart.
+	StartupDecline *StartupDecline `json:"startup_decline,omitempty"`
+
+	// LaunchInputSent is true once datawatch has sent this launch anything
+	// but start-up dialog answers. A restart clears it.
+	LaunchInputSent bool `json:"launch_input_sent,omitempty"`
+
+	// LaunchFailure says why the launch failed: the agent left at a dialog
+	// datawatch declined, before it was given anything. A session carrying it
+	// is failed and is not completed or revived. Empty otherwise; a restart
+	// clears it.
+	LaunchFailure string `json:"launch_failure,omitempty"`
+
 	// PlatformContextDelivered — true once the platform context text has been
 	// prepended to this session's first prompt (first_prompt delivery modes).
 	// Persisted so a relaunch or restart never prepends it a second time.

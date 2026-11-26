@@ -468,6 +468,7 @@ func (m *Manager) acceptRateLimitWait(sess *Session) {
 		fmt.Printf("[rate-limit] %s: usage-limit menu not on screen; sent nothing\n", sess.ID)
 		return
 	}
+	m.noteInputSent(sess.FullID)
 	_ = m.tmux.SendKeys(sess.TmuxSession, "1")
 }
 
@@ -479,6 +480,7 @@ func (m *Manager) retryMCPServers(sess *Session, gap time.Duration) {
 		m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: sess.FullID, Source: "mcp-retry", Reason: err.Error()})
 		return
 	}
+	m.noteInputSent(sess.FullID)
 	_ = m.tmux.SendKeys(sess.TmuxSession, "/mcp")
 	time.Sleep(gap)
 	if m.refuseIfApprovalPrompt(sess, "mcp-retry") != nil {

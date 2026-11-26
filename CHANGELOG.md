@@ -5,6 +5,77 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.28 — Start-up dialogs are answered only when shown, and not too soon
+
+### Fixed
+- datawatch sends a key to a Claude start-up dialog only when the live screen ends with that dialog, not because its words appear somewhere on the screen. Before, ordinary output or a pasted task could make it press Down, Enter or Esc in a working session.
+- datawatch answers a start-up dialog only after it has stayed unchanged for 2 seconds, and looks at the cursor again before Enter. With Claude Code 2.1.332 in a test without a network, answering too soon made Claude exit at the trust prompt of a never-trusted repository; with the wait, no launch exited there in 22 tries.
+
+### Before you upgrade
+- Answering a start-up dialog takes about 2 to 3 seconds longer.
+- A dialog drawn differently from the ones datawatch recognises is left for a person. A session with a task is then ended as killed after about 4 minutes; the end note says a start-up dialog was still waiting, but the alert shows only the task. A session with no task keeps waiting.
+
+### Not covered
+- A screen that ends in text shaped like a dialog, with nothing below it, can still get a key.
+- A narrow screen, below about 40 columns, can leave a real dialog unanswered.
+- The real dialog for a single new MCP server is no longer answered. It did not appear with datawatch's own settings.
+- The unnumbered bypass-permissions dialog is not answered: datawatch can type 2 into it, more than once, but does not press Enter.
+- A redraw in the milliseconds between the last look and the key could still make Claude exit.
+- If the same dialog is still on screen more than 5 seconds after its answer, datawatch can answer it again, with a second Enter (seen at 9 seconds with a stand-in terminal). If one screen reading is blank or fails while a declined dialog is still up, a second Esc can be sent.
+- A real online login was not tested.
+- Only Claude Code 2.1.332 was tested; other versions and a stalled or swapping host were not.
+- No real update dialog or other general confirmation was seen; they were tested only on made-up screens.
+- When datawatch holds Enter back, it may already have typed Down or 2 and can type it again, although the log says "not typed".
+- Declining the settings-error dialog still makes Claude Code exit; v9.187.27 says when such a session ends as failed.
+
+## v9.187.27 — Task text is no longer typed into a shell after Claude Code leaves
+
+### Fixed
+- Before typing a task, a scheduled command, an output filter's input or a line datawatch writes on its own into a Claude session (automation messages and nudges, question answers, supervisor wake-ups, exit-hook, subscription and reply-to-parent lines, the rate-limit resume line), datawatch now checks two signs: whether the visible screen shows the line printed after Claude Code exits, and whether the terminal's shell is the only thing reading the keyboard. If either shows, it does not type, because a shell would run the text outside Claude Code's permission checks. The two signs do not prove that Claude Code is there (see Not covered). A task delivery that stays refused ends the session and says that the task was not typed again; an earlier attempt may already have typed it.
+- In one case, a Claude session that quits at a start-up dialog now ends once as failed, with the reason and one alert, instead of reading as finished, and its leftover shell is closed. All of this must hold: datawatch declined the dialog (only with `auto_accept_disclaimer` on) within the last two minutes, and the dialog ended with "Enter to confirm · Esc to cancel" under numbered choices; the Claude channel is on and the session's task was never delivered; datawatch sent the session nothing but answers to start-up dialogs; Claude Code was not then seen at its input box or working; and when datawatch looks, Claude Code has left, with only the terminal's own shell remaining or tmux confirming the terminal is gone. An Automaton retries such a worker as a launch failure and then holds it.
+
+### Not covered
+- Every other exit is handled as before: the session can be reported complete, and an interactive one can switch between complete and running with an alert each time. This includes the channel being off, a session with no task, an exit with no declined dialog, other dialog layouts, anything sent through datawatch (even one key), an exit more than two minutes after the dialog, a task already delivered, and other agents.
+- If anything else is still on the terminal or running under its shell when datawatch looks, or the process list or tmux cannot be read, the session is not failed. A one-shot is then complete after that first look; an interactive session is looked at again the next time round.
+- An Automaton worker that was never given its task is not guaranteed to stay unfinished outside the case above: with automatic commits on, the completion commit can get it past the check for undelivered work, and a restarted worker can be marked done. Earlier versions do this too.
+- The check before typing sees only what shows when it looks, and datawatch types whenever neither sign shows. If Claude Code has stopped reading the keyboard, or has exited under a wrapper script that did not exec and is still in the foreground, typed text can still run in the shell later. The same can happen if Claude Code leaves after the check, with job control off in the terminal's shell (datawatch's fallback memory watchdog turns it off) once the exit line is no longer on screen, or when neither the screen nor the process list can be read.
+- Some sends are not checked: what you send yourself; the MCP tools `send_input` and `send_saved_command`, also when an AI session calls them; answers to start-up dialogs; datawatch's own menu keys (the usage-limit answer, the MCP server retry, dismissing Claude Code prompts, Enter); and the memory wake-up text, which is typed without Enter.
+- The exit line is matched when a line reads `DATAWATCH_COMPLETE: claude done` after any leading spaces and non-ASCII marks such as ⎿ or ●, so automated input is also refused while a running Claude Code shows such a line, and a task delivery that stays refused ends the session.
+- A refused scheduled command is marked failed and is not retried, and a recurring one stops. This includes a shell command you scheduled for a Claude session whose Claude Code has left.
+
+## v9.187.26 — Daemon start no longer waits for the Claude registration cleanup
+
+### Fixed
+- Daemon startup no longer waits for the cleanup of old Claude MCP registrations, so an unresponsive MCP server no longer delays the daemon from answering.
+- The cleanup removes only registrations recorded in this daemon's data folder, never a name a session start or resume has registered since the daemon started. Its `claude` commands are ended after 2 minutes (list) or 30 seconds (each removal), and on daemon stop or restart.
+
+### Before you upgrade
+- Older entries are not recorded, so startup leaves them, including an old global `datawatch` or `channel.js` entry (which can start a second bridge). Run `claude mcp list` as the daemon's user and remove them with `claude mcp remove <name> -s user` (`-s local` or `-s project`, from that project folder, for entries in those scopes). Remove a `datawatch-<hostname>-<id>` entry (also a `channel.js` one) only if, for every daemon of that user, `datawatch session list` (with that daemon's `--config`) does not list session `<id>` or shows it as `complete`, `failed` or `killed`. A claude-code session's entry is also removed when it ends.
+
+### Not covered
+- If a cleanup removal hangs, a session start or resume can wait 30 s (90 s for a `channel.js` entry).
+- With the native bridge, a recorded `channel.js` entry is removed even if its session still exists.
+- Cleanup can remove one entry while a session adds another; whether Claude protects both writes was not tested.
+- A killed or crashed daemon can leave a cleanup command running.
+- Entries recorded by a since-deleted data folder stay.
+
+## v9.187.25 — A worker keeps its capacity slot while it works
+
+### Fixed
+- An Automaton worker now keeps its capacity slot while its session runs, except while it is parked on a question or an outside wait: its session stays open and the slot is free. Before, the slot was freed as soon as the session started, so a one-slot pool could run several workers at once.
+
+### Before you upgrade
+- Expect fewer workers in parallel and more tasks waiting for capacity.
+- A worker already waiting can take the freed slot before the finished task's verifier, which then waits.
+
+### Not covered
+- A worker resumed after a question or an outside wait can lose its slot after about 10 minutes while still running.
+- A resume still queued when its session ends can hold a slot for about 10 minutes.
+- Resuming or adopting a session can put a pool over its limit.
+- Two tasks sharing one project tree can block each other until the capacity wait expires (default 4 hours); this also happened before.
+- A task shows "verifying" while its worker is still running.
+- Verification or guardrail checks that use classify mode wait for a node slot with no time limit. On a one-slot node a verification can wait on the slot it already holds (read in the code, not run). Keep classify mode off.
+
 ## v9.187.24 — Tests stop scanning the shared temporary folder
 
 ### Changed
@@ -41,7 +112,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Before you upgrade
 - An opencode or opencode-acp session is refused, with the reason, when its `opencode.json` cannot be safely read or updated. This includes comments and trailing commas, which opencode itself accepts. An automation task retries and is then held. A rate-limit fallback only logs the refusal, and an exit-hook restart ends the old session before it logs.
-- When a settings file cannot be read, datawatch's own entries are not added to it: a Claude session may stop at a prompt, and an old token stays in an unreadable MCP file.
+- When a settings file cannot be read, datawatch's own entries are not added to it, and an old token stays in an unreadable MCP file. If Claude Code cannot read the file either (seen with a comment in a project's Claude settings files), it shows an invalid-settings dialog at start. With `auto_accept_disclaimer` on, datawatch declines that dialog with Esc and Claude exits, so the session never runs its task. This version can report such a session complete, or switch it between complete and running or waiting for input.
 - Nested opencode permission rules are now kept (flat ones already were), so an unattended opencode session may prompt or be refused where it did not before. A whole-file string such as `"permission": "ask"` is refused, not kept.
 - Check that the settings files datawatch writes are strict JSON: the user and data-folder Claude settings, the data-folder MCP file, each project's `.claude/settings.local.json` and `.mcp.json`, and each opencode project's `opencode.json`.
 - Not covered: removing an old datawatch entry from a project MCP file can still drop a duplicated key, and the optional cleanup of session files on end still deletes `opencode.json` and `.mcp.json`.

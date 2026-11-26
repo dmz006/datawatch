@@ -23,6 +23,9 @@ type AdoptedWaitPorts struct {
 	Status func(sessionID string) (state session.State, family string, ok bool)
 	// Completed reports whether the session's output carries the completion marker.
 	Completed func(sessionID string) bool
+	// LaunchFailure returns the launch failure error of a session recorded as
+	// a failed launch, or nil. nil port: never one.
+	LaunchFailure func(sessionID string) error
 	// Nudge returns the idle-nudge hooks for the session.
 	Nudge func(sessionID string) WorkerNudgeHooks
 
@@ -76,6 +79,11 @@ func WaitAdopted(ctx context.Context, w AdoptedWait, p AdoptedWaitPorts) error {
 			finish()
 			return nil
 		case session.StateFailed, session.StateKilled:
+			if p.LaunchFailure != nil {
+				if err := p.LaunchFailure(w.SessionID); err != nil {
+					return err
+				}
+			}
 			return fmt.Errorf("adopted session %s ended %s", w.SessionID, state)
 		}
 		if p.Completed(w.SessionID) {

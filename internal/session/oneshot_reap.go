@@ -135,6 +135,9 @@ func (m *Manager) FinishedOneShots() []*Session {
 func (m *Manager) ReapFinishedOneShots() []string {
 	var reaped []string
 	for _, sess := range m.FinishedOneShots() {
+		if m.endIfLaunchFailed(sess.FullID) {
+			continue
+		}
 		oldState := sess.State
 		// Read the reason while the session still reads live: a finished
 		// state has no finish reason.

@@ -2166,7 +2166,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				oldStatus = t.Status
 				t.Status = TaskVerifying
 			})
-			m.releaseWorkerLeaseForVerify(t)
+			// The spawn only started the worker session; verify waits for it to
+			// end. The worker lease stays held until then: ending the session
+			// frees the lease bound to it, and admitting the verifier or judge
+			// frees one still present.
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 			}

@@ -126,7 +126,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.24"
+var Version = "9.187.28"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -247,19 +247,43 @@ func claudeDisclaimerResponse(line string) string {
 //
 // It reports whether a keystroke was answered. A "no keystroke" outcome
 // returns false so caller loops may re-capture later within their window.
+//
+// It chooses the key for whatever the pane's text names. Live responders call
+// answerLiveStartupDialog, which first requires the dialog to be on screen.
 func respondStartupDialog(m *session.Manager, sessID string) bool {
-	a := m.ActiveStartupDialog(sessID)
+	return answerStartupDialog(m, sessID, m.ActiveStartupDialog(sessID))
+}
+
+// answerLiveStartupDialog answers the start-up dialog on the live screen, if
+// there is one: words in output or in a task send nothing. It waits until the
+// dialog has stood unchanged, because one that has just appeared does not keep
+// its keys.
+func answerLiveStartupDialog(m *session.Manager, sessID string) bool {
+	a, ok := m.SettledStartupDialog(sessID)
+	return ok && answerStartupDialog(m, sessID, a)
+}
+
+// answerStartupDialog sends the answer to dialog a.
+func answerStartupDialog(m *session.Manager, sessID string, a session.StartupDialogAction) bool {
+	// One answer for each dialog, whichever responder sends it.
+	answer := func(send func() error) (sent bool, err error) {
+		err = m.AnswerStartupScreen(sessID, a.Kind, send)
+		if errors.Is(err, session.ErrStartupScreenAnswered) {
+			return false, nil
+		}
+		return err == nil, err
+	}
 	switch a.Kind {
 	case session.StartupDialogNone:
 		return false
 	case session.StartupDialogTrustFolder:
 		// Arrow-key TUI ("❯ No, exit" pre-selected): Down moves the selector
 		// onto the accept option, Enter confirms.
-		if err := m.SendTrustDialogAccept(sessID); err != nil {
+		sent, err := answer(func() error { return m.SendTrustDialogAccept(sessID) })
+		if err != nil {
 			fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
-			return false
 		}
-		return true
+		return sent
 	case session.StartupDialogUnknownConfirm:
 		// The classifier declined to guess: send nothing and let the
 		// silent-start detector flag the session as a start failure.
@@ -269,22 +293,27 @@ func respondStartupDialog(m *session.Manager, sessID string) bool {
 	if a.Retry {
 		// Unsafe dialog (confirm-unsafe / update-prompt): decline with
 		// exactly one Esc; the start-failure budget owns any re-try.
-		if err := m.DeclineStartupDialog(sessID); err != nil {
+		sent, err := answer(func() error { return m.DeclineStartupDialog(sessID) })
+		if err != nil {
 			fmt.Printf("[claude] decline %q dialog send failed %s: %v\n", a.Kind, sessID, err)
-			return false
+		} else if sent {
+			fmt.Printf("[claude] declined %q startup dialog on %s (sent esc)\n", a.Kind, sessID)
 		}
-		fmt.Printf("[claude] declined %q startup dialog on %s (sent esc)\n", a.Kind, sessID)
-		return true
+		return sent
 	}
 	text := session.StartupDialogSendText(a)
 	if text == "" {
 		return false
 	}
-	if err := m.SendInput(sessID, text, "auto-accept-disclaimer"); err != nil {
+	sent, err := answer(func() error {
+		// Enter is checked against the screen just before it is pressed.
+		defer m.GuardStartupEnter(sessID, a.Kind)()
+		return m.SendInput(sessID, text, "auto-accept-disclaimer")
+	})
+	if err != nil {
 		fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
-		return false
 	}
-	return true
+	return sent
 }
 
 // claudeStartupAccepted tracks sessions whose startup auto-accept goroutine
@@ -1095,6 +1124,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Without this, `exec.Command("claude", ...)` fails when the binary is in a
 	// non-standard location (e.g. ~/.local/bin) that isn't in the daemon's PATH.
 	channel.SetClaudeBin(claudeBin)
+	// Registrations this daemon makes are recorded in its data folder: its
+	// startup cleanup removes only those.
+	channel.SetRegistrationRecord(expandHome(cfg.DataDir))
 	// GH#128 v8.12.0 — MCP bridge registrations go to ~/.claude/ (default).
 	// Injecting a datawatch-scoped CLAUDE_CONFIG_DIR caused auth credential
 	// and first-run onboarding issues in spawned sessions.
@@ -1284,12 +1316,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			channel.SetBinaryHint(bridgeBin)
 			fmt.Printf("[channel] using native Go bridge: %s\n", bridgeBin)
 			usingGoBridge = true
-			// BL288 (v5.4.0) — purge stale `datawatch*` entries in claude's
-			// MCP list that still point at `node + channel.js` from before
-			// the Go-bridge migration. Runs once per daemon start.
-			if cleaned := channel.CleanupStaleJSRegistrations(); len(cleaned) > 0 {
-				fmt.Printf("[channel] removed stale JS-bridge MCP registration(s): %s\n", strings.Join(cleaned, ", "))
-			}
 			// One-time migration notice — operator can clean up the
 			// legacy node_modules with `datawatch setup channel --cleanup`.
 			if legacy := channel.LegacyJSArtifacts(dataDirExpanded); len(legacy) > 0 {
@@ -1311,13 +1337,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] channel setup: %v\n", err)
 			}
 		}
-		// Remove stale global "datawatch" MCP if it exists (replaced by per-session servers)
-		channel.UnregisterGlobalMCP()
-		// Clean up MCP registrations for sessions that no longer exist
-		channel.CleanupStaleMCP(func(sessionID string) bool {
+		// Old registrations are cleaned up beside the start, never before it.
+		startChannelMCPCleanup(usingGoBridge, func(sessionID string) bool {
 			_, ok := mgr.GetSession(sessionID)
 			return ok
 		})
+		defer stopChannelMCPCleanup()
 	}
 
 	// Re-register claude-code with config-driven options (skip_permissions, channel_enabled).
@@ -2681,15 +2706,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				time.Sleep(750 * time.Millisecond)
 				// Classifier-driven: answers whichever startup dialog is
 				// actually on the live pane (trust arrow keys, Enter-type
-				// accepts, or a single Esc for unsafe dialogs). At most one
-				// answer per appearance; a few re-captures in case the TUI is
-				// still rendering.
-				for i := 0; i < 5; i++ {
-					if respondStartupDialog(mgr, sessID) {
-						break
-					}
-					time.Sleep(500 * time.Millisecond)
-				}
+				// accepts, or a single Esc for unsafe dialogs), each once it has
+				// settled, until none is left.
+				respondToStartupScreens(mgr, sessID, answerLiveStartupDialog, startupRespondWindow, startupRespondPause)
 			}()
 		},
 	})
@@ -2735,7 +2754,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				deadline := time.Now().Add(45 * time.Second)
 				for time.Now().Before(deadline) {
 					time.Sleep(500 * time.Millisecond)
-					if respondStartupDialog(mgr, sessID) {
+					if answerLiveStartupDialog(mgr, sessID) {
 						return
 					}
 				}
@@ -3276,6 +3295,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
 			flushBackoff(autonomousBackoff)
+			stopChannelMCPCleanup()
 			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -6184,6 +6204,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 				}
+				// A launch the session recorded as failed outranks whatever
+				// else the wait concluded: no task was delivered.
+				if ls, ok := mgr.GetSession(task.SessionID); ok {
+					if lerr := workerLaunchFailure(ls); lerr != nil {
+						log.Printf("[autonomous] launch failure: session %s task %s/%s: %s", ls.FullID, task.PRDID, task.ID, ls.LaunchFailure)
+						return autonomouspkg.VerificationResult{}, lerr
+					}
+				}
 				if doneVerdict != nil {
 					return *doneVerdict, nil
 				}
@@ -8073,6 +8101,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Boot-resume: recorded output of a session that ended while the daemon
 			// was down, so a finished worker is verified instead of redone.
 			amgr.SetSessionOutputFn(func(sessionID string) (string, bool) {
+				if mgr.LaunchFailed(sessionID) != "" {
+					return "", false // its completion line proves nothing
+				}
 				out, err := mgr.TailOutput(sessionID, 500)
 				if err != nil {
 					return "", false
@@ -8120,6 +8151,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							return "", "", false
 						}
 						return s.State, s.BackendFamily, true
+					},
+					LaunchFailure: func(sessionID string) error {
+						s, _ := mgr.GetSession(sessionID)
+						return workerLaunchFailure(s)
 					},
 					Completed: func(sessionID string) bool {
 						out, err := mgr.TailOutput(sessionID, 200)
@@ -9790,6 +9825,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// shutdowncause.Capture) before either exit path below.
 			recordShutdownCause(nil)
 			flushBackoff(autonomousBackoff)
+			stopChannelMCPCleanup()
 			_ = mgr.Close()
 			// Under systemd, let its own Restart= policy bring the service
 			// back up — exiting non-zero so Restart=on-failure fires —
@@ -10095,6 +10131,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
 			flushBackoff(autonomousBackoff)
+			stopChannelMCPCleanup()
 			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -10459,15 +10496,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// Classifier-driven: answers whichever startup dialog is
 					// on the live pane (trust arrow keys, Enter-type accepts,
 					// or a single Esc for unsafe dialogs), not only the one the
-					// prompt line named. At most one answer per appearance;
-					// re-capture a few times in case the TUI is still
-					// rendering.
-					for i := 0; i < 5; i++ {
-						if respondStartupDialog(mgr, sessID) {
-							break
-						}
-						time.Sleep(500 * time.Millisecond)
-					}
+					// prompt line named, each once it has settled, until none is
+					// left.
+					respondToStartupScreens(mgr, sessID, answerLiveStartupDialog, startupRespondWindow, startupRespondPause)
 				}(sess.FullID)
 			}
 		}
@@ -10593,7 +10624,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		isPromptOscillation := (old == session.StateRunning && sess.State == session.StateWaitingInput) ||
 			(old == session.StateWaitingInput && sess.State == session.StateRunning)
 		if !isPromptOscillation {
-			bundleRemoteAlert(sess, event)
+			_, line := stateAlertText(sess, old, event)
+			bundleRemoteAlert(sess, line)
 		}
 		// Local alert store: skip running↔waiting_input oscillation to reduce noise
 		if !isPromptOscillation {
@@ -10601,9 +10633,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if sess.State == session.StateKilled || sess.State == session.StateFailed {
 				level = alertspkg.LevelWarn
 			}
+			body, _ := stateAlertText(sess, old, event)
 			alertStore.Add(level,
 				fmt.Sprintf("%s: %s → %s", sessionLabel(sess), old, sess.State),
-				truncate(sess.Task, 100),
+				body,
 				sess.FullID,
 			)
 		}
@@ -10987,6 +11020,7 @@ func runAutoUpdater(ctx context.Context, cfg *config.Config) {
 				}
 				fmt.Printf("[updater] installed v%s, restarting daemon...\n", latest)
 				time.Sleep(500 * time.Millisecond)
+				stopChannelMCPCleanup()
 				selfPath, execErr := os.Executable()
 				if execErr == nil {
 					selfPath, _ = filepath.EvalSymlinks(selfPath)

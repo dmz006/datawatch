@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.24 (2026-11-26).** Tests no longer scan the shared temporary folder or write into the home folder (some home lookups and leftover files remain); how datawatch behaves does not change. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.28 (2026-11-26).** datawatch now answers a Claude start-up dialog only when the screen ends with it and it has stayed unchanged for two seconds; the changelog lists what can still go wrong. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -1013,7 +1013,7 @@ Each capacity tick frees pi-prompt (`llm:pi-prompt`) slots held by a `judge:` or
 
 ### Worker slot at verification
 
-When a task enters `verifying`, its worker's capacity slot is released at once, and the verifier takes a slot of its own. The slot is not handed over (see [The worker slot at verification](howto/automata-capacity.md#the-worker-slot-at-verification)). For an operator this means a task in `verifying` no longer holds a worker lease, so the lane it used is free for the next task while the verification runs. There is no setting for this; it applies on every build that carries the change.
+When a task's worker session ends, its worker's capacity slot is released, and the verifier takes a slot of its own. The slot is not handed over (see [The worker slot at verification](howto/automata-capacity.md#the-worker-slot-at-verification)). A task shows `verifying` from the moment its worker has started, so the worker lease stays held while that session runs. For an operator this means a task whose verification is running no longer holds a worker lease, so the lane it used is free for the next task. There is no setting for this; it applies on every build that carries the change.
 
 **Still to review (operator).** The behaviour is confirmed by unit tests only (`internal/autonomous`: `verifying_lease_release_test.go`, `capacity_handoff_test.go`, `judge_capacity_verifier_test.go`), not on a live daemon. Confirm on the build in use, with a one-slot LLM pool: a second task starts while the first is verifying, and the first task's verifier runs once a verifier slot frees. Also confirm that a waiting verifier shows in the capacity status like any other waiting request. The node-balancing story test `TestTwoPiWorkersHoldDifferentNodes` (`cmd/datawatch/node_balancing_story_test.go`) models this: its stand-in worker holds its node while the worker session runs and frees it when the session ends, instead of holding the node through verification. Two code leftovers remain for a later change: `Manager.HandoffVerifyLease` and `judgeHandoff` in `internal/autonomous/capacity.go` have no production caller, and the test `TestNoVerifierPoolKeepsHandOver` keeps its old name although it now checks a fresh lease.
 
@@ -4001,9 +4001,31 @@ Supported commands: `help`, `list`, `status <id>`, `tail <id>`, `send <id>: <msg
 
 ### MCP Channel Cleanup
 
-On daemon startup, stale MCP channel registrations (from deleted sessions) are
-automatically removed from Claude's MCP config. This prevents the MCP server list from
-growing unboundedly over time.
+On daemon startup, old MCP channel registrations are removed from Claude's MCP
+config. This keeps the MCP server list from growing without bound.
+
+Claude's user-scope MCP list is shared by everything that runs as the same user,
+including other daemons with the same `hostname`. The daemon records each
+registration it makes in `<data_dir>/channel-mcp-registrations.json`. The
+cleanup removes an entry only when that record names it and no session start or
+resume has registered it in this daemon run:
+
+- the legacy global `datawatch` entry;
+- with the native bridge, a `datawatch*` entry that still runs `channel.js`;
+- a `datawatch-<session>` entry whose session the daemon does not know.
+
+**Entries the record does not name stay.** That includes every entry made before
+the daemon kept a record, an old global `datawatch` entry among them, and entries
+made with another data folder. Remove one by hand:
+`claude mcp remove <name> -s user`.
+
+The cleanup runs beside the start, so the daemon answers while it is still
+running. It uses `claude mcp list`, which connects to every MCP server in that
+list: one unreachable server holds the command for its whole connect timeout. A
+list call is ended after 2 minutes and a removal after 30 seconds; a stop or
+restart of the daemon ends the running call and the processes it started. What
+was not removed is tried again at the next start. A daemon that is killed
+outright (SIGKILL or a crash) cannot end a running call.
 
 ### MCP config files the daemon writes
 
