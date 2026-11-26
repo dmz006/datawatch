@@ -543,7 +543,12 @@ type Manager struct {
 	onScreenCapture func(sess *Session, lines []string)
 
 	// onSessionStart is called immediately after a session is successfully started.
-	onSessionStart func(sess *Session)
+	onSessionStart []func(sess *Session)
+	// sessionNotice raises one operator notice about sessions; endedAtStart
+	// and silentNoticed hold what it still has to say or has said.
+	sessionNotice func(title, body string)
+	endedAtStart  []string
+	silentNoticed map[string]time.Time
 
 	// onSessionCreated is called for PRD task sessions once the new session
 	// record is persisted and before the task text is delivered into it.
@@ -1300,9 +1305,11 @@ func (m *Manager) SetScreenCaptureHandler(fn func(*Session, []string)) {
 	m.onScreenCapture = fn
 }
 
-// SetOnSessionStart sets the callback invoked immediately after a session starts successfully.
-func (m *Manager) SetOnSessionStart(fn func(*Session)) {
-	m.onSessionStart = fn
+// AddOnSessionStart adds a callback invoked immediately after a session starts
+// successfully. Callbacks run in the order they were added; none replaces
+// another.
+func (m *Manager) AddOnSessionStart(fn func(*Session)) {
+	m.onSessionStart = append(m.onSessionStart, fn)
 }
 
 // SetOnSessionCreated sets the callback invoked after a PRD/task session record
@@ -1374,8 +1381,8 @@ func (m *Manager) notifySessionStart(sess *Session) {
 	if m.traceIngest != nil {
 		m.traceIngest.SessionStarted(m.store.Snapshot(sess))
 	}
-	if m.onSessionStart != nil {
-		m.onSessionStart(sess)
+	for _, fn := range m.onSessionStart {
+		fn(sess)
 	}
 }
 
@@ -2881,7 +2888,9 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	// under whatever the account picks. When a model is named, the persisted
 	// session record carries exactly the value the backend passes to the CLI
 	// as --model.
-	if b, ok := backendObj.(interface{ Name() string }); ok && b.Name() == "claude-code" {
+	// A subprocess runs a shell command, not a model.
+	isSubprocess := opt != nil && opt.Subprocess
+	if b, ok := backendObj.(interface{ Name() string }); ok && b.Name() == "claude-code" && !isSubprocess {
 		if opt == nil || opt.Model == "" {
 			return nil, fmt.Errorf("claude-code launch refused: no explicit model set — datawatch will not fall back to the account default or upgrade the model on its own; name a model (e.g. \"sonnet\" or \"haiku\") in any of these places and try again: the `datawatch session new --model <name>` flag; the `model` field of POST /api/sessions/start; the MCP `start_session` `model` argument; the chat `new: model=<name>` token; or the LLM row via `datawatch llm models add <llm> --model <name>`")
 		}
@@ -4796,7 +4805,7 @@ func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) (e
 		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, snap.State)
 	}
 
-	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, snap.TmuxSession, input, snap.BackendFamily)
+	m.debugf("SendInput session=%s tmux=%s length=%d backend=%s", fullID, snap.TmuxSession, len(input), snap.BackendFamily)
 
 	// Chat-mode sessions have no terminal prompt to answer.
 	if guarded && snap.OutputMode != "chat" {
@@ -4859,7 +4868,12 @@ func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) (e
 
 	// For opencode-acp sessions, route input via HTTP API if ACP session is active.
 	if snap.BackendFamily == "opencode-acp" {
-		if opencode.SendMessageACP(snap.TmuxSession, input) {
+		if active, err := opencode.SendACP(snap.TmuxSession, input); active {
+			// The pane runs the server, so a refused message is not typed
+			// there instead.
+			if err != nil {
+				return fmt.Errorf("send input: %w", err)
+			}
 			m.debugf("SendInput routed via opencode ACP HTTP")
 			routedDelivered()
 			return nil
@@ -6925,7 +6939,7 @@ func (m *Manager) ResumeRateLimitedSession(ctx context.Context, fullID string) {
 	}
 
 	// Send resume prompt to tmux — reference the PAUSED.md file for context
-	resumeMsg := "The rate limit has reset. Please read PAUSED.md in your working directory for context on what was in progress, then continue the task."
+	resumeMsg := rateLimitResumeMsg
 	if err := m.automatedBlocked(sess.TmuxSession, "rate-limit-resume"); err != nil {
 		m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: sess.FullID, Source: "rate-limit-resume", Length: len(resumeMsg), Reason: err.Error()})
 	} else {
@@ -7023,6 +7037,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			sess.State = StateFailed
 			sess.UpdatedAt = time.Now()
 			_ = m.store.Save(sess)
+			m.noteEndedAtStart(sess, oldState)
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
 			}
@@ -7043,6 +7058,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			oldState := sess.State
 			m.markEnded(sess, StateFailed, EndReason{Caller: callerAt(0), Reason: "terminal gone after a daemon restart"})
 			_ = m.store.Save(sess)
+			m.noteEndedAtStart(sess, oldState)
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
 			}
@@ -7117,29 +7133,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		// If rate limited, ensure a persisted schedule exists for auto-resume.
 		// The scheduler (runScheduler) will fire the command at the right time.
 		if sess.State == StateRateLimited {
-			if m.schedStore != nil {
-				// Check if there's already a pending resume schedule for this session
-				pending := m.schedStore.PendingForSession(sess.FullID)
-				hasResume := false
-				for _, sc := range pending {
-					if !sc.RunAt.IsZero() {
-						hasResume = true
-						break
-					}
-				}
-				if !hasResume {
-					resumeAt := time.Now().Add(60 * time.Minute)
-					if sess.RateLimitResetAt != nil && time.Until(*sess.RateLimitResetAt) > time.Minute {
-						resumeAt = *sess.RateLimitResetAt
-					}
-					resumeMsg := "The rate limit has reset. Please read PAUSED.md in your working directory for context on what was in progress, then continue the task."
-					if _, err := m.schedStore.Add(sess.FullID, resumeMsg, resumeAt, ""); err != nil {
-						fmt.Printf("[warn] schedule rate-limit resume for %s: %v\n", sess.FullID, err)
-					} else {
-						fmt.Printf("[rate-limit] re-scheduled auto-resume for %s at %s\n", sess.ID, resumeAt.Format(time.RFC3339))
-					}
-				}
-			}
+			m.ensureResumeAtStart(sess)
 			continue
 		}
 
@@ -7669,6 +7663,11 @@ func (m *Manager) SetDetection(d config.DetectionConfig) {
 // SetScheduleStore sets the schedule store for timed commands and deferred sessions.
 func (m *Manager) SetScheduleStore(store *ScheduleStore) {
 	m.schedStore = store
+	if store != nil {
+		store.mu.Lock()
+		store.settleHook = m.deliverSettled
+		store.mu.Unlock()
+	}
 }
 
 // GetScheduleStore returns the schedule store (may be nil if not set).
@@ -7684,7 +7683,9 @@ func (m *Manager) StartScheduleTimer(ctx context.Context) {
 	if m.schedStore == nil {
 		return
 	}
+	m.holdDaemonLock(ctx)
 	m.settleInterruptedFires(time.Now())
+	m.ensureResumesAtStart()
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -7694,6 +7695,7 @@ func (m *Manager) StartScheduleTimer(ctx context.Context) {
 				return
 			case <-ticker.C:
 				m.processScheduledItems(ctx)
+				m.checkSilentSessions(time.Now())
 			}
 		}
 	}()
@@ -7701,6 +7703,8 @@ func (m *Manager) StartScheduleTimer(ctx context.Context) {
 
 func (m *Manager) processScheduledItems(ctx context.Context) {
 	now := time.Now()
+	m.schedStore.AdoptExternal()
+	m.schedStore.settleUnreachable(now, func(id string) string { return m.deadSession(id, now) })
 
 	// Process due timed commands (send to existing sessions)
 	dueCmds := m.schedStore.DuePending(now)
@@ -7719,7 +7723,8 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 				fmt.Printf("[schedule] failed to send to %s: %v\n", sess.FullID, err)
 			}
 		} else {
-			fmt.Printf("[schedule] sent command to %s: %s\n", sess.FullID, sc.Command)
+			// The text can carry anything: only the schedule id is logged.
+			fmt.Printf("[schedule] sent [%s] to %s\n", sc.ID, sess.FullID)
 			m.FireChained(m.schedStore, sess.FullID, sc.ID)
 		}
 	}
@@ -8844,9 +8849,8 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			if resumeAt.IsZero() || time.Until(resumeAt) < time.Minute {
 				resumeAt = time.Now().Add(60 * time.Minute)
 			}
-			resumeMsg := "The rate limit has reset. Please read PAUSED.md in your working directory for context on what was in progress, then continue the task."
 			if m.schedStore != nil {
-				if _, err := m.schedStore.Add(current.FullID, resumeMsg, resumeAt, ""); err != nil {
+				if _, err := m.schedStore.ensureRateLimitResume(current.FullID, resumeAt, current.UpdatedAt, true); err != nil {
 					fmt.Printf("[warn] schedule rate-limit resume for %s: %v\n", current.FullID, err)
 				} else {
 					fmt.Printf("[rate-limit] scheduled auto-resume for %s at %s\n", current.ID, resumeAt.Format(time.RFC3339))

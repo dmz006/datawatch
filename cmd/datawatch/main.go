@@ -2712,7 +2712,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		},
 	})
 	// Create an alert when any session starts so it appears in alerts view for all backends
-	mgr.SetOnSessionStart(func(sess *session.Session) {
+	mgr.AddOnSessionStart(func(sess *session.Session) {
 		alertStore.Add(alertspkg.LevelInfo,
 			fmt.Sprintf("%s: started (%s)", sessionLabel(sess), sess.BackendFamily),
 			truncate(sess.Task, 100),
@@ -2728,12 +2728,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				autoInstall = *cfg.Session.AutoInstallHooks
 			}
 			if autoInstall {
-				scheme := "http"
-				if cfg.Server.TLSEnabled {
-					scheme = "https"
-				}
-				url := fmt.Sprintf("%s://%s:%d", scheme, "localhost", cfg.Server.Port)
-				if err := hookinstaller.Install(sess.ProjectDir, sess.FullID, url, ""); err != nil {
+				if err := hookinstaller.Install(sess.ProjectDir, sess.FullID, hookDaemonURL(cfg), ""); err != nil {
 					fmt.Printf("[hookinstall] %s: %v\n", sess.FullID, err)
 				}
 			}
@@ -2749,55 +2744,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// trust arrow keys, Enter-type accepts, or a single Esc for unsafe
 		// dialogs.
 		if claudeAutoAccept && sess.BackendFamily == "claude-code" {
-			go func(sessID string) {
-				deadline := time.Now().Add(45 * time.Second)
-				for time.Now().Before(deadline) {
-					time.Sleep(500 * time.Millisecond)
-					if respondStartupDialog(mgr, sessID) {
-						return
-					}
-				}
-			}(sess.FullID)
+			go pollStartupDialog(sess.FullID, func(id string) bool { return respondStartupDialog(mgr, id) },
+				500*time.Millisecond, 45*time.Second)
 		}
-		// Auto-retrieve memory context on session start (BL44 + BL56 layers)
-		if memRetriever != nil && sess.Task != "" {
-			go func() {
-				defer func() {
-					if p := recover(); p != nil {
-						fmt.Printf("[memory] wake-up panic (recovered): %v\n", p)
-					}
-				}()
-				// Build wake-up context: L0 identity + L1 critical facts
-				layers := memoryPkg.NewLayers(expandHome(cfg.DataDir), memRetriever)
-				// BL257 P1 v6.8.0 — wire the structured identity / Telos
-				// document into L0 so AI work stays anchored to operator
-				// priorities. Empty / disabled identityMgr → no-op.
-				if identityMgr != nil {
-					layers.SetIdentityProvider(identityMgr.PromptText)
-				}
-				wakeUp := layers.WakeUpContext(sess.ProjectDir)
-				// L3: task-specific search
-				topK := cfg.Memory.EffectiveTopK()
-				taskCtx := memRetriever.RetrieveContext(sess.ProjectDir, sess.Task, topK)
-				ctx := strings.TrimSpace(wakeUp + "\n\n" + taskCtx)
-				if ctx != "" {
-					// Display context in tmux session as a visible preamble
-					lines := strings.Split(ctx, "\n")
-					for _, line := range lines {
-						if strings.TrimSpace(line) == "" {
-							continue
-						}
-						escaped := strings.ReplaceAll(line, "'", "'\\''")
-						if err := mgr.SendAutomatedRawKeys(sess.FullID, fmt.Sprintf("echo '%s'", escaped), "memory-wakeup"); err != nil {
-							fmt.Printf("[memory] stopped injecting context for session %s: %v\n", sess.ID, err)
-							return
-						}
-						time.Sleep(50 * time.Millisecond)
-					}
-					fmt.Printf("[memory] injected %d context lines for session %s\n", len(lines), sess.ID)
-				}
-			}()
-		}
+		// Memory context is not put into the session here. Typing it into the
+		// pane leaves it, unsent, in front of the next thing that is typed:
+		// the task.
 	})
 
 	var (
@@ -9912,16 +9864,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 
 		// Wire SetACPFullID: when a new session starts with opencode-acp backend,
 		// associate the datawatch full_id with the tmux session name.
-		mgr.SetOnSessionStart(func(sess *session.Session) {
+		mgr.AddOnSessionStart(func(sess *session.Session) {
 			if sess.BackendFamily == "opencode-acp" {
 				opencode.SetACPFullID(sess.TmuxSession, sess.FullID)
 			}
-			// Session start alert (was in the first SetOnSessionStart but got overwritten)
-			alertStore.Add(alertspkg.LevelInfo,
-				fmt.Sprintf("%s: started (%s)", sessionLabel(sess), sess.BackendFamily),
-				truncate(sess.Task, 100),
-				sess.FullID,
-			)
 			// Remote channels are notified via SetStateChangeHandler bundler
 			// when state transitions to "running" — no separate start notification needed
 		})
@@ -10038,6 +9984,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			sendSystemAlertToComm(a, cfg.Hostname, cfg.NotifyExclude, routers, sendNtfy, sendEmail)
 		}
 	})
+
+	// Now that alerts reach the web app and the chat channels: one notice for
+	// the sessions found dead at start, and later ones for silent sessions.
+	reportSessionNotices(mgr)
 
 	// Start the scheduler goroutine (fires timed commands and on-input-prompt commands)
 	go runScheduler(ctx, schedStore, mgr)
@@ -14877,169 +14827,6 @@ func resultStorePath(cfg *config.Config) string {
 
 func scheduleResultStorePath(cfg *config.Config) string {
 	return filepath.Join(expandHome(cfg.DataDir), "schedule_results.json")
-}
-
-func runScheduleAdd(cfg *config.Config, sessionID, sessionName, command, at, cronExpr, scheduleName string) error {
-	store, err := session.NewScheduleStore(schedStorePath(cfg))
-	if err != nil {
-		return fmt.Errorf("open schedule store: %w", err)
-	}
-
-	// Validate cron if provided
-	if cronExpr != "" {
-		if err := session.ValidateCron(cronExpr); err != nil {
-			return fmt.Errorf("invalid cron expression %q: %w", cronExpr, err)
-		}
-	}
-
-	var runAt time.Time
-	if cronExpr != "" && at == "" {
-		// Compute initial run time from cron
-		runAt, err = session.CronNext(cronExpr, time.Now())
-		if err != nil {
-			return fmt.Errorf("cron next: %w", err)
-		}
-	} else if at != "" && at != "now" {
-		// Try HH:MM first
-		if t, err2 := time.Parse("15:04", at); err2 == nil {
-			now := time.Now()
-			runAt = time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
-			if runAt.Before(now) {
-				runAt = runAt.Add(24 * time.Hour)
-			}
-		} else {
-			// Try RFC3339
-			runAt, err = time.Parse(time.RFC3339, at)
-			if err != nil {
-				return fmt.Errorf("invalid --at value %q: use 'now', 'HH:MM', or RFC3339 timestamp", at)
-			}
-		}
-	}
-
-	sc, err := store.AddFull(session.AddOptions{
-		SessionID:    sessionID,
-		SessionName:  sessionName,
-		ScheduleName: scheduleName,
-		Command:      command,
-		RunAt:        runAt,
-		CronExpr:     cronExpr,
-	})
-	if err != nil {
-		return fmt.Errorf("schedule add: %w", err)
-	}
-	when := "on next input prompt"
-	if !sc.RunAt.IsZero() {
-		when = sc.RunAt.Format("2006-01-02 15:04")
-	}
-	ref := sessionID
-	if sessionName != "" {
-		ref = fmt.Sprintf("%s (name:%s)", sessionID, sessionName)
-	}
-	label := sc.ID
-	if scheduleName != "" {
-		label = fmt.Sprintf("%s (%s)", sc.ID, scheduleName)
-	}
-	fmt.Printf("Scheduled [%s] for session %s at %s:\n  %s\n", label, ref, when, command)
-	return nil
-}
-
-func runScheduleList(cfg *config.Config) error {
-	store, err := session.NewScheduleStore(schedStorePath(cfg))
-	if err != nil {
-		return fmt.Errorf("open schedule store: %w", err)
-	}
-	entries := store.List()
-	if len(entries) == 0 {
-		fmt.Println("No scheduled commands.")
-		return nil
-	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tTYPE\tSESSION/TARGET\tSCHED-NAME\tSTATE\tWHEN\tCRON\tFIRES\tLAST-FIRE\tLAST-RESULT\tREARM\tTASK/COMMAND")
-	for _, sc := range entries {
-		when := "on input"
-		if !sc.RunAt.IsZero() {
-			when = sc.RunAt.Local().Format("01-02 15:04")
-		}
-		typ := sc.Type
-		if typ == "" {
-			typ = "command"
-		}
-		target := sc.SessionID
-		if sc.SessionName != "" {
-			target = "name:" + sc.SessionName
-		}
-		if (sc.Type == session.SchedTypeNewSession || sc.Type == session.SchedTypeSpawn) && sc.DeferredSession != nil {
-			target = "spawn:" + sc.DeferredSession.Name
-		}
-		fires := ""
-		lastFire := ""
-		lastResult := ""
-		if sc.FireCount > 0 {
-			fires = fmt.Sprintf("%d", sc.FireCount)
-			lastFire = sc.LastFireAt.Local().Format("01-02 15:04")
-			lastResult = sc.LastFireResult
-		}
-		rearm := sc.RearmState
-		if rearm != "" && sc.LastError != "" {
-			rearm += ": " + truncate(sc.LastError, 40)
-		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			sc.ID, typ, target, sc.ScheduleName,
-			sc.State, when, sc.CronExpr,
-			fires, lastFire, lastResult, rearm,
-			truncate(sc.Command, 40))
-	}
-	return w.Flush()
-}
-
-func runScheduleCancel(cfg *config.Config, id string) error {
-	// GH#128: must go through the API so the daemon's in-memory ScheduleStore is
-	// updated. Direct file writes are overwritten on the next daemon save().
-	// Use TLS-skipping client: HTTP→HTTPS 307 redirect on the loopback port
-	// lands on a self-signed cert; the same pattern as validateLoopback().
-	loopbackClient := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- loopback to self-signed daemon
-		},
-	}
-	baseURL := loopbackBaseURL(cfg)
-	apiURL := fmt.Sprintf("%s/api/schedule?id=%s", baseURL, id)
-	req, err := http.NewRequest(http.MethodDelete, apiURL, nil)
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	if cfg.Server.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-	}
-	resp, err := loopbackClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cancel schedule: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode == http.StatusNotFound {
-		// Try cancel by name
-		apiURL = fmt.Sprintf("%s/api/schedule?name=%s", baseURL, id)
-		req2, _ := http.NewRequest(http.MethodDelete, apiURL, nil)
-		if cfg.Server.Token != "" {
-			req2.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-		}
-		resp2, err2 := loopbackClient.Do(req2)
-		if err2 != nil {
-			return fmt.Errorf("cancel schedule by name: %w", err2)
-		}
-		defer resp2.Body.Close() //nolint:errcheck
-		if resp2.StatusCode >= 300 {
-			return fmt.Errorf("schedule %q not found (tried id and name)", id)
-		}
-		fmt.Printf("Cancelled schedule(s) named %q.\n", id)
-		return nil
-	}
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("cancel schedule: HTTP %d", resp.StatusCode)
-	}
-	fmt.Printf("Scheduled command %s cancelled.\n", id)
-	return nil
 }
 
 // newScheduleSpawnCmd builds the "schedule spawn" subcommand (GH#128).

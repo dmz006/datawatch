@@ -113,6 +113,25 @@ func (m *Manager) endSessionAs(fullID string, why EndReason, final State) error 
 	// proceeds with the kill exactly as before).
 	m.pushUnpushedBeforeTeardown(sess)
 
+	// The end record is saved before the pane is closed, so a daemon that
+	// stops between the two does not find a live-looking record with no pane.
+	var oldState, newState State
+	m.store.Mutate(func() {
+		oldState = sess.State
+		if !oldState.IsTerminal() {
+			sess.State = final
+			sess.UpdatedAt = time.Now()
+		}
+		newState = sess.State
+		stampEnd(sess, time.Now(), endNoteFor(oldState, newState, why))
+	})
+	saveErr := m.store.Save(sess)
+	// The store batches writes; this one must be on disk first. A write that
+	// fails is retried by the store and does not stop the end.
+	if err := m.store.Flush(); err != nil {
+		m.journalf("[warn] end record of %s not yet on disk: %v\n", sess.ID, err)
+	}
+
 	// Kill the tmux session — but ONLY if there is one. Virtual
 	// sessions (council-virtual, etc.) have no tmux pane; calling
 	// `tmux kill-session -t ""` without a target munches arbitrary
@@ -130,18 +149,8 @@ func (m *Manager) endSessionAs(fullID string, why EndReason, final State) error 
 		m.onSessionReap(sess)
 	}
 
-	var oldState, newState State
-	m.store.Mutate(func() {
-		oldState = sess.State
-		if !oldState.IsTerminal() {
-			sess.State = final
-			sess.UpdatedAt = time.Now()
-		}
-		newState = sess.State
-		stampEnd(sess, time.Now(), endNoteFor(oldState, newState, why))
-	})
-	if err := m.store.Save(sess); err != nil {
-		return fmt.Errorf("save session: %w", err)
+	if saveErr != nil {
+		return fmt.Errorf("save session: %w", saveErr)
 	}
 	// The session holds no slot a moment after it is ended. The periodic reap
 	// stays as the safety net for a lease this call could not name.
