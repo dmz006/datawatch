@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -74,11 +75,15 @@ func setAutomationShipped(a *Automation, release string, mergedAt time.Time, com
 }
 
 // validateShippedRecordArgs checks the shared parts of the two record
-// signatures: a non-empty merge commit and a known source.
+// signatures: a non-empty merge commit that no git command could read as an
+// option, and a known source. It checks new writes only.
 func validateShippedRecordArgs(commit, source string) (string, error) {
 	commit = strings.TrimSpace(commit)
 	if commit == "" {
 		return "", fmt.Errorf("shipped: merge commit must not be empty")
+	}
+	if strings.HasPrefix(commit, "-") {
+		return "", fmt.Errorf("shipped: merge commit %q is not a commit id: it starts with \"-\", which git would read as an option", commit)
 	}
 	if !validShippedSource(source) {
 		return "", fmt.Errorf("shipped: source must be %q or %q, got %q", ShippedSourceMergeStep, ShippedSourceBackfill, source)
@@ -107,6 +112,10 @@ func (m *Manager) RecordPRDShipped(id, release string, mergedAt time.Time, commi
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", id)
 	}
+	c, confirmed, err := m.confirmShippedCommit(p, c, source)
+	if err != nil {
+		return nil, err
+	}
 	// p is the shared stored pointer (Store.GetPRD): check and write under the
 	// store lock so the shipped fields are ordered against snapshot reads and
 	// persist. SavePRD takes Store.mu too (non-reentrant), so it stays out.
@@ -118,6 +127,9 @@ func (m *Manager) RecordPRDShipped(id, release string, mergedAt time.Time, commi
 			return
 		}
 		setPRDShipped(p, release, mergedAt, c, source)
+		if confirmed {
+			markLandingLandedLocked(p, c, mergePipelineActor, mergedAt)
+		}
 		// A finished Automaton that now carries a shipped record is delivered:
 		// label it in the same step (an outcome already recorded is kept).
 		if outcomeMode != ClosedOutcomeOff && closedWorkStatus(p.Status) && p.ClosedOutcome == "" {
@@ -135,6 +147,68 @@ func (m *Manager) RecordPRDShipped(id, release string, mergedAt time.Time, commi
 		return nil, fmt.Errorf("prd %q not found", id)
 	}
 	return out, nil
+}
+
+// confirmShippedCommit holds a merge step record to git: when the
+// Automaton's branch is in the merge repository, the commit must hold that
+// branch, and when the repository has a remote it must also be on the
+// remote's default branch. It returns the commit to store (the full id once
+// checked) and whether the remote confirmed it. A backfill record, and work
+// of another repository, cannot be checked here and is recorded as given.
+// Text that is not a commit id is refused before git runs.
+func (m *Manager) confirmShippedCommit(p *PRD, commit, source string) (string, bool, error) {
+	if source != ShippedSourceMergeStep {
+		return commit, false, nil
+	}
+	var branch, recorded string
+	m.readLocked(func() { branch, recorded = strings.TrimSpace(p.Git.Branch), p.MergeCommit })
+	if sameShippedCommit(recorded, commit) {
+		return recorded, false, nil
+	}
+	repo := strings.TrimSpace(m.MergeBaseRepo())
+	if repo == "" || branch == "" {
+		return commit, false, nil
+	}
+	refuse := func(err error) (string, bool, error) {
+		return "", false, fmt.Errorf("shipped: not recorded: %w", err)
+	}
+	id := strings.ToLower(commit)
+	if !commitIDText.MatchString(id) {
+		return refuse(fmt.Errorf("%q is not a commit id: give the full commit id (hex only), or at least its first %d characters", commit, minShortCommitID))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), mergeSelectGitTimeout)
+	defer cancel()
+	git := m.archivedUnmergedGitRunner()
+	tip, ok := branchCommit(ctx, git, repo, branch)
+	if !ok {
+		return commit, false, nil
+	}
+	remoteName := mergeRemote(ctx, git, repo)
+	full, err := fetchedCommit(ctx, git, repo, remoteName, id)
+	if err != nil {
+		return refuse(err)
+	}
+	remote := remoteName != ""
+	if remote {
+		if err := confirmOnRemote(ctx, git, repo, full); err != nil {
+			return refuse(err)
+		}
+	}
+	if !isAncestor(ctx, git, repo, tip, full) {
+		return refuse(fmt.Errorf("commit %s does not contain its branch %s: give the commit that holds the work (work ported by hand is recorded with source %s)",
+			full, branch, ShippedSourceBackfill))
+	}
+	return full, remote, nil
+}
+
+// sameShippedCommit reports whether commit names the one already recorded:
+// the same text, or an abbreviation of the recorded full id.
+func sameShippedCommit(recorded, commit string) bool {
+	if recorded == commit {
+		return true
+	}
+	id := strings.ToLower(commit)
+	return commitIDText.MatchString(id) && fullCommitID.MatchString(recorded) && strings.HasPrefix(recorded, id)
 }
 
 // RecordAutomationShipped records that this Automation's work shipped in

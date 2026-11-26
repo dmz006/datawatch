@@ -162,7 +162,7 @@ func TestPushValidatedWorkBranchPolicyPushesWorkBranch(t *testing.T) {
 	}
 }
 
-func TestPushValidatedWorkDefaultBranchPolicyGatesOnFinalGates(t *testing.T) {
+func TestPushValidatedWorkDefaultBranchPolicyPushesNothing(t *testing.T) {
 	h := newPushHarness(t, "default_branch")
 	sha := commitFile(t, h.work, "work.txt", "final validated work\n")
 	bareBefore := bareRefs(t, h.bare)
@@ -183,20 +183,17 @@ func TestPushValidatedWorkDefaultBranchPolicyGatesOnFinalGates(t *testing.T) {
 		t.Errorf("unexpected alerts: %v", h.alerts.all)
 	}
 
-	// final gates passed: fast-forward HEAD onto the bare default branch.
+	// final gates passed: still nothing leaves; the refusal is recorded.
 	h.m.pushValidatedWork(h.pr, true)
-	if got := gitPushIn(t, h.bare, "rev-parse", "refs/heads/main"); got != sha {
-		t.Errorf("bare refs/heads/main=%s, want %s", got, sha)
+	if got := bareRefs(t, h.bare); got != bareBefore {
+		t.Fatalf("completion moved the remote (work head %s):\nbefore:%s\nafter:%s", sha, bareBefore, got)
 	}
 	saved = h.savedPRD(t)
-	if saved.Git.PushState != PushStatePushed {
-		t.Errorf("PushState=%q, want %q", saved.Git.PushState, PushStatePushed)
+	if saved.Git.PushState != PushStateNotPushed || !strings.Contains(saved.Git.PushWarning, "default branch") {
+		t.Errorf("state=%q warning=%q, want not_pushed naming the default branch", saved.Git.PushState, saved.Git.PushWarning)
 	}
-	if saved.Git.PushedRef != "main" || saved.Git.PushedSHA != sha {
-		t.Errorf("pushed ref/sha=%s/%s, want main/%s", saved.Git.PushedRef, saved.Git.PushedSHA, sha)
-	}
-	if h.alerts.count() != 0 {
-		t.Errorf("unexpected alerts: %v", h.alerts.all)
+	if h.alerts.count() != 1 {
+		t.Errorf("alerts=%v, want one", h.alerts.all)
 	}
 }
 
@@ -239,28 +236,34 @@ func TestPushValidatedWorkPushFailureRecordsNotPushedAndAlerts(t *testing.T) {
 
 func TestPushValidatedWorkNeverForcePushesDivergedRemote(t *testing.T) {
 	t.Helper()
-	h := newPushHarness(t, "default_branch")
+	h := newPushHarness(t, "branch")
+	gitPushIn(t, h.work, "checkout", "-b", "feature")
+	gitPushIn(t, h.work, "push", "origin", "feature")
+	h.pr.Git.Branch = "feature"
+	if err := h.m.store.SavePRD(h.pr); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
 
-	// Diverge the bare default branch with a commit the work clone does
+	// Diverge the bare work branch with a commit the work clone does
 	// not have (made from a second clone), while the work clone also has
 	// a commit the bare does not have.
 	other := t.TempDir()
 	gitPushIn(t, other, "clone", h.bare, other)
-	gitPushIn(t, other, "symbolic-ref", "HEAD", "refs/heads/main")
+	gitPushIn(t, other, "checkout", "feature")
 	gitPushIn(t, other, "config", "user.email", "other@example.com")
 	gitPushIn(t, other, "config", "user.name", "Other")
 	remoteSHA := commitFile(t, other, "remote-only.txt", "remote advance\n")
-	gitPushIn(t, other, "push", "origin", "main")
-	bareBefore := gitPushIn(t, h.bare, "rev-parse", "refs/heads/main")
+	gitPushIn(t, other, "push", "origin", "feature")
+	bareBefore := gitPushIn(t, h.bare, "rev-parse", "refs/heads/feature")
 	if bareBefore != remoteSHA {
-		t.Fatalf("setup: bare main=%s, want %s", bareBefore, remoteSHA)
+		t.Fatalf("setup: bare feature=%s, want %s", bareBefore, remoteSHA)
 	}
 	commitFile(t, h.work, "local-only.txt", "local advance\n")
 
 	h.m.pushValidatedWork(h.pr, true) // would only "succeed" by overwriting history
 
-	if got := gitPushIn(t, h.bare, "rev-parse", "refs/heads/main"); got != bareBefore {
-		t.Fatalf("bare refs/heads/main moved from %s to %s — a force push happened", bareBefore, got)
+	if got := gitPushIn(t, h.bare, "rev-parse", "refs/heads/feature"); got != bareBefore {
+		t.Fatalf("bare refs/heads/feature moved from %s to %s — a force push happened", bareBefore, got)
 	}
 	saved := h.savedPRD(t)
 	if saved.Git.PushState != PushStateNotPushed {

@@ -67,6 +67,15 @@ type Finding struct {
 	Blocking bool   `json:"blocking"`
 }
 
+// PlanSelection says whether the daemon's merge selection rule would let
+// datawatch merge the planned branch, and why not when it would not.
+type PlanSelection struct {
+	Eligible bool     `json:"eligible"`
+	Basis    string   `json:"basis,omitempty"`
+	Tip      string   `json:"tip,omitempty"`
+	Reasons  []string `json:"reasons"`
+}
+
 // MergePlan describes what merging one Automaton would do. Applied is always
 // false in this feature; the store refuses to save a plan with Applied set.
 type MergePlan struct {
@@ -92,4 +101,7 @@ type MergePlan struct {
 	// intermittent gates. They are stored in their own store, not in the plan
 	// file, so the plan JSON is unchanged.
 	IntermittentDefects []IntermittentDefect `json:"-"`
+	// Selection is the merge selection rule's answer when the plan was made;
+	// nil on plans made without it.
+	Selection *PlanSelection `json:"selection,omitempty"`
 }

@@ -57,6 +57,9 @@ const (
 // Fields the Manager mutates are guarded by its own mutex; callers
 // should treat values returned via Get/List as snapshots.
 type Agent struct {
+	// PushOnComplete is the spawn's push-on-complete override, empty for the
+	// daemon setting.
+	PushOnComplete string    `json:"push_on_complete,omitempty"`
 	ID             string    `json:"id"`              // UUIDv4
 	ProjectProfile string    `json:"project_profile"` // name
 	ClusterProfile string    `json:"cluster_profile"` // name
@@ -206,6 +209,10 @@ type SpawnRequest struct {
 	// to its own pi.thinking_level config). Mirrors the local-session
 	// dispatch path's "thinking_level" key.
 	ThinkingLevel string `json:"thinking_level,omitempty"`
+	// PushOnComplete is the Automaton's own push-on-complete override for
+	// this worker (never, branch or default_branch); empty means the
+	// daemon's git.push_on_complete.
+	PushOnComplete string `json:"push_on_complete,omitempty"`
 }
 
 // Driver plugs container-platform-specific behaviour into the Manager.
@@ -561,6 +568,7 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		Model:          req.Model,
 		PermissionMode: req.PermissionMode,
 		ThinkingLevel:  req.ThinkingLevel,
+		PushOnComplete: req.PushOnComplete,
 		project:        proj,
 		cluster:        cluster,
 	}

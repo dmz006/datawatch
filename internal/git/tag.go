@@ -115,22 +115,31 @@ func TagCreateArgsForHost(tag, message string, host GitHostConfig) []string {
 	return append(args, tag, "-m", message)
 }
 
-// PushBranchRef pushes branch to remote (fast-forward only; never forced).
-func PushBranchRef(ctx context.Context, dir, remote, branch string) error {
+// PushBranchRef pushes branch to remote through the outgoing check
+// (fast-forward only; never forced).
+func PushBranchRef(ctx context.Context, dir, remote, branch string, scan ...SecretScanPolicy) error {
 	if err := checkRefName(branch); err != nil {
 		return err
 	}
-	_, err := Run(ctx, dir, ShipPushBranchArgs(remote, branch)...)
-	return err
+	ref := "refs/heads/" + branch
+	return pushError(PushCheckedRefs(ctx, dir, remote, []OutgoingRef{{Src: ref, Dst: ref}}, scan...))
 }
 
-// PushTag pushes one tag to remote (never forced).
-func PushTag(ctx context.Context, dir, remote, tag string) error {
+// PushTag pushes one tag to remote through the outgoing check (never forced).
+func PushTag(ctx context.Context, dir, remote, tag string, scan ...SecretScanPolicy) error {
 	if err := checkRefName(tag); err != nil {
 		return err
 	}
-	_, err := Run(ctx, dir, PushTagArgs(remote, tag)...)
-	return err
+	ref := "refs/tags/" + tag
+	return pushError(PushCheckedRefs(ctx, dir, remote, []OutgoingRef{{Src: ref, Dst: ref}}, scan...))
+}
+
+// pushError turns a failed PushResult into an error carrying its reason.
+func pushError(res PushResult) error {
+	if res.Kind == "" {
+		return nil
+	}
+	return fmt.Errorf("%s: %s", res.Kind, res.Reason)
 }
 
 // ShipPushBranchArgs, TagCreateArgs and PushTagArgs return the exact argument

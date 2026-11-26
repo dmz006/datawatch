@@ -130,7 +130,26 @@ func completedMigrationBranch(p *PRD) string {
 
 // commitTime reads the committer time of commit, read-only.
 func completedMigrationCommitTime(ctx context.Context, git MergeGitRunner, repo, commit string) (time.Time, error) {
-	out, err := git.Run(ctx, repo, "show", "-s", "--format=%cI", commit)
+	return showCommitTime(ctx, git, repo, commit, "show", "-s", "--format=%cI", commit)
+}
+
+// storedCommitTime is the commit time of a stored shipped-record commit.
+func storedCommitTime(ctx context.Context, git MergeGitRunner, repo, stored string) (time.Time, error) {
+	commit, err := storedCommitArg(ctx, git, repo, stored)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return showCommitTime(ctx, git, repo, commit, "show", "-s", "--format=%cI", "--end-of-options", commit, "--")
+}
+
+// showCommitTime runs args, which name commit, and reads the time git prints.
+// commit must be a full commit id: git show writes files when given an option,
+// so any other text is refused before git runs.
+func showCommitTime(ctx context.Context, git MergeGitRunner, repo, commit string, args ...string) (time.Time, error) {
+	if !fullCommitID.MatchString(commit) {
+		return time.Time{}, fmt.Errorf("read commit time: %q is not a full commit id", commit)
+	}
+	out, err := git.Run(ctx, repo, args...)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("read commit time of %s: %v: %s", commit, err, strings.TrimSpace(out))
 	}
@@ -162,7 +181,7 @@ func (m *Manager) prdCompletedEvidence(ctx context.Context, git MergeGitRunner, 
 		e.reason += ")"
 		if p.MergedAt != nil && !p.MergedAt.IsZero() {
 			e.at = *p.MergedAt
-		} else if t, err := completedMigrationCommitTime(ctx, git, repo, e.commit); err == nil {
+		} else if t, err := storedCommitTime(ctx, git, repo, e.commit); err == nil {
 			e.at = t
 		} else {
 			e.err = err.Error()
@@ -174,6 +193,9 @@ func (m *Manager) prdCompletedEvidence(ctx context.Context, git MergeGitRunner, 
 	proof := MergedMemberProof(ctx, git, repo, completedMigrationBranch(p))
 	if !proof.Merged {
 		return e // unknown or not merged: never guess
+	}
+	if !onTrackedRemote(ctx, git, repo, proof.Base, proof.Commit) {
+		return e // merged here but not pushed: not landed
 	}
 	t, err := completedMigrationCommitTime(ctx, git, repo, proof.Commit)
 	if err != nil {
@@ -192,7 +214,7 @@ func (m *Manager) automationCompletedEvidence(ctx context.Context, git MergeGitR
 		e.reason = fmt.Sprintf("carries a shipped record (commit %s)", e.commit)
 		if a.MergedAt != nil && !a.MergedAt.IsZero() {
 			e.at = *a.MergedAt
-		} else if t, err := completedMigrationCommitTime(ctx, git, repo, e.commit); err == nil {
+		} else if t, err := storedCommitTime(ctx, git, repo, e.commit); err == nil {
 			e.at = t
 		} else {
 			e.err = err.Error()

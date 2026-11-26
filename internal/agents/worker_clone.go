@@ -14,6 +14,7 @@ package agents
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,6 +22,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 // CloneOnBootstrap honours the Git bundle from the parent's
@@ -109,28 +112,85 @@ func CloneOnBootstrap(ctx context.Context, resp *BootstrapResponse, workspaceRoo
 // the same bootstrap-minted token CloneOnBootstrap used to clone (the
 // worker's only credential by this point — the one-shot
 // DATAWATCH_BOOTSTRAP_TOKEN is already burned). Returns the branch
-// pushed and HEAD's commit SHA so the caller can report them in
+// pushed and the pushed commit so the caller can report them in
 // AgentResult; the parent opens the completion PR from that branch
 // directly — it never has a local copy of these commits to push
 // itself. No-op (empty strings, nil error) when the worker was never
 // git-bootstrapped (resp.Git.URL == "").
+//
+// The push obeys the parent's push settings (resp.Git.Push), pushes a work
+// branch only (never main, master, the remote's default branch or the
+// profile's base branch) and goes through the outgoing check, run here in the
+// worker. Whenever it does not push, the error says why and nothing is
+// reported as pushed.
 func PushOnCompletion(ctx context.Context, dir string, resp *BootstrapResponse) (branch, sha string, err error) {
 	if resp == nil || resp.Git.URL == "" || dir == "" {
 		return "", "", nil
 	}
-	branch, err = gitOutputText(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD")
+	scan, err := workerPushPolicy(resp.Git.Push)
 	if err != nil {
-		return "", "", fmt.Errorf("resolve current branch: %w", err)
+		return "", "", err
 	}
-	sha, err = gitOutputText(ctx, dir, "rev-parse", "HEAD")
-	if err != nil {
-		return "", "", fmt.Errorf("resolve HEAD: %w", err)
+	branch, err = gitOutputText(ctx, dir, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil || branch == "" {
+		return "", "", errors.New("the checkout is on a detached HEAD, so there is no work branch to push")
 	}
-	pushURL := injectTokenIntoURL(resp.Git.URL, resp.Git.Token)
-	if perr := runGit(ctx, dir, "push", pushURL, "HEAD:refs/heads/"+branch); perr != nil {
-		return "", "", fmt.Errorf("git push: %w", perr)
+	// A branch the parent did not ask the worker to create is the profile's
+	// own; so is the base branch it names.
+	if branch == resp.Git.BaseBranch || (!resp.Git.CreateBranch && branch == resp.Git.Branch) {
+		return "", "", fmt.Errorf("%s is the project's base branch, which finished work never moves", branch)
 	}
-	return branch, sha, nil
+
+	// The push goes to the bootstrap repository whatever the task left in the
+	// clone's settings. The token is in the address only while pushing.
+	_ = runGit(ctx, dir, "config", "--unset-all", "remote.origin.pushurl")
+	if err := runGit(ctx, dir, "remote", "set-url", "origin", injectTokenIntoURL(resp.Git.URL, resp.Git.Token)); err != nil {
+		return "", "", errors.New("could not set the push address on origin")
+	}
+	defer func() {
+		if rerr := runGit(context.Background(), dir, "remote", "set-url", "origin", resp.Git.URL); rerr != nil {
+			fmt.Fprintln(os.Stderr, "[worker] warn: failed to remove the credential from origin")
+		}
+	}()
+	res := git.PushFromWorker(ctx, dir, "origin", branch, scan)
+	if res.Kind != "" {
+		reason := res.Reason
+		if resp.Git.Token != "" {
+			reason = strings.ReplaceAll(reason, resp.Git.Token, "***")
+		}
+		return "", "", fmt.Errorf("%s: %s", res.Kind, reason)
+	}
+	return branch, res.SHA, nil
+}
+
+// workerPushPolicy turns the parent's push settings into the secret scan
+// policy for the worker's push, or says why nothing may be pushed. Settings
+// that did not arrive are never assumed.
+func workerPushPolicy(p *BootstrapPush) (git.SecretScanPolicy, error) {
+	var none git.SecretScanPolicy
+	if p == nil || strings.TrimSpace(p.Policy) == "" {
+		return none, errors.New("the parent sent no push settings, so the worker does not push")
+	}
+	policy, ok := git.ParsePolicy(p.Policy)
+	switch {
+	case !ok:
+		return none, fmt.Errorf("unknown push policy %q from the parent", p.Policy)
+	case policy == git.PushNever:
+		return none, errors.New("the push-on-complete policy is never")
+	case policy == git.PushDefaultBranch:
+		return none, errors.New("the push-on-complete policy is default_branch, and finished work never moves the default branch")
+	}
+	switch p.SecretScanMode {
+	case git.ScanOff, git.ScanShadow, git.ScanEnforce:
+	default:
+		return none, errors.New("the parent sent no usable secret scan setting, so the outgoing check cannot run in full")
+	}
+	return git.SecretScanPolicy{
+		Mode:         p.SecretScanMode,
+		Detectors:    p.SecretScanDetectors,
+		PathPatterns: p.SecretScanAllowPaths,
+		Fingerprints: p.SecretScanFingerprints,
+	}, nil
 }
 
 // gitOutputText runs a read-only git command and returns trimmed

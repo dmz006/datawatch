@@ -21,6 +21,33 @@ func ParseMergeStatus(body []byte) (MergeStatus, error) {
 	return ms, nil
 }
 
+// ParseMergeSelection reads the body of GET
+// /api/autonomous/merge?selection=true.
+func ParseMergeSelection(body []byte) (MergeSelection, error) {
+	var sel MergeSelection
+	if err := json.Unmarshal(body, &sel); err != nil {
+		return MergeSelection{}, fmt.Errorf("reading the Automaton merge selection: %w", err)
+	}
+	return sel, nil
+}
+
+// RenderMergeSelection formats the selection read: what datawatch may merge
+// now and every candidate it leaves out, with why.
+func RenderMergeSelection(sel MergeSelection) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Merge selection: %d eligible, %d excluded\n", len(sel.Eligible), len(sel.Excluded))
+	for _, group := range [][]MergeSelectionEntry{sel.Eligible, sel.Excluded} {
+		for _, e := range group {
+			fmt.Fprintf(&b, "  Automaton %q (id %s), branch %s: %s\n", e.Name, e.AutomatonID, e.Branch, e.Summary())
+		}
+	}
+	if sel.Note != "" {
+		fmt.Fprintf(&b, "%s\n", sel.Note)
+	}
+	b.WriteString("This is a report only: nothing has been merged or pushed.\n")
+	return b.String()
+}
+
 // ParseSafeToDelete reads the body of GET /api/autonomous/safe-to-delete.
 func ParseSafeToDelete(body []byte) (SafeDeleteReport, error) {
 	var r SafeDeleteReport

@@ -11,6 +11,9 @@
 //     operator alert (see recordPushOutcome);
 //   - never force-pushes: internal/git performs plain fast-forward-only
 //     pushes and has no force option;
+//   - never moves the remote's default branch and never pushes a tag;
+//   - every push goes through the outgoing check (internal/git), which
+//     refuses when it cannot run;
 //   - secret-scanned before the push when the daemon wires a scan policy
 //     (SetSecretScanSettings, git.secret_scan): enforce mode refuses the
 //     push (Kind=secret_found, remote untouched), shadow mode returns the
@@ -59,11 +62,14 @@ func pushLockFor(prdID string) *sync.Mutex {
 //   - never (git.PushNever): does nothing, records nothing.
 //   - branch (git.PushBranch): pushes the work branch (prd.Git.Branch,
 //     else the current HEAD branch) to remote/<branch> with upstream
-//     tracking set. A detached HEAD (no work branch recorded and no
-//     symbolic HEAD) is skipped without any state change.
+//     tracking set. When that branch is the remote's default branch (or
+//     main or master) nothing is pushed and the refusal is recorded. A
+//     detached HEAD (no work branch recorded and no symbolic HEAD) is
+//     skipped without any state change.
 //   - default_branch (git.PushDefaultBranch): no-op unless
-//     finalGatesPassed; then a plain fast-forward push of HEAD onto
-//     the remote's default branch.
+//     finalGatesPassed; then recorded as not pushed, because completion
+//     never moves the remote's default branch. The work reaches it
+//     through a merge.
 //
 // Gated off for cluster-dispatched PRDs (their workers push their own
 // work), for PRDs with no project directory, and for directories that
@@ -110,13 +116,12 @@ func (m *Manager) pushValidatedWork(prd *PRD, finalGatesPassed bool) {
 			return // detached HEAD with no recorded work branch — no state change
 		}
 		log.Printf("autonomous: prd %s push-on-complete (branch): pushing %s to remote %s", saved.ID, branch, remote)
-		m.recordPushOutcome(saved, git.PushToBranch(ctx, dir, remote, branch, scan), policy)
+		m.recordPushOutcome(saved, git.PushWorkBranch(ctx, dir, remote, branch, scan), policy)
 	case git.PushDefaultBranch:
 		if !finalGatesPassed {
 			return
 		}
-		log.Printf("autonomous: prd %s push-on-complete (default_branch): pushing HEAD to remote %s", saved.ID, remote)
-		m.recordPushOutcome(saved, git.PushToDefaultBranch(ctx, dir, remote, scan), policy)
+		m.recordPushOutcome(saved, git.CompletionDefaultBranchRefusal(remote), policy)
 	}
 }
 

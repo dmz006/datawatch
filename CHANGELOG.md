@@ -5,6 +5,62 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.23 — A commit value in a shipped record is checked before git sees it
+
+### Fixed
+- A commit value stored on an older shipped record is no longer handed to git unless it passes a format check. Before, a crafted stored value could make git empty or overwrite a file that datawatch can write, even during a dry run of the completed-record migration.
+- The commit value in a request for a merge-step shipped record is checked before git sees it. When the Automaton's branch can be read in the merge repository, the record must name a real commit that holds that branch. A pushed commit the merge repository does not have yet is fetched first.
+- A selected merge run gives git the recorded branch name, not the request's text.
+
+### Before you upgrade
+- For an Automaton whose branch is in the merge repository, a merge-step record is refused when its value is not a commit id of at least 7 characters, is not a commit, is not on the remote (when there is one), or does not hold the branch. Record squashed or hand-ported work as a backfill record.
+- Every new record refuses a value starting with `-`.
+
+### Not covered
+- Automation records, Automatons with no branch, and setups with no merge repository get no commit check on new records beyond refusing a leading `-`.
+- A merge-step record is still stored when the Automaton's branch is missing from the merge repository or cannot be read. It is not marked landed, but it is stored as shipped, and a finished Automaton can be marked delivered.
+- Backfill records are still taken as given, apart from a leading `-`.
+
+## v9.187.22 — datawatch stops rewriting settings files it cannot read
+
+### Fixed
+- datawatch no longer rewrites a tool settings file it cannot read in full. The memory hook installer, the Claude start settings, the terminal setting, the MCP file writers and the opencode config writer leave such a file byte for byte and say why. Before, they could replace it and drop its other settings, including permission rules; this could happen when a session started, and for the user settings file when datawatch started.
+- Memory hooks are not installed into the home folder, user-level settings or linked files.
+- The opencode config writer keeps the file's other settings.
+
+### Before you upgrade
+- An opencode or opencode-acp session is refused, with the reason, when its `opencode.json` cannot be safely read or updated. This includes comments and trailing commas, which opencode itself accepts. An automation task retries and is then held. A rate-limit fallback only logs the refusal, and an exit-hook restart ends the old session before it logs.
+- When a settings file cannot be read, datawatch's own entries are not added to it: a Claude session may stop at a prompt, and an old token stays in an unreadable MCP file.
+- Nested opencode permission rules are now kept (flat ones already were), so an unattended opencode session may prompt or be refused where it did not before. A whole-file string such as `"permission": "ask"` is refused, not kept.
+- Check that the settings files datawatch writes are strict JSON: the user and data-folder Claude settings, the data-folder MCP file, each project's `.claude/settings.local.json` and `.mcp.json`, and each opencode project's `opencode.json`.
+- Not covered: removing an old datawatch entry from a project MCP file can still drop a duplicated key, and the optional cleanup of session files on end still deletes `opencode.json` and `.mcp.json`.
+
+## v9.187.21 — Checked pushes; datawatch merges only finished work
+
+### Added
+- One check on everything datawatch is about to push: every added line, including lines made while resolving a merge, file names, commit and tag messages, and author addresses. The built-in check is the secret scan. A project adds its own rules, such as allowed author addresses or private words, with a `check-outgoing` make target read from the remote default branch; with the secret scan off and no such target, nothing is checked. If a check cannot run, nothing is pushed. The `datawatch test --pr` command still pushes without these checks.
+- Merge selection: only finished work is selected, every exclusion says why, and work whose review is pending can be accepted for one exact commit with a reason (web app, REST, MCP, command line and chat).
+
+### Changed
+- When work finishes, datawatch pushes work branches only. It never moves the remote default branch, `main` or `master`, and never creates or pushes a tag.
+- A merge is recorded as landed only after the remote's default branch holds the commit.
+- Failed, blocked, cancelled, archived and review-blocked work is never selected for merging. A review block is lifted only by the same check passing on the same unit.
+- A merge run takes one finished Automaton at a time.
+- The full release smoke runs on every minor and major release; other releases run a targeted pass.
+
+### Before you upgrade
+- The `default_branch` push policy now pushes nothing, and work done directly on the default branch is not pushed by datawatch.
+- In `shadow` and `enforce` modes, a secret scan that fails to run refuses the push. In `shadow` or `off` mode a detected secret is still pushed: use `enforce` for automatic pushes.
+- A project that adds a `check-outgoing` target needs that target on the remote default branch before datawatch will push; push it once by hand.
+- Container workers: rebuild worker images, because older images still push without these checks. Removing a container no longer pushes its unfinished work, so unpushed commits in it are lost.
+- Container workers now obey `git.push_on_complete`. With `never` or `default_branch` they push nothing, finished work included, so removing the container loses it.
+- A project whose own outgoing check needs a file that is not committed (this repository needs its private pattern list in the main checkout) refuses the push where that file is missing, including inside containers.
+- A `merge_step` shipped record is refused until the commit is on the remote, and the post-ship completion step needs the same.
+- A review block on a part whose check never runs again, such as a cancelled task or a removed check, keeps the work from being selected for merging, and accepting it does not lift the block.
+
+### Documentation
+- How-tos, definitions, operations and API reference cover the outgoing check, merge selection and acceptance.
+
 ## v9.187.20 — Commit guard reaches workers; merge and deploy off; rules changes held
 
 ### Fixed

@@ -51,23 +51,27 @@ func (u unavailableMergeLocks) Acquire(string, autonomous.MergeLockHolder) (auto
 // Release implements mergepipeline.MergeLocker; nothing is ever held.
 func (unavailableMergeLocks) Release(string, string) error { return nil }
 
-// prdCompleter is the optional Manager surface behind the mark_completed
-// built-in: *autonomous.Manager's MarkPRDCompleted. A Manager without it
-// leaves the Runner's Completer unwired, so the hook fails by name.
-type prdCompleter interface {
-	MarkPRDCompleted(id, release string, mergedAt time.Time, commit, actor, reason string) (*autonomous.PRD, error)
-}
+// mergeCompleter adapts the confirmed landing record to
+// mergepipeline.Completer, so the mark_completed hook records nothing the
+// remote does not contain. It exposes no cancel or session call.
+type mergeCompleter struct{ m mergepipeline.Landing }
 
-// mergeCompleter adapts prdCompleter to mergepipeline.Completer. It exposes
-// no cancel or session call.
-type mergeCompleter struct{ m prdCompleter }
-
-// MarkCompleted implements mergepipeline.Completer. MarkPRDCompleted is
-// already a no-op for an Automaton that is completed.
-func (c mergeCompleter) MarkCompleted(_ context.Context, id, release, commit string, mergedAt time.Time) error {
-	_, err := c.m.MarkPRDCompleted(id, release, mergedAt, commit, "merge_pipeline", "the post-ship mark_completed hook")
+// MarkCompleted implements mergepipeline.Completer. Recording a landing
+// already recorded is a no-op.
+func (c mergeCompleter) MarkCompleted(ctx context.Context, id, release, commit string, mergedAt time.Time) error {
+	_, err := c.m.RecordMergeLanding(ctx, id, release, commit, mergedAt)
 	return err
 }
+
+// The daemon's own Manager and API must carry the selection rule and the
+// confirmed landing: newMergeRunner finds them by interface, and these lines
+// stop the build if either loses one.
+var (
+	_ mergepipeline.Selection = (*autonomous.Manager)(nil)
+	_ mergepipeline.Selection = (*autonomous.API)(nil)
+	_ mergepipeline.Landing   = (*autonomous.Manager)(nil)
+	_ mergepipeline.Landing   = (*autonomous.API)(nil)
+)
 
 // mergeRunner is the Manager surface the run route needs.
 type mergeRunner interface {
@@ -143,8 +147,12 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 			return s
 		},
 	}
-	if pc, ok := mr.(prdCompleter); ok {
-		runner.Completer = mergeCompleter{m: pc}
+	if sel, ok := mr.(mergepipeline.Selection); ok {
+		runner.Selection = sel
+	}
+	if l, ok := mr.(mergepipeline.Landing); ok {
+		runner.Landing = l
+		runner.Completer = mergeCompleter{m: l}
 	}
 	if name := cfg.EffectiveConflictModel(project); name != "" {
 		runner.Model = newConflictModel(mr, name)

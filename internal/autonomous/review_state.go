@@ -158,7 +158,15 @@ func reviewStateOf(prd *PRD) ReviewResult {
 	if prd == nil {
 		return ReviewResult{State: ReviewStatePending}
 	}
-	vs := reviewVerdicts(prd)
+	var vs []GuardrailVerdict
+	vs = append(vs, reviewStateUnit(prd.Verdicts)...)
+	for i := range prd.Story {
+		s := &prd.Story[i]
+		vs = append(vs, reviewStateUnit(s.Verdicts)...)
+		for j := range s.Tasks {
+			vs = append(vs, reviewStateUnit(s.Tasks[j].Verdicts)...)
+		}
+	}
 	latestPass := latestVerdict(vs, "pass")
 	latestBlock := latestVerdict(vs, "block")
 

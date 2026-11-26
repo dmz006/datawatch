@@ -3455,6 +3455,9 @@ paths:
   /api/autonomous/merge:
     get:
       summary: Automaton merge status
+      parameters:
+        - {name: selection, in: query, required: false, schema: {type: boolean}, description: "true: answer with the merge selection rule's result instead: eligible and excluded entries (automaton_id, name, automaton_state, branch, tip, eligible, basis, reasons) for the branches waiting to merge"}
+        - {name: automaton, in: query, required: false, schema: {type: string}, description: "The merge selection rule's answer for this one Automaton"}
       description: |
         The merge-pending state of the finished Automata. `mode` is the
         `autonomous.automation.merge_pending_mode` setting in effect (`off`, `shadow`
@@ -8061,6 +8064,15 @@ paths:
         afterwards); the release name and the time are optional (the time may
         be left unset).
 
+        For every source a commit that starts with `-` is refused.
+        A `merge_step` record for a branch in the merge repository is checked.
+        The commit must be hex only: the full id (the repository's hash
+        length) or its first 7 or more characters, which are resolved and
+        stored as the full id. It must contain the Automaton's branch and,
+        when the repository has a remote, be on the remote's default branch.
+        A commit the repository does not have is looked for again after one
+        fetch of that branch.
+
         The call is idempotent per commit: a repeat with the same commit is a
         no-op that leaves the stored fields, the revision and the updated
         time alone, while a different commit overwrites all four fields.
@@ -8079,7 +8091,7 @@ paths:
           content:
             application/json:
               schema: {type: object}
-        "400": {description: "Empty commit, unknown source, unparseable time, or a store save failure"}
+        "400": {description: "Empty commit or one starting with -, unknown source, unparseable time, a merge_step commit that is not a commit id, is unknown (also after a fetch, or the fetch failed), does not contain the branch or is not on the remote, or a store save failure"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {description: "Federated peer lacks the autonomous write capability"}
         "404": {description: "Unknown Automaton id"}
@@ -8112,7 +8124,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Automation"
-        "400": {description: "Empty commit, unknown source, unparseable time, or a store write failure"}
+        "400": {description: "Empty commit or one starting with -, unknown source, unparseable time, or a store write failure"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {description: "Unknown Automation id"}
         "503": {description: "autonomous disabled"}
@@ -8925,6 +8937,36 @@ paths:
         "200": {description: "Updated PRD (landing.state is now kept)"}
         "400": {description: "Missing actor or reason"}
         "409": {description: "Already landed, kept, or dropped"}
+  /api/autonomous/prds/{id}/landing/accept:
+    post:
+      summary: Accept one exact commit of the Automaton's branch for merging
+      description: |
+        Records that the operator or the supervisor accepts exactly this
+        commit for merging, and why. For work whose review is pending or
+        timed out, or that is needs_review. Failed, blocked, cancelled,
+        archived and review-blocked work cannot be accepted, an acceptance
+        never covers a later commit, and a session doing Automaton work
+        cannot accept. The actor is recorded and audited, not proven; a
+        caller the daemon knows to be a session or a peer is recorded as
+        that. Nothing is merged or pushed.
+      operationId: autonomousPRDLandingAccept
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [commit, reason]
+              properties:
+                actor: {type: string, description: "Who is accepting (default operator)"}
+                commit: {type: string, description: "The full id of the commit the branch points at"}
+                reason: {type: string, description: "Why it is accepted (non-empty)"}
+      responses:
+        "200": {description: "Updated PRD (merge_acceptance is set)"}
+        "400": {description: "Refused; the body says why"}
+        "403": {description: "Missing the autonomous write capability"}
   /api/autonomous/prds/{id}/landing/drop:
     post:
       summary: Record that the Automaton's work will not be merged
@@ -11814,7 +11856,7 @@ paths:
       summary: Spawn a new agent worker
       operationId: agentSpawn
       tags: [Agents]
-      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {push_on_complete: {type: string, description: "Push-on-complete override for this worker's one push: never, branch or default_branch. Empty uses git.push_on_complete. Only branch pushes, and only a work branch."}}}}}}
       responses: {"200": {description: Spawned}, "400": {description: Bad Request}}
   /api/agents/audit:
     get:

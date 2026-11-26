@@ -99,6 +99,12 @@ func PostSessionPRHook(cfg PRHookConfig, log func(string, ...interface{})) func(
 			return
 		}
 
+		// Finished work is never pushed onto a main branch.
+		if branch == "main" || branch == "master" || branch == proj.Git.Branch {
+			log("[pr-hook] session %s is on %s, a base branch; not pushing", s.GetID(), branch)
+			return
+		}
+
 		if err := cfg.Pusher.PushBranch(dir, "origin", branch, proj.Git.URL, token); err != nil {
 			log("[pr-hook] push failed: %v", err)
 			return

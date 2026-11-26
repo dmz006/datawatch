@@ -27294,7 +27294,7 @@ const GENERAL_CONFIG_FIELDS = [
     // preselected after a reload. The field renderer has no option-label
     // mechanism (options render as their raw values, like
     // ws_session_list_default), so the raw values stay as the visible labels.
-    { key: 'git.push_on_complete', label: 'Push finished work to the remote', labelKey: 'settings_git_push_on_complete', type: 'select', options: ['never', 'branch', 'default_branch'] },
+    { key: 'git.push_on_complete', label: 'Push finished work to the remote (never the default branch; default_branch pushes nothing)', labelKey: 'settings_git_push_on_complete', type: 'select', options: ['never', 'branch', 'default_branch'] },
     { key: 'git.push_remote', label: 'Push remote name', labelKey: 'settings_git_push_remote', type: 'text', placeholder: 'origin' },
     { key: 'git.push_before_teardown', label: 'Push a killed session\'s own commits', labelKey: 'settings_git_push_before_teardown', helpKey: 'settings_git_push_before_teardown_help', type: 'toggle' },
     // Pre-push secret scan (v9.0.0) — git.secret_scan. Effective values are
@@ -27790,8 +27790,8 @@ const GENERAL_CONFIG_FIELDS = [
     { label: 'Platform context', labelKey: 'settings_platform_context_title', docsKey: 'settings_platform_context_title', type: 'group' },
     { type: 'platform_context_card' },
     { label: 'Ship steps', labelKey: 'settings_ship_group', docsKey: 'settings_ship_group', type: 'group' },
-    { key: 'autonomous.ship.push', label: 'Ship push (off, shadow or on; default on)', labelKey: 'settings_ship_push', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
-    { key: 'autonomous.ship.tag', label: 'Ship tag (off, shadow or on; default on)', labelKey: 'settings_ship_tag', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { key: 'autonomous.ship.push', label: 'Ship push (off, shadow or on; default on; finished work pushes its work branch only, never the default branch)', labelKey: 'settings_ship_push', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { key: 'autonomous.ship.tag', label: 'Ship tag (off, shadow or on; default on; work finishing never creates or pushes a tag: on does nothing there, shadow only records the commands)', labelKey: 'settings_ship_tag', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
     { key: 'autonomous.ship.ci_watch', label: 'Ship CI watch (off, shadow or on; default on)', labelKey: 'settings_ship_ci_watch', docsKey: 'settings_ship_ci_watch', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
     { key: 'autonomous.ship.tag_format', label: 'Ship tag format (must contain {version}, default v{version})', labelKey: 'settings_ship_tag_format', type: 'text', placeholder: 'v{version}' },
     { key: 'autonomous.ship.remote', label: 'Ship remote (default origin)', labelKey: 'settings_ship_remote', type: 'text', placeholder: 'origin' },
@@ -47837,6 +47837,46 @@ function renderLandingState(prd) {
   </div>`;
 }
 
+// ── Merge selection ────────────────────────────────────────────────────────
+// Whether datawatch may merge this Automaton's branch, from the daemon's one
+// selection rule (GET /api/autonomous/merge?automaton=ID). The block is read
+// on request. When the branch is left out, it lists why and offers to accept
+// the exact commit shown; the daemon refuses work that can never be merged.
+function renderMergeSelectionBlock(prd) {
+  const l = prd.landing || prd.Landing;
+  if (!l || l.state !== 'pending' || (prd.status !== 'completed' && prd.status !== 'needs_review')) return '';
+  const idJ = escHtml(JSON.stringify(prd.id));
+  return `<div class="prd-merge-selection" id="prd-merge-selection-${escHtml(prd.id)}" style="margin-top:6px;font-size:11px;">
+    <button style="font-size:11px;padding:3px 10px;background:var(--bg2);border:1px solid var(--border,#666);border-radius:4px;color:var(--text);" onclick="loadMergeSelection(${idJ})">${escHtml(t('merge_select_check_btn'))}</button>
+  </div>`;
+}
+window.renderMergeSelectionBlock = renderMergeSelectionBlock;
+window.mergeSelectionHtml = function(entry) {
+  const e = (entry && typeof entry === 'object') ? entry : {};
+  const tip = String(e.tip || '');
+  if (e.eligible) {
+    const key = e.basis === 'accepted' ? 'merge_select_accepted' : 'merge_select_review_passed';
+    return `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t(key, [tip]))}</div>`;
+  }
+  const reasons = (Array.isArray(e.reasons) ? e.reasons : []).map(r => `<li>${escHtml(String(r))}</li>`).join('');
+  const accept = tip
+    ? `<button style="margin-top:4px;font-size:11px;padding:3px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;font-weight:600;overflow-wrap:anywhere;" onclick="mergeAcceptPrompt(${escHtml(JSON.stringify(String(e.automaton_id || '')))},${escHtml(JSON.stringify(tip))})">${escHtml(t('merge_select_accept_btn', [tip]))}</button>`
+    : '';
+  return `<div style="color:var(--warning,#a06b00);">${escHtml(t('merge_select_excluded'))}</div><ul style="margin:2px 0 0 16px;overflow-wrap:anywhere;">${reasons}</ul>${accept}`;
+};
+window.loadMergeSelection = function(id) {
+  return apiFetch('/api/autonomous/merge?automaton=' + encodeURIComponent(id)).then(sel => {
+    const entry = [].concat((sel && sel.eligible) || [], (sel && sel.excluded) || [])[0];
+    const el = document.getElementById('prd-merge-selection-' + id);
+    if (el && entry) el.innerHTML = mergeSelectionHtml(entry);
+  }).catch(err => showToast(String((err && err.message) || err), 'error'));
+};
+window.mergeAcceptPrompt = function(id, commit) {
+  const reason = window.prompt(t('merge_select_accept_prompt', [commit]), '');
+  if (reason === null || !reason.trim()) return;
+  prdAction(id, 'landing/accept', 'POST', { actor: 'operator', commit: commit, reason: reason.trim() });
+};
+
 function _renderDetailOverview(prd) {
   const stories = prd.stories || prd.Story || [];
   const totalTasks = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).length, 0);
@@ -47878,6 +47918,7 @@ function _renderDetailOverview(prd) {
     ${renderDetailCIWatch(prd)}
     ${renderDetailLeftoverWarnings(prd)}
     ${renderLandingState(prd)}
+    ${renderMergeSelectionBlock(prd)}
     ${rulesContextPlanningHtml(prd.rules_context)}
     <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>

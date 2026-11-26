@@ -120,29 +120,33 @@ func firstLineOf(s string) string {
 	return s
 }
 
-var (
-	mergeStopBranch  = regexp.MustCompile(`merge of "([^"]+)" stopped`)
-	mergeKeptInPlace = regexp.MustCompile(`already merged and left in place: ([^\n]+)`)
-)
+var mergeStopBranch = regexp.MustCompile(`merge of "([^"]+)" stopped`)
 
 // supervisorLoopMerge runs the merge pipeline (mergepipeline.Runner.Run) over
-// the completed Automaton branches waiting to merge, the same set GET
-// /api/autonomous/merge lists as pending. The pipeline stops at the first
-// branch its conflict policy could not settle; that branch is the conflict.
+// what the merge selection rule picks among the branches GET
+// /api/autonomous/merge lists as pending (GET .../merge?selection=true).
 func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, dataDir string, cfg config.MergePipelineConfig, opts ...mergeRunnerOption) (autonomous.SupervisorMergeResult, error) {
+	if mgr.MergeBaseRepo() == "" {
+		return autonomous.SupervisorMergeResult{}, autonomous.ErrSupervisorStepNotConfigured
+	}
+	return supervisorLoopMergeSelected(ctx, mgr, dataDir, cfg, mgr.MergeSelection(ctx, ""), opts...)
+}
+
+// supervisorLoopMergeSelected runs one pipeline run per eligible Automaton. It
+// stops at the first branch the conflict policy could not settle, at the first
+// failure, and after a run whose push did not happen, so nothing is merged on
+// top of an unpushed merge. Each excluded candidate is reported with why.
+func supervisorLoopMergeSelected(ctx context.Context, mgr *autonomous.Manager, dataDir string, cfg config.MergePipelineConfig, sel autonomous.MergeSelection, opts ...mergeRunnerOption) (autonomous.SupervisorMergeResult, error) {
 	var out autonomous.SupervisorMergeResult
 	repo := mgr.MergeBaseRepo()
-	if repo == "" {
-		return out, autonomous.ErrSupervisorStepNotConfigured
+	for _, e := range sel.Excluded {
+		out.Excluded = append(out.Excluded, fmt.Sprintf("%s (%s): %s", e.AutomatonID, e.Branch, strings.Join(e.Reasons, "; ")))
 	}
-	var branches []string
-	for _, e := range mgr.MergeStatus().Automata {
-		if e.State == autonomous.MergeStatePending && e.Branch != "" {
-			branches = append(branches, e.Branch)
-		}
-	}
-	if len(branches) == 0 {
+	if len(sel.Eligible) == 0 {
 		out.Note = "no branches waiting to merge"
+		if len(sel.Excluded) > 0 {
+			out.Note = "no branch waiting to merge is eligible"
+		}
 		return out, nil
 	}
 	if !mergeRunMu.TryLock() {
@@ -151,31 +155,33 @@ func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, dataDir s
 	}
 	defer mergeRunMu.Unlock()
 
-	runCtx, cancel := context.WithTimeout(ctx, mergeRunTimeout)
-	defer cancel()
-	res, err := newMergeRunner(mgr, cfg, repo, filepath.Base(repo), dataDir, mergepipeline.ExecShipRunner{}, opts...).Run(runCtx, mergepipeline.RunRequest{
-		Title: "supervisor loop merge", Branches: branches,
-	})
-	if err == nil {
-		out.Merged = branches
-		return out, nil
-	}
-	for _, st := range res.Run.Steps {
-		if st.Result != autonomous.MergeStepFailed {
+	for _, e := range sel.Eligible {
+		runCtx, cancel := context.WithTimeout(ctx, mergeRunTimeout)
+		res, err := newMergeRunner(mgr, cfg, repo, filepath.Base(repo), dataDir, mergepipeline.ExecShipRunner{}, opts...).Run(runCtx, mergepipeline.RunRequest{
+			Title: "supervisor loop merge", Branches: []string{e.Branch}, AutomatonID: e.AutomatonID,
+		})
+		cancel()
+		if err == nil {
+			out.Merged = append(out.Merged, e.Branch)
+			if !res.Pushed {
+				out.Note = "stopped after " + e.Branch + ": its push did not happen, so nothing more is merged on top of it"
+				return out, nil
+			}
 			continue
 		}
-		if m := mergeStopBranch.FindStringSubmatch(st.Detail); m != nil && strings.Contains(err.Error(), "conflict that was not settled") {
-			out.Conflict = m[1]
-			out.Note = firstLineOf(st.Detail)
-			if k := mergeKeptInPlace.FindStringSubmatch(st.Detail); k != nil {
-				for _, b := range strings.Split(k[1], ", ") {
-					out.Merged = append(out.Merged, strings.TrimSpace(b))
-				}
+		for _, st := range res.Run.Steps {
+			if st.Result != autonomous.MergeStepFailed {
+				continue
 			}
-			return out, err
+			if m := mergeStopBranch.FindStringSubmatch(st.Detail); m != nil && strings.Contains(err.Error(), "conflict that was not settled") {
+				out.Conflict = m[1]
+				out.Note = firstLineOf(st.Detail)
+				return out, err
+			}
 		}
+		return out, err
 	}
-	return out, err
+	return out, nil
 }
 
 // supervisorLaneControl moves the Claude lane count (autonomous.lane_fill

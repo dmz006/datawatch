@@ -212,8 +212,10 @@ func deliveredOnBase(ctx context.Context, git MergeGitRunner, repo, base, branch
 	if hasShippedRecord(p) {
 		commit := strings.TrimSpace(p.MergeCommit)
 		if shippedCommitRe.MatchString(commit) {
-			if _, err := git.Run(ctx, repo, "merge-base", "--is-ancestor", commit, base); err == nil {
-				return fmt.Sprintf("delivered: its shipped record (%s, commit %s) is on %s", strings.TrimSpace(p.MergedInRelease), shortCommit(commit), base), true
+			if arg, err := storedCommitArg(ctx, git, repo, commit); err == nil {
+				if _, err := git.Run(ctx, repo, "merge-base", "--is-ancestor", "--end-of-options", arg, base); err == nil {
+					return fmt.Sprintf("delivered: its shipped record (%s, commit %s) is on %s", strings.TrimSpace(p.MergedInRelease), shortCommit(commit), base), true
+				}
 			}
 		}
 	}

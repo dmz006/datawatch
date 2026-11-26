@@ -295,6 +295,8 @@ Subcommands:
 		newAutonomousPRDApproveCmd(),
 		newAutonomousPRDRejectCmd(),
 		newAutonomousLandingKeepCmd(),
+		newAutonomousLandingAcceptCmd(),
+		newAutonomousMergeSelectionCmd(),
 		newAutonomousLandingDropCmd(),
 		newAutonomousPRDCoverageCmd(),
 		newAutonomousPRDAckCoverageCmd(),

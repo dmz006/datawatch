@@ -1406,11 +1406,11 @@ and responses. Browser-dependent fixes must include user validation steps.
 
 ### Release testing — full functional, not just unit tests
 
-**Operator directive 2026-04-28 (revises 2026-04-27):** smoke runs are **required on minor and major releases**, plus on the **first patch that introduces a new feature** (initial-feature testing). Subsequent patches inside the same minor that DON'T add new features can ship without a full smoke pass — a targeted run via `SMOKE_ONLY=<sections>` is appropriate when only specific sections matter. The full smoke is mandatory at every minor/major boundary so regression coverage doesn't drift across the patch window.
+**Operator directive 2026-11-25 (revises 2026-04-28):** a full smoke run is **required on every minor and major release, tagged or not**. Every other release, tagged bug fixes included, gets a targeted run via `SMOKE_ONLY=<sections>` when daemon code changed; a documentation-only patch needs none. The first patch that brings in part of a new feature needs no extra full run. The full smoke at every minor and major boundary keeps regression coverage from drifting across the patch window.
 
 When in doubt, run smoke. Cost is low; coverage is the point. The autonomous decompose path silently broke in v3.10.0 because unit tests covered the manager + REST handler in isolation but never exercised the loopback together — full-smoke at the v3.11.0 cut would have caught it.
 
-**Required for every minor/major release + first patch of a new feature:**
+**Required for every minor and major release:**
 
 **Always run smoke on an isolated sandbox daemon — NEVER against the production instance.** `release-smoke.sh` starts its own fresh test daemon with a temporary data directory and random port; it never touches the production daemon or its data. Do not point the smoke script at the production instance by overriding `DATAWATCH_BIN`, `SMOKE_PORT`, or `SMOKE_TLS_PORT` to match the production daemon. If an ad-hoc targeted check is needed against a live system, use a dedicated secondary sandbox instance (e.g. a second daemon started with a separate `--config` and `--data-dir`), never `~/.datawatch`.
 

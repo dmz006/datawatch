@@ -655,7 +655,7 @@ Recorded reading: a patch is a bug fix, docs, refactor or config change, and als
 
 ## 2026-11-19 evening update
 
-The full status of the release plans, today's releases, open work and the supervisor run model is in [2026-11-19-release-and-supervisor-status.md](2026-11-19-release-and-supervisor-status.md). Changes since the last entry here:
+The full status of the release plans, today's releases, open work and the supervisor run model is in [historical-plans/2026-11-19-release-and-supervisor-status.md](historical-plans/2026-11-19-release-and-supervisor-status.md). Changes since the last entry here:
 
 - New Claude work was held until 21:00 after a week-pace estimate over the line. The operator's reading of 18% window and 65% week then showed the week only about half a point over, so the hold was stricter than needed; it stays to its end.
 - The usage guard's window estimate was wrong all afternoon (a four-per-point factor instead of the file's 9.2, now about 14). Corrected; week estimates were close.
