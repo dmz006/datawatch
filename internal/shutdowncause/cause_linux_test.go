@@ -134,7 +134,16 @@ func TestScanCandidates(t *testing.T) {
 		{neg.Process.Pid, "sleep 30"},
 		{neg2.Process.Pid, "datawatch serve"},
 	} {
-		if got, err := waitForCmdline(w.pid, w.want, 10*time.Second, readProcCmdline); err != nil {
+		// Ready only once the command line starts with the wanted text: the
+		// shell's own line, before exec -a runs, already contains it.
+		execed := func(pid int) (string, error) {
+			got, err := readProcCmdline(pid)
+			if err == nil && !strings.HasPrefix(got, w.want) {
+				return "", fmt.Errorf("not execed yet: %q", got)
+			}
+			return got, err
+		}
+		if got, err := waitForCmdline(w.pid, w.want, 10*time.Second, execed); err != nil {
 			t.Fatalf("child cmdline not ready: %v (last %q)", err, got)
 		}
 	}
