@@ -1645,7 +1645,9 @@ type Manager struct {
 	// Guarded by mu.
 	tagEventFn    func(TagEvent)
 	tagRecordHook func()
-	defectIntake  DefectIntake
+	// tagRepairMu allows one tag repair at a time (tags_repair.go).
+	tagRepairMu  sync.Mutex
+	defectIntake DefectIntake
 	// autoTagsDaemon supplies the daemon-level autonomous.auto_tags block
 	// that the engine-tag sync resolves against (auto_tags.go). Wired by
 	// the server at call time so a live config change takes effect on the

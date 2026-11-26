@@ -317,3 +317,40 @@ func TestStartDoesNotUndoAnAutoTagRenameOrDelete(t *testing.T) {
 		t.Errorf("the renamed auto tag is %q after the start, want %q", got, "automation:second name")
 	}
 }
+
+// A repair that runs while the registry is in use gives back records that stay.
+func TestRepairedTagsStayAfterRegistryWritesAndAStart(t *testing.T) {
+	s := newSandbox(t)
+	m := s.manager()
+	r := s.start(m)
+	made, err := r.Create(context.Background(), CreateInput{Name: "operator tag"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	prds := s.automation(m, "made-up history", 2)
+	before := tagNames(m)
+	var copies []*autonomous.Tag
+	var lost []string
+	for _, tg := range m.ListTags() {
+		cp := *tg
+		copies = append(copies, &cp)
+		if tg.ID != made.Tag.ID {
+			lost = append(lost, tg.ID)
+		}
+	}
+	if err := m.UpdateTagRecords(nil, lost); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := m.RepairTags(copies, false)
+	if err != nil || rep.Restore != len(lost) {
+		t.Fatalf("repair = %+v, %v; want %d restored", rep, err, len(lost))
+	}
+	if _, err := r.Recolor(context.Background(), made.Tag.ID, "#010203"); err != nil {
+		t.Fatalf("Recolor: %v", err)
+	}
+	wantAllTagsResolve(t, m, before, prds)
+	m2 := s.manager()
+	s.start(m2)
+	wantAllTagsResolve(t, m2, before, prds)
+}
