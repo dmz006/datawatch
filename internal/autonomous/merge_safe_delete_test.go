@@ -41,7 +41,7 @@ const sdWorktrees = "worktree /repo\nHEAD aaa\nbranch refs/heads/main\n\n" +
 	"worktree /wt/two\nHEAD ccc\nbranch refs/heads/automaton/two\n\n"
 
 // sdListKey is the fake key of the branch listing call carrying each
-// branch's ahead count; the line shape is "<branch> <behind> <ahead>".
+// branch's ahead count; the line shape is "<branch> <ahead> <behind>".
 const sdListKey = "for-each-ref --format=%(refname:short) %(ahead-behind:main) refs/heads/automaton/"
 
 // sdListKeyPlain is the fallback plain-name branch listing call.
@@ -61,7 +61,7 @@ func sdGit(worktrees string) *recordingGit {
 // sdAddBranch registers one branch in the ahead-behind listing output with
 // its ahead count.
 func sdAddBranch(g *recordingGit, b string, ahead int) {
-	g.out[sdListKey] += b + " 0 " + strconv.Itoa(ahead) + "\n"
+	g.out[sdListKey] += b + " " + strconv.Itoa(ahead) + " 0\n"
 }
 
 func setMerged(g *recordingGit, b string) {

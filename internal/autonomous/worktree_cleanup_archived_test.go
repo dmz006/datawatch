@@ -160,11 +160,9 @@ func TestArchivedCleanupPassKeepCases(t *testing.T) {
 			gitCmd(t, e.repo, "merge", "-q", "--ff-only", archivedTestBranch)
 			keepWrite(t, e.worktree, "a.txt", "edited\n")
 		}},
-		// The removal-time comparison refuses it.
-		{"commit not on the default branch", cleanupSkipCommits, func(t *testing.T, e env) {
+		{"commit not on the default branch", cleanupSkipHeld, func(t *testing.T, e env) {
 			commit(t, e, "unmerged.txt")
 		}},
-		// With the default branch moved on, the report itself holds it.
 		{"commit not on a default branch that moved on", cleanupSkipHeld, func(t *testing.T, e env) {
 			commit(t, e, "unmerged.txt")
 			gitCmd(t, e.repo, "commit", "-q", "--allow-empty", "-m", "elsewhere")
