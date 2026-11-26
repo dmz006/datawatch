@@ -3,8 +3,7 @@
 **Date:** 2026-11-20
 
 **Recovered:** 2026-11-26. A dated review: its checks, commit ids and line-level statements describe
-the tree of 2026-11-20 and were not run again. One later difference seen on 2026-11-26: the plan
-header block includes `set_by_hand` only when the status was set by hand. Check each *Operator must
+the tree of 2026-11-20 and were not run again. Later differences seen on 2026-11-26: plan answers built with `planBlock` (the helper named `planBlockWithHand` below is gone) include `set_by_hand` only when the status was set by hand; the plan's tasks read still always includes it. Check each *Operator must
 review* item against main before acting on it.
 
 **Scope:** the merge of the plan roll-up, rename and edit feature branch into the

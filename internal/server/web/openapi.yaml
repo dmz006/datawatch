@@ -12456,7 +12456,7 @@ paths:
           in: query
           required: false
           schema: {type: integer, minimum: 0}
-          description: The what-if lane count (0 included). The advice plans with this many Claude lanes for this call only; it is not saved and does not change how many lanes are running. Without it the advice uses the lanes running now. The count the ledger reports is returned as lanes_running_now
+          description: The what-if lane count (0 included). The advice plans with this many Claude lanes for this call only; it is not saved and does not change how many lanes are running. Without it the advice plans with the lanes stamped on the newest usable reading, or the stored maximum when no reading has a usable stamp. A what-if never changes a measured figure such as the burn per lane. The count the ledger reports is returned as advice.lanes_running_now
         - name: cost
           in: query
           required: false
