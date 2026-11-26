@@ -91,9 +91,6 @@ func (m *Manager) oneShotFinishReason(sess *Session) string {
 	if err != nil {
 		return ""
 	}
-	if m.exitHeld(sess.FullID, sess.TmuxSession) {
-		return "" // the agent exited without its task: not finished work
-	}
 	// BL468 — note the state guard above already leaves sessions in a
 	// terminal state (complete/failed/killed) alone, so a StateFailed
 	// record is never reaped or re-transitioned here.
@@ -164,9 +161,6 @@ func (m *Manager) ReapFinishedOneShots() []string {
 		removeOneShotScratch(sess.TmuxSession)
 		reaped = append(reaped, sess.FullID)
 	}
-	// An agent that exited without its task is never listed above as
-	// finished. Where no watcher saw it exit, end it as failed here.
-	m.failMissedEarlyExits()
 	return reaped
 }
 

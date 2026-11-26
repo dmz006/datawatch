@@ -280,7 +280,6 @@ func (m *Manager) armTaskDeliveryAfterStart(ctx context.Context, sess *Session, 
 		return
 	}
 	m.markDaemonDeliversTask(sess)
-	m.armFirstDelivery(sess.FullID)
 	attempts, window := 3, defaultTaskDeliveryWindow
 	if m.cfg != nil {
 		attempts = m.cfg.Session.EffectiveTaskDeliveryAttempts()

@@ -6184,14 +6184,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 				}
-				// A launch the session recorded as failed outranks whatever
-				// else the wait concluded: nothing ran.
-				if ls, ok := mgr.GetSession(task.SessionID); ok {
-					if lerr := workerLaunchFailure(ls); lerr != nil {
-						log.Printf("[autonomous] launch failure: session %s task %s/%s: %s", ls.FullID, task.PRDID, task.ID, ls.LaunchFailure)
-						return autonomouspkg.VerificationResult{}, lerr
-					}
-				}
 				if doneVerdict != nil {
 					return *doneVerdict, nil
 				}
@@ -8081,9 +8073,6 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Boot-resume: recorded output of a session that ended while the daemon
 			// was down, so a finished worker is verified instead of redone.
 			amgr.SetSessionOutputFn(func(sessionID string) (string, bool) {
-				if mgr.LaunchFailed(sessionID) != "" {
-					return "", false // its completion line proves nothing
-				}
 				out, err := mgr.TailOutput(sessionID, 500)
 				if err != nil {
 					return "", false
@@ -8132,16 +8121,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}
 						return s.State, s.BackendFamily, true
 					},
-					LaunchFailure: func(sessionID string) error {
-						s, _ := mgr.GetSession(sessionID)
-						return workerLaunchFailure(s)
-					},
 					Completed: func(sessionID string) bool {
-						// The shell's completion line from an agent that never
-						// had its task is not a finished worker.
-						if mgr.EndedBeforeTask(sessionID) {
-							return false
-						}
 						out, err := mgr.TailOutput(sessionID, 200)
 						return err == nil && session.ExtractCompletionSummary(out) != ""
 					},
@@ -10613,8 +10593,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		isPromptOscillation := (old == session.StateRunning && sess.State == session.StateWaitingInput) ||
 			(old == session.StateWaitingInput && sess.State == session.StateRunning)
 		if !isPromptOscillation {
-			_, line := stateAlertText(sess, old, event)
-			bundleRemoteAlert(sess, line)
+			bundleRemoteAlert(sess, event)
 		}
 		// Local alert store: skip running↔waiting_input oscillation to reduce noise
 		if !isPromptOscillation {
@@ -10622,10 +10601,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if sess.State == session.StateKilled || sess.State == session.StateFailed {
 				level = alertspkg.LevelWarn
 			}
-			body, _ := stateAlertText(sess, old, event)
 			alertStore.Add(level,
 				fmt.Sprintf("%s: %s → %s", sessionLabel(sess), old, sess.State),
-				body,
+				truncate(sess.Task, 100),
 				sess.FullID,
 			)
 		}
