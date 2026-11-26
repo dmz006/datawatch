@@ -12,7 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The cleanup removes only registrations recorded in this daemon's data folder, never a name a session start or resume has registered since the daemon started. Its `claude` commands are ended after 2 minutes (list) or 30 seconds (each removal), and on daemon stop or restart.
 
 ### Before you upgrade
-- Older entries are not recorded, so startup leaves them, including an old global `datawatch` or `channel.js` entry (which can start a second bridge). Run `claude mcp list` as the daemon's user and remove them with `claude mcp remove <name> -s user` (`-s local` or `-s project`, from that project folder, for entries in those scopes). Remove a `datawatch-<hostname>-<id>` entry (also a `channel.js` one) only if `datawatch session list` on every daemon of that user shows no such session running. A claude-code session's entry is also removed when it ends.
+- Older entries are not recorded, so startup leaves them, including an old global `datawatch` or `channel.js` entry (which can start a second bridge). Run `claude mcp list` as the daemon's user and remove them with `claude mcp remove <name> -s user` (`-s local` or `-s project`, from that project folder, for entries in those scopes). Remove a `datawatch-<hostname>-<id>` entry (also a `channel.js` one) only if, for every daemon of that user, `datawatch session list` (with that daemon's `--config`) does not list session `<id>` or shows it as `complete`, `failed` or `killed`. A claude-code session's entry is also removed when it ends.
 
 ### Not covered
 - If a cleanup removal hangs, a session start or resume can wait 30 s (90 s for a `channel.js` entry).
