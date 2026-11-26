@@ -39556,7 +39556,7 @@ function _usageCalcWhatIfHtml(res) {
     `</div>`;
 }
 
-// The lanes running now, from the stamped readings: a number, or not known.
+// The Claude lanes running now, as the daemon's capacity ledger counts them: a number, or not known when no ledger is wired.
 function _usageCalcRunningNowHtml(res) {
   const a = res && res.advice && !res.advice.needs ? res.advice : null;
   if (!a) return '';
