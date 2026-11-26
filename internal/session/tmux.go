@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,7 +38,11 @@ type TmuxAPI interface {
 }
 
 // TmuxManager wraps tmux operations used by the session manager.
-type TmuxManager struct{}
+type TmuxManager struct {
+	// enterChecks holds, by session, the check run on the live screen just
+	// before an Enter is pressed there (startup_dialog_timing.go).
+	enterChecks sync.Map
+}
 
 // NewSession creates a new detached tmux session with the given name.
 // Starts at a conservative 80x24 default; the web client sends a resize_term
@@ -125,31 +130,59 @@ func (t *TmuxManager) PanePID(session string) int {
 }
 
 // SendTrustPromptAccept accepts Claude Code's workspace-trust TUI dialog.
-// claude renders the preselected option with the ❯ cursor on the same
-// line. In the builds observed up to claude v2.1.306 the accept option
-// ("Yes, I trust this folder") is already preselected, where a plain Enter
-// confirms it and "Down Enter" selects the neighboring "No, exit" option
-// and exits claude — that stale hard-coded sequence killed one-shot
-// sessions during the round-2 live validation (docs/plans/
-// 2026-10-20-oneshot-startup-dialog-dismiss.md). In the earlier builds it
-// was "❯ No, exit" that was preselected and a Down was needed first. Read
-// the rendered pane and pick the confirm sequence it actually wants.
+// claude renders the preselected option with the ❯ cursor on the same line.
+// In some builds the accept option is preselected, where a plain Enter confirms
+// it and "Down Enter" exits claude; in others, 2.1.332 among them, "No, exit"
+// is preselected and a Down is needed first. The live screen is read to see
+// which, and Enter is pressed only while it shows the cursor staying on the
+// accept option: a dialog that has just appeared is drawn again with the
+// cursor back where it began, undoing a Down sent too early. Nothing is typed
+// when the trust dialog is not on the screen.
 func (t *TmuxManager) SendTrustPromptAccept(session string) error {
-	if out, err := TmuxCommand("capture-pane", "-pt", session).Output(); err == nil {
-		for _, line := range strings.Split(string(out), "\n") {
-			if strings.Contains(line, "Yes, I trust this folder") {
-				if strings.Contains(line, "❯") {
-					return TmuxCommand("send-keys", "-t", session, "Enter").Run()
-				}
-				break // accept option one row from the cursor → fall through to Down+Enter
+	read := func() (startupScreen, bool) {
+		pane, err := t.CapturePaneLiveTail(session)
+		if err != nil {
+			return startupScreen{}, false
+		}
+		d, ok := readStartupScreen(pane)
+		return d, ok && d.action.Kind == StartupDialogTrustFolder
+	}
+	// stays reports that the cursor is on the accept option at every reading
+	// for the hold time, the last one just before the return.
+	stays := func() bool {
+		for end := time.Now().Add(startupCursorHold); ; time.Sleep(startupSettlePoll) {
+			if d, ok := read(); !ok || !cursorAccepts(d) {
+				return false
+			}
+			if !time.Now().Before(end) {
+				return true
 			}
 		}
 	}
-	// Pane unreadable, or older claude layout with decline preselected.
+	d, shown := read()
+	if !shown {
+		return errStartupNotSettled
+	}
+	if cursorAccepts(d) {
+		if !stays() {
+			return errStartupEnterHeld
+		}
+		return TmuxCommand("send-keys", "-t", session, "Enter").Run()
+	}
 	if err := TmuxCommand("send-keys", "-t", session, "Down").Run(); err != nil {
 		return err
 	}
-	time.Sleep(100 * time.Millisecond)
+	for end := time.Now().Add(startupCursorWait); ; time.Sleep(startupSettlePoll) {
+		if d, ok := read(); ok && cursorAccepts(d) {
+			break
+		}
+		if !time.Now().Before(end) {
+			return errStartupEnterHeld
+		}
+	}
+	if !stays() {
+		return errStartupEnterHeld
+	}
 	return TmuxCommand("send-keys", "-t", session, "Enter").Run()
 }
 
@@ -322,8 +355,16 @@ func (t *TmuxManager) sendKeysSettled(session, keys string, settle time.Duration
 	return submitUnlessVetoed(t, session, sent, veto)
 }
 
-// SendEnter presses Enter once in the tmux session, with no text.
+// SendEnter presses Enter once in the tmux session, with no text. While a
+// check is set for the session, the live screen is read first and Enter is
+// pressed only if the check passes.
 func (t *TmuxManager) SendEnter(session string) error {
+	if check, set := t.enterChecks.Load(session); set {
+		pane, err := t.CapturePaneLiveTail(session)
+		if err != nil || !check.(func(string) bool)(pane) {
+			return errStartupEnterHeld
+		}
+	}
 	return TmuxCommand("send-keys", "-t", session, "Enter").Run()
 }
 
