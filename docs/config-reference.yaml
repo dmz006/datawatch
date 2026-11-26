@@ -1639,6 +1639,22 @@ autonomous:
   # autonomous.automation.cleanup_archived=false`, and the MCP
   # autonomous_config_set tool (automation_cleanup_archived).
   #
+  # cleanup_shared_cache_sweep: bool, default false. Lets the cleanup remove
+  # Go build cache (go-build<digits>) and Trivy scan-cache folders directly in
+  # the temp directory that are at least 60 minutes old and that no process has
+  # an open file or working directory in. The daemon does not create these
+  # folders and cannot tell who did, so the sweep removes them whichever
+  # program made them; a program only running from one does not hold it. With
+  # false the daemon does not look at them, whatever cleanup_mode is. With
+  # true, cleanup_mode decides: off does nothing, report lists, on removes.
+  # PUT /api/config accepts only true or false. Settable via PUT /api/config
+  # (key autonomous.automation.cleanup_shared_cache_sweep), PUT
+  # /api/autonomous/config, CLI `datawatch config set
+  # autonomous.automation.cleanup_shared_cache_sweep true`, comm `configure
+  # autonomous.automation.cleanup_shared_cache_sweep=true`, the MCP
+  # autonomous_config_set tool (automation_cleanup_shared_cache_sweep) and
+  # the PWA Automata settings.
+  #
   # cleanup_retention_hours: whole hours >= 0. How long a removal candidate
   # may sit unused before it counts as retained for the cleanup pass. An
   # unset key, an explicit 0 and a negative value are not refused — they all
@@ -3553,7 +3569,8 @@ autonomous:
   # cancel an Automaton whose branch holds commits that are not on the default
   # branch unless a keep or drop decision is recorded, gives finished work
   # older than a day an owner and one open question (a branch left alone is
-  # asked about again on its re-ask date), sends a daily digest and runs a
+  # asked about again on its re-ask date; a withdrawn question is not raised
+  # again until the branch moves or 14 days pass), sends a daily digest and runs a
   # weekly audit written as a decision record. shadow records the same findings
   # and refusals but changes nothing and asks nothing; off disables it.
   # Applies live. Guide: docs/howto/finished-work.md.

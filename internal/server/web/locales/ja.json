@@ -3910,6 +3910,7 @@
   "settings_automation_cleanup_mode": "Automaton cleanup (off, report or on; default report)",
   "settings_automation_cleanup_archived": "アーカイブしたオートマトンも他の完了分と同じようにクリーンアップする（既定でオン）",
   "settings_automation_cleanup_archived_help": "オンの場合、クリーンアップモードはアーカイブしたオートマトンにも適用され、作業を残すルールも同じです。アーカイブではブランチもタスクのフォルダーも削除されません。定期クリーンアップが、保持期間の経過後に、1回あたりの上限の範囲で削除します。フォルダーを削除すると、保護フォルダー外の無視ファイルと git から隠された変更も消えます。実際に削除するかどうかは、引き続きクリーンアップモードで決まります。",
+  "settings_automation_cleanup_shared_cache_sweep": "共有一時キャッシュを掃除する（どのプログラムが作成した go-build と Trivy スキャンのキャッシュも対象。クリーンアップが on のときは削除されます。既定はオフ）",
   "settings_automation_cleanup_retention_hours": "Automaton cleanup retention (hours a finished Automaton worktree is kept before cleanup, whole number, default 24)",
   "settings_automation_cleanup_max_removals_per_pass": "Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)",
   "settings_automation_disk_alert_percent": "Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)",

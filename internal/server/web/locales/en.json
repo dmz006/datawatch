@@ -3910,6 +3910,7 @@
   "settings_automation_cleanup_mode": "Automaton cleanup (off, report or on; default report)",
   "settings_automation_cleanup_archived": "Clean up archived Automata like other finished ones (default on)",
   "settings_automation_cleanup_archived_help": "When on, the cleanup mode also covers archived Automata, with the same rules that keep work. Archiving removes no branch or task folder: the periodic cleanup does, after the retention time and within the limit per pass. Removing a folder also deletes ignored files outside protected folders and edits hidden from git. The cleanup mode still decides whether anything is removed.",
+  "settings_automation_cleanup_shared_cache_sweep": "Sweep shared temp caches (go-build and Trivy scan caches made by any program, also removed when cleanup is on; default off)",
   "settings_automation_cleanup_retention_hours": "Automaton cleanup retention (hours a finished Automaton worktree is kept before cleanup, whole number, default 24)",
   "settings_automation_cleanup_max_removals_per_pass": "Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)",
   "settings_automation_disk_alert_percent": "Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)",

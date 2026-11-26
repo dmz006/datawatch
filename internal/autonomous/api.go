@@ -1693,6 +1693,11 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	if c.Question.ID != "" && a.M.onDecisionWaitChange(c) {
 		return
 	}
+	// A withdrawn finished-work question stays settled until its branch moves
+	// or its re-ask date passes (finished_work.go).
+	if c.Question.ID != "" && a.M.onFinishedWorkWithdrawn(c) {
+		return
+	}
 	if c.Kind != QuestionChangeAnswered || c.Question.ID == "" {
 		return
 	}

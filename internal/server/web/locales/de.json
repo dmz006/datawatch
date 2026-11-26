@@ -3910,6 +3910,7 @@
   "settings_automation_cleanup_mode": "Automaton cleanup (off, report or on; default report)",
   "settings_automation_cleanup_archived": "Archivierte Automaten wie andere abgeschlossene bereinigen (Standard: an)",
   "settings_automation_cleanup_archived_help": "Wenn aktiv, gilt der Bereinigungsmodus auch für archivierte Automaten, mit denselben Regeln zum Schutz von Arbeit. Beim Archivieren wird kein Branch und kein Aufgabenordner entfernt: Das erledigt die regelmäßige Bereinigung nach der Aufbewahrungszeit und innerhalb des Limits pro Durchlauf. Beim Entfernen eines Ordners werden auch ignorierte Dateien außerhalb geschützter Ordner und vor Git verborgene Änderungen gelöscht. Ob etwas entfernt wird, entscheidet weiterhin der Bereinigungsmodus.",
+  "settings_automation_cleanup_shared_cache_sweep": "Gemeinsame Temp-Caches bereinigen (go-build- und Trivy-Scan-Caches beliebiger Programme, bei Bereinigung „on“ auch entfernt; Standard aus)",
   "settings_automation_cleanup_retention_hours": "Automaton cleanup retention (hours a finished Automaton worktree is kept before cleanup, whole number, default 24)",
   "settings_automation_cleanup_max_removals_per_pass": "Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)",
   "settings_automation_disk_alert_percent": "Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)",

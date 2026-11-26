@@ -941,6 +941,13 @@ type AutomationConfig struct {
 	// package default of 10 via EffectiveCleanupMaxRemovalsPerPass.
 	CleanupMaxRemovalsPerPass int `json:"cleanup_max_removals_per_pass,omitempty"`
 
+	// CleanupSharedCacheSweep: the switch of the shared-cache sweep
+	// (autonomous.automation.cleanup_shared_cache_sweep), off by default.
+	// That sweep removes go-build and trivy scan-cache folders in the temp
+	// folder whichever process made them, so cleanup_mode alone does not run
+	// it. Not omitempty: an explicit false reads back.
+	CleanupSharedCacheSweep bool `json:"cleanup_shared_cache_sweep"`
+
 	// DiskAlertPercent: zero (unset) reads the config package default of 85,
 	// and the EffectiveDiskAlertPercent accessor clamps any other value into
 	// 1..100.

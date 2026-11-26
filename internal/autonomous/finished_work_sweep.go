@@ -268,6 +268,23 @@ type FinishedWorkState struct {
 	AuditWeek        string `json:"audit_week,omitempty"`
 	AuditRecordID    string `json:"audit_record_id,omitempty"`
 	LastAuditSummary string `json:"last_audit_summary,omitempty"`
+	// Withdrawn holds, per Automaton, the finished-work question someone
+	// withdrew and what keeps it settled. Read and written only through
+	// withdrawal, settleWithdrawal, noteWithdrawalTip and forgetWithdrawal,
+	// which hold the sweep lock.
+	Withdrawn map[string]FinishedWorkWithdrawal `json:"withdrawn,omitempty"`
+}
+
+// FinishedWorkWithdrawal is a withdrawn finished-work question: it stays
+// settled until the branch moves off Tip or ReaskAt passes.
+type FinishedWorkWithdrawal struct {
+	QuestionID string    `json:"question_id"`
+	Actor      string    `json:"actor,omitempty"`
+	At         time.Time `json:"at"`
+	// Tip is the commit the branch pointed at when the question was
+	// withdrawn; empty when git could not say.
+	Tip     string    `json:"tip,omitempty"`
+	ReaskAt time.Time `json:"reask_at"`
 }
 
 func (s *FinishedWorkSweep) statePath() string {
@@ -297,6 +314,11 @@ func (s *FinishedWorkSweep) UpdateState(f func(*FinishedWorkState)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f(&s.state)
+	s.saveStateLocked()
+}
+
+// saveStateLocked writes the remembered state. The caller holds s.mu.
+func (s *FinishedWorkSweep) saveStateLocked() {
 	data, err := json.Marshal(s.state)
 	if err == nil {
 		err = atomicWriteFile(s.statePath(), data)
@@ -304,4 +326,71 @@ func (s *FinishedWorkSweep) UpdateState(f func(*FinishedWorkState)) {
 	if err != nil {
 		log.Printf("[autonomous] finished work sweep: write %s: %v", s.statePath(), err)
 	}
+}
+
+// withdrawal returns the remembered withdrawal of an Automaton's question.
+func (s *FinishedWorkSweep) withdrawal(automaton string) (FinishedWorkWithdrawal, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	w, ok := s.state.Withdrawn[automaton]
+	return w, ok
+}
+
+// settleWithdrawal remembers a withdrawal. It reports false, and changes
+// nothing, when this question's withdrawal is already remembered, so a
+// settlement is made once and its re-ask date never slides.
+func (s *FinishedWorkSweep) settleWithdrawal(automaton string, w FinishedWorkWithdrawal) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if old, ok := s.state.Withdrawn[automaton]; ok && old.QuestionID == w.QuestionID {
+		return false
+	}
+	if s.state.Withdrawn == nil {
+		s.state.Withdrawn = map[string]FinishedWorkWithdrawal{}
+	}
+	s.state.Withdrawn[automaton] = w
+	s.saveStateLocked()
+	return true
+}
+
+// noteWithdrawalTip fills in a tip that could not be read when the question
+// was withdrawn, so a later move of the branch can be seen.
+func (s *FinishedWorkSweep) noteWithdrawalTip(automaton, tip string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	w, ok := s.state.Withdrawn[automaton]
+	if !ok || w.Tip != "" {
+		return
+	}
+	w.Tip = tip
+	s.state.Withdrawn[automaton] = w
+	s.saveStateLocked()
+}
+
+// forgetWithdrawal drops the withdrawal of an Automaton: its work no longer
+// waits to land, or the daemon has asked again.
+func (s *FinishedWorkSweep) forgetWithdrawal(automaton string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.state.Withdrawn[automaton]; !ok {
+		return
+	}
+	delete(s.state.Withdrawn, automaton)
+	s.saveStateLocked()
+}
+
+// upsertUnasked stores a finding that has no question: unlike Upsert it does
+// not carry an earlier finding's question over.
+func (s *FinishedWorkSweep) upsertUnasked(f FinishedWorkFinding) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f.QuestionID = ""
+	s.upsertLocked(f)
+	for i := range s.findings {
+		if s.findings[i].Automaton == f.Automaton {
+			s.findings[i].QuestionID = ""
+		}
+	}
+	s.dirty = true
+	s.save()
 }

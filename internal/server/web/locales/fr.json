@@ -3910,6 +3910,7 @@
   "settings_automation_cleanup_mode": "Automaton cleanup (off, report or on; default report)",
   "settings_automation_cleanup_archived": "Nettoyer les automates archivés comme les autres automates terminés (activé par défaut)",
   "settings_automation_cleanup_archived_help": "Si activé, le mode de nettoyage couvre aussi les automates archivés, avec les mêmes règles qui préservent le travail. L’archivage ne supprime aucune branche ni aucun dossier de tâche : c’est le nettoyage périodique qui le fait, après la durée de rétention et dans la limite par passage. La suppression d’un dossier efface aussi les fichiers ignorés hors des dossiers protégés et les modifications masquées à git. Le mode de nettoyage décide toujours si quelque chose est supprimé.",
+  "settings_automation_cleanup_shared_cache_sweep": "Nettoyer les caches temporaires partagés (caches go-build et d’analyse Trivy de n’importe quel programme, supprimés aussi quand le nettoyage est sur on ; désactivé par défaut)",
   "settings_automation_cleanup_retention_hours": "Automaton cleanup retention (hours a finished Automaton worktree is kept before cleanup, whole number, default 24)",
   "settings_automation_cleanup_max_removals_per_pass": "Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)",
   "settings_automation_disk_alert_percent": "Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)",
