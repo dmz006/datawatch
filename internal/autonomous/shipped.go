@@ -179,19 +179,16 @@ func (m *Manager) confirmShippedCommit(p *PRD, commit, source string) (string, b
 	if !ok {
 		return commit, false, nil
 	}
-	full, err := resolveCommitID(ctx, git, repo, id)
+	remoteName := mergeRemote(ctx, git, repo)
+	full, err := fetchedCommit(ctx, git, repo, remoteName, id)
 	if err != nil {
 		return refuse(err)
 	}
-	remote := mergeRemote(ctx, git, repo) != ""
+	remote := remoteName != ""
 	if remote {
 		if err := confirmOnRemote(ctx, git, repo, full); err != nil {
 			return refuse(err)
 		}
-	}
-	// After the remote check, which may have fetched the commit.
-	if got, ok := commitObject(ctx, git, repo, full); !ok || got != full {
-		return refuse(fmt.Errorf("%s is not a commit in the merge repository", full))
 	}
 	if !isAncestor(ctx, git, repo, tip, full) {
 		return refuse(fmt.Errorf("commit %s does not contain its branch %s: give the commit that holds the work (work ported by hand is recorded with source %s)",

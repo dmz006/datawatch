@@ -152,6 +152,12 @@ refused before git runs. An abbreviation is matched against the commits the
 merge repository holds and the full id is stored; if none or more than one
 matches, the record is refused and you give the full id.
 
+A commit pushed from another clone may not be in the merge repository yet. When
+it is not found and there is a remote, the daemon fetches the remote's default
+branch once and looks again. If it is still not found, the refusal says that the
+fetch failed (record it again once the fetch works) or that the commit is
+unknown.
+
 **A `backfill` record is stored as given, with no check**, and `backfill` is
 what the CLI, MCP and chat send unless you choose `merge_step`. So such a
 record can mark work that was never pushed as shipped. The landing stays
