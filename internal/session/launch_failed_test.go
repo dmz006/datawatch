@@ -90,7 +90,7 @@ func launchFixture(t *testing.T, mutate func(*Session)) (*Manager, *FakeTmux, *S
 	return mgr, fake, sess, seen
 }
 
-func setPane(fake *FakeTmux, name, pane, cmd string) {
+func setLaunchPane(fake *FakeTmux, name, pane, cmd string) {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	fake.Pane[name] = pane
@@ -99,14 +99,14 @@ func setPane(fake *FakeTmux, name, pane, cmd string) {
 
 func declineAndExit(t *testing.T, mgr *Manager, fake *FakeTmux, sess *Session) {
 	t.Helper()
-	setPane(fake, sess.TmuxSession, settingsErrorPane, "claude")
+	setLaunchPane(fake, sess.TmuxSession, settingsErrorPane, "claude")
 	if err := mgr.DeclineStartupDialog(sess.FullID); err != nil {
 		t.Fatal(err)
 	}
 	if got := fake.LastCall("send-keys-literal").Args; len(got) != 1 || got[0] != "\x1b" {
 		t.Fatalf("the decline must stay a single Esc, sent %q", got)
 	}
-	setPane(fake, sess.TmuxSession, exitedPane, "bash")
+	setLaunchPane(fake, sess.TmuxSession, exitedPane, "bash")
 }
 
 func feedLine(mgr *Manager, sess *Session, line string) {
@@ -209,7 +209,7 @@ func TestAgentExitDuringDeliveryIsFailedByTheScreenWatcher(t *testing.T) {
 			if !mgr.ClaimTaskDelivery(sess.FullID) {
 				t.Fatal("claim")
 			}
-			setPane(fake, sess.TmuxSession, plainExitPane, "bash")
+			setLaunchPane(fake, sess.TmuxSession, plainExitPane, "bash")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			mgr.StartScreenCapture(ctx, sess.FullID, 20)
@@ -228,7 +228,7 @@ func TestAgentExitDuringDeliveryIsFailedByTheScreenWatcher(t *testing.T) {
 
 func TestReaperDoesNotCompleteAnUndeliveredOneShot(t *testing.T) {
 	mgr, fake, sess, seen := launchFixture(t, func(s *Session) { s.OneShot = true })
-	setPane(fake, sess.TmuxSession, plainExitPane, "bash")
+	setLaunchPane(fake, sess.TmuxSession, plainExitPane, "bash")
 	if got := mgr.ReapFinishedOneShots(); len(got) != 0 {
 		t.Errorf("reaped as complete: %v", got)
 	}
@@ -301,7 +301,7 @@ func TestARestartFollowsTheSameRule(t *testing.T) {
 	// The relaunched agent exits without any dialog.
 	again := &stateLog{}
 	mgr.SetStateChangeHandler(again.add)
-	setPane(fake, sess.TmuxSession, plainExitPane, "bash")
+	setLaunchPane(fake, sess.TmuxSession, plainExitPane, "bash")
 	feedLine(mgr, s, "DATAWATCH_COMPLETE: claude done")
 	awaitState(mgr, sess.FullID, StateFailed, 6*time.Second)
 	time.Sleep(200 * time.Millisecond)
@@ -338,7 +338,7 @@ func TestDeliveryNeverMarksAFailedLaunchDelivered(t *testing.T) {
 // an exit.
 func TestExitLineWithTheAgentStillRunningChangesNothing(t *testing.T) {
 	mgr, fake, sess, seen := launchFixture(t, func(s *Session) { s.OneShot = true })
-	setPane(fake, sess.TmuxSession, plainExitPane, "claude")
+	setLaunchPane(fake, sess.TmuxSession, plainExitPane, "claude")
 	feedLine(mgr, sess, "DATAWATCH_COMPLETE: claude done")
 	if got := mgr.ReapFinishedOneShots(); len(got) != 0 {
 		t.Errorf("reaped: %v", got)
@@ -361,7 +361,7 @@ func TestADeliveredTaskStillCompletes(t *testing.T) {
 	old := time.Now().Add(-time.Hour)
 	mgr.taskDeliveredAt[sess.FullID] = old
 	mgr.mu.Unlock()
-	setPane(fake, sess.TmuxSession, plainExitPane, "bash")
+	setLaunchPane(fake, sess.TmuxSession, plainExitPane, "bash")
 	feedLine(mgr, sess, "DATAWATCH_COMPLETE: claude done")
 	if got := awaitState(mgr, sess.FullID, StateComplete, time.Second); got != StateComplete {
 		t.Fatalf("state = %s, want complete", got)
@@ -370,19 +370,19 @@ func TestADeliveredTaskStillCompletes(t *testing.T) {
 
 func TestADeclinedDialogTheAgentGotPastDoesNotFailItsLaterExit(t *testing.T) {
 	mgr, fake, sess, _ := launchFixture(t, func(s *Session) { s.DaemonDeliversTask = false; s.OneShot = true })
-	setPane(fake, sess.TmuxSession, " Update available! Update now?\n\n Enter to confirm · Esc to cancel", "claude")
+	setLaunchPane(fake, sess.TmuxSession, " Update available! Update now?\n\n Enter to confirm · Esc to cancel", "claude")
 	if err := mgr.DeclineStartupDialog(sess.FullID); err != nil {
 		t.Fatal(err)
 	}
 	// Esc closed the dialog and the agent reached its input box.
-	setPane(fake, sess.TmuxSession, "──────────\n❯ \n──────────", "claude")
+	setLaunchPane(fake, sess.TmuxSession, "──────────\n❯ \n──────────", "claude")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mgr.StartScreenCapture(ctx, sess.FullID, 20)
 	time.Sleep(200 * time.Millisecond)
 	cancel()
 	mgr.bg.Wait() // the watcher has stopped before the log line arrives
-	setPane(fake, sess.TmuxSession, plainExitPane, "bash")
+	setLaunchPane(fake, sess.TmuxSession, plainExitPane, "bash")
 	feedLine(mgr, sess, "DATAWATCH_COMPLETE: claude done")
 	if got := awaitState(mgr, sess.FullID, StateComplete, time.Second); got != StateComplete {
 		t.Fatalf("state = %s, want complete", got)
