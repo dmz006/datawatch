@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.29 (2026-11-26).** A datawatch-run merge now checks in a scratch folder and moves local main only after the remote confirms the pushed commit; merging stays off, and the changelog lists what is not protected. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.30 (2026-11-26).** A local claude-code Automaton worker is no longer marked done unless datawatch recorded its task as delivered; the changelog lists what that does not prove. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
