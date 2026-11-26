@@ -58,6 +58,18 @@ type Input struct {
 	// Selection is the daemon's merge selection rule's answer, copied onto
 	// the plan.
 	Selection *PlanSelection
+	// ReleaseSize is the size of the release this Automaton makes, from its
+	// own release size or its kind. patch, minor and major set the planned
+	// version from the base ref's version; none plans no release. Empty
+	// means it is not known, and both come from the changelog heading.
+	ReleaseSize ReleaseSize
+	// ChangelogDraftPath is the Automaton's changelog draft file in the work
+	// branch. When the branch holds it, the plan's changelog comes from it
+	// and names it as the source.
+	ChangelogDraftPath string
+	// CheckRootFiles blocks the plan for each file the branch adds at the
+	// repository root.
+	CheckRootFiles bool
 }
 
 // Runner builds a shadow merge plan for one finished Automaton and stores it.
@@ -168,28 +180,64 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 		}
 	}
 
-	// Step 4: the changelog entry.
-	entry := ReadChangelogEntry(in.ChangelogTasks)
+	// A file the branch adds at the repository root blocks the plan.
+	var rootFindings []Finding
+	if in.CheckRootFiles {
+		if rootFindings, err = CheckStrayRootFiles(ctx, in.RepoPath, in.Branch, base); err != nil {
+			return nil, err
+		}
+	}
+
+	// Step 4: the changelog entry, from the branch's draft file when it has
+	// one, else from the entry task.
+	entry, drafted := readChangelogDraft(ctx, in)
+	if !drafted {
+		entry = ReadChangelogEntry(in.ChangelogTasks)
+	}
 	plan.ChangelogSource = entry.Source
 	plan.ChangelogHeading = entry.Heading
 	plan.ChangelogBody = entry.Body
 	planned := versionFromHeading(entry.Heading)
-	plan.PlannedVersion = planned
 
-	// Step 5: the release size and the derived lines.
+	// Step 5: the release size and the derived lines. A size the Automaton
+	// makes known sets the planned version from the base ref's version.
+	var versionFindings []Finding
 	plan.ReleaseSize = ReleaseSizeNone
-	if planned != "" {
+	readBase := func(version string) (string, error) {
 		landed, err := ReadLanded(ctx, in.RepoPath, base, LandedQuery{
 			Project:     in.Project,
 			AutomatonID: in.AutomatonID,
-			Version:     planned,
+			Version:     version,
 			Pipeline:    in.Pipeline,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("mergeshadow: read base version: %w", err)
+			return "", fmt.Errorf("mergeshadow: read base version: %w", err)
 		}
-		plan.ReleaseSize = releaseSizeBetween(landedVersion(landed, in.Pipeline, in.Project), planned)
+		return landedVersion(landed, in.Pipeline, in.Project), nil
 	}
+	switch {
+	case in.ReleaseSize == ReleaseSizeNone:
+		planned = ""
+	case in.ReleaseSize != "":
+		plan.ReleaseSize, planned = in.ReleaseSize, ""
+		from, err := readBase("")
+		if err != nil {
+			return nil, err
+		}
+		if next, perr := PlanVersion(from, in.ReleaseSize); perr != nil {
+			versionFindings = append(versionFindings, Finding{Code: BaseVersionUnreadCode,
+				Message: "the next version cannot be computed from " + base + ": " + perr.Error(), Blocking: true})
+		} else {
+			planned = next
+		}
+	case planned != "":
+		from, err := readBase(planned)
+		if err != nil {
+			return nil, err
+		}
+		plan.ReleaseSize = releaseSizeBetween(from, planned)
+	}
+	plan.PlannedVersion = planned
 	d, err := Derive(in.ChangeRecord, planned, now.Format(dateLayout), "")
 	if err != nil {
 		return nil, err
@@ -204,6 +252,12 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	plan.Conflicts = conflicts
 	plan.Gates = gateList
 	plan.Findings = append(taskFindings, findingsFor(trialErr, conflicts, gateList, entry.Source)...)
+	plan.Findings = append(plan.Findings, rootFindings...)
+	plan.Findings = append(plan.Findings, versionFindings...)
+	// The gates' own findings, such as the pinned lint's.
+	for _, res := range gateResults {
+		plan.Findings = append(plan.Findings, res.Findings...)
+	}
 	if err := Save(in.DataDir, in.AutomatonID, plan); err != nil {
 		return nil, err
 	}
@@ -211,6 +265,27 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	// so a failure to record is not an error of the run.
 	plan.IntermittentDefects = r.recordIntermittent(ctx, in, gateResults, now)
 	return plan, nil
+}
+
+// readChangelogDraft reads the Automaton's changelog draft from the work
+// branch: its "## " heading, when it starts with one, and the rest. false means
+// the branch holds no usable draft.
+func readChangelogDraft(ctx context.Context, in Input) (ChangelogEntry, bool) {
+	path := in.ChangelogDraftPath
+	if !validRepoPath(path) || strings.HasPrefix(in.Branch, "-") {
+		return ChangelogEntry{}, false
+	}
+	out, err := runGit(ctx, in.RepoPath, "cat-file", "blob", "refs/heads/"+in.Branch+":"+path)
+	if err != nil {
+		return ChangelogEntry{}, false
+	}
+	text := strings.TrimSpace(normalizeNewlines(out))
+	e := ChangelogEntry{Source: path, Body: text}
+	if strings.HasPrefix(text, "## ") {
+		e.Heading, e.Body, _ = strings.Cut(text, "\n")
+		e.Body = strings.TrimSpace(e.Body)
+	}
+	return e, e.Body != ""
 }
 
 // recordIntermittent makes and stores the defect records of every intermittent

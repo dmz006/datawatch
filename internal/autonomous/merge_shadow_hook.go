@@ -22,10 +22,12 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/changerecord"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/genartifacts"
 	"github.com/dmz006/datawatch/internal/mergeshadow"
 )
 
@@ -77,6 +79,7 @@ func (m *Manager) startMergeShadow(prd *PRD) <-chan struct{} {
 	}
 	in, ok := m.mergeShadowInput(prd, cfg)
 	if !ok {
+		m.recordNoShadowPlan(prd.ID, in, "the Automaton has no work branch or no project folder, so there is no merge to plan")
 		return nil
 	}
 	timeout := mergeShadowGateCount*cfg.EffectiveGateTimeout() + mergeShadowGitAllowance
@@ -92,6 +95,7 @@ func (m *Manager) startMergeShadow(prd *PRD) <-chan struct{} {
 		plan, err := mergeShadowRun(ctx, in)
 		if err != nil {
 			log.Printf("[autonomous] merge shadow: automaton %s: %v", prd.ID, err)
+			m.recordNoShadowPlan(prd.ID, in, err.Error())
 			return
 		}
 		if plan == nil {
@@ -115,9 +119,15 @@ func (m *Manager) startMergeShadow(prd *PRD) <-chan struct{} {
 // merge to plan.
 func (m *Manager) mergeShadowInput(prd *PRD, cfg config.MergeShadowConfig) (mergeshadow.Input, bool) {
 	if prd.Git.Branch == "" || prd.ProjectDir == "" {
-		return mergeshadow.Input{}, false
+		return mergeshadow.Input{Project: ProjectKey(prd), Branch: prd.Git.Branch, BaseRef: prd.Git.BaseBranch}, false
 	}
 	return mergeshadow.Input{
+		ReleaseSize: m.mergeShadowReleaseSize(prd),
+		Review:      mergeShadowReview(prd),
+		ChangelogDraftPath: strings.ReplaceAll(genartifacts.DefaultPaths()[genartifacts.ChangelogDraft],
+			genartifacts.IDPlaceholder, prd.ID),
+		CheckRootFiles: true,
+
 		AutomatonID:    prd.ID,
 		Project:        ProjectKey(prd),
 		RepoPath:       prd.ProjectDir,
@@ -129,6 +139,53 @@ func (m *Manager) mergeShadowInput(prd *PRD, cfg config.MergeShadowConfig) (merg
 		ChangelogTasks: m.mergeShadowChangelogTasks(prd),
 		GateTimeout:    cfg.EffectiveGateTimeout(),
 	}, true
+}
+
+// mergeShadowReleaseSize is the release the Automaton's merge makes, from its
+// own release size, else its kind. Empty when it has neither: nothing is
+// guessed for the plan.
+func (m *Manager) mergeShadowReleaseSize(prd *PRD) mergeshadow.ReleaseSize {
+	if prd.ReleaseSize == "" && prd.Kind == "" {
+		return ""
+	}
+	pipeline := m.mergePipelineConfig()
+	res := ResolveReleaseSize(ReleaseSizeInput{
+		ReleaseSize: prd.ReleaseSize, BreakingChange: prd.BreakingChange, Kind: prd.Kind,
+		KindMap: pipeline.EffectiveReleaseSizeMap(ProjectKey(prd)), MajorTrigger: pipeline.EffectiveMajorTrigger(ProjectKey(prd)),
+	})
+	if size := mergeshadow.ReleaseSize(res.Size); size.Valid() {
+		return size
+	}
+	return ""
+}
+
+// mergeShadowReview is the commit the newest passing completion review of the
+// Automaton recorded, so a review of an older commit is seen. nil when no
+// passing review records a commit.
+func mergeShadowReview(prd *PRD) *mergeshadow.ReviewVerdict {
+	var anchored []GuardrailVerdict
+	for _, v := range prd.Verdicts {
+		if v.Outcome == "pass" && v.JudgedCommitSHA != "" {
+			anchored = append(anchored, v)
+		}
+	}
+	if v := latestVerdict(anchored, "pass"); v != nil {
+		return &mergeshadow.ReviewVerdict{Commit: v.JudgedCommitSHA}
+	}
+	return nil
+}
+
+// recordNoShadowPlan stores, in place of a plan that could not be made, one
+// that says why.
+func (m *Manager) recordNoShadowPlan(id string, in mergeshadow.Input, why string) {
+	plan := &mergeshadow.MergePlan{
+		AutomatonID: id, Project: in.Project, Branch: in.Branch, BaseRef: in.BaseRef,
+		ReleaseSize: mergeshadow.ReleaseSizeNone, ChangelogSource: mergeshadow.ChangelogSourceMissing, CreatedAt: time.Now().UTC(),
+		Findings: []mergeshadow.Finding{{Code: mergeshadow.PlanNotMadeCode, Message: "no merge plan was made: " + why, Blocking: true}},
+	}
+	if err := mergeshadow.Save(m.dataDir, id, plan); err != nil {
+		log.Printf("[autonomous] merge shadow: automaton %s: store why no plan was made: %v", id, err)
+	}
 }
 
 // mergeShadowChangeRecord returns the Automaton's merged change record, or,
