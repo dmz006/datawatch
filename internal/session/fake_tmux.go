@@ -31,6 +31,14 @@ type FakeTmux struct {
 	// Pane simulates visible pane content returned by CapturePane*.
 	Pane map[string]string
 
+	// History is what scrolled off a pane: only the captures that read
+	// scrollback return it, ahead of the visible Pane.
+	History map[string]string
+
+	// Unanswerable names sessions tmux cannot be asked about: SessionExists
+	// reads false, as on any tmux error, and SessionGone proves nothing.
+	Unanswerable map[string]bool
+
 	// PaneCmd simulates each pane's foreground command (PaneCommand). Unset
 	// panes report "", as a pane that cannot be queried does.
 	PaneCmd map[string]string
@@ -171,7 +179,10 @@ func (f *FakeTmux) NewSessionWithSize(name string, cols, rows int) error {
 // SessionGone reports that the session is known not to exist: the fake always
 // has an answer.
 func (f *FakeTmux) SessionGone(name string) bool {
-	return name != "" && !f.SessionExists(name)
+	f.mu.Lock()
+	unknown := f.Unanswerable[name]
+	f.mu.Unlock()
+	return !unknown && name != "" && !f.SessionExists(name)
 }
 
 // SocketPath names the fake's tmux server socket.
@@ -185,6 +196,9 @@ func (f *FakeTmux) SocketPath() string {
 func (f *FakeTmux) SessionExists(name string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.Unanswerable[name] {
+		return false
+	}
 	// A pane implies a live session in real tmux, so a session seeded via
 	// Pane (e.g. task-delivery tests) counts as existing; KillSession removes
 	// both.
@@ -267,7 +281,7 @@ func (f *FakeTmux) CapturePaneANSI(session string) (string, error) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.Pane[session], nil
+	return f.History[session] + f.Pane[session], nil
 }
 
 // CapturePaneLiveTail (v5.27.6 — BL211) — fake equivalent of the
@@ -292,7 +306,7 @@ func (f *FakeTmux) CapturePaneScrollback(session string, lines int) (string, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.Pane[session], nil
+	return f.History[session] + f.Pane[session], nil
 }
 
 // AttachedClients reports the seeded number of attached tmux clients.
@@ -348,6 +362,9 @@ func (f *FakeTmux) ListSessions(prefix string) ([]string, error) {
 	}
 	var names []string
 	for name := range f.sessions {
+		if f.Unanswerable[name] {
+			continue
+		}
 		if prefix == "" || len(name) >= len(prefix) && name[:len(prefix)] == prefix {
 			names = append(names, name)
 		}

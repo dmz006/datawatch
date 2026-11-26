@@ -311,8 +311,15 @@ YAML
   SMOKE_TMUX_DIR="${TEST_DATA_DIR}/dw-tmux-scratch"
   mkdir -p "$SMOKE_TMUX_DIR"
 
+  # The test daemon, and what it starts, gets its own empty Claude config
+  # folder: the daemon runs `claude mcp` at startup and for sessions, and must
+  # not read or change the MCP list of the user who runs this script.
+  SMOKE_CLAUDE_CONFIG_DIR="${TEST_DATA_DIR}/claude-config"
+  mkdir -p "$SMOKE_CLAUDE_CONFIG_DIR"
+
   # Start the test daemon in the background.
   env TMUX_TMPDIR="${TEST_DATA_DIR}/dw-tmux-scratch" \
+    CLAUDE_CONFIG_DIR="$SMOKE_CLAUDE_CONFIG_DIR" \
     "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!

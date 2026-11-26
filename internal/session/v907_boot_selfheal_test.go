@@ -17,6 +17,7 @@ package session
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -31,7 +32,7 @@ func TestV907_ResumeMonitorsRecoversFailedSessionWithLiveTmuxPane(t *testing.T) 
 	_ = mgr.SaveSession(&Session{
 		ID: "ab22", FullID: "testhost-ab22", TmuxSession: "cs-testhost-ab22",
 		Hostname: "testhost", State: StateFailed, UpdatedAt: time.Now(),
-		LogFile: "/tmp/ab22.log",
+		LogFile: filepath.Join(t.TempDir(), "ab22.log"),
 	})
 	// The pane is alive the whole time — this is the false-negative case,
 	// not a genuinely dead session.

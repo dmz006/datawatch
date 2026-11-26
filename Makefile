@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-outgoing outgoing-check check-no-config-copies config-audit check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build check-absolute-symlinks \
+.PHONY: pre-tag check-test-isolation build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-outgoing outgoing-check check-no-config-copies config-audit check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build check-absolute-symlinks \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs help check-toolchain \
@@ -436,6 +436,11 @@ test-tmp-guard:
 # `go test ./...` run.
 test-cross-build:
 	DW_RUN_CROSS_BUILD=1 go test -count=1 -timeout 30m ./tests/ci/ -run TestMainBuildsForReleaseTargets
+
+# Release gate: the whole test suite, failing when a test reads or writes outside
+# its own temporary area and the repository. Needs Linux and bubblewrap (bwrap).
+check-test-isolation:
+	bash scripts/check-test-isolation.sh
 
 # Local pre-tag checks: slow opt-in checks that a plain `go test ./...` skips.
 # Run both before tagging a release.

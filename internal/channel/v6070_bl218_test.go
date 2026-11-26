@@ -18,6 +18,7 @@ func TestEnsureExtracted_SHA256_Rewrite(t *testing.T) {
 	t.Setenv("DATAWATCH_NODE_BIN", "/bin/sh")
 	dir := t.TempDir()
 	isolateNodeCompileCache(t, dir)
+	presentNodeModules(t, dir)
 
 	// First extraction — should succeed.
 	dst, err := EnsureExtracted(dir)
@@ -54,6 +55,7 @@ func TestEnsureExtracted_NoRewrite_WhenCorrect(t *testing.T) {
 	t.Setenv("DATAWATCH_NODE_BIN", "/bin/sh")
 	dir := t.TempDir()
 	isolateNodeCompileCache(t, dir)
+	presentNodeModules(t, dir)
 
 	// First extraction.
 	dst, err := EnsureExtracted(dir)
@@ -70,6 +72,16 @@ func TestEnsureExtracted_NoRewrite_WhenCorrect(t *testing.T) {
 	info2, _ := os.Stat(dst)
 	if info2.ModTime() != mtime1 {
 		t.Errorf("channel.js was rewritten unnecessarily (mtime changed)")
+	}
+}
+
+// presentNodeModules makes the SDK folder EnsureExtracted looks for, so it does
+// not run a real `npm install`: that needs the network and writes ~/.npm. These
+// tests check how channel.js is written, not the install.
+func presentNodeModules(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "channel", "node_modules", "@modelcontextprotocol"), 0o755); err != nil {
+		t.Fatalf("mkdir node_modules: %v", err)
 	}
 }
 

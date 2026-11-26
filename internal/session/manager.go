@@ -451,6 +451,10 @@ type Manager struct {
 	// deliveryFailure holds the last reason a task delivery gave up, per
 	// session. Guarded by mu; created on first use.
 	deliveryFailure map[string]string
+
+	// paneProcsFn lists a pane's processes; nil reads the system's. Tests set
+	// it.
+	paneProcsFn func(tmuxSession string) (shellPID int, tty string, procs []paneProc, ok bool)
 	// redelivering holds the sessions whose unverified delivery claim this
 	// daemon took over at boot and is typing again.
 	redelivering map[string]bool
@@ -778,6 +782,11 @@ type Manager struct {
 	// in-flight / attempts and confirms the dismissal once the dialog is
 	// observed gone — see dismissClaudeStartupDialog.
 	claudeDialogDismiss sync.Map
+	// startupAnswers records the start-up screens answered, by session and
+	// kind (startup_answer.go). Guarded by startupMu.
+	startupMu      sync.Mutex
+	startupAnswers map[string]time.Time
+	startupSending map[string]bool
 
 	// summaries stores the last generated summary per session ID.
 	// Access is protected by the summariesMu mutex.
@@ -1470,11 +1479,16 @@ func (m *Manager) SetOnResponseCaptured(fn func(*Session, string)) {
 	m.onResponseCaptured = fn
 }
 
+// claudeCopyResponsePath is where Claude Code's /copy writes a response. It is
+// a variable only so tests never read the real file, which is shared by every
+// session on the machine.
+var claudeCopyResponsePath = "/tmp/claude/response.md"
+
 // CaptureResponse reads the last LLM response for a session. For claude-code,
 // reads /tmp/claude/response.md. Falls back to the last N lines of tmux output.
 func (m *Manager) CaptureResponse(sess *Session) string {
 	// Try /tmp/claude/response.md first (Claude Code /copy output)
-	if data, err := os.ReadFile("/tmp/claude/response.md"); err == nil && len(data) > 0 {
+	if data, err := os.ReadFile(claudeCopyResponsePath); err == nil && len(data) > 0 {
 		return strings.TrimSpace(string(data))
 	}
 	// BL338 — use tmux capture-pane -p (rendered terminal) instead of
@@ -3551,6 +3565,11 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 				// inside the helper — a no-op for interactive sessions and
 				// other backends.
 				m.dismissClaudeStartupDialog(current, capture)
+				// A launch proven failed ends here, before this screen
+				// can complete it.
+				if current.BackendFamily == "claude-code" && m.endIfLaunchFailed(fullID) {
+					continue
+				}
 				// Only send if content changed
 				if capture != lastCapture {
 					lastCapture = capture //nolint:staticcheck
@@ -4400,7 +4419,7 @@ func (m *Manager) ClaimTaskDelivery(fullID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	sess, ok := m.store.Get(fullID)
-	if !ok {
+	if !ok || (sess.LaunchFailure != "" && sess.State.IsTerminal()) {
 		return false
 	}
 	if _, inMem := m.taskDeliveredAt[fullID]; inMem || sess.TaskDeliveredAt != nil {
@@ -4756,6 +4775,7 @@ func (m *Manager) SendRawKeys(fullID, data string) error {
 		}
 	}
 	m.mu.Unlock()
+	m.noteInputSent(sess.FullID)
 	return m.tmux.SendKeysLiteral(sess.TmuxSession, data)
 }
 
@@ -4900,6 +4920,17 @@ func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) (e
 	// scheduleSettleMs defaults to 200ms and is configurable via
 	// session.schedule_settle_ms. Falls back to defaultSendSettle (120ms) if
 	// not configured (scheduleSettleMs == 0).
+	// Last look before the keys go: a task or queued input never goes to the
+	// shell of an agent that has left.
+	if heldToTypingGuard(source) && snap.OutputMode != "chat" {
+		if err := m.refuseTypingWithoutAgent(&snap); err != nil {
+			m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: fullID, Source: source, FilterID: filterID, Length: len(input), Reason: err.Error()})
+			return err
+		}
+	}
+	if source != StartupAcceptSource {
+		m.noteInputSent(fullID) // before the keys: a failed send may have typed
+	}
 	var sendErr error
 	submitter, canGuard := m.tmux.(guardedSubmitter)
 	switch {
@@ -5072,6 +5103,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	}
 
 	// Reset session state
+	m.resetLaunchEvidence(sess)
 	oldState := sess.State
 	sess.State = StateRunning
 	sess.UpdatedAt = time.Now()
@@ -6267,6 +6299,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 
 	exited := false
 	notEchoed := false
+	agentLeft := false
 	lastScreen := ""
 	attemptsMade := 0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -6280,16 +6313,20 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 		case oneShotReady:
 			err := m.SendInput(fullID, input, "channel-task")
 			if err == nil {
-				if m.awaitTaskEcho(fullID, input) {
+				echoed := m.awaitTaskEcho(fullID, input)
+				if m.LaunchFailed(fullID) != "" {
+					exited = true
+				} else if echoed {
 					m.MarkTaskDelivered(fullID)
 					// The worker may already be inside a silent tool call; keep it
 					// Running rather than letting the gap watcher flip it back.
 					m.applyBusyProbe(fullID, time.Time{})
 					return nil
 				}
-				notEchoed = true
+				notEchoed = !exited
 				m.debugf("DeliverOneShotTask: task text for %s never appeared in the pane within %s of typing (attempt %d/%d)", fullID, taskEchoWindow, attempt, maxAttempts)
 			} else {
+				agentLeft = errors.Is(err, ErrAgentLeft)
 				m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d (window %s): %v", fullID, attempt, maxAttempts, window, err)
 			}
 		case oneShotSessionExited:
@@ -6306,11 +6343,19 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 		}
 	}
 
+	// A launch that failed has its own reason and has already reported the
+	// delivery failure.
+	if m.endIfLaunchFailed(fullID) {
+		return ErrTaskUndelivered
+	}
+
 	m.ReleaseTaskDelivery(fullID)
 
 	var reason string
 	if exited {
 		reason = "task delivery failed: session ended before the task was delivered"
+	} else if agentLeft {
+		reason = fmt.Sprintf("task delivery failed: the task was not typed again: the typing check found signs that Claude had left the session's terminal; an earlier attempt may already have typed it, so check what ran there (%d attempts)", attemptsMade)
 	} else if notEchoed {
 		reason = fmt.Sprintf("task delivery failed: the task text never appeared in the session input within %s of typing it, across %d attempts — worker was never given its task (prompt %d lines)", taskEchoWindow, attemptsMade, promptLines)
 	} else {
@@ -6354,7 +6399,13 @@ func (m *Manager) DeclineStartupDialog(fullID string) error {
 	if !ok {
 		return fmt.Errorf("session %s not found", fullID)
 	}
-	return m.tmux.SendKeysLiteral(sess.TmuxSession, "\x1b")
+	// Read first: the dialog is gone from the screen once it is answered.
+	screen, _ := m.launchScreen(sess.TmuxSession)
+	if err := m.tmux.SendKeysLiteral(sess.TmuxSession, "\x1b"); err != nil {
+		return err
+	}
+	m.noteStartupDecline(sess, screen)
+	return nil
 }
 
 // IsOpenCodeAtPrompt returns true when the live pane for fullID shows
@@ -6488,9 +6539,18 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 		return false
 	}
 	lower := strings.ToLower(StripANSI(text))
+	// The text (a pane capture or one log line) is only a reason to look: a
+	// dialog is answered when the live screen shows it.
+	onScreen := StartupDialogNone
+	if containsAnyPhrase(lower, "yes, i trust this folder", "quick safety check", "i am using this for local development") {
+		if a, ok := liveStartupDialog(m.liveScreen(sess.TmuxSession)); ok {
+			onScreen = a.Kind
+		}
+	}
 
 	specs := []struct {
 		name       string
+		kind       StartupKind
 		visible    bool
 		sendAccept func() error
 	}{
@@ -6501,7 +6561,8 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			// (it reads the pane to pick between plain Enter and
 			// Down+Enter — see TmuxManager.SendTrustPromptAccept).
 			name:    claudeDialogTrust,
-			visible: strings.Contains(lower, "yes, i trust this folder") || strings.Contains(lower, "quick safety check"),
+			kind:    StartupDialogTrustFolder,
+			visible: onScreen == StartupDialogTrustFolder,
 			sendAccept: func() error {
 				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
 					return err
@@ -6515,11 +6576,13 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 			// (not the "loading development channels" warning) so a stray
 			// Enter never races ahead of a still-pending trust dialog.
 			name:    claudeDialogChannels,
-			visible: strings.Contains(lower, "i am using this for local development"),
+			kind:    StartupDialogDevChannels,
+			visible: onScreen == StartupDialogDevChannels,
 			sendAccept: func() error {
 				if err := m.refuseIfApprovalPrompt(sess, "startup-dialog"); err != nil {
 					return err
 				}
+				defer m.guardEnter(sess.TmuxSession, StartupDialogDevChannels)()
 				return m.tmux.SendKeys(sess.TmuxSession, "Enter")
 			},
 		},
@@ -6528,7 +6591,20 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 	acted := false
 	for _, d := range specs {
 		if d.visible {
-			if m.trySendDialogAccept(sess, d.name, d.sendAccept) {
+			// A screen that has its answer is not an attempt of this
+			// responder, and is not worth waiting on.
+			if m.startupScreenHeld(sess.FullID, d.kind) {
+				continue
+			}
+			// The keys go once the dialog has stood unchanged, and only
+			// one watcher sends them.
+			answer := func() error {
+				if got, ok := m.settledScreen(sess.FullID, sess.TmuxSession); !ok || got.action.Kind != d.kind {
+					return errStartupNotSettled
+				}
+				return m.AnswerStartupScreen(sess.FullID, d.kind, d.sendAccept)
+			}
+			if m.trySendDialogAccept(sess, d.name, answer) {
 				acted = true
 			}
 		} else {
@@ -6590,6 +6666,10 @@ func (m *Manager) trySendDialogAccept(sess *Session, dialog string, sendAccept f
 	err := sendAccept()
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	if errors.Is(err, errStartupNotSettled) || errors.Is(err, ErrStartupScreenAnswered) {
+		st.attempts-- // nothing was typed
+		return false
+	}
 	st.lastAttempt = time.Now()
 	if err != nil {
 		st.inFlight = false
@@ -6654,6 +6734,9 @@ func (m *Manager) ReconnectBackends(reconnectFn func(sess *Session, bs *BackendS
 		}
 		// Verify tmux session still exists
 		if !m.tmux.SessionExists(sess.TmuxSession) {
+			if m.endIfLaunchFailed(sess.FullID) {
+				continue
+			}
 			m.debugf("reconnect: tmux session %s gone, marking complete", sess.TmuxSession)
 			// Commit the worker's work BEFORE the state is saved as Complete so
 			// no poller can observe Complete while changes are still uncommitted.
@@ -6952,7 +7035,7 @@ func (m *Manager) ResumeRateLimitedSession(ctx context.Context, fullID string) {
 	resumeMsg := "The rate limit has reset. Please read PAUSED.md in your working directory for context on what was in progress, then continue the task."
 	if err := m.automatedBlocked(sess.TmuxSession, "rate-limit-resume"); err != nil {
 		m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: sess.FullID, Source: "rate-limit-resume", Length: len(resumeMsg), Reason: err.Error()})
-	} else {
+	} else if m.mayTypeRateLimitResume(sess, resumeMsg) {
 		_ = m.tmux.SendKeys(sess.TmuxSession, resumeMsg)
 	}
 
@@ -7008,7 +7091,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			// with a tmux-liveness false negative. Resurrecting those
 			// because a pane happens to still exist would override real
 			// intent instead of undoing a boot-time glitch.
-			if sess.State == StateFailed &&
+			if sess.State == StateFailed && sess.LaunchFailure == "" &&
 				sess.TmuxSession != "" && m.tmux.SessionExists(sess.TmuxSession) {
 				recovering = true
 			} else {
@@ -7062,6 +7145,9 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			time.Sleep(500 * time.Millisecond)
 			if m.tmux.SessionExists(sess.TmuxSession) {
 				goto resumeSession // tmux recovered
+			}
+			if m.endIfLaunchFailed(sess.FullID) {
+				continue
 			}
 			// Mark as failed — tmux session is confirmed gone
 			oldState := sess.State
@@ -7229,6 +7315,9 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 	// tryTransitionToWaiting proceed it can flip the session to waiting_input
 	// ~3s after rate-limit detection and mask the rate-limit from the operator.
 	if current.State == StateRateLimited {
+		return false
+	}
+	if current.LaunchFailure != "" && current.State.IsTerminal() {
 		return false
 	}
 
@@ -7862,6 +7951,9 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 			if m.tmux.SessionExists(sess.TmuxSession) {
 				continue // transient
 			}
+			if m.endIfLaunchFailed(sess.FullID) {
+				continue
+			}
 			m.debugf("reconcile: session %s marked running but tmux gone — marking complete", sess.FullID)
 			oldState := sess.State
 			// Commit the worker's work BEFORE the state is saved as Complete so
@@ -7885,6 +7977,14 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 		}
 
 		if !isActive && tmuxAlive && (sess.State == StateComplete || sess.State == StateFailed) {
+			// A failed launch is never revived. Its pane was closed; one
+			// that outlived that is closed again if it is only a shell.
+			if sess.LaunchFailure != "" {
+				if shellPID, tty, procs, ok := m.paneProcesses(sess.TmuxSession); ok && onlyShellLeft(shellPID, tty, procs) {
+					m.killPane(sess.FullID, sess.TmuxSession, "failed launch still had a live pane")
+				}
+				continue
+			}
 			// GH#128: OneShot sessions that completed must NOT be resumed — the Claude
 			// process is still at the prompt but the task is done. Kill the tmux session
 			// so the process exits cleanly rather than looping complete→running→waiting.
@@ -7935,6 +8035,10 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 		// BL355: probe whether Claude process is alive in the pane.
 		if isActive && tmuxAlive {
 			alive := m.probeClaudeAlive(sess)
+			// A proven failed launch gets its own alert, not this one too.
+			if !alive && m.endIfLaunchFailed(sess.FullID) {
+				continue
+			}
 			prevAlive := sess.ClaudeAlive
 			if sess.ClaudeAlive == nil || *sess.ClaudeAlive != alive {
 				sess.ClaudeAlive = &alive
@@ -8363,6 +8467,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					stripped := StripANSI(capture)
 					capLines := strings.Split(stripped, "\n")
 					current, ok := m.store.Get(sess.FullID)
+					if ok && current.BackendFamily == "claude-code" && m.endIfLaunchFailed(sess.FullID) {
+						continue
+					}
 					if ok {
 						// Check last 10 non-empty lines for prompt patterns
 						matchedLine, promptCtx := m.matchPromptForSession(sess, capLines, 10)
@@ -8535,6 +8642,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			if !m.tmux.SessionExists(sess.TmuxSession) {
 				time.Sleep(500 * time.Millisecond)
 				if !m.tmux.SessionExists(sess.TmuxSession) {
+					if m.endIfLaunchFailed(sess.FullID) {
+						return
+					}
 					current, ok := m.store.Get(sess.FullID)
 					if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
 						oldState := current.State
@@ -8712,6 +8822,9 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		// Check for explicit completion pattern — applies to all backends, including
 		// structured-channel ones (claude-code emits DATAWATCH_COMPLETE: when its
 		// shell wrapper runs `echo` after claude exits).
+		if isAgentExitLine(line) && m.endIfLaunchFailed(sess.FullID) {
+			return
+		}
 		completionLine := strings.TrimSpace(line)
 		for _, pat := range m.effectiveCompletionPatterns() {
 			if matchesCompletionPattern(completionLine, pat) {

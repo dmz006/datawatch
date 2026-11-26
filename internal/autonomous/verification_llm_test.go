@@ -7,6 +7,7 @@ package autonomous
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -204,7 +205,7 @@ func newVerifManager(t *testing.T) (*Manager, *PRD) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	prd, err := m.CreatePRD("test spec", "/tmp/ts-verif-llm", "ollama", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "ts-verif-llm"), "ollama", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}

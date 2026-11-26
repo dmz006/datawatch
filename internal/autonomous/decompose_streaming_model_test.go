@@ -10,7 +10,10 @@
 
 package autonomous
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestDecomposeStreaming_UsesDecompositionModel_OverGlobal(t *testing.T) {
 	const perPRDModel = "claude-fable-5-1"
@@ -29,7 +32,7 @@ func TestDecomposeStreaming_UsesDecompositionModel_OverGlobal(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	prd, err := m.CreatePRD("test spec", "/tmp/decomp-stream-model", "claude-code", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "decomp-stream-model"), "claude-code", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -63,7 +66,7 @@ func TestDecomposeStreaming_ForeignGlobalModelNotUsedForClaudeCode(t *testing.T)
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	prd, err := m.CreatePRD("test spec", "/tmp/decomp-stream-model-b", "claude-code", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "decomp-stream-model-b"), "claude-code", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
@@ -101,7 +104,7 @@ func TestDecomposeStreaming_FallsBackToPRDModel_WhenDecompositionModelAndGlobalE
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	prd, err := m.CreatePRD("test spec", "/tmp/decomp-stream-model-c", "claude-code", "", "")
+	prd, err := m.CreatePRD("test spec", filepath.Join(t.TempDir(), "decomp-stream-model-c"), "claude-code", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}

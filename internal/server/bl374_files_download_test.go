@@ -11,6 +11,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,7 +91,8 @@ func TestFilesDownload_MissingPath(t *testing.T) {
 // TS-723 — non-existent file returns 404.
 func TestFilesDownload_NotFound(t *testing.T) {
 	s := bl374Server(t, "")
-	req := httptest.NewRequest(http.MethodGet, "/api/files/download?path=/tmp/definitely-does-not-exist-bl374.txt", nil)
+	missing := filepath.Join(t.TempDir(), "definitely-does-not-exist-bl374.txt")
+	req := httptest.NewRequest(http.MethodGet, "/api/files/download?path="+url.QueryEscape(missing), nil)
 	rec := httptest.NewRecorder()
 	s.handleFilesDownload(rec, req)
 	if rec.Code != http.StatusNotFound {

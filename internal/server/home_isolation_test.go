@@ -17,7 +17,7 @@ import (
 // pointed at a throwaway directory, so nothing in the test binary can
 // reach the operator's tmux server (see internal/testhome).
 func TestMain(m *testing.M) {
-	os.Exit(testhome.Run(m))
+	os.Exit(testhome.RunPrivateTmp(m))
 }
 
 // TestTmuxEnvIsolated proves the test binary is scrubbed of every path to

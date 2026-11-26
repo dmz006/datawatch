@@ -123,6 +123,44 @@ and darwin/arm64 (`TestMainBuildsForReleaseTargets` in `tests/ci`; the target se
 skipped by a plain `go test ./...` with a message naming the target. Whether CI
 and the release workflow run either check is decided separately.
 
+## Tests stay in their own folders
+
+A test may read and write only its own temporary folders and the repository.
+`make check-test-isolation` (`scripts/check-test-isolation.sh`) runs the whole
+suite and fails when one reaches outside. It takes `go test` arguments, so one
+package can be checked alone: `scripts/check-test-isolation.sh ./internal/session/`.
+
+Each test binary runs in its own sandbox (bubblewrap): a private `/tmp` and home,
+no network, and no `TMUX` or `DATAWATCH_*` variables. Planted decoys there stand
+for other people's files. The run fails when:
+
+- the machine temp folder or the shared temp folder is listed, or a decoy is
+  listed, read, changed or removed, by the test binary or by a process it
+  started (seen from file times);
+- something is made or removed directly in the machine temp folder (such as the
+  default tmux socket folder) or in the home;
+- the Go test log shows the test binary using a fixed path in the machine temp
+  folder or the home.
+
+It does not see what a process started by a test reads outside the decoys. It
+needs Linux, bubblewrap and a file system that records access times, and fails
+without them: tests are never run unguarded under this target. A failure names
+the paths and, where the test log allows, the last test whose temp folder was
+seen before the first access. That is a hint, not proof of which test did it.
+`TESTISOLATION_MAX_LINES` prints more of them.
+
+To fix a failure:
+
+- give the package a `TestMain` that returns `testhome.RunPrivateTmp(m)`: a
+  private home, temp folder and tmux folder;
+- use `t.TempDir()` for every folder or file a test names, even one that never
+  exists;
+- never set `TMUX_TMPDIR` to an empty value around code that may run tmux: that
+  is the machine's default tmux server;
+- give a test git repository its own `user.name` and `user.email`.
+
+The target is not part of `make pre-tag` yet.
+
 ## Performance budget checks are part of the local pre-tag run
 
 `scripts/perf-budget.sh` is a local pre-tag check, not a CI step: it is
