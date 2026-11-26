@@ -79,12 +79,35 @@ type Step struct {
 	// Makefile defines that target; otherwise the runner skips it.
 	RequiresMakeTarget string        `yaml:"requires_make_target,omitempty" json:"requires_make_target,omitempty"`
 	Timeout            time.Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"` // zero means the runner's default
+	// TagSizes limits a tag_release step to releases of these sizes (patch,
+	// minor, major). Empty tags every release.
+	TagSizes []string `yaml:"tag_sizes,omitempty" json:"tag_sizes,omitempty"`
 }
 
 // Definition is an ordered list of steps.
 type Definition struct {
 	Steps []Step `yaml:"steps" json:"steps"`
+	// ConflictRules say how a conflict in a matching file is settled. The
+	// first matching rule wins; a file no rule matches keeps the built-in
+	// handling.
+	ConflictRules []ConflictRule `yaml:"conflict_rules,omitempty" json:"conflict_rules,omitempty"`
 }
+
+// ConflictRule is one per-file conflict rule of a project.
+type ConflictRule struct {
+	// Path is a repository-relative file path, or a pattern for one folder
+	// level as path.Match reads it.
+	Path string `yaml:"path" json:"path"`
+	// Rule is keep_main, keep_both or ask.
+	Rule string `yaml:"rule" json:"rule"`
+}
+
+// The conflict rules.
+const (
+	ConflictRuleKeepMain = "keep_main"
+	ConflictRuleKeepBoth = "keep_both"
+	ConflictRuleAsk      = "ask"
+)
 
 // ValidationError reports every problem found in a definition.
 type ValidationError struct {
@@ -160,6 +183,16 @@ func (d Definition) Validate() error {
 		if err := checkDir(s.Dir); err != nil {
 			problems = append(problems, label+": "+err.Error())
 		}
+		if len(s.TagSizes) > 0 && s.Action != ActionTagRelease {
+			problems = append(problems, label+": tag_sizes is only for the tag_release action")
+		}
+		for _, size := range s.TagSizes {
+			switch ReleaseSize(size) {
+			case ReleaseSizePatch, ReleaseSizeMinor, ReleaseSizeMajor:
+			default:
+				problems = append(problems, fmt.Sprintf("%s: unknown release size %q in tag_sizes", label, size))
+			}
+		}
 		switch s.OnFailure {
 		case "", OnFailureStop, OnFailureContinue:
 		default:
@@ -167,6 +200,22 @@ func (d Definition) Validate() error {
 		}
 		if s.Timeout < 0 {
 			problems = append(problems, label+": negative timeout")
+		}
+	}
+	for i, r := range d.ConflictRules {
+		label := fmt.Sprintf("conflict rule %d", i+1)
+		if strings.TrimSpace(r.Path) == "" {
+			problems = append(problems, label+": empty path")
+		} else if err := checkDir(r.Path); err != nil {
+			problems = append(problems, label+": "+strings.ReplaceAll(err.Error(), "dir", "path"))
+		} else if _, err := path.Match(r.Path, "x"); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: invalid pattern %q", label, r.Path))
+		}
+		switch r.Rule {
+		case ConflictRuleKeepMain, ConflictRuleKeepBoth, ConflictRuleAsk:
+		default:
+			problems = append(problems, fmt.Sprintf("%s: unknown rule %q; use %s, %s or %s", label, r.Rule,
+				ConflictRuleKeepMain, ConflictRuleKeepBoth, ConflictRuleAsk))
 		}
 	}
 	if len(problems) > 0 {

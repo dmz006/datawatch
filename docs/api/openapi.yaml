@@ -14189,6 +14189,10 @@ components:
         on_failure: {type: string, enum: [stop, continue], description: "What the pipeline does when the step fails; stop by default"}
         requires_make_target: {type: string, description: "Run the step only when the project's Makefile defines this target"}
         timeout: {type: integer, description: "The step's time limit in nanoseconds; 0 uses the runner's default"}
+        tag_sizes:
+          type: array
+          items: {type: string, enum: [patch, minor, major]}
+          description: "Only on a tag_release step: the release sizes it tags. Empty tags every release"
     MergePipelineDefinition:
       type: object
       description: An ordered list of merge pipeline steps.
@@ -14197,6 +14201,15 @@ components:
         steps:
           type: array
           items: {$ref: "#/components/schemas/MergePipelineStep"}
+        conflict_rules:
+          type: array
+          description: "Per-file conflict rules; the first match wins"
+          items:
+            type: object
+            required: [path, rule]
+            properties:
+              path: {type: string, description: "A repository-relative path, or a pattern for one folder level"}
+              rule: {type: string, enum: [keep_main, keep_both, ask]}
     MergePipelineOverride:
       type: object
       description: The merge pipeline values set for one project. A key that is left out inherits the global value.

@@ -1474,6 +1474,9 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
+	// mergeModel is the merge conflict model wiring (merge_run_facts.go).
+	mergeModel atomic.Pointer[mergeModelWiring]
+
 	// idRootsCfg is the live config the id check reads (id_alloc.go).
 	idRootsCfg atomic.Pointer[idRootsSnapshot]
 

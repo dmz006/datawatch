@@ -126,7 +126,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.28"
+var Version = "9.187.29"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8277,6 +8277,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			})
 			// Supervisor loop: the eight mechanical steps run once per idle
 			// tick, and an escalation raises a question in the queue.
+			wireMergeConflictModel(amgr, cfg, autonomousInferenceReg, inferenceDispatcher)
+			go server.ReconcileMergePushesAtStart(context.Background(), amgr, cfg)
 			if stopWake := wireSupervisorLoop(autoCoord, amgr, aAPI, cfg, autonomousInferenceReg, httpServer, mgr); stopWake != nil {
 				defer stopWake()
 			}
