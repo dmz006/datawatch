@@ -3908,6 +3908,7 @@
   "settings_supervisor_watch_main_checkout": "Supervisor watch main checkout (repository path, empty = dirty main checkout not checked)",
   "settings_supervisor_watch_working_model": "Supervisor watch working model (model every compute node should keep resident, empty = not checked)",
   "settings_automation_cleanup_mode": "Automaton cleanup (off, report or on; default report)",
+  "settings_automation_cleanup_shared_cache_sweep": "Gemeinsame Temp-Caches bereinigen (go-build- und Trivy-Scan-Caches beliebiger Programme, bei Bereinigung „on“ auch entfernt; Standard aus)",
   "settings_automation_cleanup_retention_hours": "Automaton cleanup retention (hours a finished Automaton worktree is kept before cleanup, whole number, default 24)",
   "settings_automation_cleanup_max_removals_per_pass": "Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)",
   "settings_automation_disk_alert_percent": "Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)",

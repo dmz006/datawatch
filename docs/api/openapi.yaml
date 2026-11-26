@@ -7159,6 +7159,10 @@ paths:
                         enum: [off, report, "on"]
                         default: report
                         description: "The cleanup mode in effect (autonomous.automation.cleanup_mode): off never removes anything, report removes nothing and records what it would remove, on performs the removals."
+                      cleanup_shared_cache_sweep:
+                        type: boolean
+                        default: false
+                        description: "Default false (autonomous.automation.cleanup_shared_cache_sweep). Lets the cleanup remove go-build and Trivy scan-cache folders in the temp directory, whichever program made them. With true, cleanup_mode still decides: off does nothing, report lists, on removes. A value that is not a boolean rejects the PUT with 400."
                       cleanup_retention_hours:
                         type: integer
                         default: 24
@@ -7347,6 +7351,10 @@ paths:
                       type: string
                       enum: [off, report, "on"]
                       description: "The cleanup mode: off never removes anything, report removes nothing and records what it would remove, on performs the removals (autonomous.automation.cleanup_mode). Any other value rejects the PUT with 400."
+                    cleanup_shared_cache_sweep:
+                      type: boolean
+                      default: false
+                      description: "Default false (autonomous.automation.cleanup_shared_cache_sweep). Lets the cleanup remove go-build and Trivy scan-cache folders in the temp directory, whichever program made them. With true, cleanup_mode still decides: off does nothing, report lists, on removes. A value that is not a boolean rejects the PUT with 400."
                     cleanup_retention_hours:
                       type: integer
                       description: "Whole hours >= 1; only finished entries older than this are candidates (autonomous.automation.cleanup_retention_hours). Zero, a negative, a fractional or a non-numeric value rejects the PUT with 400."

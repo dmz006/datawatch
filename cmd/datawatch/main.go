@@ -4948,6 +4948,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				CleanupRetentionHours:     acfgIn.Automation.CleanupRetentionHours,
 				CleanupMaxRemovalsPerPass: acfgIn.Automation.CleanupMaxRemovalsPerPass,
 				DiskAlertPercent:          acfgIn.Automation.DiskAlertPercent,
+				// Off by default: the shared-cache sweep removes caches any
+				// process made.
+				CleanupSharedCacheSweep: acfgIn.Automation.CleanupSharedCacheSweep,
 				// Uncommitted-work keys: raw values; the manager's Effective*
 				// accessors resolve the defaults (hold, task_files).
 				UncommittedWorkPolicy: acfgIn.Automation.UncommittedWorkPolicy,

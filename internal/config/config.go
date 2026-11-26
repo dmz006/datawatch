@@ -4799,6 +4799,12 @@ type AutonomousAutomationConfig struct {
 	CleanupRetentionHours     int    `yaml:"cleanup_retention_hours,omitempty" json:"cleanup_retention_hours,omitempty"`
 	CleanupMaxRemovalsPerPass int    `yaml:"cleanup_max_removals_per_pass,omitempty" json:"cleanup_max_removals_per_pass,omitempty"`
 	DiskAlertPercent          int    `yaml:"disk_alert_percent,omitempty" json:"disk_alert_percent,omitempty"`
+	// CleanupSharedCacheSweep switches the shared-cache sweep on (default
+	// false). The sweep removes go-build and trivy scan-cache folders in the
+	// temp folder whichever process made them — datawatch cannot tell whose
+	// they are. With it on, cleanup_mode still decides: off does nothing,
+	// report lists, on removes.
+	CleanupSharedCacheSweep bool `yaml:"cleanup_shared_cache_sweep,omitempty" json:"cleanup_shared_cache_sweep"`
 	// UncommittedWorkPolicy decides what happens to a task whose work is not
 	// committed after verification (hold|warn|off): hold = the task is held
 	// with the reason and the files, and a question is raised; warn = record

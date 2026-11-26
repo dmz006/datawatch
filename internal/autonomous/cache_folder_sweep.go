@@ -17,9 +17,15 @@
 // and unknown is always treated as held: the folder is kept, and that is
 // the safe default.
 //
-// The pass respects the daemon's report-versus-on cleanup mode exactly
-// like the worktree and temp-sweep passes: off does nothing (not even a
-// scan), report lists the folders that would be removed and removes
+// Datawatch does not create these folders and keeps no record that could
+// say who did: they belong to whatever process ran the toolchain. The daemon
+// pass therefore has its own switch,
+// autonomous.automation.cleanup_shared_cache_sweep, off by default; with it
+// off the pass does not read the temp folder at all.
+//
+// With the switch on, the pass respects the daemon's report-versus-on cleanup
+// mode exactly like the worktree and temp-sweep passes: off does nothing (not
+// even a scan), report lists the folders that would be removed and removes
 // nothing, on removes — and in every mode the result counts both the
 // number of folders removed and the bytes of space freed, in the same
 // shape as TempSweepResult, so the operator sees both numbers.
@@ -208,8 +214,9 @@ var errCacheSweepNoProbe = errors.New("cache-folder-sweep: no liveness probe con
 
 // SweepCacheFoldersPass is the manager entry point for the periodic
 // cache-folder safety net, sitting right beside the daemon temp sweep in
-// the coordinator's triage cycle and the daemon-start cleanup pass. It
-// sweeps the process temp root for stale go-build / trivy scan-cache
+// the coordinator's triage cycle and the daemon-start cleanup pass. It does
+// nothing unless the shared-cache switch is on. Then it sweeps the process
+// temp root for stale go-build / trivy scan-cache
 // folders that no live process holds, honoring the daemon's cleanup
 // mode (off does nothing, report lists, on removes). The result is logged
 // and recorded in the audit stream, the same shape as the temp-sweep
@@ -217,8 +224,9 @@ var errCacheSweepNoProbe = errors.New("cache-folder-sweep: no liveness probe con
 func (m *Manager) SweepCacheFoldersPass() CacheFolderSweepResult {
 	m.mu.Lock()
 	mode := m.cfg.Automation.EffectiveCleanupMode()
+	shared := m.cfg.Automation.CleanupSharedCacheSweep
 	m.mu.Unlock()
-	if mode == config.CleanupModeOff {
+	if mode == config.CleanupModeOff || !shared {
 		return CacheFolderSweepResult{Mode: mode}
 	}
 	// The cache-folder age gate is its own fixed 60-minute retention
