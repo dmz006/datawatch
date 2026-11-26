@@ -774,6 +774,17 @@ For an Ollama model, OpenCode has no built-in Ollama provider, so datawatch also
 
 `chunkTimeout`/`headerTimeout` come from `opencode.ollama_chunk_timeout_sec` / `opencode.ollama_header_timeout_sec` (default 1200s / 900s, seconds → ms) — see [SSE stalls on local models](#sse-stalls-on-local-models) below. Set either to `0` to fall back to opencode's own built-in 300s default.
 
+#### When datawatch cannot safely add its settings to `opencode.json`
+
+datawatch changes only its own keys (`model`, its entries under `agent.build`, `permission`, `lsp` and `provider.ollama`) and keeps everything else in your file. The model reaches opencode only through this file, so for the `opencode` and `opencode-acp` backends **the launch fails and says why**, and your file is left byte for byte, when:
+
+- the file is not plain JSON: a `//` or `/* */` comment or a trailing comma counts, although opencode itself accepts them;
+- it has text after its JSON object, a key written twice, bytes that are not UTF-8, or is not a JSON object;
+- `permission`, `agent` or `agent.build` is not an object (the shorthand `"permission": "allow"` counts), or, when datawatch has a language server or an Ollama server to add, `lsp` or `provider` is not an object;
+- it cannot be read or written, or it is a link that cannot be followed.
+
+To fix it, make the file plain JSON with objects in those places, or move it away. A refused start makes no session. A refused restart changes nothing: a running session keeps running. For an Automaton task a refused launch is a spawn error: it is retried on the [infrastructure retry](datawatch-definitions.md#infrastructure-retry) schedule (3 retries by default) and the task is then held with the reason.
+
 #### SSE stalls on local models (B89)
 
 Large local models (30B+ params, or "thinking"/reasoning-enabled models like qwen3) can go several minutes with zero streamed output — either loading into VRAM on a cold start (`headerTimeout`) or reasoning silently before the first output token (`chunkTimeout`). OpenCode's own defaults for both are 300s (5 min), which is routinely too short: a stalled request aborts client-side and opencode prints `SSE read timed out` (or `SSE error` / `provider response headers`, depending on which timeout tripped and the opencode/ai-sdk version) into the TUI, then sits idle forever waiting for output that will never arrive because the underlying HTTP request is already dead.
