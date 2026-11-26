@@ -117,3 +117,66 @@ func TestProjectIntendedPipelineRunsTheFiveChecksOnTheFinalCandidate(t *testing.
 		t.Error("a pipeline file at the default path would replace the live record")
 	}
 }
+
+// A merge check has an empty HOME. Tests that commit without naming an
+// identity, as some here do, must still run, and what fails must be named last.
+func TestProjectGoTestCheckRunsWithoutAGitIdentity(t *testing.T) {
+	for name, c := range map[string]struct {
+		extra string
+		fails bool
+	}{"passing": {"", false}, "failing": {"\nfunc TestBroken(t *testing.T) { t.Fatal(\"broken on purpose\") }\n", true}} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			runGit(t, dir, "init", "-q", "-b", "main")
+			putFile(t, dir, "go.mod", "module sandbox\n\ngo 1.22\n")
+			putFile(t, dir, "Makefile", "sync-docs docs-index:\n\t@true\n")
+			putFile(t, dir, "a_test.go", `package sandbox
+
+import (
+	"os/exec"
+	"testing"
+)
+
+func TestCommits(t *testing.T) {
+	dir := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"commit", "-q", "--allow-empty", "-m", "x"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+	}
+}
+`+c.extra)
+			for _, f := range []string{"lib.sh", "go-test.sh"} {
+				data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "merge", f))
+				if err != nil {
+					t.Fatal(err)
+				}
+				putFile(t, dir, "scripts/merge/"+f, string(data))
+			}
+			home := t.TempDir()
+			cmd := exec.Command("bash", "scripts/merge/go-test.sh")
+			cmd.Dir = dir
+			cmd.Env = isolatedEnv(os.Environ(), home, t.TempDir(), nil)
+			cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GOFLAGS=")
+			out, err := cmd.CombinedOutput()
+			if (err != nil) != c.fails {
+				t.Fatalf("err = %v\n%s", err, out)
+			}
+			if c.fails {
+				last := string(out[max(0, len(out)-400):])
+				if !strings.Contains(last, "--- FAIL: TestBroken") || strings.Contains(string(out), "TestCommits") {
+					t.Errorf("the failed test must be named at the end, and only it: %s", out)
+				}
+			}
+			if left, _ := os.ReadDir(home); name == "passing" {
+				for _, e := range left {
+					if e.Name() == ".gitconfig" {
+						t.Error("the script wrote a git config into HOME")
+					}
+				}
+			}
+		})
+	}
+}

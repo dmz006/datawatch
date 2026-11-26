@@ -401,6 +401,9 @@ func TestIsolatedChecksSeeNoHomeTmuxOrCredentials(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("GOCACHE", "/shared/gocache")
+	// Unset here even when the tests run inside a merge check, which sets them.
+	t.Setenv("GOPATH", "")
+	t.Setenv("GOMODCACHE", "")
 	for _, k := range []string{"TMUX", "TMUX_TMPDIR", "DATAWATCH_TOKEN", "DATAWATCH_SESSION_ID", "GH_TOKEN", "GITHUB_TOKEN",
 		"ANTHROPIC_API_KEY", "DW_BASE", "MY_SECRET", "DB_PASSWORD", "SSH_AUTH_SOCK"} {
 		t.Setenv(k, "leak-"+k)
