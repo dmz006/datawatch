@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +35,7 @@ import (
 	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/dmz006/datawatch/internal/spendledger"
+	"github.com/dmz006/datawatch/internal/toolsettings"
 	"github.com/dmz006/datawatch/internal/workerprofile"
 	"github.com/fsnotify/fsnotify"
 )
@@ -9078,19 +9078,18 @@ func ensureClaudeTUISetting(claudeDir string) error {
 		return err
 	}
 	settingsPath := filepath.Join(claudeDir, "settings.json")
-	settings := map[string]interface{}{}
-	if data, err := os.ReadFile(settingsPath); err == nil {
-		_ = json.Unmarshal(data, &settings)
+	real, settings, mode, err := toolsettings.ReadThroughLink(settingsPath)
+	if err != nil {
+		return fmt.Errorf("claude tui setting not set: %w", err)
+	}
+	if mode == 0 {
+		mode = 0o600
 	}
 	if v, ok := settings["tui"]; ok && v == "default" {
 		return nil // already set, nothing to do
 	}
 	settings["tui"] = "default"
-	data, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(settingsPath, append(data, '\n'), 0600)
+	return toolsettings.Write(real, settings, mode)
 }
 
 // projectPolicyFor returns the per-project policy for dir, or nil when the

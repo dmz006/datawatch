@@ -84,7 +84,7 @@ func wireSessionMCPFiles(sess *session.Session, in launchMCPInput) {
 
 	// Extra MCP servers stay in the project file (no datawatch entry).
 	if err := channel.InjectExtrasIntoMCPConfig(sess.ProjectDir, in.Extras); err != nil {
-		debugf("BL344 inject extras .mcp.json: %v", err)
+		fmt.Printf("[warn] session %s: %v\n", sess.FullID, err)
 	}
 }
 
