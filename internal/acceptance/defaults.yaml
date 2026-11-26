@@ -1,0 +1,72 @@
+# Default "done when" items, kept as data. Four kinds and a scheduled
+# modifier. A default is a floor: items are added freely, and removing one is a
+# recorded change. A project replaces a kind's list or adds a pack with the
+# file named by acceptance.defaults_file (same shape).
+version: "1"
+kinds:
+  deliverable:
+    - id: d-delivered
+      statement: The work reaches the requester
+      method: receipt
+      checker: recipient
+    - id: d-answers
+      statement: Each asked question is answered or marked unanswered
+      method: review
+      checker: reviewer
+    - id: d-unchecked
+      statement: The work says what was not checked
+      method: review
+      checker: reviewer
+  change:
+    - id: d-live-state
+      statement: The changed thing, read from the running system itself, shows the asked state
+      method: state:live
+      checker: datawatch
+      change: true
+      before: differ
+      effect: the running system
+    - id: d-connected
+      statement: The change is connected and used, with something real that calls or reads it
+      method: review
+      checker: reviewer
+  delivery:
+    - id: d-received
+      statement: The recipient received it
+      method: receipt
+      checker: recipient
+  other: []
+# Added to any kind for a scheduled request. Each occurrence has its own list.
+scheduled:
+  - id: s-run
+    statement: The named run started and finished and left its result
+    method: state:scheduled_run
+    checker: datawatch
+    state: {want: finished}
+  - id: s-missed
+    statement: Missed or failed runs were listed to the operator
+    method: state:missed_runs_listed
+    checker: datawatch
+    state: {want: listed}
+# Used only when neither the ask nor the kind gives an item.
+fallback:
+  - id: d-requester
+    statement: The requester confirms the ask is met
+    method: confirm
+    checker: operator
+# Opt-in packs. Nothing here is part of the core defaults.
+packs:
+  software:
+    - id: p-on-main
+      statement: The change is on the main branch and still there
+      method: review
+      checker: reviewer
+      change: true
+      effect: ref:main
+    - id: p-restart
+      statement: Settings the change adds are still in effect after a restart
+      method: review
+      checker: reviewer
+    - id: p-docs
+      statement: The documentation says what the change does
+      method: review
+      checker: reviewer
