@@ -55,7 +55,11 @@ so you never have to discard a partially-completed run:
   never translated those titles to IDs afterward — so on an Automaton
   planned before that fix, `depends_on` still holds raw titles and was
   never actually enforced. Safe to call on any Automaton; a no-op if
-  everything already resolves.
+  everything already resolves. When a plan is stored or repaired, an
+  entry that names a title two or more of its stories (or two or more of
+  its tasks) share is ambiguous: the whole plan is refused, the error
+  names the entry and its owner, and nothing is saved. Name that
+  dependency by ID or position instead.
 
 A fourth path, `rejudge` (covered below), is for the opposite stuck
 state: an Automaton whose tasks are all already `completed` but which

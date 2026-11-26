@@ -619,7 +619,10 @@ remove the directory.
 
 ## Still for the operator to review
 
-Nothing here turns on by itself. These are yours to settle:
+Nothing here turns on by itself. These are yours to settle. The items from the roll-up,
+rename and edit merge are also in
+[the merge review](../plans/plan-rollup-rename-merge-review.md#operator-must-review) of
+2026-11-20:
 
 - **Records marked `needs_review`.** After the first real import, look through
   the records an import flagged and settle each one (rename, merge or accept).

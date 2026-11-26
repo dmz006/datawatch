@@ -421,6 +421,7 @@ test:
 	python3 scripts/tests/test_dismissed_alerts_watch.py
 	python3 scripts/tests/test_codeql_alert_gate.py
 	bash tests/test-e2e-pwa-config.sh
+	bash tests/test-smoke-binary-from-tree.sh
 
 # Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
 # mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`
