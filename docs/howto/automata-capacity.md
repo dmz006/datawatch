@@ -356,6 +356,9 @@ The guardrail judge works the same way. Its lease is `judge:<task>`. A worker
 lease still present when the judge starts is released, not handed over, and the
 judge then waits for its own slot like the verifier does.
 
+**Exceptions and known limits.** A task parked for a question releases its slot while it waits. A worker resumed after a question or an outside wait can lose its slot after about 10 minutes while still running. A resume still queued when its session ends can hold a slot for about 10 minutes. Resuming or adopting a session can put a pool over its limit.
+
+
 ## Verifying tasks in the capacity view
 
 A task whose worker session has ended and is verifying keeps its place in the
