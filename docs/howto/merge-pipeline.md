@@ -621,6 +621,11 @@ variables tell it about the merge:
 | `MERGE_RELEASE_SIZE` | `patch`, `minor`, `major` or `none`. |
 | `MERGE_RELEASE_VERSION` | The version the merge carries. |
 | `MERGE_SHADOW` | `1` in a shadow run. |
+| `MERGE_PROPOSAL` | `1` while the command judges a model's conflict proposal, before any release bump. |
+
+A model's conflict proposal must pass every `lint` and `test` step of the
+pipeline, and they run inside the merge step: give that step a `timeout` long
+enough for all of them.
 
 A command step must not change what is pushed: one that commits, or leaves the
 scratch branch, fails (steps of kind `version_bump` and `changelog` may

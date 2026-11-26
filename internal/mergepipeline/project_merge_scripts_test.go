@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestProjectSmokeModeChoice(t *testing.T) {
@@ -84,6 +85,15 @@ func TestProjectIntendedPipelineRunsTheFiveChecksOnTheFinalCandidate(t *testing.
 				t.Errorf("step %s: %v", s.Name, err)
 			}
 		}
+	}
+	// A model's conflict proposal must pass every check inside the merge
+	// step, so that step needs time for them.
+	if i := at["merge-branches"]; i == 0 || def.Steps[i-1].Timeout < time.Hour {
+		t.Error("merge-branches is too short for the checks a conflict proposal must pass")
+	}
+	parity, err := os.ReadFile(filepath.Join(root, "scripts", "merge", "parity-gates.sh"))
+	if err != nil || !strings.Contains(string(parity), "MERGE_PROPOSAL") {
+		t.Errorf("the parity gates would fail every proposal on the missing release bump (%v)", err)
 	}
 	for _, name := range []string{"lint", "build", "go-test", "node-test", "release-smoke", "parity-gates"} {
 		if at[name] == 0 || at[name] < at["commit-release-bump"] || at[name] > at["push-release"] {

@@ -129,3 +129,22 @@ func TestIsolatedModelProposalNeedsATestStep(t *testing.T) {
 		}
 	})
 }
+
+// A check can tell it is judging a model's proposal, before any release bump,
+// from judging the candidate that will be pushed.
+func TestIsolatedCheckKnowsItIsJudgingAProposal(t *testing.T) {
+	s := clashSandbox(t)
+	putFile(t, s.dir, "Makefile", "build:\n\t@true\n")
+	runGit(t, s.dir, "add", "Makefile")
+	runGit(t, s.dir, "commit", "-q", "-m", "makefile")
+	runGit(t, s.dir, "push", "-q", "origin", "main")
+	t.Setenv("MERGE_PROPOSAL", "inherited")
+	def := noTagSteps(check("unit tests", "echo \"proposal=$MERGE_PROPOSAL\" >> '"+s.note("seen")+"'"))
+	reply := `{"resolutions":[{"file":"shared.txt","hunk":1,"text":"both sides\n"}]}`
+	if res, err := clashRun(t, s, def, PolicyMechanicalAndModel, newFakeReleaseQuestions(), &replyModel{reply: reply}); err != nil {
+		t.Fatalf("%v %+v", err, res.Run.Steps)
+	}
+	if got := s.read("seen"); got != "proposal=1\nproposal=" {
+		t.Errorf("checks saw %q, want the proposal run marked and the candidate run not", got)
+	}
+}

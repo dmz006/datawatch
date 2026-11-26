@@ -28,6 +28,12 @@ import (
 // The returned text is the tail of the failing step's output, or a summary of
 // what ran when the gate passes.
 func (m *Merger) runConflictGate(ctx context.Context, dir string, set ConflictSettings) (passed bool, output string) {
+	if env := m.CheckEnv; env != nil {
+		// A check can tell a proposal, which has no release bump yet, from the
+		// candidate that will be pushed.
+		m.CheckEnv = func() []string { return append(env(), "MERGE_PROPOSAL=1") }
+		defer func() { m.CheckEnv = env }()
+	}
 	build, berr := m.gateBuild(ctx, dir, set)
 	if berr != "" {
 		return false, berr

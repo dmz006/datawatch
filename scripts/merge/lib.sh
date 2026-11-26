@@ -9,6 +9,7 @@
 #   MERGE_RELEASE_SIZE     patch, minor, major or none
 #   MERGE_RELEASE_VERSION  the version this merge carries
 #   MERGE_SHADOW           1 in a shadow run
+#   MERGE_PROPOSAL         1 while judging a model's conflict proposal
 
 cd "$(git rev-parse --show-toplevel)" || exit 2
 

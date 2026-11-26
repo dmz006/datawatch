@@ -24,7 +24,8 @@ shipped_go=go$(awk '/^go /{print $2; exit}' go.mod)
 
 step docs-sync bash -c 'make sync-docs >/dev/null && bash scripts/check-docs-sync.sh'
 step docs-index make docs-index
-if [[ "${MERGE_RELEASE_SIZE:-}" != none ]]; then
+# A conflict proposal is judged before the release bump exists.
+if [[ "${MERGE_RELEASE_SIZE:-}" != none && -z "${MERGE_PROPOSAL:-}" ]]; then
     step version-bump bash scripts/check-version-bump.sh "$MERGE_BASE_COMMIT"
 fi
 step tmux-kill bash scripts/check-no-unscoped-tmux.sh

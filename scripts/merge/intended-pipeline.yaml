@@ -11,7 +11,8 @@ steps:
   - {name: rebase-onto-main, kind: custom, action: rebase_onto_main, timeout: 5m}
   - {name: check-branch-versions, kind: custom, action: check_branch_versions, timeout: 2m}
   - {name: check-internal-refs, kind: lint, command: make check-internal-refs, requires_make_target: check-internal-refs, timeout: 10m}
-  - {name: merge-branches, kind: ship, action: merge_branches, timeout: 5m}
+  # Long: a model's conflict proposal must pass every lint and test step here.
+  - {name: merge-branches, kind: ship, action: merge_branches, timeout: 90m}
   - {name: set-release-version, kind: version_bump, action: set_release_version, timeout: 1m}
   - {name: insert-changelog-heading, kind: changelog, action: insert_changelog_heading, timeout: 1m}
   - {name: set-readme-release-line, kind: version_bump, action: set_readme_release_line, timeout: 1m}
