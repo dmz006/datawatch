@@ -9,6 +9,9 @@ Draft for the datawatch-app mobile client. File only; no issue has been filed.
   optional; a record without `delivery` says nothing about the send.
 - A task also carries `owed_decisions` (`question_id`, `session_id`,
   `waiting_noticed`): blocking questions still waiting for their line.
+- The supervisor wake status gains `pass_count` (passes event wakes ran).
+  `event_count` and `last_event` now cover only wakes whose line was typed; the
+  web status line shows both counts (`supervisor_wake_status_passes`).
 - New alerts through the existing alert list: *Automaton decision not
   delivered yet*, *Automaton decision: review needed*, *Supervisor wake not
   delivered yet*, *Supervisor wake: review needed*, *Subscription delivery:

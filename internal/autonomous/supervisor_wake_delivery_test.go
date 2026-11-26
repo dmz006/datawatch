@@ -305,17 +305,22 @@ func TestWakeStatusDoesNotCountAnUntypedLineWhenThePassRan(t *testing.T) {
 	}
 }
 
-// With no supervisor session designated, a wake that ran the pass stays
-// counted, as the controller's existing expectation requires; typing it later
-// does not count it again.
-func TestWakeStatusWithNoDesignatedSessionCountsThePassOnce(t *testing.T) {
+// With no supervisor session designated, a wake runs its pass and is counted
+// only once its line is typed later; the retry runs no second pass.
+func TestWakeStatusWithNoDesignatedSessionCountsOnlyTheTypedLine(t *testing.T) {
 	r := newWakeDeliveryRig("")
 	rec := supervisorloop.NewWakeRecord(r.clock, 0)
 	r.record = rec
 	set := r.register(t, nil)
 	r.failed(set, "t1")
+	if st := rec.Status(); st.EventCount != 0 || st.PassCount != 1 {
+		t.Fatalf("with nothing typed: events=%d passes=%d, want 0 and 1", st.EventCount, st.PassCount)
+	}
 	r.retarget("designated")
 	r.clock.pass(time.Hour)
+	if n := rec.Status().PassCount; n != 1 {
+		t.Fatalf("pass count = %d after the retry, want 1", n)
+	}
 	if _, typed, _, _ := r.state(); len(typed) != 1 {
 		t.Fatalf("typed = %q, want the waiting wake once", typed)
 	}
@@ -350,7 +355,7 @@ func TestWakeHandedToAClosedSetIsCountedWhenTheNextSetTypesIt(t *testing.T) {
 	memory := supervisorloop.NewWakeSendMemory()
 	old := r.register(t, memory)
 	old.Close()
-	old.send([]supervisorloop.WakeEvent{{Kind: "task.failed", AutomatonID: "a1", TaskID: "t1"}}, true)
+	old.send([]supervisorloop.WakeEvent{{Kind: "task.failed", AutomatonID: "a1", TaskID: "t1"}})
 	r.wakeTestSubscriber = &wakeTestSubscriber{}
 	r.register(t, memory)
 	r.clock.pass(time.Hour)

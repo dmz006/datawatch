@@ -43930,6 +43930,7 @@ window.supervisorWakeStatusText = function (v) {
   let text = t('supervisor_wake_status_line', [
     supervisorWakeTimeText(v.last_event), Number(v.event_count) || 0,
     supervisorWakeTimeText(v.last_scheduled_check), Number(v.scheduled_count) || 0]);
+  text += ' ' + t('supervisor_wake_status_passes', [Number(v.pass_count) || 0]);
   if (v.events_silent_for) text += ' ' + t('supervisor_wake_status_silent', [String(v.events_silent_for)]);
   const target = _supervisorWakeTargetText(v);
   if (target) text += ' ' + target;

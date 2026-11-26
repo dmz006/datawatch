@@ -130,10 +130,12 @@ How it behaves:
 - The scheduled check is the fallback: while the wake is on it runs a pass every
   `wake.fallback_interval_minutes`, and each scheduled pass is counted in the
   status.
-- The wake status shows when the supervisor last woke for an event and when it
-  last ran a scheduled check, with a count of each. If the event path has been
-  silent for more than an hour, the status says so, which usually means the
-  kinds list is too narrow or nothing you subscribed to has happened.
+- The wake status shows when an event wake last typed its line and when the last
+  scheduled check ran, with a count of each, and how many passes event wakes ran.
+  If no wake line has been typed for more than an hour, the status says so. If
+  `pass_count` is still rising, events are arriving but no line is being typed:
+  check the wake target and the alerts. If it is not, the kinds list may be too
+  narrow, or nothing you subscribed to has happened.
 
 ### When the line cannot be typed
 
@@ -154,11 +156,13 @@ The waiting list is kept in memory. It survives a change of the wake settings,
 including turning the wake off and on, and is lost when the daemon restarts; the
 scheduled check still runs.
 
-The wake status's event count and last event time record a wake once its line is
-typed. A refused line is counted when a retry types it. A send that needs review,
-and a repeat that types nothing, are not counted. One exception: while no
-supervisor session is designated, a wake whose pass ran is counted although no
-line is typed, and it is not counted again if typed later.
+The wake status keeps two counts apart. `event_count` (with `last_event`) counts
+event wakes whose line was typed: a line that waits, for a refused send or
+because no session is designated, is counted when a retry types it, and a send
+that needs review or a repeat that types nothing is not counted. `pass_count`
+counts the supervisor passes that event wakes ran, whether or not a line was
+typed; a retry runs no pass. With no session designated, `event_count` stays at
+zero while `pass_count` rises.
 
 ### Which session a wake types into
 

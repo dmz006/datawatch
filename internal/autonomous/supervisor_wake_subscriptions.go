@@ -61,9 +61,8 @@ type SupervisorWakeConfig struct {
 	Record    *supervisorloop.WakeRecord
 	// Run, when set, is called first for each delivered batch: it is the
 	// supervisor loop pass the daemon runs at once instead of waiting for the
-	// scheduled check; a retry never runs it again. The wake record counts a
-	// wake once its line was typed. One exception: with no session designated,
-	// a wake that ran the pass is counted then, and not again when typed.
+	// scheduled check; a retry never runs it again. The wake record counts
+	// the pass when it has run, and the wake only once its line was typed.
 	Run func(supervisorloop.WakeBatch)
 	// Alert raises an operator alert; nil uses the Subscriber's alert sink
 	// when it has one (the Manager does).
@@ -126,8 +125,11 @@ func RegisterSupervisorWake(c SupervisorWakeConfig) *SupervisorWakeSet {
 	set.runner = supervisorloop.NewRunner(func(b supervisorloop.WakeBatch) {
 		if c.Run != nil {
 			c.Run(b)
+			if c.Record != nil {
+				c.Record.MarkPass()
+			}
 		}
-		set.send(b.Events, c.Run != nil)
+		set.send(b.Events)
 	})
 	window := time.Duration(c.Settings.CoalesceSeconds) * time.Second
 	set.coalescer = supervisorloop.NewCoalescer(c.Clock, window, func(b supervisorloop.WakeBatch) {
@@ -151,8 +153,8 @@ func RegisterSupervisorWake(c SupervisorWakeConfig) *SupervisorWakeSet {
 
 // send types what is waiting, including events, into the designated session.
 // Whatever was certainly not typed stays waiting and a retry is scheduled.
-// events is empty for a retry; passRan says the supervisor pass ran for them.
-func (s *SupervisorWakeSet) send(events []supervisorloop.WakeEvent, passRan bool) {
+// events is empty for a retry.
+func (s *SupervisorWakeSet) send(events []supervisorloop.WakeEvent) {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
 	pending := s.memory.Hold(events)
@@ -168,10 +170,7 @@ func (s *SupervisorWakeSet) send(events []supervisorloop.WakeEvent, passRan bool
 	}
 	sid := s.cfg.Session()
 	if sid == "" {
-		switch {
-		case fresh && passRan:
-			s.count()
-		case fresh:
+		if fresh {
 			s.memory.Owe()
 		}
 		s.wait(pending, "no supervisor session can take input now")
@@ -289,7 +288,7 @@ func (s *SupervisorWakeSet) retry() {
 	s.retryMu.Lock()
 	s.stopRetry = nil
 	s.retryMu.Unlock()
-	s.send(nil, false)
+	s.send(nil)
 }
 
 func (s *SupervisorWakeSet) isClosed() bool {
