@@ -3184,7 +3184,13 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		m.noteTaskCommand(t.ID, t.VerificationScript, inv.ScriptExitCode, inv.ScriptOutput)
 	}
 	if scriptPassed {
-		if msg := applyLintGate(ctx, &inv); msg != "" {
+		msg, lintPassed := applyLintGate(ctx, &inv)
+		if lintPassed {
+			if err := m.liftLintGateBlock(prd, t.ID, &t.Verdicts); err != nil {
+				return false, "", err
+			}
+		}
+		if msg != "" {
 			v := lintGateBlockVerdict(msg)
 			if err := m.recordGuardrailVerdict(prd, t.ID, v); err != nil {
 				return false, "", err
@@ -3313,7 +3319,13 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 	}
 	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, inv.ProjectDir) // BL447
 	if scriptPassed {
-		if msg := applyLintGate(ctx, &inv); msg != "" {
+		msg, lintPassed := applyLintGate(ctx, &inv)
+		if lintPassed {
+			if err := m.liftLintGateBlock(prd, s.ID, &s.Verdicts); err != nil {
+				return false, nil, err
+			}
+		}
+		if msg != "" {
 			v := lintGateBlockVerdict(msg)
 			if err := m.recordGuardrailVerdict(prd, s.ID, v); err != nil {
 				return false, nil, err

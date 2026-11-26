@@ -145,42 +145,107 @@ func capLintFindings(s string) string {
 var VerifyLintRunner LintRunner = DefaultLintRunner
 
 // applyLintGate runs the lint gate over inv.ProjectDir after a passing
-// verification script. It returns "" when the gate passes, no Go package
-// was touched, or the directory is not a git work tree; otherwise it
-// returns the failure message (starting "lint gate failed") and appends it
-// to inv.ScriptOutput so the operator sees it.
-func applyLintGate(ctx context.Context, inv *GuardrailInvocation) string {
+// verification script. msg is "" when the gate passes, no Go package was
+// touched, or the directory is not a git work tree; otherwise it is the
+// failure message (starting "lint gate failed"), also appended to
+// inv.ScriptOutput so the operator sees it. passed is true only when the
+// gate ran and passed: a directory it could not check passes nothing.
+func applyLintGate(ctx context.Context, inv *GuardrailInvocation) (msg string, passed bool) {
 	if inv.ProjectDir == "" {
-		return ""
+		return "", false
 	}
 	if out, err := lintGateGit(ctx, inv.ProjectDir, "rev-parse", "--is-inside-work-tree"); err != nil || strings.TrimSpace(out) != "true" {
-		return ""
+		return "", false
 	}
 	res, err := LintGateCheck(ctx, inv.ProjectDir, VerifyLintRunner)
-	var msg string
 	switch {
 	case err != nil:
 		msg = "lint gate failed: " + err.Error()
 	case !res.Passed:
 		msg = "lint gate failed: findings in " + strings.Join(res.Packages, " ") + ":\n" + res.Findings
 	default:
-		return ""
+		return "", true
 	}
 	if inv.ScriptOutput != "" {
 		inv.ScriptOutput += "\n"
 	}
 	inv.ScriptOutput += msg
-	return msg
+	return msg, false
 }
 
 // lintGateBlockVerdict is the deterministic block verdict recorded when
 // the lint gate fails a unit whose verification script passed.
 func lintGateBlockVerdict(msg string) GuardrailVerdict {
 	return GuardrailVerdict{
-		Guardrail: "lint-gate",
+		Guardrail: lintGateName,
 		Outcome:   "block",
 		Severity:  "high",
 		Summary:   msg,
 		VerdictAt: time.Now(),
 	}
+}
+
+// lintGateName is the guardrail name on the lint gate's own verdicts.
+const lintGateName = "lint-gate"
+
+// DecisionLintGateLifted is the decision kind written when a passing lint gate
+// lifts a unit's earlier lint-gate block.
+const DecisionLintGateLifted = "lint_gate_lifted"
+
+// lintGateBlockOpen reports whether one unit's newest lint-gate judgment is a
+// block.
+func lintGateBlockOpen(vs []GuardrailVerdict) bool {
+	var own []GuardrailVerdict
+	for _, v := range vs {
+		if v.Guardrail == lintGateName {
+			own = append(own, v)
+		}
+	}
+	return unitReviewBlocked(own)
+}
+
+// liftLintGateBlock records, on a unit whose lint-gate block is still open,
+// that the gate has now passed it. A unit with no open lint-gate block gets
+// nothing. The record is not a review verdict: it is logged under its own
+// decision kind, sends no judge event, and ReviewStateOf never counts it as a
+// pass (see reviewStateUnit).
+func (m *Manager) liftLintGateBlock(prd *PRD, unitID string, vs *[]GuardrailVerdict) error {
+	lifted := false
+	m.store.WithLock(func() {
+		if !lintGateBlockOpen(*vs) {
+			return
+		}
+		lifted = true
+		now := time.Now()
+		*vs = append(*vs, GuardrailVerdict{Guardrail: lintGateName, Outcome: "pass", Severity: "info",
+			Summary: "lint gate passed; the earlier lint-gate block no longer stands", VerdictAt: now})
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: DecisionLintGateLifted, Actor: "autonomous",
+			Note: fmt.Sprintf("unit %s passed the lint gate: its earlier lint-gate block no longer stands (this is not a review pass)", unitID)})
+	})
+	if !lifted {
+		return nil
+	}
+	return m.savePRDOwn(prd)
+}
+
+// reviewStateUnit is one unit's verdicts as the review state reads them: a
+// lint-gate pass is never a review pass, so it is left out, and so is a
+// lint-gate block it has lifted.
+func reviewStateUnit(vs []GuardrailVerdict) []GuardrailVerdict {
+	open := lintGateBlockOpen(vs)
+	hasPass := false
+	for _, v := range vs {
+		hasPass = hasPass || (v.Guardrail == lintGateName && v.Outcome == "pass")
+	}
+	if !hasPass {
+		return vs
+	}
+	var out []GuardrailVerdict
+	for _, v := range vs {
+		if v.Guardrail == lintGateName && (v.Outcome == "pass" || !open) {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
 }
