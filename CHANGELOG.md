@@ -5,6 +5,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.23 — A commit value in a shipped record is checked before git sees it
+
+### Fixed
+- A commit value stored on an older shipped record is no longer handed to git unless it passes a format check. Before, a crafted stored value could make git empty or overwrite a file that datawatch can write, even during a dry run of the completed-record migration.
+- The commit value in a request for a merge-step shipped record is checked before git sees it. When the Automaton's branch can be read in the merge repository, the record must name a real commit that holds that branch. A pushed commit the merge repository does not have yet is fetched first.
+- A selected merge run gives git the recorded branch name, not the request's text.
+
+### Before you upgrade
+- A merge-step record is refused when its value is not a commit id of at least 7 characters, is not a commit, is not on the remote, or does not hold the branch. Record squashed or hand-ported work as a backfill record.
+
+### Not covered
+- A merge-step record is still stored, as shipped but not landed, when the Automaton's branch is missing from the merge repository or cannot be read.
+- Backfill records are still taken as given.
+
 ## v9.187.22 — datawatch stops rewriting settings files it cannot read
 
 ### Fixed
