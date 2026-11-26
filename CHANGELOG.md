@@ -16,7 +16,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Before you upgrade
 - Merging stays off by default and this release does not turn it on. Before you ever turn it on: replace the recorded pipeline first, because a record without the new check steps would release with few checks.
 - Once merging is on, features release as a minor version, an unset kind is guessed from the title and the start of the spec, and a run may take up to 3 hours.
-- Under the `mechanical_and_model` conflict policy, a `conflict_model` naming an enabled model entry is now really called.
+- Under the `mechanical_and_model` conflict policy (the default), a `conflict_model` (default `sonnet`) naming an enabled model entry is now really called.
 
 ### Not covered
 - Checks are not sandboxed and come from the work being merged: a check can itself push to the remote, move local branches or leave a tag, and it can read or change any file the daemon's user can.
@@ -26,7 +26,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A tag step written as a command, or the post-ship "tag" hook, can still make a tag; the hook can tag the old version when nothing was released.
 - The new conflict rules do nothing while the conflict policy is `stop_and_ask`.
 - No merge run was tried with a full release smoke, a real conflict model or a live daemon's merge loop.
-- Under the `mechanical` conflict policy, the new `keep_main` rules drop the branch's side of a conflicting hunk without asking, including its CHANGELOG line.
+- Under the `mechanical` conflict policy, and under `mechanical_and_model` (the default) when its model entry is available, the new `keep_main` rules drop the branch's side of a conflicting hunk without asking, including its CHANGELOG line.
 - If only the daemon process is killed, a running check or push can carry on, and that push can still land.
 
 ## v9.187.28 — Start-up dialogs are answered only when shown, and not too soon
