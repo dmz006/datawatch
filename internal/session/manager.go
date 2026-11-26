@@ -555,6 +555,8 @@ type Manager struct {
 	tagRegistry TagRegistry
 	tagOwners   TagOwnerLookup
 
+	// launchCheck can refuse a launch (launch_check.go).
+	launchCheck func(sess *Session) error
 	// onPreLaunch is called just before the LLM backend is launched (for per-session setup like MCP registration).
 	onPreLaunch func(sess *Session)
 
@@ -3012,6 +3014,14 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		sess.ValidateCommands = opt.ValidateCommands
 	}
 
+	// Before anything of this session exists. A subprocess session runs no
+	// backend, so there is nothing to check.
+	if opt == nil || !opt.Subprocess {
+		if err := m.checkLaunch(sess); err != nil {
+			return nil, err
+		}
+	}
+
 	// Create the session tracker (git-tracked folder)
 	tracker, err := NewTracker(m.dataDir, sess)
 	if err != nil {
@@ -5016,6 +5026,15 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		return nil, fmt.Errorf("cannot restart session in state %q (must be complete, failed, or killed)", sess.State)
 	}
 
+	// A refused relaunch changes nothing: asked before the leftover pane is
+	// closed or the record is touched.
+	if err := m.checkLaunch(sess); err != nil {
+		m.mu.Lock()
+		delete(m.restartTaskOverride, sess.FullID)
+		m.mu.Unlock()
+		return nil, err
+	}
+
 	// Cancel any existing monitor
 	m.mu.Lock()
 	if cancel, ok := m.monitors[sess.FullID]; ok {
@@ -5302,6 +5321,11 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 		if !ok {
 			return nil, fmt.Errorf("session %s not found", fullID)
 		}
+	}
+
+	// Asked here too: a refused relaunch must not stop a live session.
+	if err := m.checkLaunch(sess); err != nil {
+		return nil, err
 	}
 
 	// Kill the session if it is still alive.

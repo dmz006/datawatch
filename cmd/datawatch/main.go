@@ -1596,6 +1596,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 		channel.SetLaunchRoot(expandHome(cfg.DataDir))
 
+		// v8.7.0 — per-session opencode.json (opencode_launch.go). A launch
+		// check, so a refusal stops the launch before anything of it exists.
+		mgr.SetLaunchCheck(opencodeLaunchCheck(cfg, opencodeConfigRefusalFailsLaunch))
+
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
 			// Design A3 — mint this session's own scoped credential and
 			// build a PER-SESSION channelEnv carrying it, instead of the
@@ -1649,7 +1653,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// token; a refresh failure is logged and there is deliberately no
 			// server-token fallback (the token store is fatal-if-missing above).
 			if updated, err := instanceMCP.Refresh(); err != nil {
-				debugf("BL318 refresh instance .mcp.json: %v", err)
+				fmt.Printf("[warn] refresh instance .mcp.json: %v\n", err)
 			} else if updated {
 				fmt.Printf("[channel] updated instance .mcp.json to current %s bridge\n", channel.BridgeKind())
 			}
@@ -1733,45 +1737,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				},
 			})
 
-			// v8.7.0 — write per-session opencode.json for OpenCode backends.
-			// Always written (not conditional) so the default model is always set.
-			// Idempotent; operator-added entries are preserved.
-			if sess.BackendFamily == "opencode" || sess.BackendFamily == "opencode-acp" {
-				model := sess.Model
-				if model == "" && cfg.OpenCode.DefaultModel != "" {
-					model = cfg.OpenCode.DefaultModel
-				}
-				ocOpts := opencode.ProjectConfigOpts{
-					Model:            model,
-					OllamaURL:        sess.OllamaURL,
-					ChunkTimeoutSec:  cfg.OpenCode.OllamaChunkTimeoutSec,
-					HeaderTimeoutSec: cfg.OpenCode.OllamaHeaderTimeoutSec,
-					BuildTemperature: cfg.OpenCode.BuildTemperature,
-					// 2026-10-15, live-validated — deny only the tools that
-					// are safe to deny for ANY one-shot autonomous task
-					// regardless of content; see DenyTools' doc comment for
-					// why this is not a broader allow-list.
-					DenyTools: []string{"task", "external_directory"},
-				}
-				if sess.LSPLanguage != "" {
-					if srv, ok := cfg.LSP.Servers[sess.LSPLanguage]; ok {
-						ocOpts.LSPServers = map[string]opencode.LSPServer{
-							sess.LSPLanguage: {
-								Command:    srv.Command,
-								Extensions: srv.Extensions,
-								Env:        srv.Env,
-							},
-						}
-					}
-				}
-				if err := opencode.WriteProjectConfig(sess.ProjectDir, ocOpts); err != nil {
-					debugf("opencode config write: %v", err)
-				} else {
-					fmt.Printf("[opencode] wrote project config (model=%s lsp=%s) for %s\n",
-						model, sess.LSPLanguage, sess.ID)
-				}
-			}
-
 			if sess.BackendFamily != "claude-code" {
 				return
 			}
@@ -1793,7 +1758,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if cfg.Memory.Enabled && cfg.Memory.IsAutoHooks() {
 				if !memoryPkg.HooksInstalled(sess.ProjectDir) {
 					if err := memoryPkg.InstallClaudeHooks(sess.ProjectDir, hooksDataDir, cfg.Memory.EffectiveHookInterval()); err != nil {
-						debugf("auto-hooks: skip %s: %v", sess.ID, err)
+						fmt.Printf("[memory] %s: %v\n", sess.ID, err)
 					} else {
 						fmt.Printf("[memory] installed Claude hooks in %s/.claude/\n", sess.ProjectDir)
 					}
