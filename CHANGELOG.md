@@ -5,6 +5,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.22 — A settings file datawatch cannot read is never rewritten
+
+### Fixed
+- datawatch no longer rewrites a tool settings file it cannot read in full. The memory hook installer, the Claude start settings, the terminal setting, the MCP file writers and the opencode config writer leave such a file byte for byte and say why. Before, they could replace it and drop its other settings, including permission rules; this could happen when a session started, and for the user settings file when datawatch started.
+- Memory hooks are not installed into the home folder, user-level settings or linked files.
+- The opencode config writer keeps the file's other settings.
+
+### Before you upgrade
+- An opencode or opencode-acp session is refused, with the reason, when its `opencode.json` cannot be safely read or updated. This includes comments and trailing commas, which opencode itself accepts. An automation task retries and is then held. A rate-limit fallback only logs the refusal, and an exit-hook restart ends the old session before it logs.
+- When a settings file cannot be read, datawatch's own entries are not added to it: a Claude session may stop at a prompt, and an old token stays in an unreadable MCP file.
+- Your own opencode `ask` and `deny` rules are now kept, so an unattended opencode session may prompt or be refused where it did not before.
+- Check that the settings files datawatch writes are strict JSON: the user and data-folder Claude settings, the data-folder MCP file, and each opencode project's `opencode.json`.
+- Not covered: removing an old datawatch entry from a project MCP file can still drop a duplicated key, and the optional cleanup of session files on end still deletes `opencode.json` and `.mcp.json`.
+
 ## v9.187.21 — Checked pushes; datawatch merges only finished work
 
 ### Added

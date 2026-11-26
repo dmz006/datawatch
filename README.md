@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.21 (2026-11-25).** datawatch now checks everything before it pushes, never moves main or tags when work finishes, and selects only finished work to merge. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.22 (2026-11-25).** datawatch leaves any tool settings file it cannot read exactly as it is, and says why. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
