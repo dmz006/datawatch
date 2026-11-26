@@ -70,8 +70,11 @@ func (m *Manager) AnswerStartupScreen(fullID string, kind StartupKind, send func
 // is no longer up, so that a later screen of the same kind is answered. The
 // pane is read here: a log line without the dialog's words proves nothing.
 func (m *Manager) startupScreenLeft(sess *Session, kind StartupKind) {
-	pane, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
-	if err != nil || pane == "" || classifyStartupDialog(pane).Kind == kind {
+	pane := m.liveScreen(sess.TmuxSession)
+	if pane == "" {
+		return
+	}
+	if a, up := liveStartupDialog(pane); up && a.Kind == kind {
 		return
 	}
 	m.startupMu.Lock()

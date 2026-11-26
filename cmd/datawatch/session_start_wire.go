@@ -24,12 +24,17 @@ func hookDaemonURL(cfg *config.Config) string {
 
 // pollStartupDialog answers a startup dialog of a new session that the log
 // based responders miss: it tries every interval, for at most limit, until one
-// answer is sent. It takes the gate those responders take, so a dialog is never
-// answered by two of them at once.
-func pollStartupDialog(sessID string, respond func(string) bool, interval, limit time.Duration) {
+// answer is sent or over says the session is past start-up. It takes the gate
+// those responders take, so a dialog is never answered by two of them at once.
+func pollStartupDialog(sessID string, respond func(string) bool, interval, limit time.Duration, over ...func(string) bool) {
 	deadline := time.Now().Add(limit)
 	for time.Now().Before(deadline) {
 		time.Sleep(interval)
+		for _, done := range over {
+			if done(sessID) {
+				return
+			}
+		}
 		if _, busy := claudeStartupAccepted.LoadOrStore(sessID, struct{}{}); busy {
 			continue
 		}

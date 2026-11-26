@@ -2752,7 +2752,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// dialogs.
 		if claudeAutoAccept && sess.BackendFamily == "claude-code" {
 			go pollStartupDialog(sess.FullID, func(id string) bool { return answerLiveStartupDialog(mgr, id) },
-				500*time.Millisecond, 45*time.Second)
+				500*time.Millisecond, 45*time.Second, mgr.StartupOver)
 		}
 		// Memory context is not put into the session here. Typing it into the
 		// pane leaves it, unsent, in front of the next thing that is typed:
