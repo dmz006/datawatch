@@ -228,6 +228,19 @@ type MergeRequest struct {
 	Message string
 	// AutomatonID links the question to the Automaton the branch came from.
 	AutomatonID string
+	// Ref is what git merges when it is not Branch itself: an isolated run's
+	// rebased copy. Branch stays the name in messages and questions.
+	Ref string
+	// Tip is the commit that identifies the branch in questions and held
+	// proposals; empty means the commit Ref names.
+	Tip string
+}
+
+func (r MergeRequest) ref() string {
+	if r.Ref != "" {
+		return r.Ref
+	}
+	return r.Branch
 }
 
 // Merger merges a branch into the project's checked-out branch and settles a
@@ -248,6 +261,10 @@ type Merger struct {
 	// VersionFiles are the repository-relative files that carry the release
 	// version line; a conflict in one of them is classed ClassVersionLine.
 	VersionFiles []string
+	// CheckEnv builds the environment of the project commands run here (the
+	// build, lint and test of a proposal and the docs index rebuild); nil
+	// means the daemon's own, without the terminal server variables.
+	CheckEnv func() []string
 	// Project names the project in the conflict counter and the pending
 	// confirmations. Empty means the base name of Dir.
 	Project string
@@ -305,8 +322,22 @@ type cmdResult struct {
 	Code int
 }
 
+// runCheck is run with the environment of a project command.
+func (m *Merger) runCheck(ctx context.Context, dir string, name string, args ...string) (cmdResult, error) {
+	if m.CheckEnv == nil {
+		return m.run(ctx, dir, name, args...)
+	}
+	return m.runEnv(ctx, m.CheckEnv(), true, dir, name, args...)
+}
+
 // run starts name in dir, which must be the project or lie under it.
 func (m *Merger) run(ctx context.Context, dir string, name string, args ...string) (cmdResult, error) {
+	return m.runEnv(ctx, scrubbedEnv(), false, dir, name, args...)
+}
+
+// runEnv starts name with env. contained runs it so that nothing it starts
+// outlives it.
+func (m *Merger) runEnv(ctx context.Context, env []string, contained bool, dir string, name string, args ...string) (cmdResult, error) {
 	if m.Dir == "" {
 		return cmdResult{}, errors.New("no project directory")
 	}
@@ -315,10 +346,15 @@ func (m *Merger) run(ctx context.Context, dir string, name string, args ...strin
 	}
 	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- fixed binaries, arguments built here
 	cmd.Dir = dir
-	cmd.Env = scrubbedEnv()
+	cmd.Env = env
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
-	err := cmd.Run()
+	var err error
+	if contained {
+		err = runContained(cmd, &out)
+	} else {
+		err = cmd.Run()
+	}
 	res := cmdResult{Out: out.String()}
 	if err == nil {
 		return res, nil
@@ -402,9 +438,12 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 	if err != nil {
 		return out, err
 	}
-	branchSHA, err := m.revParse(ctx, m.Dir, req.Branch+"^{commit}")
+	branchSHA, err := m.revParse(ctx, m.Dir, req.ref()+"^{commit}")
 	if err != nil {
 		return out, fmt.Errorf("branch %s: %w", req.Branch, err)
+	}
+	if req.Tip != "" {
+		branchSHA = req.Tip
 	}
 	msg := req.Message
 	if msg == "" {
@@ -419,7 +458,7 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 		}
 	}
 
-	r, err := m.git(ctx, m.Dir, "merge", "--no-ff", "-m", msg, req.Branch)
+	r, err := m.git(ctx, m.Dir, "merge", "--no-ff", "-m", msg, req.ref())
 	if err != nil {
 		m.abortQuietly(m.Dir)
 		return out, err
@@ -562,6 +601,16 @@ func (m *Merger) mechanical(ctx context.Context, dir string, files []string) (ma
 			remaining = append(remaining, f+" (binary)")
 			continue
 		}
+		if rule := m.Pipeline.conflictRule(f); rule != "" {
+			text, res, rerr := resolveByRule(rule, f, string(data))
+			if rerr != nil {
+				remaining = append(remaining, f+" ("+rerr.Error()+")")
+				continue
+			}
+			resolved = append(resolved, res...)
+			texts[f] = text
+			continue
+		}
 		class := ClassifyConflictFile(f, m.VersionFiles)
 		if class == ClassCode || class == ClassDocument {
 			text, res, rest, perr := ResolveAdditive(f, string(data))
@@ -638,7 +687,7 @@ func (m *Merger) regenerateDocsIndex(ctx context.Context, dir string, texts map[
 	}
 	tctx, cancel := context.WithTimeout(ctx, DefaultStepTimeout)
 	defer cancel()
-	r, err := m.run(tctx, dir, "make", "docs-index")
+	r, err := m.runCheck(tctx, dir, "make", "docs-index")
 	if err != nil || r.Code != 0 {
 		var failed []string
 		for _, f := range regen {

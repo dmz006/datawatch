@@ -70,7 +70,7 @@ func (m *Merger) gateBuild(ctx context.Context, dir string, set ConflictSettings
 	}
 	tctx, cancel := context.WithTimeout(ctx, set.TestTimeout)
 	defer cancel()
-	r, err := m.run(tctx, dir, name, args...)
+	r, err := m.runCheck(tctx, dir, name, args...)
 	if err != nil {
 		return "", fmt.Sprintf("build %q did not finish: %v\n%s", desc, err, tail(r.Out, 2000))
 	}
@@ -115,7 +115,7 @@ func (m *Merger) gateSteps(ctx context.Context, dir string, set ConflictSettings
 			timeout = set.TestTimeout
 		}
 		tctx, cancel := context.WithTimeout(ctx, timeout)
-		r, err := m.run(tctx, wd, "sh", "-c", s.Command)
+		r, err := m.runCheck(tctx, wd, "sh", "-c", s.Command)
 		cancel()
 		ran++
 		if err != nil {
