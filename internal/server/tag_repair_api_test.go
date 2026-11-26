@@ -31,7 +31,8 @@ func TestTagRepairEndpointWritesOnlyWhenAsked(t *testing.T) {
 	}
 	call := func(path, body string) (autonomous.TagRepairReport, int, string) {
 		t.Helper()
-		rec := tagCall(t, s, http.MethodPost, path, body)
+		rec := httptest.NewRecorder()
+		s.handleTagRepair(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
 		var rep autonomous.TagRepairReport
 		_ = json.Unmarshal(rec.Body.Bytes(), &rep)
 		return rep, rec.Code, rec.Body.String()
