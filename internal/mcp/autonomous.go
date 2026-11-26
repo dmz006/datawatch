@@ -1260,7 +1260,7 @@ func (s *Server) toolAutonomousShippedRecord() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_shipped_record",
 		mcpsdk.WithDescription("Record the shipped state of an Automaton (PRD) or an Automation: the release it was merged into, the merge time, the merge commit and how the record was written (merge_step or backfill). Recording never changes the entity's status and is idempotent per merge commit. Set automation=true to record an Automation; by default a PRD is addressed."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton (PRD) ID, or Automation ID when automation=true")),
-		mcpsdk.WithString("merge_commit", mcpsdk.Required(), mcpsdk.Description("The merge commit")),
+		mcpsdk.WithString("merge_commit", mcpsdk.Required(), mcpsdk.Description("The merge commit. A merge_step record for an Automaton branch in the merge repository takes a hex commit id (full, or at least 7 characters) that contains the branch and is on the remote when there is one")),
 		mcpsdk.WithString("merged_in_release", mcpsdk.Description("Release the work was merged into, e.g. v1.2.0")),
 		mcpsdk.WithString("merged_at", mcpsdk.Description("Merge time, RFC 3339 (default now)")),
 		mcpsdk.WithString("source", mcpsdk.Enum("merge_step", "backfill"), mcpsdk.Description("How the record was written (default backfill)")),

@@ -38,7 +38,13 @@ func (m *Manager) finishIfMerged(prd *PRD) bool {
 	if base == "" {
 		return false
 	}
-	if _, err := git.Run(ctx, dir, "merge-base", "--is-ancestor", commit, base); err != nil {
+	// A stored HEAD or branch name would always be "in main".
+	commit, err := storedCommitArg(ctx, git, dir, commit)
+	if err != nil {
+		log.Printf("[autonomous] automaton=%s not finished from its shipped record: %v", prd.ID, err)
+		return false
+	}
+	if _, err := git.Run(ctx, dir, "merge-base", "--is-ancestor", "--end-of-options", commit, base); err != nil {
 		return false
 	}
 	rev, ok := m.store.PRDRev(prd.ID)
@@ -47,7 +53,7 @@ func (m *Manager) finishIfMerged(prd *PRD) bool {
 	}
 	at := m.holdNow()
 	done := false
-	err := m.store.CommitPRDIfRev(prd.ID, rev, func(p *PRD) bool {
+	err = m.store.CommitPRDIfRev(prd.ID, rev, func(p *PRD) bool {
 		if p.Status == PRDCompleted || p.Status == PRDCancelled || p.Status == PRDArchived {
 			return false
 		}

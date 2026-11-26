@@ -138,16 +138,38 @@ shows this as the step `record-landing`. A push that was held, skipped or
 failed, or a remote that cannot confirm it, leaves everything as it was.
 
 A shipped record you set by hand with source `merge_step`, for a branch in the
-merge repository that has a remote, is refused unless the remote contains the
-commit; when it does, the landing becomes `landed` too. It never changes the
-Automaton's status.
+merge repository, is refused unless the commit contains that branch and, when
+the repository has a remote, the remote contains the commit; when the remote
+does, the landing becomes `landed` too. It never changes the Automaton's status.
+Work that was squashed or ported by hand does not contain the branch: record it
+with `backfill`. If the branch is no longer in the repository, nothing can be
+checked: the record is stored as given and the landing is not changed.
 
-**A `backfill` record is stored as given, with no check**, and `backfill` is
-what the CLI, MCP and chat send unless you choose `merge_step`. So such a
+For such a record the commit must be a commit id: hex only, either the full id
+(the repository's hash length) or its first 7 or more characters, as
+`git rev-parse --short` prints. Anything else, such as a branch or ref name, is
+refused before git runs. An abbreviation is matched against the commits the
+merge repository holds and the full id is stored; if none or more than one
+matches, the record is refused and you give the full id.
+
+A commit pushed from another clone may not be in the merge repository yet. When
+it is not found and there is a remote, the daemon fetches the remote's default
+branch once and looks again. If it is still not found, the refusal says that the
+fetch failed (record it again once the fetch works) or that the commit is
+unknown.
+
+**A `backfill` record is stored without being checked against git**, and
+`backfill` is what the CLI, MCP and chat send unless you choose `merge_step`. So such a
 record can mark work that was never pushed as shipped. The landing stays
 `pending`, and the selection rule then leaves the work out as already shipped.
 Record a shipped record only after the push, or choose `merge_step` to have the
 daemon check it.
+
+For every source, on an Automaton or an Automation, a commit that starts with
+`-` is refused: git would read it as an option. When the daemon later gives a
+stored commit to git (the completed migration, finishing merged work after a
+restart, the unlanded-work list), it does so only for a commit id. A stored
+`HEAD`, branch name or option is not used, and the record is left as it is.
 
 ## Reading the record
 

@@ -592,9 +592,13 @@ func mergeRemote(ctx context.Context, git MergeGitRunner, repo string) string {
 }
 
 // confirmOnRemote asks the remote itself whether its default branch contains
-// commit. Anything it cannot prove is an error. It may fetch that branch,
+// commit, which must be a full commit id: any other text is refused before
+// git runs. Anything it cannot prove is an error. It may fetch that branch,
 // which moves only the remote-tracking ref.
 func confirmOnRemote(ctx context.Context, git MergeGitRunner, repo, commit string) error {
+	if !fullCommitID.MatchString(commit) {
+		return fmt.Errorf("%q is not a full commit id (hex only)", commit)
+	}
 	remote := mergeRemote(ctx, git, repo)
 	if remote == "" {
 		return errors.New("the repository has no remote, so a push cannot be confirmed")
