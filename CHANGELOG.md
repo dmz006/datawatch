@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.27 — Task text is no longer typed into a shell after Claude Code leaves
+
+### Fixed
+- Before typing a task, a scheduled command, an output filter's input or a line datawatch writes on its own into a Claude session (automation messages and nudges, question answers, supervisor wake-ups, exit-hook, subscription and reply-to-parent lines, the rate-limit resume line), datawatch now checks two signs: whether the visible screen shows the line printed after Claude Code exits, and whether the terminal's shell is the only thing reading the keyboard. If either shows, it does not type, because a shell would run the text outside Claude Code's permission checks. The two signs do not prove that Claude Code is there (see Not covered). A task delivery that stays refused ends the session and says that the task was not typed again; an earlier attempt may already have typed it.
+- In one case, a Claude session that quits at a start-up dialog now ends once as failed, with the reason and one alert, instead of reading as finished, and its leftover shell is closed. All of this must hold: datawatch declined the dialog (only with `auto_accept_disclaimer` on) within the last two minutes, and the dialog ended with "Enter to confirm · Esc to cancel" under numbered choices; the Claude channel is on and the session's task was never delivered; datawatch sent the session nothing but answers to start-up dialogs; Claude Code was not then seen at its input box or working; and when datawatch looks, Claude Code has left, with only the terminal's own shell remaining or tmux confirming the terminal is gone. An Automaton retries such a worker as a launch failure and then holds it.
+
+### Not covered
+- Every other exit is handled as before: the session can be reported complete, and an interactive one can switch between complete and running with an alert each time. This includes the channel being off, a session with no task, an exit with no declined dialog, other dialog layouts, anything sent through datawatch (even one key), an exit more than two minutes after the dialog, a task already delivered, and other agents.
+- If anything else is still on the terminal or running under its shell when datawatch looks, or the process list or tmux cannot be read, the session is not failed. A one-shot is then complete after that first look; an interactive session is looked at again the next time round.
+- An Automaton worker that was never given its task is not guaranteed to stay unfinished outside the case above: with automatic commits on, the completion commit can get it past the check for undelivered work, and a restarted worker can be marked done. Earlier versions do this too.
+- The check before typing sees only what shows when it looks, and datawatch types whenever neither sign shows. If Claude Code has stopped reading the keyboard, or has exited under a wrapper script that did not exec and is still in the foreground, typed text can still run in the shell later. The same can happen if Claude Code leaves after the check, with job control off in the terminal's shell (datawatch's fallback memory watchdog turns it off) once the exit line is no longer on screen, or when neither the screen nor the process list can be read.
+- Some sends are not checked: what you send yourself; the MCP tools `send_input` and `send_saved_command`, also when an AI session calls them; answers to start-up dialogs; datawatch's own menu keys (the usage-limit answer, the MCP server retry, dismissing Claude Code prompts, Enter); and the memory wake-up text, which is typed without Enter.
+- The exit line is matched when a line reads `DATAWATCH_COMPLETE: claude done` after any leading spaces and non-ASCII marks such as ⎿ or ●, so automated input is also refused while a running Claude Code shows such a line, and a task delivery that stays refused ends the session.
+- A refused scheduled command is marked failed and is not retried, and a recurring one stops. This includes a shell command you scheduled for a Claude session whose Claude Code has left.
+
 ## v9.187.26 — Daemon start no longer waits for the Claude registration cleanup
 
 ### Fixed

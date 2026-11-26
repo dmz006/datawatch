@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.26 (2026-11-26).** Daemon startup no longer waits for the cleanup of old Claude MCP registrations, and that cleanup removes only registrations this daemon recorded; the release notes say what to remove by hand. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.27 (2026-11-26).** Before typing a task or scheduled command into a Claude session, datawatch now looks for two signs that Claude Code has left and does not type if either shows, and in one narrow case a session that quits at a start-up dialog datawatch declined ends as failed instead of finished (both have limits; see the changelog). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
