@@ -59,6 +59,7 @@ func newAutonomousTagListCmd() *cobra.Command {
 	// `datawatch autonomous tags sweep` and `datawatch autonomous
 	// tag-list sweep` reach it.
 	cmd.AddCommand(newAutonomousTagsSweepCmd())
+	cmd.AddCommand(newAutonomousTagsRepairCmd())
 	return cmd
 }
 

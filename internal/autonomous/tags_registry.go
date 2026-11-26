@@ -30,6 +30,25 @@ func (m *Manager) SaveTagRecords(tags []*Tag) error {
 	return nil
 }
 
+// UpdateTagRecords saves the tags in save and removes the ids in remove. Every
+// other record is left as it is. An id with no record is passed over.
+func (m *Manager) UpdateTagRecords(save []*Tag, remove []string) error {
+	for _, t := range save {
+		if err := m.store.SaveTag(t); err != nil {
+			return err
+		}
+	}
+	for _, id := range remove {
+		if _, ok := m.store.GetTag(id); !ok {
+			continue
+		}
+		if err := m.store.DeleteTag(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // TagAssignmentCount returns how many Automata and sessions carry a tag, counting
 // a session's inherited tags.
 func (m *Manager) TagAssignmentCount(tagID string) int {
@@ -60,6 +79,13 @@ func (m *Manager) RemoveTagAssignments(tagID string) (int, error) {
 // moveTagAssignments replaces fromID with toID on every Automaton and session
 // that carries fromID. An empty toID removes fromID instead.
 func (m *Manager) moveTagAssignments(fromID, toID string) (int, error) {
+	return m.moveTagAssignmentsAt(fromID, toID, true)
+}
+
+// moveTagAssignmentsAt is moveTagAssignments. Without touch an Automaton keeps
+// its updated time: the tag repair uses that, so that a repair does not make
+// old work look new.
+func (m *Manager) moveTagAssignmentsAt(fromID, toID string, touch bool) (int, error) {
 	changed := 0
 	for _, p := range m.store.ListPRDs() {
 		next, hit := replaceTagID(p.TagIDs, fromID, toID)
@@ -72,9 +98,11 @@ func (m *Manager) moveTagAssignments(fromID, toID string) (int, error) {
 			if primaryHit {
 				p.PrimaryTagID = toID
 			}
-			p.UpdatedAt = time.Now()
+			if touch {
+				p.UpdatedAt = time.Now()
+			}
 		})
-		if err := m.store.SavePRD(p); err != nil {
+		if err := m.store.savePRD(p, touch); err != nil {
 			return changed, err
 		}
 		changed++

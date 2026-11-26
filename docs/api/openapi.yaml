@@ -6674,6 +6674,53 @@ paths:
         "405": {description: "POST only"}
         "503": {description: "Tag sweep is not wired into this server"}
 
+  /api/autonomous/tags/repair:
+    post:
+      summary: Restore tag IDs that have no tag record (dry run unless dry_run is false)
+      description: |
+        Looks at every tag ID that an Automaton, a session or a tag's parent names
+        and that has no record, and plans one of: `restore` (put the record back
+        under the same ID), `merge` (another tag has taken its place: move the
+        assignments to it) or `unresolved` (left as it is, with the reason).
+        Records come from `copies`; an auto tag that no copy holds is worked out
+        from the Automation whose members carry the ID, only when one answer is
+        left. The repair adds records and moves assignments. It deletes no record
+        and keeps each Automaton's updated time. It writes only when `dry_run` is
+        false, in the body or as `?dry_run=false`; the body wins.
+      operationId: autonomousTagRepair
+      tags: [Autonomous]
+      parameters:
+        - name: dry_run
+          in: query
+          required: false
+          schema: {type: boolean, default: true}
+          description: "false: make the changes; any other value, or none, is a dry run"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean, default: true}
+                copies:
+                  type: array
+                  description: Tag records from saved copies (id and name are required)
+                  items: {type: object}
+      responses:
+        "200":
+          description: |
+            `dry_run`, `copies_read`, `missing`, `restore`, `merge`, `unresolved`,
+            `automata`, `automata_left`, `items` (each with `tag_id`, `action`,
+            `source`, `name`, `into_tag_id`, `automaton_ids`, `sessions`,
+            `reason`) and `unused_copies`
+        "400": {description: "The body could not be read, or is over 4 MB"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "POST only"}
+        "500": {description: "The repair stopped part way; run it again after the cause is fixed"}
+        "503": {description: "Tag repair is not wired into this server"}
+
   /api/autonomous/attention:
     get:
       summary: List the Automata that need the operator's attention
@@ -12027,7 +12074,7 @@ paths:
           in: query
           required: false
           schema: {type: integer, minimum: 0}
-          description: The what-if lane count (0 included). The advice plans with this many Claude lanes for this call only; it is not saved and does not change how many lanes are running. Without it the advice uses the lanes running now. The count the ledger reports is returned as lanes_running_now
+          description: The what-if lane count (0 included). The advice plans with this many Claude lanes for this call only; it is not saved and does not change how many lanes are running. Without it the advice plans with the lanes stamped on the newest usable reading, or the stored maximum when no reading has a usable stamp. A what-if never changes a measured figure such as the burn per lane. The count the ledger reports is returned as advice.lanes_running_now
         - name: cost
           in: query
           required: false
@@ -12041,12 +12088,15 @@ paths:
               schema:
                 type: object
                 properties:
-                  lanes_running_now:
-                    type: integer
-                    nullable: true
-                    description: The Claude lane count in the capacity ledger at the moment of the call; null when no ledger is wired. Kept apart from lanes_stamped (the stamp on the newest usable reading) and what_if_lanes (the count asked for with the lanes parameter)
-                  lanes_stamped: {type: integer, nullable: true, description: The lane count stamped on the newest reading whose lanes_source is live, recorded or current; null when no reading has one}
-                  what_if_lanes: {type: integer, description: Present only when the call set the lanes parameter; never saved}
+                  advice:
+                    type: object
+                    properties:
+                      lanes_running_now:
+                        type: integer
+                        nullable: true
+                        description: The Claude lane count in the capacity ledger at the moment of the call; null when no ledger is wired. Kept apart from lanes_stamped (the stamp on the newest usable reading) and what_if_lanes (the count asked for with the lanes parameter)
+                      lanes_stamped: {type: integer, nullable: true, description: The lane count stamped on the newest reading whose lanes_source is live, recorded or current; null when no reading has one}
+                      what_if_lanes: {type: integer, description: Present only when the call set the lanes parameter; never saved}
         "400": {description: Unknown variant or policy, or a malformed lanes / cost value}
         "503": {description: The calculator is not wired on this daemon}
   /api/llm/classifier:
@@ -15479,6 +15529,7 @@ components:
         kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
         verification_script: {type: string}
         status: {type: string}
+        loop_retried_infra_hold: {type: boolean, description: "True once the supervisor loop has retried this task off an infrastructure hold; a later hold stays for the operator, whose own retry or reset clears it. Absent = false"}
         compute_node: {type: string, description: "Compute node the task's worker was started on; a daemon restart adopts the surviving worker onto it. Absent for a hosted backend or before the worker starts"}
         executor_source: {type: string, description: "task | story | prd | automation | global"}
     TaskProgress:
@@ -15732,6 +15783,10 @@ components:
           type: string
           format: date-time
           description: When a claimed task delivery was seen to have reached the session.
+        launch_log_start:
+          type: integer
+          format: int64
+          description: Size of the output log when the session was last restarted. Output before it belongs to an earlier start. Omitted for a session that was never restarted.
 
     SessionState:
       type: string

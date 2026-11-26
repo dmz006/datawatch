@@ -416,6 +416,11 @@ type Session struct {
 	// session. Nil while no claim has been verified.
 	TaskVerifiedAt *time.Time `json:"task_verified_at,omitempty"`
 
+	// LaunchLogStart — the size of the output log when this launch began. A
+	// restart appends to the same log; what is before this belongs to an
+	// earlier launch.
+	LaunchLogStart int64 `json:"launch_log_start,omitempty"`
+
 	// DaemonDeliversTask — true when the launch left the task off the command
 	// line, so the daemon itself types it once the input box is ready (the
 	// channel-enabled claude-code launch). For such a session a ready channel

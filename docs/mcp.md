@@ -3178,7 +3178,7 @@ the plain-English advice block naming the formulas used.
 |---|---|---|---|
 | `variant` | string | No | Answer shape; overrides the stored variant for this call only |
 | `policy` | string | No | Spend target; overrides the stored policy for this call only |
-| `lanes` | number | No | Whole number of 0 or more; overrides the stored max lanes for this call only |
+| `lanes` | number | No | Whole number of 0 or more; the what-if lane count for this call only (0 is valid). It is never saved and does not change the lanes running; the result reports the lanes running now apart as `lanes_running_now` |
 | `cost` | number | No | Points of 0 or more; the per-task cost used for the finish-early estimate |
 
 Reads (`usage:read`).
@@ -3186,7 +3186,7 @@ Reads (`usage:read`).
 ### `usage_readings`
 
 The shared readings series: the readings the account has been measured at
-(percent and/or spend, when, session percent, lanes, source), the bought
+(percent and/or spend, when, session percent, lanes, `lanes_source`, source), the bought
 extra credit, and the per-policy remaining-work figure. No parameters.
 
 Reads (`usage:read`).
@@ -3203,7 +3203,7 @@ Append one reading to the shared series.
 | `spend_usd` | number | One of | 0 or more. Exactly one of `percent` / `spend_usd` |
 | `at` | string | No | RFC 3339 time; now when omitted |
 | `session_percent` | number | No | 0–100, the account's session number (the secondary reading) |
-| `lanes` | number | No | 0 or more, the lanes that were in play when the reading was taken |
+| `lanes` | number | No | Deprecated and ignored. The daemon stamps each reading with the Claude lanes its capacity ledger shows running, and records where the count came from in `lanes_source`. Any value is accepted and dropped |
 
 Writes (`usage:write`). The source is the built (typed) kind; the planned
 pasted and account kinds are not built yet (they answer 501 at REST) and are
@@ -3280,7 +3280,7 @@ One call per tool:
 usage_advice(lanes=5, cost=2.5)
 usage_advice(variant="pace-gauge", policy="run-flat-out")
 usage_readings()
-usage_reading_add(percent=42.5, at="2026-12-15T09:00:00Z", session_percent=33, lanes=2)
+usage_reading_add(percent=42.5, at="2026-12-15T09:00:00Z", session_percent=33)
 usage_reading_add(spend_usd=6.75)
 usage_reading_delete(id="r-8f2c1d")
 usage_extra_credit_set(points=25)

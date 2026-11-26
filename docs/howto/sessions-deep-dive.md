@@ -113,6 +113,24 @@ datawatch config set session.finalise_interval_minutes 2
 
 The details of how a record is judged and what each run covers follow below.
 
+## An interactive session that reports its work done
+
+A completion line such as `DATAWATCH_COMPLETE: wrote the report` ends a
+one-shot session. It does not end an interactive one: that session goes to
+`waiting_input` and takes your next instruction. While it works on a later turn
+it reads `running`, even with the earlier line still on screen. The report
+never turns it `complete`.
+
+This is about Claude Code's own report. When Claude Code **quits**, the line its
+launch command prints afterwards (`DATAWATCH_COMPLETE: claude done`) still
+reads as before: with the terminal left open the session can switch between
+`complete` and `running`, with an alert each time. End or restart it:
+
+```bash
+datawatch session kill a3f2
+datawatch session restart a3f2
+```
+
 ## Gone session records
 
 A session record can be left in `running` (or another non-final state)
@@ -917,10 +935,31 @@ still be reported `complete`, and an interactive one can switch between
 - the task had been delivered;
 - other agents.
 
-An Automaton worker that was never given its task is **not** guaranteed to stay
-unfinished outside the case above. With automatic commits on, the commit made at
-completion can get such a task past the check for undelivered work, and a
-restarted worker can be marked done.
+An Automaton worker is never marked done without its task, also outside the
+case above. See [When an Automaton worker never got its
+task](#when-an-automaton-worker-never-got-its-task).
+
+### When an Automaton worker never got its task
+
+On a Claude channel launch datawatch types the task itself. When such a worker
+ends and datawatch has no proof that the task arrived on **this** start, the task
+is not verified and not done. It is retried as a [launch
+failure](infrastructure-retry.md#what-counts-as-transient) and held when the
+retries run out. Proof is the task seen on screen after datawatch typed it, or,
+after a daemon restart mid-delivery, the task on screen or an answer recorded
+since this start.
+None of these stands in for it: that datawatch had started typing, a commit made
+when the session ended, a screen captured on an earlier start, a finished
+checkpoint file with a passing check, or the `DATAWATCH_COMPLETE: claude done`
+line the launch command prints when Claude Code leaves.
+
+A restart is a new start: the task has to arrive again. So a worker whose task
+you typed yourself, or that you restarted and told to carry on while datawatch
+never typed the task again, is retried too.
+
+With the channel off the task is part of the launch command. Such a worker is
+judged by what it left: a completion line of its own plus a commit or a stored
+response. The launch command's exit line does not count as its own.
 
 ### The check before datawatch types on its own
 

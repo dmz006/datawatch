@@ -5,6 +5,57 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.33 — A daemon start or a tag registry change no longer drops daemon-written tags
+
+### Fixed
+- Tag records the daemon writes itself, such as automatic tags, could be deleted by a daemon start, a tag registry change (also one running while they were written) or a peer's sync. A start and a registry change no longer drop them, a sync keeps those marked as this daemon's own, and the registry now sees them. A keeper therefore shares its automatic tags with peers.
+- A start no longer undoes the daemon's tag renames, or deletes made while the registry was running. The daemon's own tag updates no longer fail with "tag not found" after saving a membership change because the Automaton carries an ID with no record; setting an unknown ID yourself is still refused.
+- Merging or removing a tag no longer moves archived sessions back to the active list.
+
+### Added
+- A repair for tag IDs with no record. It changes tags or assignments only with `datawatch autonomous tags repair --apply`, chat `autonomous tags repair apply`, or REST `/api/autonomous/tags/repair` with `dry_run` false; otherwise it is a dry run. Nothing runs it automatically. It restores records or moves assignments to a replacement, leaves what it cannot decide, and deletes or overwrites no tag record. No MCP tool or web button.
+
+### Not covered
+- Repair limits: a merge has no simple undo. An auto tag rebuilt from Automations gets today's name template and creation time, and you cannot rename or delete it. After a missing parent is merged, child tags that still had a record keep the old parent ID, and later runs list the merge again.
+- Installing does not restore tags already lost, and the repair may leave some unresolved. A deleted tag can return after a restart if the daemon stopped partway through the delete, or deleted it while the registry was not running.
+- On peers: a sync can still delete automatic tags, with assignments, that a copy saved by an earlier version already lists; a daemon that becomes a peer can still lose its own non-automatic tags the keeper lacks.
+
+## v9.187.32 — Work recovered from older branches
+
+### Changed
+- A plan being stored or repaired is now refused when a `depends_on` entry names a title shared by two or more of its stories (story entries) or tasks (task entries); before, the last one was picked silently. IDs, positions and unique titles work as before. Stored plans are not re-checked unless repaired. In planning it is handled like other bad dependencies: a retry if the retry budget allows (one by default), then back to draft with the reason.
+- The release smoke, with no `DATAWATCH_BIN` and no `datawatch` file at the top of the source tree, now runs `make build` and stops if that fails, instead of using a `datawatch` from PATH. A binary already at the top of the tree is still used, even if old.
+
+### Fixed
+- Usage advice: when no reading had a usable lane stamp, a what-if lane count changed the measured burn per lane. It no longer does. Command, MCP and API-mapping references now say a lane count sent with a reading is ignored; an unused web text for the removed input is gone.
+
+### Added
+- Guard tests for parallel chains, stalled pi sessions, default task routing and the built-in docs index (needs `make docs-index` first); a smoke binary-choice test in `make test`. Recovered dated notes (voice, smoke failures, plan merge review; not all rechecked) and how-to additions on parallel chains, failure-escalation upgrades and plan records.
+
+## v9.187.31 — The pi launch check no longer sends pi's provider prefix to the node
+
+### Fixed
+- Present since 9.182.84: the launch check for pi and pi-prompt asked a compute node for pi's "provider/model" name, for example `ollama/qwen3.8-64k:27b`, which the Ollama nodes checked do not recognize (404). This check applies to nodes that belong to an LLM entry listing more than one node; a failed check stops the launch and marks the node unhealthy. The check now leaves off the first "provider/" part, and pi is still started with the full name.
+
+### Not covered
+- Any failed check is still worded "Request timed out", whatever its cause.
+- The check sends no API key and uses `<address>/v1`; an OpenAI-compatible node was not tested.
+- A cold model slower than the 20-second check limit could still be refused.
+- No full pi session was run end to end with this change.
+
+## v9.187.30 — A stricter task delivery check for Automaton workers
+
+### Fixed
+- datawatch's check of a local claude-code Automaton worker whose task datawatch types no longer passes it unless the task is recorded as delivered. A commit, a saved screen, a checkpoint with a passing script or the launch command's exit line is not enough; the attempt is a launch failure (by default retried, then held).
+- An interactive claude-code session reporting finished work now waits for input instead of switching between complete and running. If Claude Code quits and the terminal stays open, it can still switch.
+
+### Changed
+- Some work that did run can be retried, for example if you typed the task yourself or datawatch could not confirm delivery. For local claude-code one-shot workers with no recorded delivery (such as channel off), the exit line no longer counts as the worker's completion line, so one that exits before its own line is picked up is retried.
+- The supervisor loop's infrastructure-hold retry (on by default) now uses the same path as your own retry, which wakes or starts the run without waiting for lane fill. It retries a task once, even across daemon restarts; a later hold stays until you retry or reset the task. This change does not start tasks the loop requeued earlier; if held again, they can get one more loop retry.
+
+### Not covered
+- A recorded delivery does not prove that Claude read the task. If Claude stopped reading or a wrapper holds the terminal, typed text can still show; after a session restart, text redrawn from the earlier conversation can also count. Remote agent workers and other backends are not covered by this check.
+
 ## v9.187.29 — A safer merge run, with merging still off
 
 ### Changed
@@ -16,7 +67,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Before you upgrade
 - Merging stays off by default and this release does not turn it on. Before you ever turn it on: replace the recorded pipeline first, because a record without the new check steps would release with few checks.
 - Once merging is on, features release as a minor version, an unset kind is guessed from the title and the start of the spec, and a run may take up to 3 hours.
-- Under the `mechanical_and_model` conflict policy, a `conflict_model` naming an enabled model entry is now really called.
+- Under the `mechanical_and_model` conflict policy (the default), a `conflict_model` (default `sonnet`) naming an enabled model entry is now really called.
 
 ### Not covered
 - Checks are not sandboxed and come from the work being merged: a check can itself push to the remote, move local branches or leave a tag, and it can read or change any file the daemon's user can.
@@ -26,7 +77,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A tag step written as a command, or the post-ship "tag" hook, can still make a tag; the hook can tag the old version when nothing was released.
 - The new conflict rules do nothing while the conflict policy is `stop_and_ask`.
 - No merge run was tried with a full release smoke, a real conflict model or a live daemon's merge loop.
-- Under the `mechanical` conflict policy, the new `keep_main` rules drop the branch's side of a conflicting hunk without asking, including its CHANGELOG line.
+- Under the `mechanical` conflict policy, and under `mechanical_and_model` (the default) when its model entry is available, the new `keep_main` rules drop the branch's side of a conflicting hunk without asking, including its CHANGELOG line.
 - If only the daemon process is killed, a running check or push can carry on, and that push can still land.
 
 ## v9.187.28 — Start-up dialogs are answered only when shown, and not too soon

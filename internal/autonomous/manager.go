@@ -1646,7 +1646,10 @@ type Manager struct {
 	// name of the Automation that takes kind-bug filings lives in
 	// m.cfg.DefectIntakeAutomation (autonomous.defect_intake_automation).
 	// Guarded by mu.
-	tagEventFn   func(TagEvent)
+	tagEventFn    func(TagEvent)
+	tagRecordHook func()
+	// tagRepairMu allows one tag repair at a time (tags_repair.go).
+	tagRepairMu  sync.Mutex
 	defectIntake DefectIntake
 	// autoTagsDaemon supplies the daemon-level autonomous.auto_tags block
 	// that the engine-tag sync resolves against (auto_tags.go). Wired by
@@ -5098,6 +5101,13 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 					// the flag false, so an unconsumed clean restart never carries
 					// over into a later reset.
 					t.CleanRestart = cleanRestart
+					// The supervisor loop retries an infrastructure hold once
+					// for each time the operator has not stepped in.
+					if isOperatorActor(actor) {
+						t.LoopRetriedInfraHold = false
+					} else if review != nil && actor == supervisorLoopActor {
+						t.LoopRetriedInfraHold = true
+					}
 					// An operator review's changes go on last, so the hint they
 					// set replaces the generic one built above.
 					if review != nil {

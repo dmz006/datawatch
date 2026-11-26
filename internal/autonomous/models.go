@@ -1385,6 +1385,10 @@ type Task struct {
 	// current incident. It is reset when the task gets a fair attempt; the
 	// InfraRetries history is not.
 	InfraRetryCount int `json:"infra_retry_count,omitempty"`
+	// LoopRetriedInfraHold is true once the supervisor loop has retried this
+	// task off an infrastructure hold. A later hold then stays for the
+	// operator, whose own reset or retry clears it.
+	LoopRetriedInfraHold bool `json:"loop_retried_infra_hold,omitempty"`
 	// VerifierFaultRetries is the consecutive verifier-only retries of the
 	// current worker's result. Above zero, the worker is known to have
 	// finished, so a restart verifies again instead of running it. It returns
