@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +35,7 @@ import (
 	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/dmz006/datawatch/internal/spendledger"
+	"github.com/dmz006/datawatch/internal/toolsettings"
 	"github.com/dmz006/datawatch/internal/workerprofile"
 	"github.com/fsnotify/fsnotify"
 )
@@ -555,6 +555,8 @@ type Manager struct {
 	tagRegistry TagRegistry
 	tagOwners   TagOwnerLookup
 
+	// launchCheck can refuse a launch (launch_check.go).
+	launchCheck func(sess *Session) error
 	// onPreLaunch is called just before the LLM backend is launched (for per-session setup like MCP registration).
 	onPreLaunch func(sess *Session)
 
@@ -3012,6 +3014,14 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		sess.ValidateCommands = opt.ValidateCommands
 	}
 
+	// Before anything of this session exists. A subprocess session runs no
+	// backend, so there is nothing to check.
+	if opt == nil || !opt.Subprocess {
+		if err := m.checkLaunch(sess); err != nil {
+			return nil, err
+		}
+	}
+
 	// Create the session tracker (git-tracked folder)
 	tracker, err := NewTracker(m.dataDir, sess)
 	if err != nil {
@@ -5016,6 +5026,15 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		return nil, fmt.Errorf("cannot restart session in state %q (must be complete, failed, or killed)", sess.State)
 	}
 
+	// A refused relaunch changes nothing: asked before the leftover pane is
+	// closed or the record is touched.
+	if err := m.checkLaunch(sess); err != nil {
+		m.mu.Lock()
+		delete(m.restartTaskOverride, sess.FullID)
+		m.mu.Unlock()
+		return nil, err
+	}
+
 	// Cancel any existing monitor
 	m.mu.Lock()
 	if cancel, ok := m.monitors[sess.FullID]; ok {
@@ -5302,6 +5321,11 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 		if !ok {
 			return nil, fmt.Errorf("session %s not found", fullID)
 		}
+	}
+
+	// Asked here too: a refused relaunch must not stop a live session.
+	if err := m.checkLaunch(sess); err != nil {
+		return nil, err
 	}
 
 	// Kill the session if it is still alive.
@@ -9078,19 +9102,18 @@ func ensureClaudeTUISetting(claudeDir string) error {
 		return err
 	}
 	settingsPath := filepath.Join(claudeDir, "settings.json")
-	settings := map[string]interface{}{}
-	if data, err := os.ReadFile(settingsPath); err == nil {
-		_ = json.Unmarshal(data, &settings)
+	real, settings, mode, err := toolsettings.ReadThroughLink(settingsPath)
+	if err != nil {
+		return fmt.Errorf("claude tui setting not set: %w", err)
+	}
+	if mode == 0 {
+		mode = 0o600
 	}
 	if v, ok := settings["tui"]; ok && v == "default" {
 		return nil // already set, nothing to do
 	}
 	settings["tui"] = "default"
-	data, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(settingsPath, append(data, '\n'), 0600)
+	return toolsettings.Write(real, settings, mode)
 }
 
 // projectPolicyFor returns the per-project policy for dir, or nil when the

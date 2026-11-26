@@ -1,10 +1,11 @@
 package opencode
 
 import (
-	"encoding/json"
-	"os"
+	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/toolsettings"
 )
 
 // projectConfig is the subset of opencode.json that datawatch manages.
@@ -118,42 +119,57 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 
 	path := filepath.Join(projectDir, "opencode.json")
 
-	existing := projectConfig{}
-	if data, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(data, &existing) //nolint:errcheck
+	// Only the keys datawatch manages are changed. Everything else in the
+	// project's file is kept, and a file that cannot be read in full (a
+	// comment included) is left as it is.
+	real, doc, mode, err := toolsettings.ReadThroughLink(path)
+	if err != nil {
+		return fmt.Errorf("opencode config not written: %w", err)
+	}
+	if mode == 0 {
+		mode = 0o644
+	}
+	object := func(parent map[string]any, key string) (map[string]any, error) {
+		o, err := toolsettings.Object(parent, key)
+		if err != nil {
+			return nil, fmt.Errorf("opencode config not written: %s: %w", path, err)
+		}
+		return o, nil
 	}
 
 	if opts.Model != "" {
-		existing.Model = opts.Model
+		doc["model"] = opts.Model
 	}
 
 	if opts.BuildTemperature != 0 {
-		if existing.Agent == nil {
-			existing.Agent = make(map[string]any)
+		agent, err := object(doc, "agent")
+		if err != nil {
+			return err
 		}
-		build, _ := existing.Agent["build"].(map[string]any)
-		if build == nil {
-			build = make(map[string]any)
+		build, err := object(agent, "build")
+		if err != nil {
+			return err
 		}
 		build["temperature"] = opts.BuildTemperature
-		existing.Agent["build"] = build
 	}
 
 	if len(opts.DenyTools) > 0 {
-		if existing.Permission == nil {
-			existing.Permission = make(map[string]string)
+		permission, err := object(doc, "permission")
+		if err != nil {
+			return err
 		}
 		for _, tool := range opts.DenyTools {
-			existing.Permission[tool] = "deny"
+			permission[tool] = "deny"
 		}
 	}
 
 	if len(opts.LSPServers) > 0 {
-		if existing.LSP == nil {
-			existing.LSP = make(map[string]lspEntry)
+		lsp, err := object(doc, "lsp")
+		if err != nil {
+			return err
 		}
 		for name, srv := range opts.LSPServers {
-			existing.LSP[name] = lspEntry(srv)
+			lsp[name] = lspEntry(srv)
 		}
 	}
 
@@ -173,8 +189,9 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 			baseURL = "http://" + baseURL
 		}
-		if existing.Provider == nil {
-			existing.Provider = make(map[string]any)
+		provider, err := object(doc, "provider")
+		if err != nil {
+			return err
 		}
 		providerOpts := map[string]any{
 			"baseURL": strings.TrimSuffix(baseURL, "/") + "/v1",
@@ -188,7 +205,7 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 		if opts.HeaderTimeoutSec > 0 {
 			providerOpts["headerTimeout"] = opts.HeaderTimeoutSec * 1000
 		}
-		existing.Provider["ollama"] = map[string]any{
+		provider["ollama"] = map[string]any{
 			"npm":     "@ai-sdk/openai-compatible",
 			"name":    "Ollama",
 			"options": providerOpts,
@@ -198,9 +215,5 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 		}
 	}
 
-	data, err := json.MarshalIndent(existing, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return toolsettings.Write(real, doc, mode)
 }

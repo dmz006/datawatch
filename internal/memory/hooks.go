@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/dmz006/datawatch/internal/toolsettings"
 )
 
 // InstallClaudeHooks writes datawatch memory hooks to the project's
 // .claude/settings.local.json so Claude Code auto-saves to memory.
-// Merges with existing settings (preserves user config).
+// Merges with existing settings (preserves user config). It installs nothing,
+// and says why, for a home folder or user-level settings, for a linked .claude
+// folder or settings file, and for a file it cannot read and parse in full.
 // hooksDir is the path to the datawatch hooks/ directory containing the scripts.
 func InstallClaudeHooks(projectDir, hooksDir string, saveInterval int) error {
 	if saveInterval <= 0 {
@@ -30,13 +34,18 @@ func InstallClaudeHooks(projectDir, hooksDir string, saveInterval int) error {
 		return fmt.Errorf("pre-compact hook not found: %s", precompactHookPath)
 	}
 
-	// Read existing settings
-	var settings map[string]interface{}
-	if data, err := os.ReadFile(settingsPath); err == nil {
-		json.Unmarshal(data, &settings) //nolint:errcheck
+	// Everything that can refuse comes before the first write: never a user's
+	// own settings, and never a file that was not read in full.
+	notInstalled := func(err error) error { return fmt.Errorf("memory hooks: not installed: %w", err) }
+	if err := toolsettings.RefuseUserClaude(projectDir, filepath.Base(settingsPath)); err != nil {
+		return notInstalled(err)
 	}
-	if settings == nil {
-		settings = make(map[string]interface{})
+	settings, mode, err := toolsettings.Read(settingsPath)
+	if err != nil {
+		return notInstalled(err)
+	}
+	if mode == 0 {
+		mode = 0o644
 	}
 
 	// Build hook entries
@@ -62,31 +71,33 @@ func InstallClaudeHooks(projectDir, hooksDir string, saveInterval int) error {
 	}
 
 	// Merge hooks into settings
-	hooks, _ := settings["hooks"].(map[string]interface{})
-	if hooks == nil {
-		hooks = make(map[string]interface{})
+	hooks, err := toolsettings.Object(settings, "hooks")
+	if err != nil {
+		return notInstalled(fmt.Errorf("%s: %w", settingsPath, err))
 	}
 
 	// Only add if not already configured (don't overwrite user customization)
+	changed := false
 	if _, exists := hooks["Stop"]; !exists {
 		hooks["Stop"] = []interface{}{saveHook}
+		changed = true
 	}
 	if _, exists := hooks["PreCompact"]; !exists {
 		hooks["PreCompact"] = []interface{}{precompactHook}
+		changed = true
 	}
-
-	settings["hooks"] = hooks
+	if !changed {
+		return nil
+	}
 
 	// Write settings
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
 		return fmt.Errorf("create .claude dir: %w", err)
 	}
-
-	data, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return err
+	if err := toolsettings.Write(settingsPath, settings, mode); err != nil {
+		return notInstalled(err)
 	}
-	return os.WriteFile(settingsPath, append(data, '\n'), 0644)
+	return nil
 }
 
 // EnsureHookScripts writes the hook shell scripts to the given directory,
