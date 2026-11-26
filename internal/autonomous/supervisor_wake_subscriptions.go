@@ -74,6 +74,9 @@ type alertSource interface {
 	AlertSink() func(level, title, body string) (id string)
 }
 
+// The daemon's subscriber is the Manager: its wake alerts depend on this.
+var _ alertSource = (*Manager)(nil)
+
 // alert raises an operator alert, resolving the sink at the time of the alert.
 func (c SupervisorWakeConfig) alert(level, title, body string) {
 	if c.Alert != nil {
