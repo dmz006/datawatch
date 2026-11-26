@@ -14241,9 +14241,8 @@ func runSessionKill(cfg *config.Config, id string) error {
 		return fmt.Errorf("session not found: %s", id)
 	}
 
-	cmd := exec.Command("tmux", "kill-session", "-t", sess.TmuxSession)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("tmux kill-session: %w\n%s", err, out)
+	if err := endThenClosePane(store, sess, session.EndReason{Caller: endCallerCLIKill, Reason: cliKillEndReason(sess.ID, sess.TmuxSession)}); err != nil {
+		return err
 	}
 	fmt.Printf("Session %s killed (tmux: %s)\n", id, sess.TmuxSession)
 	fmt.Printf("  ended by=%s reason=%s\n", endCallerCLIKill, cliKillEndReason(sess.ID, sess.TmuxSession))
@@ -14681,16 +14680,11 @@ func runSessionStopAll(cfg *config.Config) error {
 		if sess.State != session.StateRunning && sess.State != session.StateWaitingInput {
 			continue
 		}
-		cmd := exec.Command("tmux", "kill-session", "-t", sess.TmuxSession)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			fmt.Printf("[warn] kill session %s: %v %s\n", sess.ID, err, out)
+		why := cliStopAllEndReason(sess.TmuxSession, sess.State)
+		if err := endThenClosePane(store, sess, session.EndReason{Caller: endCallerCLIStopAll, Reason: why}); err != nil {
+			fmt.Printf("[warn] kill session %s: %v\n", sess.ID, err)
 			continue
 		}
-		why := cliStopAllEndReason(sess.TmuxSession, sess.State)
-		from := sess.State
-		sess.State = session.StateKilled
-		session.StampEnd(sess, from, session.EndReason{Caller: endCallerCLIStopAll, Reason: why})
-		_ = store.Save(sess)
 		fmt.Printf("Killed session %s (%s)\n", sess.ID, truncate(sess.Task, 40))
 		fmt.Printf("  ended by=%s reason=%s\n", endCallerCLIStopAll, why)
 		killed++

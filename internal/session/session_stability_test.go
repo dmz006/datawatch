@@ -4,10 +4,13 @@ package session
 
 import (
 	"context"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -23,13 +26,31 @@ func (k *killWatch) KillSession(name string) error {
 	return k.FakeTmux.KillSession(name)
 }
 
-// savedState is the state of fullID in the sessions file right now.
+// savedState is the state of fullID in the session files as they are right
+// now. It reads a copy and flushes nothing: what has only been queued for
+// writing is not there.
 func savedState(t *testing.T, mgr *Manager, fullID string) State {
 	t.Helper()
-	if err := mgr.store.Flush(); err != nil {
+	copyDir := t.TempDir()
+	err := filepath.WalkDir(mgr.dataDir, func(p string, d fs.DirEntry, err error) error {
+		rel, rerr := filepath.Rel(mgr.dataDir, p)
+		if err != nil || rerr != nil || d.IsDir() || !strings.HasPrefix(rel, "sessions") ||
+			strings.HasPrefix(rel, "sessions"+string(os.PathSeparator)) {
+			return nil
+		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return nil // a temporary file already renamed away
+		}
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(copyDir, rel)), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(copyDir, rel), raw, 0o600)
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := NewStore(filepath.Join(mgr.dataDir, "sessions.json"))
+	again, err := NewStore(filepath.Join(copyDir, "sessions.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,12 +62,26 @@ func savedState(t *testing.T, mgr *Manager, fullID string) State {
 	return got.State
 }
 
+// holdWrites makes the store keep changes in memory until it is told to write.
+func holdWrites(t *testing.T, mgr *Manager) {
+	t.Helper()
+	if err := mgr.store.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	mgr.store.SetFlushInterval(time.Hour)
+}
+
 func TestEndRecordIsSavedBeforeThePaneIsClosed(t *testing.T) {
-	ends := map[string]func(*Manager, *Session){
-		"kill": func(m *Manager, s *Session) {
+	// Each end path closes the pane of the session it has just ended; want is
+	// the state the files must hold at that moment.
+	ends := map[string]struct {
+		want State
+		end  func(*testing.T, *Manager, *FakeTmux, *Session)
+	}{
+		"kill": {StateKilled, func(t *testing.T, m *Manager, _ *FakeTmux, s *Session) {
 			_ = m.EndSession(s.FullID, EndReason{Caller: "test", Reason: "kill"})
-		},
-		"launch drain": func(m *Manager, s *Session) {
+		}},
+		"launch drain": {StateKilled, func(t *testing.T, m *Manager, _ *FakeTmux, s *Session) {
 			m.mu.Lock()
 			if m.launching == nil {
 				m.launching = map[string]context.CancelFunc{}
@@ -56,19 +91,84 @@ func TestEndRecordIsSavedBeforeThePaneIsClosed(t *testing.T) {
 			m.launchSessions[s.FullID] = s
 			m.mu.Unlock()
 			m.DrainLaunches(0)
-		},
+		}},
+		"finished one-shot reaper": {StateComplete, func(t *testing.T, m *Manager, f *FakeTmux, s *Session) {
+			m.store.Mutate(func() { s.OneShot, s.ProjectDir = true, t.TempDir() })
+			holdWrites(t, m)
+			f.mu.Lock()
+			f.Pane[s.TmuxSession] = "worker output\n" + oneShotCompletionMarker + " job done\n"
+			f.mu.Unlock()
+			if got := m.ReapFinishedOneShots(); len(got) != 1 {
+				t.Fatalf("reaped = %v", got)
+			}
+		}},
+		"reconciler closes a finished one-shot's pane": {StateComplete, func(t *testing.T, m *Manager, f *FakeTmux, s *Session) {
+			// Completed in memory by an earlier step, not yet written.
+			m.store.Mutate(func() { s.OneShot, s.State = true, StateComplete })
+			if err := m.store.Save(s); err != nil {
+				t.Fatal(err)
+			}
+			f.mu.Lock()
+			f.sessions[s.TmuxSession] = true
+			f.mu.Unlock()
+			m.reconcileSessions(t.Context())
+			time.Sleep(900 * time.Millisecond) // it closes the pane a moment later
+		}},
+		"restart abort after the record was made live": {StateFailed, func(t *testing.T, m *Manager, _ *FakeTmux, s *Session) {
+			m.abortLaunch(s, s.TmuxSession, "restart aborted: test")
+		}},
 	}
-	for label, end := range ends {
+	for label, c := range ends {
 		t.Run(label, func(t *testing.T) {
 			mgr, f := newTestManagerWithFake(t)
 			sess := addNamedHolder(t, mgr, f, "aa01", "worker", StateRunning, idlePane)
-			var atClose State
-			mgr.tmux = &killWatch{FakeTmux: f, onKill: func(string) { atClose = savedState(t, mgr, sess.FullID) }}
-			end(mgr, sess)
-			if atClose != StateKilled {
-				t.Fatalf("saved state when the pane was closed = %q, want %q", atClose, StateKilled)
+			holdWrites(t, mgr)
+			var mu sync.Mutex
+			var atClose []State
+			mgr.tmux = &killWatch{FakeTmux: f, onKill: func(string) {
+				st := savedState(t, mgr, sess.FullID)
+				mu.Lock()
+				atClose = append(atClose, st)
+				mu.Unlock()
+			}}
+			c.end(t, mgr, f, sess)
+			mu.Lock()
+			defer mu.Unlock()
+			if len(atClose) == 0 || atClose[0] != c.want {
+				t.Fatalf("saved state when the pane was closed = %q, want %q", atClose, c.want)
 			}
 		})
+	}
+}
+
+// A task session is recorded before its launch. A launch that fails must not
+// leave that record "running" with no pane: the reconciler would then call it
+// complete.
+func TestAFailedTaskLaunchIsRecordedFailed(t *testing.T) {
+	mgr, f := newTestManagerWithFake(t)
+	var id string
+	mgr.SetOnSessionCreated(func(s *Session) { id = s.FullID })
+	var atClose State
+	mgr.tmux = &killWatch{FakeTmux: f, onKill: func(string) {
+		if id != "" {
+			atClose = savedState(t, mgr, id)
+		}
+	}}
+	stub := &claudeModelStubBackend{}
+	_, err := mgr.Start(context.Background(), "task", "", t.TempDir(), &StartOptions{
+		PRDID: "p1", TaskID: "t1", Model: "haiku", BackendObj: stub,
+		LaunchFn: func(context.Context, string, string, string, string) error { return errors.New("launch refused") },
+	})
+	if err == nil || id == "" {
+		t.Fatalf("setup: err=%v id=%q", err, id)
+	}
+	if atClose != StateFailed {
+		t.Fatalf("saved state when the pane was closed = %q, want failed", atClose)
+	}
+	mgr.reconcileSessions(t.Context())
+	got, ok := mgr.GetSession(id)
+	if !ok || got.State != StateFailed {
+		t.Fatalf("after a reconcile: %+v", got)
 	}
 }
 

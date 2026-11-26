@@ -3148,13 +3148,13 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		encLogPath := logFile + ".enc"
 		fifo, err := secfile.NewEncryptingFIFO(logFile+".pipe", encLogPath, m.encKey)
 		if err != nil {
-			m.killPane(sess.FullID, tmuxSession, "spawn aborted: encrypted output FIFO setup failed")
+			m.abortLaunch(sess, tmuxSession, "spawn aborted: encrypted output FIFO setup failed")
 			return nil, fmt.Errorf("create encrypting FIFO: %w", err)
 		}
 		// tmux pipes to the FIFO; encrypted output goes to .enc file
 		if err := m.tmux.PipeOutput(tmuxSession, fifo.FIFOPath()); err != nil {
 			_ = fifo.Close()
-			m.killPane(sess.FullID, tmuxSession, "spawn aborted: encrypted output pipe failed")
+			m.abortLaunch(sess, tmuxSession, "spawn aborted: encrypted output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
 		}
 		// Store FIFO reference for cleanup on session end
@@ -3167,7 +3167,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		m.debugf("tmux session %q piped to encrypted FIFO → %s", tmuxSession, encLogPath)
 	} else {
 		if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
-			m.killPane(sess.FullID, tmuxSession, "spawn aborted: output pipe failed")
+			m.abortLaunch(sess, tmuxSession, "spawn aborted: output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output: %w", err)
 		}
 		m.debugf("tmux session %q piped to %s", tmuxSession, logFile)
@@ -3381,7 +3381,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 			launchErr = launchFn(launchCtx, launchTask, tmuxSession, projectDir, logFile)
 		}
 		if launchErr != nil {
-			m.killPane(sess.FullID, tmuxSession, "spawn aborted: LLM backend launch failed")
+			m.abortLaunch(sess, tmuxSession, "spawn aborted: LLM backend launch failed")
 			return nil, fmt.Errorf("launch LLM backend: %w", launchErr)
 		}
 		m.debugf("backend %q launched in tmux session %q", backendName, tmuxSession)
@@ -3392,7 +3392,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 		// Fallback: run LLM binary directly (legacy path, no configured backend)
 		llmCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.llmBin, projectDir, launchTask)
 		if err := m.tmux.SendKeys(tmuxSession, llmCmd); err != nil {
-			m.killPane(sess.FullID, tmuxSession, "spawn aborted: sending the LLM command failed")
+			m.abortLaunch(sess, tmuxSession, "spawn aborted: sending the LLM command failed")
 			return nil, fmt.Errorf("send LLM command: %w", err)
 		}
 		// Right after the paste: confirm the prompt was actually submitted.
@@ -3432,7 +3432,7 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 
 	// Persist the session
 	if err := m.store.Save(sess); err != nil {
-		m.killPane(sess.FullID, tmuxSession, "spawn aborted: session save failed")
+		m.abortLaunch(sess, tmuxSession, "spawn aborted: session save failed")
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 
@@ -5112,12 +5112,12 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		encLogPath := logFile + ".enc"
 		fifo, err := secfile.NewEncryptingFIFO(logFile+".pipe", encLogPath, m.encKey)
 		if err != nil {
-			m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: encrypted output FIFO setup failed")
+			m.abortLaunch(sess, sess.TmuxSession, "restart aborted: encrypted output FIFO setup failed")
 			return nil, fmt.Errorf("create encrypting FIFO: %w", err)
 		}
 		if err := m.tmux.PipeOutput(sess.TmuxSession, fifo.FIFOPath()); err != nil {
 			_ = fifo.Close()
-			m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: encrypted output pipe failed")
+			m.abortLaunch(sess, sess.TmuxSession, "restart aborted: encrypted output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
 		}
 		m.mu.Lock()
@@ -5128,7 +5128,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		m.mu.Unlock()
 	} else {
 		if err := m.tmux.PipeOutput(sess.TmuxSession, logFile); err != nil {
-			m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: output pipe failed")
+			m.abortLaunch(sess, sess.TmuxSession, "restart aborted: output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output: %w", err)
 		}
 	}
@@ -5263,14 +5263,14 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		launchErr = launchFn(ctx, sess.Task, sess.TmuxSession, sess.ProjectDir, logFile)
 	}
 	if launchErr != nil {
-		m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: relaunch LLM backend failed")
+		m.abortLaunch(sess, sess.TmuxSession, "restart aborted: relaunch LLM backend failed")
 		return nil, fmt.Errorf("relaunch LLM backend: %w", launchErr)
 	}
 	unlockBackend()
 
 	// Save updated session
 	if err := m.store.Save(sess); err != nil {
-		m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: session save failed")
+		m.abortLaunch(sess, sess.TmuxSession, "restart aborted: session save failed")
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 

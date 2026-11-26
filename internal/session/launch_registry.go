@@ -97,7 +97,6 @@ func (m *Manager) DrainLaunches(grace time.Duration) []string {
 			m.markEnded(s.sess, StateKilled, EndReason{Caller: callerAt(0), Reason: why})
 		}
 		_ = m.store.Save(s.sess)
-		_ = m.store.Flush()
 		m.killPane(s.fullID, s.sess.TmuxSession, why)
 	}
 	sort.Strings(ids)
