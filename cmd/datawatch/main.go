@@ -51,6 +51,7 @@ import (
 	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/classifier"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
@@ -6751,7 +6752,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// fallback. Generate mode skips this block entirely and runs the
 			// unchanged path below.
 			if resolvedVLLM.Mode == autonomouspkg.VerifierModeClassify {
-				return runClassifyVerification(ctx, vnode, vbackend, verifyModel, prompt,
+				// The verifier holds its slot here, so a classify call on the
+				// same node runs on it instead of waiting for a second one.
+				vctx := classifier.WithHeldSlot(ctx, autonomouspkg.VerifyHolder(task.ID))
+				return runClassifyVerification(vctx, vnode, vbackend, verifyModel, prompt,
 					autonomouspkg.RecordScoresEnabled(liveCfg.VerificationRecordScores)), nil
 			}
 			// B124 — vkind has no /api/ask adapter but is a real
@@ -7936,6 +7940,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// served-models cache it reads through is wired.
 			startVerifierHeadroomMeasurer(ctx, headroom.Store, httpServer, capLedger, servedModelsCache)
 			classifyWiring.ledger.Store(capLedger)
+			nodeWait := amgr.CapacityWaitDuration
+			classifyWiring.capacityWait.Store(&nodeWait)
 			// Preflight a pi launch on a compute node: a node that fails it is
 			// marked unhealthy in the ledger and the launch is deferred.
 			pibackend.SetLaunchGate(capLedger, func(addr string) string {

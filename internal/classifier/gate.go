@@ -30,6 +30,21 @@ func (e *GateError) Error() string {
 // Unwrap returns the gate's cause.
 func (e *GateError) Unwrap() error { return e.Cause }
 
+type heldSlotKey struct{}
+
+// WithHeldSlot marks ctx as running under the capacity lease named holder, so
+// a gate can run a call on the slot that lease already holds instead of
+// waiting for a second one.
+func WithHeldSlot(ctx context.Context, holder string) context.Context {
+	return context.WithValue(ctx, heldSlotKey{}, holder)
+}
+
+// HeldSlot returns the lease holder set by WithHeldSlot, or "".
+func HeldSlot(ctx context.Context) string {
+	holder, _ := ctx.Value(heldSlotKey{}).(string)
+	return holder
+}
+
 // WithGate runs fn holding one slot of the node's inference-load pool. A nil
 // gate is an error, not a bypass.
 func WithGate(ctx context.Context, g Gate, node, model string, fn func(context.Context) error) error {
