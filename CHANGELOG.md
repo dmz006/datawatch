@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.26 — Daemon start no longer waits for the Claude registration cleanup
+
+### Fixed
+- Daemon startup no longer waits for the cleanup of old Claude MCP registrations, so an unresponsive MCP server no longer delays the daemon from answering.
+- The cleanup removes only registrations recorded in this daemon's data folder, never a name a session start or resume has registered since the daemon started. Its `claude` commands are ended after 2 minutes (list) or 30 seconds (each removal), and on daemon stop or restart.
+
+### Before you upgrade
+- Older entries are not recorded, so startup leaves them, including an old global `datawatch` or `channel.js` entry (which can start a second bridge). Run `claude mcp list` as the daemon's user and remove them with `claude mcp remove <name> -s user` (`-s local` or `-s project`, from that project folder, for entries in those scopes). Remove a `datawatch-<hostname>-<id>` entry (also a `channel.js` one) only if `datawatch session list` on every daemon of that user shows no such session running. A claude-code session's entry is also removed when it ends.
+
+### Not covered
+- If a cleanup removal hangs, a session start or resume can wait 30 s (90 s for a `channel.js` entry).
+- With the native bridge, a recorded `channel.js` entry is removed even if its session still exists.
+- Cleanup can remove one entry while a session adds another; whether Claude protects both writes was not tested.
+- A killed or crashed daemon can leave a cleanup command running.
+- Entries recorded by a since-deleted data folder stay.
+
 ## v9.187.25 — A worker keeps its capacity slot while it works
 
 ### Fixed
