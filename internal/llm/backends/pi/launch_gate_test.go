@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // TestMain runs the package with a probe client that always answers, so
@@ -14,7 +16,8 @@ import (
 // the gate install their own client.
 func TestMain(m *testing.M) {
 	setPreflightClient(&fakeDoer{status: 200})
-	os.Exit(m.Run())
+	// Private HOME, temp folder and tmux folder (scripts/check-test-isolation.sh).
+	os.Exit(testhome.RunPrivateTmp(m))
 }
 
 type fakeMarker struct {

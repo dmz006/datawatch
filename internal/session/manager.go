@@ -1483,11 +1483,16 @@ func (m *Manager) SetOnResponseCaptured(fn func(*Session, string)) {
 	m.onResponseCaptured = fn
 }
 
+// claudeCopyResponsePath is where Claude Code's /copy writes a response. It is
+// a variable only so tests never read the real file, which is shared by every
+// session on the machine.
+var claudeCopyResponsePath = "/tmp/claude/response.md"
+
 // CaptureResponse reads the last LLM response for a session. For claude-code,
 // reads /tmp/claude/response.md. Falls back to the last N lines of tmux output.
 func (m *Manager) CaptureResponse(sess *Session) string {
 	// Try /tmp/claude/response.md first (Claude Code /copy output)
-	if data, err := os.ReadFile("/tmp/claude/response.md"); err == nil && len(data) > 0 {
+	if data, err := os.ReadFile(claudeCopyResponsePath); err == nil && len(data) > 0 {
 		return strings.TrimSpace(string(data))
 	}
 	// BL338 — use tmux capture-pane -p (rendered terminal) instead of

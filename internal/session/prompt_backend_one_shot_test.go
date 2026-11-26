@@ -56,11 +56,13 @@ func stubPromptLaunch(t *testing.T, fake *FakeTmux) LaunchFunc {
 }
 
 // isolateMultiplexerEnv keeps the test process pointed away from any real
-// multiplexer socket, following the pattern in tmux_socket_test.go.
+// multiplexer socket. TMUX_TMPDIR must name a folder of the test's own: empty
+// means the machine's default tmux server, and some paths under Start, Restart
+// and EndSession run tmux directly, past the fake.
 func isolateMultiplexerEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("TMUX", "")
-	t.Setenv("TMUX_TMPDIR", "")
+	t.Setenv("TMUX_TMPDIR", t.TempDir())
 }
 
 func TestHandStartedPromptBackendIsOneShot(t *testing.T) {
