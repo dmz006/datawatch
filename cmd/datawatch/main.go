@@ -1660,7 +1660,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// token; a refresh failure is logged and there is deliberately no
 			// server-token fallback (the token store is fatal-if-missing above).
 			if updated, err := instanceMCP.Refresh(); err != nil {
-				debugf("BL318 refresh instance .mcp.json: %v", err)
+				fmt.Printf("[warn] refresh instance .mcp.json: %v\n", err)
 			} else if updated {
 				fmt.Printf("[channel] updated instance .mcp.json to current %s bridge\n", channel.BridgeKind())
 			}
@@ -1776,7 +1776,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					}
 				}
 				if err := opencode.WriteProjectConfig(sess.ProjectDir, ocOpts); err != nil {
-					debugf("opencode config write: %v", err)
+					fmt.Printf("[warn] %s: %v\n", sess.ID, err)
 				} else {
 					fmt.Printf("[opencode] wrote project config (model=%s lsp=%s) for %s\n",
 						model, sess.LSPLanguage, sess.ID)
@@ -1804,7 +1804,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if cfg.Memory.Enabled && cfg.Memory.IsAutoHooks() {
 				if !memoryPkg.HooksInstalled(sess.ProjectDir) {
 					if err := memoryPkg.InstallClaudeHooks(sess.ProjectDir, hooksDataDir, cfg.Memory.EffectiveHookInterval()); err != nil {
-						debugf("auto-hooks: skip %s: %v", sess.ID, err)
+						fmt.Printf("[memory] %s: %v\n", sess.ID, err)
 					} else {
 						fmt.Printf("[memory] installed Claude hooks in %s/.claude/\n", sess.ProjectDir)
 					}

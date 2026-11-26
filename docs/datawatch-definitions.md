@@ -276,6 +276,8 @@ If the named session is absent when the schedule fires, the item is skipped (not
 
 **Session notices** — one warn alert naming the sessions found dead when the daemon starts, and one for running sessions with no output, channel event or record change for longer than `session.stale_timeout_seconds` (default 1800; 0 in the file means the default; a negative value turns this alert off, and with it the default stale list and, when `autonomous.stale_task_seconds` is also 0 or negative, the worker log stall check). It is a YAML setting.
 
+**Tool settings files** — datawatch changes only its own keys in the settings files of the tools it launches (Claude Code `settings.json` and `settings.local.json`, `.mcp.json`, `opencode.json`). A file it cannot read and parse in full (comments, trailing commas, a key written twice, an unexpected shape) is left byte for byte, and the daemon log says so. What datawatch would have set is then missing: for `opencode.json` that includes the session's model, so the session runs with the project's own opencode settings.
+
 **One answer per start-up screen** — the daemon's start-up dialog responders send one answer to each screen a new Claude session shows. The keys are sent again only if the same screen is still up 5 seconds later (never for a screen that is declined).
 
 **Channel messages (native bridge)** — the Go channel bridge declares `claude/channel`, so messages the daemon posts to it now reach every Claude session that uses it, as new input. See [Claude Code Channel Integration](claude-channel.md#channel-messages-and-the-native-bridge).

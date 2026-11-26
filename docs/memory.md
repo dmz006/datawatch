@@ -488,6 +488,12 @@ launching Claude Code. This installs:
 - **Save hook**: Every 15 messages, extracts recent exchanges and saves to memory
 - **Pre-compact hook**: Before context compression, saves topic summary
 
+The installer writes `.claude/settings.local.json` in the project. It installs
+**nothing**, and says why in the daemon log (`[memory] ... not installed`), for a home
+folder or user-level settings, for a linked `.claude` folder or settings file, and for
+a file it cannot read and parse in full (a `//` comment or a trailing comma counts). A
+file it can read keeps every setting, its numbers and its mode.
+
 Configure:
 ```yaml
 memory:

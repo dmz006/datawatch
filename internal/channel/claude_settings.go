@@ -2,8 +2,11 @@ package channel
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/dmz006/datawatch/internal/toolsettings"
 )
 
 // requiredSettings are merged into CLAUDE_CONFIG_DIR/settings.json at daemon
@@ -31,9 +34,14 @@ func EnsureClaudeSettings(dir string) error {
 	}
 	path := filepath.Join(dir, "settings.json")
 
-	existing := make(map[string]any)
-	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &existing)
+	// This is also run on the user's own ~/.claude folder: a file that cannot
+	// be read in full is left as it is. A link is followed and stays a link.
+	real, existing, mode, err := toolsettings.ReadThroughLink(path)
+	if err != nil {
+		return fmt.Errorf("claude settings flags not set: %w", err)
+	}
+	if mode == 0 {
+		mode = 0o600
 	}
 
 	changed := false
@@ -49,11 +57,7 @@ func EnsureClaudeSettings(dir string) error {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(existing, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o600)
+	return toolsettings.Write(real, existing, mode)
 }
 
 // settingEqual does a JSON-round-trip comparison so []any{"datawatch"} from

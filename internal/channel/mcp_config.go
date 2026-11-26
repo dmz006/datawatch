@@ -76,41 +76,20 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 		return fmt.Errorf("WriteProjectMCPConfig: %w", err)
 	}
 
-	path := filepath.Join(projectDir, ".mcp.json")
-	cfg := MCPProjectConfig{MCPServers: map[string]MCPServerSpec{}}
-	if raw, readErr := os.ReadFile(path); readErr == nil {
-		_ = json.Unmarshal(raw, &cfg) // best-effort merge; ignore parse errors
-		if cfg.MCPServers == nil {
-			cfg.MCPServers = map[string]MCPServerSpec{}
-		}
+	f, err := readMCPFile(filepath.Join(projectDir, ".mcp.json"))
+	if err != nil {
+		return fmt.Errorf("WriteProjectMCPConfig: %w", err)
 	}
-
-	cfg.MCPServers[ProjectMCPEntryName] = spec
+	f.set(ProjectMCPEntryName, spec)
 	for name, extra := range extras {
 		if name != ProjectMCPEntryName {
-			cfg.MCPServers[name] = extra
+			f.set(name, extra)
 		}
 	}
-
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal .mcp.json: %w", err)
-	}
 	// HLLM-001 (docs/plans/historical-plans/2026-08-28-security-assessment-hostile-llm.md):
-	// this file's "env" carries DATAWATCH_TOKEN (the daemon's admin
-	// bearer token) in plaintext -- 0600 so only the daemon's own uid
-	// can read it, not every other local user/process on a shared host.
-	// os.WriteFile's mode argument only applies to a NEWLY created file,
-	// not one that already exists with the old 0644 from before this
-	// fix, so an explicit Chmod self-heals any pre-existing file too --
-	// this function already runs on every session spawn.
-	if err := os.WriteFile(path, out, 0600); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := os.Chmod(path, 0600); err != nil {
-		return fmt.Errorf("chmod %s: %w", path, err)
-	}
-	return nil
+	// this file's "env" can carry DATAWATCH_TOKEN in plaintext, so it is
+	// written 0600, which also heals a file that had a wider mode.
+	return f.write()
 }
 
 // bridgeSpec is the datawatch bridge entry with env: the native bridge when
@@ -141,34 +120,23 @@ func InjectExtrasIntoMCPConfig(projectDir string, extras map[string]MCPServerSpe
 	if projectDir == "" || len(extras) == 0 {
 		return nil
 	}
-	path := filepath.Join(projectDir, ".mcp.json")
-	cfg := MCPProjectConfig{MCPServers: map[string]MCPServerSpec{}}
-	if raw, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(raw, &cfg)
-		if cfg.MCPServers == nil {
-			cfg.MCPServers = map[string]MCPServerSpec{}
-		}
+	f, err := readMCPFile(filepath.Join(projectDir, ".mcp.json"))
+	if err != nil {
+		return fmt.Errorf("extra MCP servers not added: %w", err)
 	}
 	changed := false
 	for name, spec := range extras {
 		if name == ProjectMCPEntryName {
 			continue
 		}
-		cfg.MCPServers[name] = spec
+		f.set(name, spec)
 		changed = true
 	}
 	if !changed {
 		return nil
 	}
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", path, err)
-	}
 	// HLLM-001 -- see WriteProjectMCPConfig's comment above.
-	if err := os.WriteFile(path, out, 0600); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0600)
+	return f.write()
 }
 
 // WriteInstanceMCPConfig rewrites `<dataDir>/.mcp.json` so it tracks the
@@ -203,12 +171,9 @@ func SweepUserScopeMCPConfig(channelJSPath string, env map[string]string) (bool,
 // sweepMCPConfigFile rewrites the "datawatch" entry in path if it is stale.
 // Shared by WriteInstanceMCPConfig and SweepUserScopeMCPConfig.
 func sweepMCPConfigFile(path, channelJSPath string, env map[string]string) (bool, error) {
-	cfg := MCPProjectConfig{MCPServers: map[string]MCPServerSpec{}}
-	if raw, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(raw, &cfg)
-		if cfg.MCPServers == nil {
-			cfg.MCPServers = map[string]MCPServerSpec{}
-		}
+	f, err := readMCPFile(path)
+	if err != nil {
+		return false, fmt.Errorf("bridge entry not written: %w", err)
 	}
 
 	// Build the canonical entry for the current bridge.
@@ -230,7 +195,7 @@ func sweepMCPConfigFile(path, channelJSPath string, env map[string]string) (bool
 	// compared too (nil and empty treated as equal): the env carries the
 	// DATAWATCH_TOKEN, and with a rotating scoped token a stale token means
 	// the entry is stale even when command/args match.
-	if existing, ok := cfg.MCPServers[ProjectMCPEntryName]; ok {
+	if existing, ok := f.spec(ProjectMCPEntryName); ok {
 		argsMatch := len(existing.Args) == len(want.Args) &&
 			(len(existing.Args) == 0 || existing.Args[0] == want.Args[0])
 		if existing.Command == want.Command && argsMatch && envMapEqual(existing.Env, want.Env) {
@@ -238,17 +203,10 @@ func sweepMCPConfigFile(path, channelJSPath string, env map[string]string) (bool
 		}
 	}
 
-	cfg.MCPServers[ProjectMCPEntryName] = want
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return false, fmt.Errorf("marshal %s: %w", path, err)
-	}
+	f.set(ProjectMCPEntryName, want)
 	// HLLM-001 -- see WriteProjectMCPConfig's comment above.
-	if err := os.WriteFile(path, out, 0600); err != nil {
-		return false, fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := os.Chmod(path, 0600); err != nil {
-		return false, fmt.Errorf("chmod %s: %w", path, err)
+	if err := f.write(); err != nil {
+		return false, err
 	}
 	return true, nil
 }
@@ -261,31 +219,7 @@ func RemoveProjectMCPEntry(projectDir, name string) error {
 	if projectDir == "" {
 		return nil
 	}
-	path := filepath.Join(projectDir, ".mcp.json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil // file doesn't exist — nothing to remove
-	}
-	var cfg MCPProjectConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.MCPServers == nil {
-		return nil
-	}
-	if _, ok := cfg.MCPServers[name]; !ok {
-		return nil // key not present — already clean
-	}
-	delete(cfg.MCPServers, name)
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", path, err)
-	}
-	// HLLM-001 -- see WriteProjectMCPConfig's comment above. This path
-	// removes one entry but the file may still carry other servers'
-	// tokens, and consistent permissions regardless of which of this
-	// file's 4 writers last touched it matters more than this one case.
-	if err := os.WriteFile(path, out, 0600); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0600)
+	return removeEntry(filepath.Join(projectDir, ".mcp.json"), name, false)
 }
 
 // IsStaleProjectMCPConfig reads <path> as a `.mcp.json` and reports
@@ -346,34 +280,7 @@ func RemoveInstanceMCPConfig(dataDir string) error {
 	if dataDir == "" {
 		return nil
 	}
-	path := filepath.Join(dataDir, ".mcp.json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil // file doesn't exist — nothing to remove
-	}
-	var cfg MCPProjectConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.MCPServers == nil {
-		return nil // unparsable or no servers map — leave it alone
-	}
-	if _, ok := cfg.MCPServers[ProjectMCPEntryName]; !ok {
-		return nil // entry not present — already clean
-	}
-	delete(cfg.MCPServers, ProjectMCPEntryName)
-	if len(cfg.MCPServers) == 0 {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		return nil
-	}
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", path, err)
-	}
-	// HLLM-001 -- see WriteProjectMCPConfig's comment above.
-	if err := os.WriteFile(path, out, 0600); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0600)
+	return removeEntry(filepath.Join(dataDir, ".mcp.json"), ProjectMCPEntryName, true)
 }
 
 // ScrubInstanceMCPToken removes the "datawatch" entry from
@@ -387,16 +294,13 @@ func ScrubInstanceMCPToken(dataDir string, legacyTokens ...string) (bool, error)
 	if dataDir == "" {
 		return false, nil
 	}
-	path := filepath.Join(dataDir, ".mcp.json")
-	raw, err := os.ReadFile(path)
+	f, err := readMCPFile(filepath.Join(dataDir, ".mcp.json"))
 	if err != nil {
-		return false, nil // file doesn't exist — nothing to scrub
-	}
-	var cfg MCPProjectConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.MCPServers == nil {
+		// Said, because a token in it stays on disk.
+		fmt.Fprintf(os.Stderr, "[channel] old server token not looked for: %v\n", err)
 		return false, nil
 	}
-	spec, ok := cfg.MCPServers[ProjectMCPEntryName]
+	spec, ok := f.spec(ProjectMCPEntryName)
 	if !ok {
 		return false, nil
 	}
