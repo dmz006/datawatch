@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders, live daemon housekeeping routes, autonomous disabled, federation capability]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, archived cleanup, cleanup_archived, needed_by_record, recreate worktree, missing worktree, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders, live daemon housekeeping routes, autonomous disabled, federation capability]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what the cleanup passes did last, the two disk readings, the disk alert and the biggest temp folders while the temp disk is over threshold
@@ -81,7 +81,7 @@ Three safety nets. Two of them — the worktrees pass and the temp sweep — eac
 
 | Pass | What it removes | When |
 |---|---|---|
-| **Worktrees** | A finished Automaton's work branch and its worktree | When the Automaton completes or is cancelled, and again on a periodic sweep for anything that was held back or missed |
+| **Worktrees** | A finished Automaton's work branch and its worktree, and the task worktrees and task branches of archived Automata | When the Automaton completes, is cancelled or is archived, and again on a periodic sweep for anything that was held back or missed |
 | **Temp files** | The scratch files and directories the daemon's own worker sessions created in the temporary directory | When the session ends, and again on a periodic sweep for anything that refused to go the first time |
 | **Cache folders** | Stale Go build cache (`go-build`) and Trivy scan-cache (`trivy-scan-cache*`) folders directly under your temp directory, at least 60 minutes old, that no live process holds | Not at all on the owner path: once at daemon start, and again on a periodic sweep beside the temp sweep — the sweep is their only cleanup |
 
@@ -96,7 +96,13 @@ owner removals and a net that finds little or nothing.
 The worktrees pass removes an entry only if **every** one of these holds. If any
 one does not, the entry is left exactly as it is and the reason is recorded.
 
-- The branch belongs to an Automaton that is **completed or cancelled**, as the
+- No Automaton that has **not finished** points at the worktree or the branch:
+  as its project directory (the folder itself or one below it), its work branch,
+  its base branch, or a task's directory, worktree or branch. A later run needs
+  it. The entry is held as `needed_by_record` and names that Automaton.
+- The branch belongs to an Automaton that is **completed, cancelled or
+  archived** (archived only while `cleanup_archived` is on; see **Archived
+  Automata** below), as the
   store says right now. A running, paused, blocked or restarted Automaton is
   never touched.
 - **No live session** is working in the worktree or bound to the Automaton, and
@@ -244,8 +250,9 @@ and Trivy scan-cache folders it could not remove itself.
 
 With a worktree per task, each task also has a worktree and a branch
 (`automaton/<id>-...--tasks-<task>`). They are looked at when the Automaton
-completes or is cancelled. The worktree and the branch are judged apart, and
-anything that cannot be checked is kept.
+completes, is cancelled or is archived. The worktree and the branch are judged
+apart, and anything that cannot be checked is kept. A worktree or branch that an
+Automaton which has not finished still points at is kept.
 
 A **task worktree** is removed only if all of these hold:
 
@@ -278,11 +285,11 @@ branch setting is not used for task branches.
 
 A clean worktree of a branch that has not landed is removed and the branch is
 kept, so no commit is lost. A kept branch is looked at again on later passes
-over a completed Automaton.
+over a completed Automaton, and by the periodic pass over an archived one.
 
 The mode applies here too. `off` removes nothing and runs no git command.
 `report` removes nothing and records what it would remove. `on` removes.
-Archiving never removes a task worktree or branch.
+Archiving follows the same rules unless `cleanup_archived` is off.
 
 **What was kept and why.** The Automaton record carries
 `task_worktree_cleanup`: the counts of worktrees and branches removed and kept,
@@ -294,7 +301,9 @@ carry it on every surface (REST, MCP, CLI, chat), and the web app shows a notice
 |---|---|
 | `cleanup_off` | `cleanup_mode` is `off`: nothing was looked at |
 | `report_mode` | `cleanup_mode` is `report`: it would be removed in `on` |
-| `not_removed_by_archive` | Safe to remove, but archiving removes nothing |
+| `not_removed_by_archive` | Safe to remove, but `cleanup_archived` is off, so archiving removes nothing |
+| `needed_by_record` | An Automaton that has not finished still points at the worktree or branch; the detail names it |
+| `over_limit` | The periodic pass reached `cleanup_max_removals_per_pass`; a later pass takes it |
 | `no_base_repo` | No base repository is configured |
 | `live_session` | A session is still working in the worktree |
 | `uncommitted_work` | Uncommitted or untracked files |
@@ -338,9 +347,68 @@ Rejecting or archiving an Automaton also cleans up its worktree. It follows
 `cleanup_mode` in the same way: `off` and `report` remove nothing. In `on` it
 keeps everything the release after a pull request keeps, and it is never forced:
 if any untracked file is left, even one of the daemon's own, git refuses and the
-worktree stays. No branch is deleted. The audit actions are
+worktree stays. This step deletes no branch. On archive, the release described
+in **Archived Automata** below follows it. The audit actions are
 `autonomous_orphan_worktree_remove`, `autonomous_orphan_worktree_kept` and
 `autonomous_orphan_worktree_would_remove`.
+
+## Archived Automata
+
+With `autonomous.automation.cleanup_archived` on (the default) an archived
+Automaton counts as finished, like a completed or cancelled one. Every keep-work
+rule on this page applies to it unchanged: uncommitted or untracked files, real
+files in a protected folder, commits that are not on the default branch, a live
+session or lease, anything that cannot be checked, and a folder or branch an
+unfinished Automaton points at are all **kept**. The switch removes nothing by
+itself: `cleanup_mode` still decides.
+
+- **At archive** the daemon releases the Automaton's task worktrees, task
+  branches and work branch where nothing would be lost, with no retention wait,
+  as at completion and cancel. Like them, and unlike the step in **Reject and
+  archive** above, it passes `--force` when the only files left in a worktree
+  are the daemon's own tool files.
+- **Later**, the periodic pass covers what was kept, and records that were
+  archived earlier. It waits `cleanup_retention_hours` from the record's last
+  change. Work that lands **after** the archive is released then.
+- The periodic pass takes task work first, then work branches, and
+  `cleanup_max_removals_per_pass` bounds both together. One task's worktree and
+  branch count as one removal. This step stops after 60 seconds and carries on
+  from there on the next pass. The release at archive time is not bounded, like
+  the release at completion and cancel.
+- When the pass removes an archived Automaton's work branch, it records the
+  landing as `landed` (actor `worktree-cleanup`) unless a keep or drop decision
+  or a landing is already recorded, so the finished-work audit does not read the
+  missing branch as lost work.
+
+To see what would happen before anything is removed, set `cleanup_mode` to
+`report`. Work branches are listed in the cleanup status (`datawatch autonomous
+cleanup`, `would_remove`) and the audit log; task worktrees and branches are on
+each record's `task_worktree_cleanup` with the reason `report_mode`, and in the
+audit log.
+
+Turn the switch off with `datawatch config set
+autonomous.automation.cleanup_archived=false` (or comm `configure
+autonomous.automation.cleanup_archived=false`, `PUT /api/config`, MCP
+`autonomous_config_set` with `automation_cleanup_archived`, or the PWA: Settings,
+Automata, *Clean up archived Automata like other finished ones*). Then archiving
+removes no task worktree or branch and the periodic pass leaves archived
+Automata alone.
+
+## A cleared worktree is made again
+
+An Automaton's own worktree (`<worktree dir>/<id>`) that was removed is created
+again at its next plan or run, instead of that step failing. It is checked out on
+the work branch; when the work branch is gone too, a new branch of the same name
+starts from the base branch. The record gets a `worktree_recreated` entry that
+says which. Lane fill does not refuse such an Automaton as `worktree_invalid`.
+So the folder of an Automaton that has not run yet can be cleared by hand (use
+`git worktree remove`, which refuses a folder with changes).
+
+Only that one path is ever created. Any other missing directory is refused as
+before, and so is a folder that exists but is not a valid worktree. If git still
+lists the missing folder, only that registration is removed, without force: a
+locked one, or one whose detached HEAD holds a commit the work branch does not
+have, stops the run with the reason.
 
 ## Real files in ignored folders
 
@@ -399,6 +467,7 @@ mode is read live, so a change applies on the next poll without a restart.
 
 | Key | Meaning | Default | Allowed |
 |---|---|---|---|
+| `autonomous.automation.cleanup_archived` | Whether archived Automata count as finished (see **Archived Automata**) | `true` (an unset key reads `true`) | `true`, `false` |
 | `autonomous.automation.cleanup_retention_hours` | How long a finished Automaton's branch, or a finished session's scratch, must have sat before it can be removed | 24 | whole number, at least 1 |
 | `autonomous.automation.cleanup_max_removals_per_pass` | The most entries one pass removes. In `report` mode, what is over the limit is counted as would-remove | 10 | whole number, at least 1 |
 | `autonomous.automation.disk_alert_percent` | Disk usage percent at or above which the disk alert is raised | 85 | whole number, 1 to 100 |

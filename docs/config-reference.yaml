@@ -1601,8 +1601,8 @@ autonomous:
   # cleanup_mode: string, `off`, `report` (default) or `on`. Controls the
   # safe-to-delete cleanup pass: `off` does not run it, `report` records and
   # reports only, and `on` performs the removals the pass decides on. The
-  # mode also covers the task worktrees and task branches of a completed or
-  # cancelled Automaton: `off` and `report` remove none of them. In every
+  # mode also covers the task worktrees and task branches of a completed,
+  # cancelled or archived (cleanup_archived) Automaton: `off` and `report` remove none of them. In every
   # mode, a task worktree with uncommitted or untracked files is never
   # removed and a task branch with commits that are not on the default branch
   # is never deleted. It also covers the Automaton worktree after a
@@ -1620,6 +1620,23 @@ autonomous:
   # autonomous.automation.cleanup_mode=on`, comm `configure
   # autonomous.automation.cleanup_mode=on`, and the MCP
   # autonomous_config_set tool (automation_cleanup_mode).
+  #
+  # cleanup_archived: bool, default true (an unset key reads true). Whether
+  # the cleanup treats an archived Automaton as finished, like a completed or
+  # cancelled one and under the same keep-work rules. cleanup_mode still
+  # decides whether anything is removed. When true, archiving releases the
+  # Automaton's task worktrees, task branches and work branch where nothing
+  # unmerged or hand-written would be lost, and the periodic pass releases the
+  # rest after cleanup_retention_hours once the work has landed;
+  # cleanup_max_removals_per_pass bounds what that pass removes. A worktree or
+  # branch that an unfinished Automaton still points at is kept. When false,
+  # archiving removes no task worktree or branch and the periodic pass leaves
+  # archived Automata alone. Settable via PUT /api/config (key
+  # autonomous.automation.cleanup_archived; a value that is not true or false
+  # is refused with 400), CLI `datawatch config set
+  # autonomous.automation.cleanup_archived=false`, comm `configure
+  # autonomous.automation.cleanup_archived=false`, and the MCP
+  # autonomous_config_set tool (automation_cleanup_archived).
   #
   # cleanup_retention_hours: whole hours >= 0. How long a removal candidate
   # may sit unused before it counts as retained for the cleanup pass. An
@@ -1882,6 +1899,7 @@ autonomous:
   # optional (0 or omitted skips the check; a stale positive value is a 409).
   # See docs/api/autonomous.md.
   automation:
+    cleanup_archived: true
     idle_alert_minutes: 0
     triage_alert_minutes: 30
     merge_pending_mode: off
