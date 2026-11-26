@@ -17,6 +17,8 @@ package autonomous
 //   - The task records the answer it resumed for (Task.DecisionResume), so a
 //     later tick never resumes it twice; a superseding answer is recorded as
 //     the new current answer without a second resume.
+//   - The record also says whether the prompt line arrived
+//     (answer_delivery.go): only a line refused before typing is tried again.
 
 import (
 	"bytes"
@@ -45,6 +47,15 @@ type DecisionResume struct {
 	// differs from AnswerID once an answer superseded the one resumed for.
 	CurrentAnswerID string    `json:"current_answer_id,omitempty"`
 	ResumedAt       time.Time `json:"resumed_at"`
+	// Delivery says what is known about the prompt line: waiting, sending,
+	// sent, not_typed or review_needed (answer_delivery.go).
+	Delivery string `json:"delivery,omitempty"`
+	// DeliveryReason is a reason code for not_typed and review_needed.
+	DeliveryReason string `json:"delivery_reason,omitempty"`
+	// DeliverySessionID is the one worker session the line is meant for.
+	DeliverySessionID string `json:"delivery_session_id,omitempty"`
+	// DeliveredAt is when the send returned no error.
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
 }
 
 // QuestionLister is the read side of the question store that the REST layer
@@ -244,6 +255,12 @@ func (m *Manager) questionTickTask(ctx context.Context, store *QuestionStore, tk
 		}
 	}
 
+	// A resume whose prompt line has not been seen to arrive.
+	if dr := tk.DecisionResume; dr != nil && dr.deliveryOpen() {
+		m.continueDelivery(ctx, store, tk, answered, withdrawn)
+		return
+	}
+
 	if tk.Status != TaskWaitingCapacity || !IsAwaitDecisionWaitReason(tk.WaitReason) {
 		return
 	}
@@ -309,6 +326,9 @@ func (m *Manager) waitQuestionResumes() {
 // the resume, re-admits the task, re-claims the tree lock if the park released
 // it, and prompts the session with the decision. A failed re-admission undoes
 // the record so the next tick tries again.
+//
+// A record still in the waiting state was never typed (the daemon stopped
+// while the task was queued), so it may be claimed again.
 func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, ans *Answer) {
 	if ctx.Err() != nil {
 		return
@@ -332,10 +352,11 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 		if c.Status != TaskWaitingCapacity || AwaitDecisionQuestionID(c.WaitReason) != q.ID {
 			return
 		}
-		if c.DecisionResume != nil && c.DecisionResume.QuestionID == q.ID {
+		if cur := c.DecisionResume; cur != nil && cur.QuestionID == q.ID && cur.Delivery != DecisionWaiting {
 			return
 		}
 		prev = c.DecisionResume
+		rec.open(c.SessionID)
 		c.DecisionResume = rec
 		claimed = true
 	})
@@ -363,18 +384,27 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 	}
 	m.reclaimTreeLock(prd, t, releasedTree, box)
 
-	sessionID := snap.SessionID
-	if cur, ok := m.store.TaskSnapshot(snap.ID); ok && cur.SessionID != "" {
-		sessionID = cur.SessionID
+	m.finishResume(prd, snap.ID, q, ans, rec)
+}
+
+// finishResume prompts the resumed session. With no prompt hook there is
+// nothing to deliver, so the resume is recorded and counted at once.
+func (m *Manager) finishResume(prd *PRD, taskID string, q Question, ans *Answer, rec *DecisionResume) {
+	if m.sessionContinueLineFnLocked() != nil {
+		m.sendDecisionLine(prd.ID, taskID, q, ans)
+		return
 	}
-	if fn := m.sessionContinueLineFnLocked(); fn != nil && sessionID != "" {
-		if err := fn(sessionID, BuildDecisionResumeLine(q, ans)); err != nil {
-			log.Printf("[autonomous] %s: decision resume prompt to session %s failed: %v", snap.ID, sessionID, err)
+	m.store.MutateTask(taskID, func(c *Task) {
+		if c.DecisionResume == nil || c.DecisionResume.QuestionID != q.ID {
+			return
 		}
-	}
-	m.emitDecisionResumeAudit(prd, snap.ID, rec)
+		next := *c.DecisionResume
+		next.Delivery, next.DeliverySessionID = "", ""
+		c.DecisionResume = &next
+	})
+	m.emitDecisionResumeAudit(prd, taskID, rec)
 	recordWorkerQuestion(WorkerQuestionOutcomeResumed)
-	log.Printf("[autonomous] %s: resumed after decision %s (answer %q, withdrawn=%v); no retry counted", snap.ID, q.ID, rec.AnswerID, rec.Withdrawn)
+	log.Printf("[autonomous] %s: resumed after decision %s (answer %q, withdrawn=%v); no retry counted", taskID, q.ID, rec.AnswerID, rec.Withdrawn)
 }
 
 func (m *Manager) emitDecisionResumeAudit(prd *PRD, taskID string, rec *DecisionResume) {
@@ -387,6 +417,7 @@ func (m *Manager) emitDecisionResumeAudit(prd *PRD, taskID string, rec *Decision
 		"question_id": rec.QuestionID,
 		"answer_id":   rec.AnswerID,
 		"withdrawn":   rec.Withdrawn,
+		"delivery":    rec.Delivery,
 	})
 }
 

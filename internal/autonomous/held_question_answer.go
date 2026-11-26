@@ -645,6 +645,12 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	// One resume per task at a time, so the tick's delivery retry never runs
+	// beside this send.
+	if !m.questionTick.begin(t.ID) {
+		return fmt.Errorf("task %s is no longer parked under a decision", t.ID)
+	}
+	defer m.questionTick.end(t.ID)
 	rec := &DecisionResume{QuestionID: q.ID, AnswerID: ans.ID, CurrentAnswerID: ans.ID, ResumedAt: time.Now().UTC()}
 	var claimed bool
 	var prev *DecisionResume
@@ -656,6 +662,7 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 			return
 		}
 		prev = c.DecisionResume
+		rec.open(c.SessionID)
 		c.DecisionResume = rec
 		claimed = true
 	})
@@ -683,16 +690,7 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 		return nil
 	}
 	m.reclaimTreeLock(p, t, releasedTree, box)
-	sessionID := t.SessionID
-	if cur, ok := m.store.TaskSnapshot(t.ID); ok && cur.SessionID != "" {
-		sessionID = cur.SessionID
-	}
-	if fn := m.sessionContinueLineFnLocked(); fn != nil && sessionID != "" {
-		if err := fn(sessionID, BuildDecisionResumeLine(q, ans)); err != nil {
-			log.Printf("[autonomous] %s: held-decision resume prompt to session %s failed: %v", t.ID, sessionID, err)
-		}
-	}
-	m.emitDecisionResumeAudit(p, t.ID, rec)
+	m.finishResume(p, t.ID, q, ans, rec)
 	return nil
 }
 
