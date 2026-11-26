@@ -177,5 +177,6 @@ func (m *Manager) mayTypeRateLimitResume(sess *Session, msg string) bool {
 		m.emitInputAudit(InputAuditEvent{Action: InputAuditRefused, SessionFullID: sess.FullID, Source: "rate-limit-resume", Length: len(msg), Reason: err.Error()})
 		return false
 	}
+	m.noteInputSent(sess.FullID)
 	return true
 }
