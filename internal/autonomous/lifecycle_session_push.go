@@ -18,7 +18,9 @@
 // prune, one-shot consumption) and cancels every registration on Close.
 // One-shot subscriptions are removed from the store ONLY after a
 // successful delivery — on failure the engine retries once, then logs,
-// leaving the subscription armed for a later event.
+// leaving the subscription armed for a later event. There is no retry when the
+// text may already be in the session: it is not typed twice, and the operator
+// gets an alert.
 //
 // Import cycle: session lookup, the bridge POST and SendInput are
 // injected as function values (SessionPushConfig), so this package
@@ -52,6 +54,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // sessionPushSourceTag is the source tag for the SendInput fallback
@@ -626,7 +630,8 @@ func (e *LifecycleSubscriptionEngine) commSink(subID string) (*activeSubscriptio
 // name, full ID, or short ID): channel bridge first when the session
 // has a port, SendInput as the fallback. One-shot subscriptions are
 // consumed (deleted from the store) only after a successful delivery;
-// on failure the engine retries once, then logs and leaves it armed.
+// on failure the engine retries once, then logs and leaves it armed. A failure
+// after keys were sent is not retried.
 func (e *LifecycleSubscriptionEngine) deliverSession(sub Subscription, target, text string) {
 	var err error
 	const attempts = 2
@@ -637,6 +642,10 @@ func (e *LifecycleSubscriptionEngine) deliverSession(sub Subscription, target, t
 		}
 		log.Printf("[autonomous] lifecycle sub %s: delivery attempt %d/%d to session %q failed: %v",
 			sub.ID, attempt, attempts, target, err)
+		if session.TextMayBeInSession(err) {
+			e.alertUnsureDelivery(sub.ID, target)
+			break
+		}
 	}
 	if err == nil && sub.OneShot {
 		if derr := e.store.Delete(sub.ID); derr != nil {
@@ -646,6 +655,17 @@ func (e *LifecycleSubscriptionEngine) deliverSession(sub Subscription, target, t
 		}
 		return
 	}
+}
+
+// alertUnsureDelivery reports a send whose text may or may not have reached
+// the session. It names ids only, never the text.
+func (e *LifecycleSubscriptionEngine) alertUnsureDelivery(subID, target string) {
+	if e.m == nil {
+		return
+	}
+	e.m.deliveryAlert("error", "Subscription delivery: review needed", fmt.Sprintf(
+		"review needed: subscription=%s session=%s. The send failed after keys were sent, so datawatch does not send it again. Check the session.",
+		subID, target))
 }
 
 // deliverSessionOnce performs a single delivery: bridge when the
