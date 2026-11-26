@@ -665,6 +665,8 @@ func (m *Manager) finishedWorkFinding(p *PRD, c fwCandidate, ahead int, now time
 
 // actOnFinishedWork stores the finding and, in mode on, asks the one question.
 func (m *Manager) actOnFinishedWork(sw *FinishedWorkSweep, mode string, p *PRD, f *FinishedWorkFinding, c fwCandidate, now time.Time, pass *FinishedWorkPass) {
+	// A finding that says "land it" also says what the daemon's rule allows.
+	f.MergeSelection = m.MergeEligibility(context.Background(), p.ID).Summary()
 	if mode != FinishedWorkOn {
 		sw.Upsert(*f)
 		return
@@ -919,7 +921,7 @@ func (m *Manager) recordLandByHand(id, actor, questionID, answerID string) error
 	m.store.WithLock(func() {
 		if strings.TrimSpace(p.Git.Branch) != "" && !landingLanded(p) {
 			r := reask
-			p.Landing = &Landing{State: LandingPending, Actor: actor, At: now, Reason: "will be landed by hand", ReaskAt: &r}
+			p.Landing = &Landing{State: LandingPending, Actor: actor, At: now, Reason: landByHandReason, ReaskAt: &r}
 		}
 		p.Decisions = trimDecisions(append(p.Decisions, Decision{At: now, Kind: DecisionLandByHand, Actor: actor,
 			Note:       fmt.Sprintf("will be landed by hand; the daemon asks again on %s if the work is still not on the default branch", reask.Format("2006-01-02")),

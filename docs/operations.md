@@ -1001,7 +1001,9 @@ that is missing from `PATH` or cannot start, block the unit with a `lint-gate`
 verdict and a non-retryable `content` failure reason; the message (starting
 `lint gate failed`) is appended to the script output. Units with no Go change,
 no project directory, or a project directory that is not a git work tree skip
-the gate. There is no setting for it: make sure every worker node has
+the gate. When the same task or story later passes the gate, its `lint-gate`
+block is lifted (decision `lint_gate_lifted`); a skipped gate lifts nothing, and
+a lint pass is never a review pass. There is no setting for it: make sure every worker node has
 `golangci-lint` installed. Details are in
 [the verification-scripts how-to](howto/automaton-verification-scripts.md#7-the-verification-lint-gate).
 

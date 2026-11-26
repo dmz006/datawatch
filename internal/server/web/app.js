@@ -47828,6 +47828,46 @@ function renderLandingState(prd) {
   </div>`;
 }
 
+// ── Merge selection ────────────────────────────────────────────────────────
+// Whether datawatch may merge this Automaton's branch, from the daemon's one
+// selection rule (GET /api/autonomous/merge?automaton=ID). The block is read
+// on request. When the branch is left out, it lists why and offers to accept
+// the exact commit shown; the daemon refuses work that can never be merged.
+function renderMergeSelectionBlock(prd) {
+  const l = prd.landing || prd.Landing;
+  if (!l || l.state !== 'pending' || (prd.status !== 'completed' && prd.status !== 'needs_review')) return '';
+  const idJ = escHtml(JSON.stringify(prd.id));
+  return `<div class="prd-merge-selection" id="prd-merge-selection-${escHtml(prd.id)}" style="margin-top:6px;font-size:11px;">
+    <button style="font-size:11px;padding:3px 10px;background:var(--bg2);border:1px solid var(--border,#666);border-radius:4px;color:var(--text);" onclick="loadMergeSelection(${idJ})">${escHtml(t('merge_select_check_btn'))}</button>
+  </div>`;
+}
+window.renderMergeSelectionBlock = renderMergeSelectionBlock;
+window.mergeSelectionHtml = function(entry) {
+  const e = (entry && typeof entry === 'object') ? entry : {};
+  const tip = String(e.tip || '');
+  if (e.eligible) {
+    const key = e.basis === 'accepted' ? 'merge_select_accepted' : 'merge_select_review_passed';
+    return `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t(key, [tip]))}</div>`;
+  }
+  const reasons = (Array.isArray(e.reasons) ? e.reasons : []).map(r => `<li>${escHtml(String(r))}</li>`).join('');
+  const accept = tip
+    ? `<button style="margin-top:4px;font-size:11px;padding:3px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;font-weight:600;overflow-wrap:anywhere;" onclick="mergeAcceptPrompt(${escHtml(JSON.stringify(String(e.automaton_id || '')))},${escHtml(JSON.stringify(tip))})">${escHtml(t('merge_select_accept_btn', [tip]))}</button>`
+    : '';
+  return `<div style="color:var(--warning,#a06b00);">${escHtml(t('merge_select_excluded'))}</div><ul style="margin:2px 0 0 16px;overflow-wrap:anywhere;">${reasons}</ul>${accept}`;
+};
+window.loadMergeSelection = function(id) {
+  return apiFetch('/api/autonomous/merge?automaton=' + encodeURIComponent(id)).then(sel => {
+    const entry = [].concat((sel && sel.eligible) || [], (sel && sel.excluded) || [])[0];
+    const el = document.getElementById('prd-merge-selection-' + id);
+    if (el && entry) el.innerHTML = mergeSelectionHtml(entry);
+  }).catch(err => showToast(String((err && err.message) || err), 'error'));
+};
+window.mergeAcceptPrompt = function(id, commit) {
+  const reason = window.prompt(t('merge_select_accept_prompt', [commit]), '');
+  if (reason === null || !reason.trim()) return;
+  prdAction(id, 'landing/accept', 'POST', { actor: 'operator', commit: commit, reason: reason.trim() });
+};
+
 function _renderDetailOverview(prd) {
   const stories = prd.stories || prd.Story || [];
   const totalTasks = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).length, 0);
@@ -47869,6 +47909,7 @@ function _renderDetailOverview(prd) {
     ${renderDetailCIWatch(prd)}
     ${renderDetailLeftoverWarnings(prd)}
     ${renderLandingState(prd)}
+    ${renderMergeSelectionBlock(prd)}
     ${rulesContextPlanningHtml(prd.rules_context)}
     <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>

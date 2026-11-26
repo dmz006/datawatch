@@ -1423,6 +1423,17 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r.Context(), "landing_keep", "automaton", id, map[string]any{"reason": req.Reason})
 		s.writeAutonomousResult(w, r, updated, "", "", "")
+	// Accept one exact commit of the branch for merging (see
+	// merge_accept_api.go and the merge selection rule).
+	case "landing/accept":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		s.handleMergeAccept(w, r, id)
 	case "landing/drop":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

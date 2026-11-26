@@ -85,6 +85,10 @@ func (m *Manager) startMergeShadow(prd *PRD) <-chan struct{} {
 		defer close(done)
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
+		if m.store != nil {
+			sel := m.MergeEligibility(ctx, in.AutomatonID)
+			in.Selection = &mergeshadow.PlanSelection{Eligible: sel.Eligible, Basis: sel.Basis, Tip: sel.Tip, Reasons: sel.Reasons}
+		}
 		plan, err := mergeShadowRun(ctx, in)
 		if err != nil {
 			log.Printf("[autonomous] merge shadow: automaton %s: %v", prd.ID, err)

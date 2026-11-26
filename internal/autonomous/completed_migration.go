@@ -175,6 +175,9 @@ func (m *Manager) prdCompletedEvidence(ctx context.Context, git MergeGitRunner, 
 	if !proof.Merged {
 		return e // unknown or not merged: never guess
 	}
+	if !onTrackedRemote(ctx, git, repo, proof.Base, proof.Commit) {
+		return e // merged here but not pushed: not landed
+	}
 	t, err := completedMigrationCommitTime(ctx, git, repo, proof.Commit)
 	if err != nil {
 		e.err = err.Error()

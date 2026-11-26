@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -107,6 +108,10 @@ func (m *Manager) RecordPRDShipped(id, release string, mergedAt time.Time, commi
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", id)
 	}
+	confirmed, err := m.confirmShippedCommit(p, c, source)
+	if err != nil {
+		return nil, err
+	}
 	// p is the shared stored pointer (Store.GetPRD): check and write under the
 	// store lock so the shipped fields are ordered against snapshot reads and
 	// persist. SavePRD takes Store.mu too (non-reentrant), so it stays out.
@@ -118,6 +123,9 @@ func (m *Manager) RecordPRDShipped(id, release string, mergedAt time.Time, commi
 			return
 		}
 		setPRDShipped(p, release, mergedAt, c, source)
+		if confirmed {
+			markLandingLandedLocked(p, c, mergePipelineActor, mergedAt)
+		}
 		// A finished Automaton that now carries a shipped record is delivered:
 		// label it in the same step (an outcome already recorded is kept).
 		if outcomeMode != ClosedOutcomeOff && closedWorkStatus(p.Status) && p.ClosedOutcome == "" {
@@ -135,6 +143,34 @@ func (m *Manager) RecordPRDShipped(id, release string, mergedAt time.Time, commi
 		return nil, fmt.Errorf("prd %q not found", id)
 	}
 	return out, nil
+}
+
+// confirmShippedCommit holds a merge step record to the remote: when the
+// Automaton's branch is in the merge repository and that repository has a
+// remote, the commit must be on the remote's default branch. It reports
+// whether the remote confirmed it. A backfill record, and work of another
+// repository, cannot be checked here and is recorded as given.
+func (m *Manager) confirmShippedCommit(p *PRD, commit, source string) (bool, error) {
+	if source != ShippedSourceMergeStep {
+		return false, nil
+	}
+	var branch string
+	var already bool
+	m.readLocked(func() { branch, already = strings.TrimSpace(p.Git.Branch), p.MergeCommit == commit })
+	repo := strings.TrimSpace(m.MergeBaseRepo())
+	if already || repo == "" || branch == "" {
+		return false, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), mergeSelectGitTimeout)
+	defer cancel()
+	git := m.archivedUnmergedGitRunner()
+	if _, ok := branchCommit(ctx, git, repo, branch); !ok || mergeRemote(ctx, git, repo) == "" {
+		return false, nil
+	}
+	if err := confirmOnRemote(ctx, git, repo, commit); err != nil {
+		return false, fmt.Errorf("shipped: not recorded: %w", err)
+	}
+	return true, nil
 }
 
 // RecordAutomationShipped records that this Automation's work shipped in

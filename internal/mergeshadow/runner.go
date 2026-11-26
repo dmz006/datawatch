@@ -55,6 +55,9 @@ type Input struct {
 	// Review is the review verdict on the work branch, nil when no review was
 	// recorded. A non-nil verdict must name the branch head (CheckReviewHead).
 	Review *ReviewVerdict
+	// Selection is the daemon's merge selection rule's answer, copied onto
+	// the plan.
+	Selection *PlanSelection
 }
 
 // Runner builds a shadow merge plan for one finished Automaton and stores it.
@@ -115,6 +118,7 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 		BaseRef:     base,
 		CreatedAt:   now,
 		Applied:     false,
+		Selection:   in.Selection,
 	}
 
 	// Step 0: a task branch of the Automaton with commits the Automaton branch
