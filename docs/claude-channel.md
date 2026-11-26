@@ -125,6 +125,21 @@ Channel mode enables:
 
 ---
 
+### Channel messages and the native bridge
+
+Claude Code takes channel messages only from a server that declares the
+`claude/channel` capability when it starts. The native Go bridge did not declare it,
+so with that bridge Claude Code skipped every channel message, while the daemon's send
+to the bridge succeeded. It now declares it, as the Node.js bridge already did.
+
+**This changes what reaches every Claude session that uses the Go bridge.** Messages
+the daemon posts to the bridge, such as lifecycle session subscriptions and the web
+Channel tab, now arrive in Claude as new input. They are not typed into the terminal,
+so the checks on typed input (for example, not typing while a permission prompt is
+open) do not apply to them. A successful send still proves only that the bridge took
+the message, not that Claude acted on it. The permission-relay capability
+(`claude/channel/permission`) is not declared by the Go bridge.
+
 ## What goes where: quick reference
 
 | Interaction | Console (tmux) | Channel (MCP) |

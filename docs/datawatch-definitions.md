@@ -274,7 +274,11 @@ If the named session is absent when the schedule fires, the item is skipped (not
 
 **Daemon lock** — `daemon.lock` beside `schedule.json`, held while the daemon runs. The schedule CLI writes the file only when the daemon does not answer and this lock is free.
 
-**Session notices** — one warn alert naming the sessions found dead when the daemon starts, and one for running sessions that have not changed for longer than `session.stale_timeout_seconds` (default 1800).
+**Session notices** — one warn alert naming the sessions found dead when the daemon starts, and one for running sessions with no output, channel event or record change for longer than `session.stale_timeout_seconds` (default 1800; 0 in the file means the default; a negative value turns this alert off, and with it the default stale list and, when `autonomous.stale_task_seconds` is also 0 or negative, the worker log stall check). It is a YAML setting.
+
+**One answer per start-up screen** — the daemon's start-up dialog responders send one answer to each screen a new Claude session shows. The keys are sent again only if the same screen is still up 5 seconds later (never for a screen that is declined).
+
+**Channel messages (native bridge)** — the Go channel bridge declares `claude/channel`, so messages the daemon posts to it now reach every Claude session that uses it, as new input. See [Claude Code Channel Integration](claude-channel.md#channel-messages-and-the-native-bridge).
 
 ---
 

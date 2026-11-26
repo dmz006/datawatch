@@ -72,8 +72,21 @@ Installed hook files never reach your commits. In a git repository datawatch lis
 files it creates in the repository's own `info/exclude` file. It installs **nothing**,
 and says why in the daemon log (`[hookinstall] ... not installed`), when:
 
-- the project tracks `.claude/settings.json` or one of the hook files in git, or
-- the project has its own `.claude/settings.json` that git does not ignore.
+- the project folder is a home folder, or its `.claude` folder holds user-level
+  settings (`~/.claude`, or the daemon's `CLAUDE_CONFIG_DIR`);
+- the `.claude` folder or `settings.json` is a link;
+- an existing `settings.json` cannot be read and parsed in full: no permission, not
+  plain JSON (a `//` comment or a trailing comma counts), text after the object, a key
+  written twice, or `hooks` or one of its events in an unexpected shape;
+- the project tracks `.claude/settings.json` or one of the hook files in git;
+- the project has its own `.claude/settings.json` that git does not ignore; or
+- the folder has a `.git` that git cannot be asked about.
+
+**When datawatch does rewrite your file.** A `settings.json` that git ignores, or one in
+a folder that is not in a git repository, gets the hook entries merged into it. Every
+setting and number is kept, and the file's mode; the file is written whole, with its
+keys sorted and its indentation standardised. Installed hooks stay after the session
+ends.
 
 Each session's hook events carry that session's own id (from `DATAWATCH_SESSION_ID`),
 also when several sessions share a folder.
