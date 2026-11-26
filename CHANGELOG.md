@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.30 — A stricter task delivery check for Automaton workers
+
+### Fixed
+- datawatch's check of a local claude-code Automaton worker whose task datawatch types no longer passes it unless the task is recorded as delivered. A commit, a saved screen, a checkpoint with a passing script or the launch command's exit line is not enough; the attempt is a launch failure (by default retried, then held).
+- An interactive claude-code session reporting finished work now waits for input instead of switching between complete and running. If Claude Code quits and the terminal stays open, it can still switch.
+
+### Changed
+- Some work that did run can be retried, for example if you typed the task yourself or datawatch could not confirm delivery. For local claude-code one-shot workers with no recorded delivery (such as channel off), the exit line no longer counts as the worker's completion line, so one that exits before its own line is picked up is retried.
+- The supervisor loop's infrastructure-hold retry (on by default) now uses the same path as your own retry, which wakes or starts the run without waiting for lane fill. It retries a task once, even across daemon restarts; a later hold stays until you retry or reset the task. This change does not start tasks the loop requeued earlier; if held again, they can get one more loop retry.
+
+### Not covered
+- A recorded delivery does not prove that Claude read the task. If Claude stopped reading or a wrapper holds the terminal, typed text can still show; after a session restart, text redrawn from the earlier conversation can also count. Remote agent workers and other backends are not covered by this check.
+
 ## v9.187.29 — A safer merge run, with merging still off
 
 ### Changed
@@ -16,7 +29,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Before you upgrade
 - Merging stays off by default and this release does not turn it on. Before you ever turn it on: replace the recorded pipeline first, because a record without the new check steps would release with few checks.
 - Once merging is on, features release as a minor version, an unset kind is guessed from the title and the start of the spec, and a run may take up to 3 hours.
-- Under the `mechanical_and_model` conflict policy, a `conflict_model` naming an enabled model entry is now really called.
+- Under the `mechanical_and_model` conflict policy (the default), a `conflict_model` (default `sonnet`) naming an enabled model entry is now really called.
 
 ### Not covered
 - Checks are not sandboxed and come from the work being merged: a check can itself push to the remote, move local branches or leave a tag, and it can read or change any file the daemon's user can.
@@ -26,7 +39,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A tag step written as a command, or the post-ship "tag" hook, can still make a tag; the hook can tag the old version when nothing was released.
 - The new conflict rules do nothing while the conflict policy is `stop_and_ask`.
 - No merge run was tried with a full release smoke, a real conflict model or a live daemon's merge loop.
-- Under the `mechanical` conflict policy, the new `keep_main` rules drop the branch's side of a conflicting hunk without asking, including its CHANGELOG line.
+- Under the `mechanical` conflict policy, and under `mechanical_and_model` (the default) when its model entry is available, the new `keep_main` rules drop the branch's side of a conflicting hunk without asking, including its CHANGELOG line.
 - If only the daemon process is killed, a running check or push can carry on, and that push can still land.
 
 ## v9.187.28 — Start-up dialogs are answered only when shown, and not too soon
