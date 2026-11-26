@@ -51,14 +51,14 @@ recorded. The two writes made outside the daemon's session manager set them too:
 council run (`complete` or `failed by council.persona: <reason>`).
 
 A claude-code session that ends as a
-[failed launch](../howto/sessions-deep-dive.md#a-claude-session-that-exits-before-it-gets-its-task)
-is `failed` and carries `launch_failure`; one on which datawatch declined a
-start-up dialog carries `startup_decline`:
+[failed launch](../howto/sessions-deep-dive.md#a-claude-session-that-quits-at-a-declined-start-up-dialog)
+is `failed` and carries `launch_failure`. Three optional fields describe it:
 
 | Field | Type | Meaning |
 |---|---|---|
 | `launch_failure` | string | Why the launch failed. Omitted otherwise. A session carrying it is not completed or brought back; a restart clears it. |
-| `startup_decline` | object | A start-up dialog datawatch declined with Esc: `dialog`, `files` (settings files it named) and `at`. Recorded only when the visible screen ended with the dialog's footer and numbered choices, and the task was not proven delivered. Removed on restart, and when the visible screen later shows Claude Code answering or working, or at its framed input box, before a delivery is proven. It can stay on a session whose delivery is proven first; it then has no effect. |
+| `startup_decline` | object | A start-up dialog datawatch declined with Esc: `dialog`, `files` (settings files it named) and `at`. Recorded only when the visible screen ended with the dialog's footer and numbered choices. Removed on restart, and when the screen is later read showing Claude Code at its input box or working. It can stay on a session where it has no effect. |
+| `launch_input_sent` | bool | True once datawatch has sent this start anything besides answers to start-up dialogs; such a session is never a failed launch. A restart clears it. |
 
 ### Task delivery on launch
 ### Task delivery on launch
