@@ -142,8 +142,30 @@ for other people's files. The run fails when:
 - the Go test log shows the test binary using a fixed path in the machine temp
   folder or the home.
 
-It does not see what a process started by a test reads outside the decoys. It
-needs Linux, bubblewrap and a file system that records access times, and fails
+A passing run is not proof that no test reaches outside. The guard does not see:
+
+- what a process started by a test reads outside the decoys;
+- what a process started by a test writes below a folder that already exists in
+  the home, such as a new file under `~/.config`: only entries made or removed
+  directly in the home or the machine temp folder are noticed;
+- a remove, rename or new folder at a fixed path that leaves no trace in those
+  two folders, even from the test binary itself, because the Go test log records
+  only opens, stats and folder changes. Removing a fixed path that does not
+  exist passes;
+- writes to `/var/tmp`, which is private to the sandbox and not checked, and the
+  same for `/run` and `/dev/shm`;
+- reads of paths outside the machine temp folder and the home (writes there fail,
+  because they are mounted read-only);
+- anything done in the repository or the Go build cache, which stay writable;
+- files and folders a test makes in the shared temp folder and leaves behind
+  (`make test-tmp-guard` is the leftover check);
+- a stat of a temp folder itself or of a parent of an allowed folder, and the
+  usual project-root lookups above it;
+- a home other than the one `HOME` names when the run starts;
+- a leak that does not happen in that run: one that depends on timing shows only
+  when it occurs.
+
+It needs Linux, bubblewrap and a file system that records access times, and fails
 without them: tests are never run unguarded under this target. A failure names
 the paths and, where the test log allows, the last test whose temp folder was
 seen before the first access. That is a hint, not proof of which test did it.
