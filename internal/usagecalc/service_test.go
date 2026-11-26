@@ -498,6 +498,37 @@ func TestServiceWhatIfZeroDiffersFromUnset(t *testing.T) {
 	}
 }
 
+func TestServiceWhatIfLeavesBurnPerLaneAloneWithoutStamp(t *testing.T) {
+	// No reading carries a usable stamp, so the burn per lane divides by the stored maximum.
+	// A what-if changes the lanes the advice plans with and must not move that divisor or the
+	// measured burn per lane.
+	f := newServiceFixture(t, Settings{Reset: serviceReset, MaxLanes: 4}, nil)
+	five := 5
+	f.laneReading(serviceReadingAt.Add(-30*time.Hour), 20, nil, LanesUnavailable)
+	f.laneReading(serviceReadingAt, 40, &five, LanesTyped)
+	unset := f.advice(Options{})
+	if unset.Advice.LanesStamped != nil || unset.Advice.RecentLanes != 4 {
+		t.Fatalf("no stamp: stamped %v recent %d; want nil and the stored maximum 4", unset.Advice.LanesStamped, unset.Advice.RecentLanes)
+	}
+	if unset.Advice.PerLanePer24h <= 0 {
+		t.Fatalf("burn per lane: got %v; want a measured figure above 0 for the check to mean anything", unset.Advice.PerLanePer24h)
+	}
+	for _, n := range []int{0, 1, 2, 3} {
+		n := n
+		res := f.advice(Options{Lanes: &n})
+		if res.Advice.Lanes != n {
+			t.Errorf("what-if %d: planned with %d lanes", n, res.Advice.Lanes)
+		}
+		if res.Advice.RecentLanes != 4 || res.Advice.PerLanePer24h != unset.Advice.PerLanePer24h {
+			t.Errorf("what-if %d moved the divisor: recent %d per lane %v; want 4 and %v",
+				n, res.Advice.RecentLanes, res.Advice.PerLanePer24h, unset.Advice.PerLanePer24h)
+		}
+		if res.Advice.LanesStamped != nil {
+			t.Errorf("what-if %d: LanesStamped %d; a what-if is not a stamp", n, *res.Advice.LanesStamped)
+		}
+	}
+}
+
 func TestServiceTypedAndUnavailableIgnoredForDivisor(t *testing.T) {
 	// Only the typed and unavailable readings carry counts here, so the divisor is nil and
 	// the model falls back to the chosen count; the default is the stored maximum.

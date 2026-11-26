@@ -260,6 +260,14 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 	}
 
 	stamped := newestStampedLanes(snap.Record.Readings)
+	// The burn per lane divides by the stamped count. With no usable stamp it divides by the
+	// lanes the advice would plan with if no what-if were set, never by the what-if itself,
+	// so a what-if changes the plan and leaves every measured figure alone.
+	divisor := stamped
+	if divisor == nil {
+		n := lanesFrom(Options{}, cfg, nil)
+		divisor = &n
+	}
 	reset := cfg.Reset
 	if applied, ok := cfg.Schedule.Apply(reset); ok {
 		reset = applied
@@ -272,7 +280,7 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 		PointValue:        cfg.PointValue,
 		ExtraCreditPoints: snap.Record.ExtraCreditPoints,
 		Lanes:             lanesFrom(o, cfg, stamped),
-		RecentLanes:       stamped,
+		RecentLanes:       divisor,
 		MaxLanes:          cfg.MaxLanes,
 		BaselinePer24h:    cfg.BaselinePer24h,
 		SafetyPoints:      cfg.SafetyPoints,

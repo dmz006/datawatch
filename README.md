@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.31 (2026-11-26).** pi and pi-prompt launches on nodes shared by an LLM entry no longer fail because the launch check asked the node for the wrong model name. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.32 (2026-11-26).** Recovered work from older branches: storing or repairing a plan is now refused when a dependency names a shared title, a usage what-if no longer changes the measured burn per lane, and guard tests that had never reached main are added. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

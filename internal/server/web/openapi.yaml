@@ -12488,7 +12488,7 @@ paths:
           in: query
           required: false
           schema: {type: integer, minimum: 0}
-          description: The what-if lane count (0 included). The advice plans with this many Claude lanes for this call only; it is not saved and does not change how many lanes are running. Without it the advice uses the lanes running now. The count the ledger reports is returned as lanes_running_now
+          description: The what-if lane count (0 included). The advice plans with this many Claude lanes for this call only; it is not saved and does not change how many lanes are running. Without it the advice plans with the lanes stamped on the newest usable reading, or the stored maximum when no reading has a usable stamp. A what-if never changes a measured figure such as the burn per lane. The count the ledger reports is returned as advice.lanes_running_now
         - name: cost
           in: query
           required: false
@@ -12502,12 +12502,15 @@ paths:
               schema:
                 type: object
                 properties:
-                  lanes_running_now:
-                    type: integer
-                    nullable: true
-                    description: The Claude lane count in the capacity ledger at the moment of the call; null when no ledger is wired. Kept apart from lanes_stamped (the stamp on the newest usable reading) and what_if_lanes (the count asked for with the lanes parameter)
-                  lanes_stamped: {type: integer, nullable: true, description: The lane count stamped on the newest reading whose lanes_source is live, recorded or current; null when no reading has one}
-                  what_if_lanes: {type: integer, description: Present only when the call set the lanes parameter; never saved}
+                  advice:
+                    type: object
+                    properties:
+                      lanes_running_now:
+                        type: integer
+                        nullable: true
+                        description: The Claude lane count in the capacity ledger at the moment of the call; null when no ledger is wired. Kept apart from lanes_stamped (the stamp on the newest usable reading) and what_if_lanes (the count asked for with the lanes parameter)
+                      lanes_stamped: {type: integer, nullable: true, description: The lane count stamped on the newest reading whose lanes_source is live, recorded or current; null when no reading has one}
+                      what_if_lanes: {type: integer, description: Present only when the call set the lanes parameter; never saved}
         "400": {description: Unknown variant or policy, or a malformed lanes / cost value}
         "503": {description: The calculator is not wired on this daemon}
   /api/usage/autolanes:
