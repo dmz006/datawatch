@@ -122,9 +122,10 @@ type failedSend struct {
 }
 
 // recordSendFailure records a command that could not be typed. A recurring
-// schedule for a session id whose session can still take input moves to its
-// next fire: one send error does not end it. Any other is failed, a recurring
-// schedule for a session name included.
+// schedule moves to its next fire: one send error does not end it. One for a
+// session name does so even when its session has just gone, because the name
+// can reach the next one; one for a session id needs a session that can still
+// take input. Any other is failed.
 func (s *ScheduleStore) recordSendFailure(id string, cause error, targetGone bool, now time.Time) (failedSend, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -140,7 +141,7 @@ func (s *ScheduleStore) recordSendFailure(id string, cause error, targetGone boo
 		sc.LastFireAt = now
 		sc.appendFire(ScheduleFire{At: now, Result: "failed", Error: reason})
 		next, recurring := sc.nextFire(now)
-		if recurring && !targetGone && !sc.NameTargeted() && !sc.RunAt.IsZero() && (sc.RecurUntil.IsZero() || !next.After(sc.RecurUntil)) {
+		if recurring && (!targetGone || sc.NameTargeted()) && !sc.RunAt.IsZero() && (sc.RecurUntil.IsZero() || !next.After(sc.RecurUntil)) {
 			sc.RunAt, sc.LastError, sc.LastFireResult = next, reason, "failed"
 			sc.ConsecutiveFailures++
 			return failedSend{rearmed: true, copy: *sc}, s.save()
