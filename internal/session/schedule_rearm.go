@@ -207,6 +207,8 @@ func truncateReason(err error) string {
 // A cancelled schedule stays cancelled.
 func (s *ScheduleStore) RecordStartFailure(id string, cause error, now time.Time, p RearmPolicy) (StartFailure, error) {
 	p = p.Normalised()
+	var chain []ScheduledCommand
+	defer func() { s.reportSettled(chain) }() // runs after the unlock
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, sc := range s.entries {
@@ -280,6 +282,9 @@ func (s *ScheduleStore) RecordStartFailure(id string, cause error, now time.Time
 			out.NextAt = sc.RunAt
 		}
 		out.Consecutive, out.Waits = sc.ConsecutiveFailures, sc.ConsecutiveWaits
+		if sc.State == SchedFailed {
+			chain = s.failChainLocked(sc.ID, now)
+		}
 		return out, s.save()
 	}
 	return StartFailure{}, fmt.Errorf("scheduled command %q not found", id)
@@ -296,6 +301,13 @@ type ScheduleAlert struct {
 	NoSession bool
 	// Interrupted: the command may or may not have arrived.
 	Interrupted bool
+	// Settled, when set, is why datawatch ended the schedule undelivered.
+	// With Count > 0 it lists that many schedules instead.
+	Settled string
+	Count   int
+	// SendFailed: a recurring command could not be typed this time; it stays
+	// scheduled.
+	SendFailed bool
 }
 
 // SetScheduleAlertHook sets the function that raises the operator alert for a

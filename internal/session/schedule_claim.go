@@ -82,6 +82,8 @@ func (s *ScheduleStore) releaseFire(id, fullID string, mark *time.Time) {
 // becomes failed. It returns copies of the pending schedules it settled. Only
 // the daemon calls it, at start, before anything can type.
 func (s *ScheduleStore) SettleInterruptedFires(now time.Time) ([]ScheduledCommand, error) {
+	var chain []ScheduledCommand
+	defer func() { s.reportSettled(chain) }() // runs after the unlock
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []ScheduledCommand
@@ -109,6 +111,9 @@ func (s *ScheduleStore) SettleInterruptedFires(now time.Time) ([]ScheduledComman
 		sc.LastFireAt, sc.LastFireResult, sc.LastError = at, result, interruptedFireReason
 		sc.appendFire(ScheduleFire{At: at, Result: result, Error: interruptedFireReason})
 		out = append(out, *sc)
+		if sc.State == SchedFailed {
+			chain = append(chain, s.failChainLocked(sc.ID, now)...)
+		}
 	}
 	if !changed {
 		return nil, nil
@@ -157,7 +162,7 @@ func (m *Manager) FireChained(store *ScheduleStore, fullID, doneID string) {
 			_ = store.ReleaseChained(next.ID, time.Now())
 		case errors.Is(err, ErrFireDeferred):
 			store.deferChained(next.ID, fullID, time.Now())
-		default:
+		case errors.Is(err, ErrPromptOnScreen):
 			_ = store.MarkDone(next.ID, true)
 		}
 	}

@@ -120,6 +120,9 @@ type ScheduledCommand struct {
 	LastError string `json:"last_error,omitempty"`
 	// FireHistory is the newest fires and attempts, oldest first, bounded.
 	FireHistory []ScheduleFire `json:"fire_history,omitempty"`
+	// Kind marks a command datawatch itself queued for a purpose:
+	// SchedKindRateLimitResume, or empty.
+	Kind string `json:"kind,omitempty"`
 	// FiringSince is set, and saved, before a due command is typed, and
 	// cleared when the outcome is recorded. One found at daemon start means
 	// the daemon stopped in between (see schedule_claim.go).
@@ -167,6 +170,14 @@ type ScheduleStore struct {
 	entries []*ScheduledCommand
 	// typing holds the sessions a schedule is being typed into now.
 	typing map[string]bool
+	// settleHook is told of the schedules datawatch ended undelivered.
+	settleHook func([]ScheduledCommand)
+	// targetCheck, when set, refuses new schedules that could never run.
+	targetCheck func(sessionID string) error
+	// fileSum and seen tell an outside change of the file from our own.
+	fileSum [32]byte
+	haveSum bool
+	seen    map[string]bool
 }
 
 // NewScheduleStore creates or loads the schedule store at path (no encryption).
@@ -195,21 +206,36 @@ func (s *ScheduleStore) load() error {
 		}
 		return fmt.Errorf("read schedule: %w", err)
 	}
-	return json.Unmarshal(data, &s.entries)
+	if err := json.Unmarshal(data, &s.entries); err != nil {
+		return err
+	}
+	s.noteFileLocked()
+	return nil
 }
 
 func (s *ScheduleStore) save() error {
+	s.adoptLocked() // never write over what was added outside
 	data, err := json.MarshalIndent(s.entries, "", "  ")
 	if err != nil {
 		return err
 	}
-	return secfile.WriteFile(s.path, data, 0600, s.encKey)
+	if err := secfile.WriteFile(s.path, data, 0600, s.encKey); err != nil {
+		return err
+	}
+	s.noteFileLocked()
+	return nil
 }
 
 // Add inserts a new scheduled command and returns it.
 func (s *ScheduleStore) Add(sessionID, command string, runAt time.Time, runAfterID string) (*ScheduledCommand, error) {
+	if err := s.checkTarget(sessionID, ""); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.checkNewLocked(runAfterID); err != nil {
+		return nil, err
+	}
 
 	id, err := randomID()
 	if err != nil {
@@ -244,8 +270,14 @@ type AddOptions struct {
 
 // AddFull inserts a scheduled command with all BL353 options.
 func (s *ScheduleStore) AddFull(opts AddOptions) (*ScheduledCommand, error) {
+	if err := s.checkTarget(opts.SessionID, opts.SessionName); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.checkNewLocked(opts.RunAfterID); err != nil {
+		return nil, err
+	}
 
 	id, err := randomID()
 	if err != nil {
@@ -528,6 +560,8 @@ func (s *ScheduleStore) Delete(id string) error {
 // Matches both short IDs and full IDs (hostname-id). Command schedules created
 // with a session name are kept: they wait for the next session with that name.
 func (s *ScheduleStore) CancelBySession(sessionID string) int {
+	var settled []ScheduledCommand
+	defer func() { s.reportSettled(settled) }() // runs after the unlock
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cancelled := 0
@@ -536,8 +570,7 @@ func (s *ScheduleStore) CancelBySession(sessionID string) int {
 			continue
 		}
 		if sc.SessionID == sessionID || strings.HasSuffix(sc.SessionID, "-"+sessionID) || strings.HasSuffix(sessionID, "-"+sc.SessionID) {
-			sc.State = SchedCancelled
-			sc.DoneAt = time.Now()
+			settled = append(settled, s.settleLocked(sc, SchedCancelled, settledSessionEndedKill, time.Now())...)
 			cancelled++
 		}
 	}
@@ -632,6 +665,8 @@ func (s *ScheduleStore) AfterDone(doneID string) []*ScheduledCommand {
 
 // MarkDone marks a scheduled command as done or failed.
 func (s *ScheduleStore) MarkDone(id string, failed bool) error {
+	var settled []ScheduledCommand
+	defer func() { s.reportSettled(settled) }() // runs after the unlock
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, sc := range s.entries {
@@ -648,6 +683,11 @@ func (s *ScheduleStore) MarkDone(id string, failed bool) error {
 			if !failed {
 				sc.endNameWait()
 				sc.endInterruptedNote()
+				// A command that was typed ends a run of failed sends.
+				// Spawn schedules count their own in RecordFire.
+				if (sc.Type == "" || sc.Type == SchedTypeCommand) && sc.ConsecutiveFailures > 0 {
+					sc.ConsecutiveFailures, sc.LastError, sc.LastFireResult = 0, "", ""
+				}
 			}
 			// BL26 — recurring schedule: bump RunAt instead of marking done,
 			// unless the entry hit its RecurUntil deadline or the run failed.
@@ -677,6 +717,10 @@ func (s *ScheduleStore) MarkDone(id string, failed bool) error {
 				}
 			}
 			if failed {
+				if sc.State == SchedPending {
+					settled = s.settleLocked(sc, SchedFailed, settledNotDelivered, time.Now())
+					return s.save()
+				}
 				sc.State = SchedFailed
 			} else {
 				sc.State = SchedDone

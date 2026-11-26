@@ -12,8 +12,6 @@ import (
 	"github.com/dmz006/datawatch/internal/toolsettings"
 )
 
-const settingsFile = ".claude/settings.json"
-
 // hookEvents are the events Install registers a hook for.
 var hookEvents = []string{"Stop", "PostToolUse", "UserPromptSubmit", "SubagentStop", "SessionStart"}
 

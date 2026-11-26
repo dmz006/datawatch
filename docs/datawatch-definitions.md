@@ -268,6 +268,20 @@ Killing, deleting or ending the session does not cancel or fail a schedule creat
 
 If the named session is absent when the schedule fires, the item is skipped (not failed) and will try again on the next tick.
 
+**Shell scripts** — a one-shot session running a shell backend script ends `complete` when the script exits with status 0 and `failed` when it exits with any other. See [`llm-backends.md`](llm-backends.md).
+
+**Ended without being typed** — when datawatch ends a schedule that was never typed (its session was killed, deleted or ended; the send failed; the schedule it follows did not run), the schedule is `failed` or `cancelled` with the reason in `last_error`, and a warn alert is raised. A recurring schedule survives a send error and stays scheduled for its next fire (by session id: while that session can still take input). It does not alert on every failed send: only on the first in a row and then every 24th. A schedule for a session id that does not exist or has ended is refused when created. Details: [`howto/schedule-rearm.md`](howto/schedule-rearm.md#when-a-command-schedule-does-not-run).
+
+**Rate-limit resume** — the command datawatch queues to resume a rate-limited session, marked `kind: rate_limit_resume`.
+
+**Daemon lock** — `daemon.lock` beside `schedule.json`, held while the daemon runs. The schedule CLI writes the file only when the daemon does not answer and this lock is free.
+
+**Session notices** — one warn alert naming the sessions found dead when the daemon starts, and one for running sessions with no output, channel event or record change for longer than `session.stale_timeout_seconds` (default 1800; 0 in the file means the default; a negative value turns this alert off, and with it the default stale list and, when `autonomous.stale_task_seconds` is also 0 or negative, the worker log stall check). It is a YAML setting.
+
+**One answer per start-up screen** — the daemon's start-up dialog responders send one answer to each screen a new Claude session shows. The keys are sent again only if the same screen is still up 5 seconds later (never for a screen that is declined). The start poller stops once the session shows its main prompt or a turn in progress, once its task is seen to have arrived, or when the session ends.
+
+**Channel messages (native bridge)** — the Go channel bridge declares `claude/channel`, so messages the daemon posts to it now reach every Claude session that uses it, as new input. See [Claude Code Channel Integration](claude-channel.md#channel-messages-and-the-native-bridge).
+
 ---
 
 ### Scheduled session spawn (ephemeral one-shot)
@@ -755,7 +769,7 @@ The **Status** sub-tab (session detail → Status) shows a live sprint/git/test 
 | **Tests** | Last test run outcome (pass/fail/skip counts) |
 | **Git** | Current branch + recent commit |
 
-For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.sh` hook script into the project directory on session start. The environment file beside it holds the daemon URL and session id, never a token. Other backends (opencode, opencode-acp) emit equivalent events through their own hook paths.
+For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.sh` hook script into the project directory on session start. The environment file beside it holds the daemon URL and session id, never a token. Other backends (opencode, opencode-acp) emit equivalent events through their own hook paths. The installer writes only its own files, never through a link, and keeps the files it creates out of git ([limits](howto/claude-hooks.md#what-can-still-be-committed)).
 
 **CLI:** `datawatch session status <id>` · **REST:** `GET /api/sessions/{id}/status` · **MCP:** `session_timeline`
 
@@ -773,6 +787,7 @@ For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.
 |---|---|
 | `~/.claude/settings.json` or the data folder's `.claude/settings.json` | the flags datawatch sets at daemon start (including the ones that skip Claude's permission and MCP prompts); see **What a Claude session then does** below |
 | a project's `.claude/settings.local.json` | the memory save and pre-compact hooks |
+| a project's `.claude/settings.json` | the session hooks that report status ([what auto-install will not touch](howto/claude-hooks.md#what-auto-install-will-not-touch)) |
 | a project's `.mcp.json` | the extra MCP servers from `session.extra_mcp_servers` and web search; a Claude session also does not load the servers listed in that file |
 | the data folder's `.mcp.json` | the current bridge entry and its token |
 | a project's `opencode.json` | the session's model and datawatch's tool denials, so the launch **fails** with the reason ([LLM backends](llm-backends.md#when-datawatch-cannot-safely-add-its-settings-to-opencodejson)) |

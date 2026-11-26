@@ -66,6 +66,60 @@ session:
 
 Or pass `--no-hooks` on `datawatch sessions start`.
 
+## What auto-install will not touch
+
+datawatch keeps the files it creates out of your commits. It writes a
+`.claude/sprint/.gitignore` that names only its own files, so they stay ignored also in a
+folder that becomes a git repository later. When it creates `.claude/settings.json` and
+there is no `.claude/.gitignore`, it writes one that names that settings file. In a git
+repository it also lists its files in the repository's own `info/exclude` file. Your own
+files in `.claude` are never ignored. See
+[what can still be committed](#what-can-still-be-committed).
+
+It installs **nothing**,
+and says why in the daemon log (`[hookinstall] ... not installed`), when:
+
+- the project folder is a home folder, or its `.claude` folder holds user-level
+  settings (`~/.claude`, or the daemon's `CLAUDE_CONFIG_DIR`);
+- the `.claude` folder, its `sprint` folder, `settings.json` or a file in `sprint`
+  that datawatch writes is a link;
+- `.claude/sprint` holds a `post-event.sh`, `platform-context.txt`, `.dw-env` or
+  `.gitignore` that datawatch did not write (yours is not overwritten or excluded);
+- an existing `settings.json` cannot be read and parsed in full: no permission, not
+  plain JSON (a `//` comment or a trailing comma counts), bytes that are not UTF-8,
+  text after the object, a key written twice, or `hooks` or one of its events in an
+  unexpected shape;
+- an existing `settings.json` that would have to change may not be written (the file
+  is left alone and no hook file is installed; the `info/exclude` lines and an empty
+  `.claude/sprint` folder may already have been made);
+- the project tracks `.claude/settings.json` or one of the hook files in git;
+- the project has its own `.claude/settings.json` that git does not ignore; or
+- the folder has a `.git` that git cannot be asked about.
+
+### What can still be committed
+
+- **Hook entries in a `settings.json` that was already there**, in a folder that is not a
+  repository and later becomes one. Git cannot ignore part of a file, and ignoring the
+  whole file would keep your own settings out of your commits. This includes a file an
+  earlier datawatch created. The entries hold the local path of the hook script, no token.
+- A `settings.json` datawatch creates in a folder that has its own `.claude/.gitignore`,
+  in the same later-repository case: your ignore file is not edited.
+- Anything you add with `git add -f`.
+
+**When datawatch does rewrite your file.** A `settings.json` that git ignores, or one in
+a folder that is not in a git repository, gets the hook entries merged into it. Every
+setting and number is kept, and the file's mode; the file is written whole, with its
+keys sorted and its indentation standardised. Installed hooks stay after the session
+ends.
+
+Each session's hook events carry that session's own id (from `DATAWATCH_SESSION_ID`),
+also when several sessions share a folder.
+
+**A daemon with an API token does not accept these events yet.** The installer writes
+no token into the project, and the event endpoint needs a credential, so the daemon
+answers `401` and the hook script ignores the answer. A narrow per-session credential
+for hook events is planned with the authentication work.
+
 ## Two happy paths
 
 ### 4a. Happy path — auto-install (default)
