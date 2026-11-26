@@ -228,7 +228,10 @@ func TestPushOnCompletion_LocalGitRoundTrip(t *testing.T) {
 	mustGit(t, seed, "push", "origin", "main")
 
 	workspace := filepath.Join(root, "workspace")
-	resp := &BootstrapResponse{Git: BootstrapGit{URL: bareRepo}}
+	resp := &BootstrapResponse{Git: BootstrapGit{
+		URL: bareRepo, Branch: "automaton/round-trip", CreateBranch: true,
+		Push: &BootstrapPush{Policy: "branch", SecretScanMode: "enforce"},
+	}}
 	target, err := CloneOnBootstrap(context.Background(), resp, workspace)
 	if err != nil {
 		t.Fatalf("clone: %v", err)
@@ -245,23 +248,31 @@ func TestPushOnCompletion_LocalGitRoundTrip(t *testing.T) {
 		t.Fatalf("rev-parse HEAD: %v", err)
 	}
 
+	mainBefore, err := gitOutputText(context.Background(), "", "--git-dir="+bareRepo, "rev-parse", "main")
+	if err != nil {
+		t.Fatalf("rev-parse main on bare repo: %v", err)
+	}
+
 	branch, sha, err := PushOnCompletion(context.Background(), target, resp)
 	if err != nil {
 		t.Fatalf("PushOnCompletion: %v", err)
 	}
-	if branch != "main" {
-		t.Errorf("branch=%q want main", branch)
+	if branch != "automaton/round-trip" {
+		t.Errorf("branch=%q want automaton/round-trip", branch)
 	}
 	if sha != wantSHA {
 		t.Errorf("sha=%q want %q", sha, wantSHA)
 	}
 
-	remoteSHA, err := gitOutputText(context.Background(), "", "--git-dir="+bareRepo, "rev-parse", "main")
+	remoteSHA, err := gitOutputText(context.Background(), "", "--git-dir="+bareRepo, "rev-parse", "automaton/round-trip")
 	if err != nil {
-		t.Fatalf("rev-parse main on bare repo: %v", err)
+		t.Fatalf("rev-parse the work branch on bare repo: %v", err)
 	}
 	if remoteSHA != wantSHA {
-		t.Errorf("bare repo main=%q want %q — push didn't actually land", remoteSHA, wantSHA)
+		t.Errorf("bare repo work branch=%q want %q — push didn't actually land", remoteSHA, wantSHA)
+	}
+	if mainAfter, _ := gitOutputText(context.Background(), "", "--git-dir="+bareRepo, "rev-parse", "main"); mainAfter != mainBefore {
+		t.Errorf("bare repo main moved from %q to %q", mainBefore, mainAfter)
 	}
 }
 

@@ -12,12 +12,12 @@
 // is refused by git and surfaced as a non_fast_forward failure
 // (see PushFailureKind), with the remote left exactly as it was.
 //
-// Pre-push secret scan: when a caller passes a SecretScanPolicy (see
-// push_scan.go), the commits about to be pushed are scanned for secret
-// material before anything runs. Enforce mode refuses the push with
-// Kind=secret_found and the remote untouched; shadow mode logs and
-// returns the (always redacted) findings on the PushResult and lets the
-// push proceed. Without a policy no scan runs.
+// Outgoing check: every push here goes through checkedPush (outgoing.go),
+// which checks exactly what would leave, refuses when a check cannot run, and
+// sends the checked commit id. The secret scan follows the SecretScanPolicy a
+// caller passes (see push_scan.go): enforce mode refuses the push with
+// Kind=secret_found and the remote untouched; shadow mode logs and returns the
+// (always redacted) findings on the PushResult and lets the push proceed.
 
 package git
 
@@ -90,6 +90,13 @@ const (
 	// Reason and SecretFindings are redacted (counts, detector names,
 	// file:line, fingerprints) — the matched secret is never in them.
 	PushFailSecret PushFailureKind = "secret_found"
+	// PushFailCheck: the outgoing check refused the push, either because the
+	// project's own check did not pass or because a check could not run.
+	// The remote is untouched.
+	PushFailCheck PushFailureKind = "check_failed"
+	// PushFailProtected: a push limited to work branches was asked to move
+	// the remote's default branch or push something that is not a branch.
+	PushFailProtected PushFailureKind = "default_branch_refused"
 	// PushFailOther: everything else.
 	PushFailOther PushFailureKind = "other"
 )
@@ -127,7 +134,16 @@ var urlCredsRe = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^/@\s]+:[^/@\s]+
 // env plus GIT_TERMINAL_PROMPT=0 (fail fast rather than block on an
 // interactive credential prompt).
 func gitEnv() []string {
-	return append([]string{"GIT_TERMINAL_PROMPT=0"}, os.Environ()...)
+	env := []string{"GIT_TERMINAL_PROMPT=0"}
+	for _, kv := range os.Environ() {
+		// A push runs the repository's hooks; they never reach the
+		// daemon's own terminal server.
+		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_TMPDIR=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return env
 }
 
 // runGit executes a bounded `git <args...>` in dir and returns the
@@ -213,43 +229,50 @@ func headSHA(ctx context.Context, dir string) string {
 	return strings.TrimSpace(out)
 }
 
-// PushToBranch pushes dir's checkout of `branch` up to
-// remote/<branch>, with upstream tracking set via `--set-upstream` so
-// a later plain `git push` works. A plain, fast-forward-only push: no
-// force flag and no '+' refspec, so a non-fast-forward state on the
-// remote is a terminal, reported failure (Kind=non_fast_forward) and
-// the remote is left untouched. An unconfigured remote is reported as
-// Kind=no_remote before anything is attempted. When non-empty secret
-// scan policies are passed (see SecretScanPolicy), the commits about
-// to be pushed are scanned first: enforce mode refuses with
-// Kind=secret_found before the push runs, shadow mode logs the
-// findings, returns them on the success shape and pushes.
+// PushToBranch pushes the local branch `branch` up to remote/<branch> and
+// records it as the branch's upstream so a later plain `git push` works. The
+// outgoing check runs first and the checked commit id is what is sent. A
+// plain, fast-forward-only push: no force flag and no '+' refspec, so a
+// non-fast-forward state on the remote is a terminal, reported failure
+// (Kind=non_fast_forward) and the remote is left untouched. An unconfigured
+// remote is reported as Kind=no_remote before anything is attempted. See
+// SecretScanPolicy for the secret scan modes.
+//
+// It will push any branch, the default one included; a push made because work
+// finished uses PushWorkBranch.
 func PushToBranch(ctx context.Context, dir, remote, branch string, scan ...SecretScanPolicy) (res PushResult) {
+	return pushBranch(ctx, dir, remote, branch, pushRules{upstream: branch}, scan)
+}
+
+// PushWorkBranch is PushToBranch for work that finished: it additionally
+// refuses (Kind=default_branch_refused) to move the remote's default branch,
+// main or master.
+func PushWorkBranch(ctx context.Context, dir, remote, branch string, scan ...SecretScanPolicy) (res PushResult) {
+	return pushBranch(ctx, dir, remote, branch, pushRules{upstream: branch, workBranchOnly: true}, scan)
+}
+
+// PushFromWorker is PushWorkBranch for a push made inside a container worker:
+// the project's check, when there is one, gets no project working tree.
+func PushFromWorker(ctx context.Context, dir, remote, branch string, scan ...SecretScanPolicy) PushResult {
+	return pushBranch(ctx, dir, remote, branch, pushRules{upstream: branch, workBranchOnly: true, noProjectTree: true}, scan)
+}
+
+// CompletionDefaultBranchRefusal is the outcome of the default_branch push
+// policy at completion: nothing is pushed.
+func CompletionDefaultBranchRefusal(remote string) PushResult {
+	return PushResult{Remote: remote, Kind: PushFailProtected, Reason: "completion never moves the remote's default branch, so push_on_complete=default_branch pushes nothing; merge the work instead"}
+}
+
+func pushBranch(ctx context.Context, dir, remote, branch string, rules pushRules, scan []SecretScanPolicy) (res PushResult) {
 	defer func() { RecordHostOp(HostOpPush, res.Kind == "" && (res.Pushed || res.NothingToPush)) }()
 	if remote == "" {
 		remote = "origin"
 	}
-	if !remoteExists(ctx, dir, remote) {
-		return PushResult{
-			Remote: remote,
-			Ref:    branch,
-			Kind:   PushFailNoRemote,
-			Reason: fmt.Sprintf("remote %q is not configured in %s (try `git remote add %s <url>`)", remote, dir, remote),
-		}
+	if err := checkRefName(branch); err != nil {
+		return PushResult{Remote: remote, Ref: branch, Kind: PushFailOther, Reason: err.Error()}
 	}
-	findings, blocked := scanBeforePush(ctx, dir, remote, branch, pushScanPolicy(scan))
-	if blocked.Kind != "" {
-		return blocked // refused before any push ran — remote untouched
-	}
-	out, err := runGit(ctx, dir, "push", "--set-upstream", remote, branch+":refs/heads/"+branch)
-	if err != nil {
-		return failedPush(out, remote, branch)
-	}
-	sha := headSHA(ctx, dir)
-	if strings.Contains(out, "Everything up-to-date") {
-		return PushResult{NothingToPush: true, Remote: remote, Ref: branch, SHA: sha, SecretFindings: findings}
-	}
-	return PushResult{Pushed: true, Remote: remote, Ref: branch, SHA: sha, SecretFindings: findings}
+	ref := "refs/heads/" + branch
+	return checkedPush(ctx, dir, remote, branch, []OutgoingRef{{Src: ref, Dst: ref}}, pushScanPolicy(scan), rules)
 }
 
 // DefaultBranch resolves the default branch reported by remote for
@@ -357,21 +380,7 @@ func PushToDefaultBranch(ctx context.Context, dir, remote string, scan ...Secret
 			Reason: err.Error(),
 		}
 	}
-	findings, blocked := scanBeforePush(ctx, dir, remote, def, pushScanPolicy(scan))
-	if blocked.Kind != "" {
-		return blocked // refused before any push ran — remote untouched
-	}
-	sha := headSHA(ctx, dir)
-	out, err := runGit(ctx, dir, "push", remote, "HEAD:refs/heads/"+def)
-	if err != nil {
-		res := failedPush(out, remote, def)
-		res.SHA = sha
-		return res
-	}
-	if strings.Contains(out, "Everything up-to-date") {
-		return PushResult{NothingToPush: true, Remote: remote, Ref: def, SHA: sha, SecretFindings: findings}
-	}
-	return PushResult{Pushed: true, Remote: remote, Ref: def, SHA: sha, SecretFindings: findings}
+	return checkedPush(ctx, dir, remote, def, []OutgoingRef{{Src: "HEAD", Dst: "refs/heads/" + def}}, pushScanPolicy(scan), pushRules{})
 }
 
 // UnpushedCommits reports how many commits on HEAD are present on no

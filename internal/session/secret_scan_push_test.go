@@ -79,6 +79,14 @@ func recordingAlerts() (fn func(level, title, body string), out *[]secretScanAle
 // pushed), a bare Manager over a real temp store with a running one-shot
 // session bound to the clone, a recording alert sink, and branch-policy
 // push settings pointing at origin.
+// onWorkBranch moves the fixture to a work branch that is on the remote:
+// completion never moves the remote's default branch.
+func onWorkBranch(t *testing.T, dir string) {
+	t.Helper()
+	gitRunT(t, dir, "checkout", "-q", "-b", "work")
+	gitRunT(t, dir, "push", "-q", "-u", "origin", "work")
+}
+
 func pushSecretScanFixture(t *testing.T) (bare, dir string, mgr *Manager, sess *Session, alerts *[]secretScanAlert) {
 	t.Helper()
 	isolatedGitEnv(t)
@@ -227,6 +235,7 @@ func TestRecordShadowSecretScanFindings_NoAlertSinkDoesNotPanic(t *testing.T) {
 // token material.
 func TestPushAfterCommit_SecretScanShadowPushesRecordsWarningFiresOneWarnAlert(t *testing.T) {
 	bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
+	onWorkBranch(t, dir)
 	addSecretCommit(t, dir, "add creds")
 	head := localHead(t, dir)
 	mgr.SetSecretScanSettings(func() git.SecretScanPolicy { return git.SecretScanPolicy{Mode: git.ScanShadow} })
@@ -254,8 +263,8 @@ func TestPushAfterCommit_SecretScanShadowPushesRecordsWarningFiresOneWarnAlert(t
 	if got.PushedSHA != head {
 		t.Errorf("PushedSHA %q — want the pushed commit %q", got.PushedSHA, head)
 	}
-	if r := bareHead(t, bare, "main"); r != head {
-		t.Errorf("bare remote main %q — shadow mode must not refuse the push (want %q)", r, head)
+	if r := bareHead(t, bare, "work"); r != head {
+		t.Errorf("bare remote work %q — shadow mode must not refuse the push (want %q)", r, head)
 	}
 	if len(*alerts) != 1 {
 		t.Fatalf("exactly one warn alert expected in shadow mode, got %d: %+v", len(*alerts), *alerts)
@@ -283,7 +292,8 @@ func TestPushAfterCommit_SecretScanShadowPushesRecordsWarningFiresOneWarnAlert(t
 // commit stays local, and exactly one warn alert fired.
 func TestPushAfterCommit_SecretScanEnforceRefusesPushAndKeepsRemoteUntouched(t *testing.T) {
 	bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
-	seed := bareHead(t, bare, "main")
+	onWorkBranch(t, dir)
+	seed := bareHead(t, bare, "work")
 	addSecretCommit(t, dir, "add creds")
 	head := localHead(t, dir)
 	mgr.SetSecretScanSettings(func() git.SecretScanPolicy { return git.SecretScanPolicy{Mode: git.ScanEnforce} })
@@ -311,8 +321,8 @@ func TestPushAfterCommit_SecretScanEnforceRefusesPushAndKeepsRemoteUntouched(t *
 	if got.PushedSHA != "" {
 		t.Errorf("PushedSHA %q — nothing reached the remote", got.PushedSHA)
 	}
-	if r := bareHead(t, bare, "main"); r != seed {
-		t.Errorf("bare remote main %q — enforce mode must leave the remote untouched (want seed %q)", r, seed)
+	if r := bareHead(t, bare, "work"); r != seed {
+		t.Errorf("bare remote work %q — enforce mode must leave the remote untouched (want seed %q)", r, seed)
 	}
 	if localHead(t, dir) != head {
 		t.Error("the commit must stay committed locally")
@@ -345,6 +355,7 @@ func TestPushAfterCommit_SecretScanOffOrUnwiredKeepsLegacyPush(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
+			onWorkBranch(t, dir)
 			addSecretCommit(t, dir, "add creds")
 			head := localHead(t, dir)
 			if tc.wire {
@@ -366,8 +377,8 @@ func TestPushAfterCommit_SecretScanOffOrUnwiredKeepsLegacyPush(t *testing.T) {
 			if got.PushedSHA != head {
 				t.Errorf("PushedSHA %q — want the pushed commit %q", got.PushedSHA, head)
 			}
-			if r := bareHead(t, bare, "main"); r != head {
-				t.Errorf("bare remote main %q — want the pushed commit %q", r, head)
+			if r := bareHead(t, bare, "work"); r != head {
+				t.Errorf("bare remote work %q — want the pushed commit %q", r, head)
 			}
 			if len(*alerts) != 0 {
 				t.Errorf("no alert expected without a scan or a failure, got: %+v", *alerts)
@@ -657,6 +668,7 @@ func TestRecordShadowSecretScanFindings_SecretScanAuditNilFnChangesNothing(t *te
 // state and alert are unchanged by the wiring.
 func TestPushAfterCommit_SecretScanAuditEmitsOncePerShadowReport(t *testing.T) {
 	bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
+	onWorkBranch(t, dir)
 	addSecretCommit(t, dir, "add creds")
 	head := localHead(t, dir)
 	fnAudit, calls := recordingAudit()
@@ -665,8 +677,8 @@ func TestPushAfterCommit_SecretScanAuditEmitsOncePerShadowReport(t *testing.T) {
 
 	mgr.pushAfterCommit(sess, head)
 
-	if r := bareHead(t, bare, "main"); r != head {
-		t.Errorf("bare remote main %q — shadow mode must push (want %q)", r, head)
+	if r := bareHead(t, bare, "work"); r != head {
+		t.Errorf("bare remote work %q — shadow mode must push (want %q)", r, head)
 	}
 	if len(*calls) != 1 {
 		t.Fatalf("exactly ONE audit emission expected per shadow report, got %d: %+v", len(*calls), *calls)
@@ -681,7 +693,7 @@ func TestPushAfterCommit_SecretScanAuditEmitsOncePerShadowReport(t *testing.T) {
 	if c.remote != "origin" {
 		t.Errorf("audit remote %q — want the push target %q", c.remote, "origin")
 	}
-	if !strings.Contains(c.ref, "main") {
+	if !strings.Contains(c.ref, "work") {
 		t.Errorf("audit ref %q — must name the pushed branch", c.ref)
 	}
 	for _, f := range c.findings {
@@ -700,7 +712,8 @@ func TestPushAfterCommit_SecretScanAuditEmitsOncePerShadowReport(t *testing.T) {
 // refused target and the redacted findings; the remote stays untouched.
 func TestPushAfterCommit_SecretScanAuditEmitsOncePerRefusal(t *testing.T) {
 	bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
-	seed := bareHead(t, bare, "main")
+	onWorkBranch(t, dir)
+	seed := bareHead(t, bare, "work")
 	addSecretCommit(t, dir, "add creds")
 	fnAudit, calls := recordingAudit()
 	mgr.SetSecretScanAuditFn(fnAudit)
@@ -708,8 +721,8 @@ func TestPushAfterCommit_SecretScanAuditEmitsOncePerRefusal(t *testing.T) {
 
 	mgr.pushAfterCommit(sess, localHead(t, dir))
 
-	if r := bareHead(t, bare, "main"); r != seed {
-		t.Errorf("bare remote main %q — enforce mode must leave the remote untouched (want seed %q)", r, seed)
+	if r := bareHead(t, bare, "work"); r != seed {
+		t.Errorf("bare remote work %q — enforce mode must leave the remote untouched (want seed %q)", r, seed)
 	}
 	if len(*calls) != 1 {
 		t.Fatalf("exactly ONE audit emission expected per enforce refusal, got %d: %+v", len(*calls), *calls)
@@ -738,6 +751,7 @@ func TestPushAfterCommit_SecretScanAuditEmitsOncePerRefusal(t *testing.T) {
 // alert.
 func TestPushAfterCommit_SecretScanCleanPushEmitsNoAuditEntry(t *testing.T) {
 	bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
+	onWorkBranch(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, "f1.txt"), []byte("one\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -750,8 +764,8 @@ func TestPushAfterCommit_SecretScanCleanPushEmitsNoAuditEntry(t *testing.T) {
 
 	mgr.pushAfterCommit(sess, head)
 
-	if r := bareHead(t, bare, "main"); r != head {
-		t.Errorf("bare remote main %q — want the pushed commit %q", r, head)
+	if r := bareHead(t, bare, "work"); r != head {
+		t.Errorf("bare remote work %q — want the pushed commit %q", r, head)
 	}
 	if len(*calls) != 0 {
 		t.Errorf("a clean push must emit no audit entry, got: %+v", *calls)

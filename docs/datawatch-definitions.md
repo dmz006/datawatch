@@ -2231,7 +2231,9 @@ is `on` and it holds no work of its own (v9.0.20). A
 worktree at all — the dispatched worker commits and pushes its own
 branch itself (using its bootstrap-minted git token), reports it back
 on completion, and the parent opens the PR from that branch directly
-(v9.0.21). As of v9.0.22, that worker
+(v9.0.21). The worker's push follows the parent's push settings, pushes
+a work branch only and goes through the [outgoing check](#outgoing-check);
+when it cannot, it pushes nothing and says why. As of v9.0.22, that worker
 creates and checks out the PRD's own dedicated `automaton/<prd-id>-<slug>`
 branch fresh (instead of landing on whatever branch the dispatching
 Project Profile names), closing the one gap between cluster mode and
@@ -2633,11 +2635,15 @@ A task verification script, and a final-gate script, do not run as a direct chil
 
 ### Ship steps
 
-The ship steps run when a release is finished, in this order: **push** the branch to the configured remote, create an annotated **tag** named from `autonomous.ship.tag_format` (default `v{version}`, with the version read from the release's version file) and push the tag, then the **CI watch**. Each step has its own mode under `autonomous.ship.*` — `off` (skip), `shadow` (record the exact git commands without running them) or `on` (the default: run). The step never force-pushes and refuses a working tree with uncommitted changes. `autonomous.ship.remote` (default `origin`) names the remote. The outcomes, newest first, are shown on the **Automata ship status** card in the Automation view's Resources sub-tab, by `GET /api/autonomous/ship`, the `ship_status` MCP tool, `datawatch autonomous ship` and `autonomous ship [automaton-id]` on the comm channel. See [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md).
+The ship steps run when an Automaton finishes, in this order: **push** the work branch to the configured remote, then the **CI watch**. Completion pushes a work branch only: the remote's default branch, `main` and `master` are refused, and no tag is created or pushed: **tag** mode `on` (`autonomous.ship.tag`, with `autonomous.ship.tag_format`) is not applied here, `shadow` only records the tag commands, and the ship result says so. Each step has its own mode under `autonomous.ship.*` — `off` (skip), `shadow` (record the exact git commands without running them) or `on` (the default: run). The step never force-pushes, refuses a working tree with uncommitted changes, and pushes only through the [outgoing check](#outgoing-check). `autonomous.ship.remote` (default `origin`) names the remote. The outcomes, newest first, are shown on the **Automata ship status** card in the Automation view's Resources sub-tab, by `GET /api/autonomous/ship`, the `ship_status` MCP tool, `datawatch autonomous ship` and `autonomous ship [automaton-id]` on the comm channel. See [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md).
+
+### Outgoing check
+
+The check every datawatch push goes through before anything leaves the machine. It takes **exactly what the push would send**, compared with the remote's own list of refs: every new commit with its message, author and committer, every added line (for a merge, the lines that are in no parent, which is where conflict resolutions are), every new file name, every new annotated tag with its message, and the destination ref names. Local replace refs, tracking refs and git attributes cannot hide anything from it. It runs the [secret scan](howto/secret-scan-push-gate.md) over that, and the project's own **`check-outgoing`** make target when the project declares one. The target is read and run from the **base commit** (the head of the remote's default branch), so a branch cannot weaken the check that judges it. A check that cannot run refuses the push, and the push sends the checked commit id, not whatever the branch points at later. A refused push shows `push_state: not_pushed` with the reason (`check_failed`, `secret_found` or `default_branch_refused`). A container worker runs the same check for its one push, with no project working tree; nothing is pushed from a container at teardown. See [howto/secret-scan-push-gate.md](howto/secret-scan-push-gate.md#the-outgoing-check).
 
 ### CI watch
 
-The ship CI watch (`autonomous.ship.ci_watch`) follows the CI runs of the pushed commit and of the tag after a successful ship step, limited to the workflows named in `autonomous.ship.ci_workflows` (an empty list watches every workflow). Each ref ends as success, failure, still running or timeout. In `shadow` mode a failure is only recorded; in `on` mode a failure also raises an alert on the Automaton's triage record. It is separate from the repo CI watch (`autonomous.automation.repo_ci_watch.*`), which watches the repository's default branch on a schedule.
+The ship CI watch (`autonomous.ship.ci_watch`) follows the CI runs of the pushed commit (and of a tag, when one was pushed) after a successful ship step, limited to the workflows named in `autonomous.ship.ci_workflows` (an empty list watches every workflow). Each ref ends as success, failure, still running or timeout. In `shadow` mode a failure is only recorded; in `on` mode a failure also raises an alert on the Automaton's triage record. It is separate from the repo CI watch (`autonomous.automation.repo_ci_watch.*`), which watches the repository's default branch on a schedule.
 
 ### Decision records in the PWA
 

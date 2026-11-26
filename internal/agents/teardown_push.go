@@ -11,11 +11,11 @@ import (
 // TeardownPushReport is the outcome of the push-first step that runs
 // inside Manager.Terminate, BEFORE the driver tears the worker down.
 //
-//	Attempted — the driver actually tried to run the push (false when
-//	  the driver cannot run commands in the worker, e.g. the k8s
-//	  driver, or when no container existed).
-//	Pushed    — the worker's branch reached its remote (plain,
-//	  fast-forward-only push; never a force).
+//	Attempted — the driver actually tried to run a push. The built-in
+//	  drivers push nothing at teardown (the outgoing check cannot run
+//	  there), so they report false.
+//	Pushed    — no commit of the worker is left that its remote does not
+//	  have.
 //	Count     — commits on the worker's HEAD that were not present on
 //	  any remote ref at teardown time (0 when unknown).
 //	Branch    — the branch that was (attempted to be) pushed.
@@ -28,13 +28,11 @@ type TeardownPushReport struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
-// TeardownPusher is the optional capability a Driver implements when
-// it can run commands inside the worker container and therefore push
-// the worker's unpushed commits back to its remote before the
-// container is destroyed. The Manager calls PushUnpushed with a
-// bounded context inside Terminate, strictly before Driver.Terminate,
-// so a worker that dies on teardown does not take its unpushed
-// commits with it.
+// TeardownPusher is the optional capability a Driver implements when it can
+// say, before the container is destroyed, whether the worker holds commits its
+// remote does not have. The Manager calls PushUnpushed with a bounded context
+// inside Terminate, strictly before Driver.Terminate, and records the report
+// on the Agent so the operator learns what was lost.
 //
 // Contract:
 //

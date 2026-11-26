@@ -12,6 +12,8 @@
 //     completion state is left exactly as it was;
 //   - never force-pushes: internal/git performs plain fast-forward-only
 //     pushes and has no force option;
+//   - never moves the remote's default branch and never pushes a tag, and
+//     every push goes through the outgoing check (internal/git);
 //   - one-shots with a PRD owner (PRDID set) are pushed by the autonomous
 //     executor, not here — this path is a no-op for them.
 package session
@@ -124,10 +126,11 @@ func (m *Manager) effectiveSecretScan() git.SecretScanPolicy {
 // PRD work) is a silent no-op.
 //
 //   - policy never: does nothing, records nothing;
-//   - policy branch: pushes the current branch with upstream tracking;
-//   - policy default_branch: the one-shot's own validation was its final
-//     gate, so a plain fast-forward push of HEAD onto the remote's
-//     default branch is safe here.
+//   - policy branch: pushes the current branch with upstream tracking,
+//     unless it is the remote's default branch (or main or master), which
+//     is refused and recorded;
+//   - policy default_branch: recorded as not pushed, because completion
+//     never moves the remote's default branch.
 //
 // A success records PushState=pushed plus the pushed SHA; a failure
 // records PushState=not_pushed plus PushWarning="not pushed: <reason>"
@@ -162,11 +165,10 @@ func (m *Manager) pushAfterCommit(sess *Session, sha string) {
 			res = git.PushResult{Kind: git.PushFailOther, Reason: "detached HEAD: no branch to push"}
 		} else {
 			log.Printf("session %s: one-shot push-on-complete (branch): pushing %s to remote %s", sess.ID, branch, remote)
-			res = git.PushToBranch(ctx, dir, remote, branch, m.effectiveSecretScan())
+			res = git.PushWorkBranch(ctx, dir, remote, branch, m.effectiveSecretScan())
 		}
 	case git.PushDefaultBranch:
-		log.Printf("session %s: one-shot push-on-complete (default_branch): pushing HEAD to remote %s", sess.ID, remote)
-		res = git.PushToDefaultBranch(ctx, dir, remote, m.effectiveSecretScan())
+		res = git.CompletionDefaultBranchRefusal(remote)
 	}
 
 	if res.Pushed || res.NothingToPush {
@@ -328,7 +330,7 @@ func (m *Manager) pushUnpushedBeforeTeardown(sess *Session) PushReport {
 	}
 
 	log.Printf("session %s: teardown push: pushing %d unpushed commit(s) on %s to remote %s", sess.ID, count, branch, remote)
-	res := git.PushToBranch(ctx, dir, remote, branch, m.effectiveSecretScan())
+	res := git.PushWorkBranch(ctx, dir, remote, branch, m.effectiveSecretScan())
 	rep.Attempted = true
 
 	if res.Pushed || res.NothingToPush {

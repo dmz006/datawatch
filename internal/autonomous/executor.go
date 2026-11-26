@@ -73,6 +73,10 @@ type SpawnRequest struct {
 	// 1's EnsureWorktree or this phase's cluster-mode counterpart
 	// (e.g. AutoPR-less PRDs with an explicit ProjectDir).
 	Branch string
+	// PushOnComplete is the Automaton's own push-on-complete override
+	// (empty: the daemon setting), forwarded to a cluster worker, which
+	// makes its own push.
+	PushOnComplete string
 	// WorkerProfile is the profile applied to this launch; it is meaningful
 	// only when WorkerProfileApplied is true. A launch with no applied
 	// profile leaves both unset.
@@ -2042,9 +2046,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				PermissionMode:       permMode,
 				ThinkingLevel:        thinkingLevel,
 				RetryHint:            retryHint,
-				ProjectProfile:       snapProjectProfile,           // v5.26.19
-				ClusterProfile:       prd.ClusterProfile,           // v5.26.19
-				Branch:               snapGit.Branch,               // BL407 Phase 4
+				ProjectProfile:       snapProjectProfile, // v5.26.19
+				ClusterProfile:       prd.ClusterProfile, // v5.26.19
+				Branch:               snapGit.Branch,     // BL407 Phase 4
+				PushOnComplete:       snapGit.PushOnComplete,
 				Git:                  snapAutoCommits && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
 				ContextPrepend:       contextPrepend,               // BL244
 				LSPLanguage:          lspLang,

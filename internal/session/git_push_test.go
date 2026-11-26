@@ -106,6 +106,7 @@ func bareHead(t *testing.T, bare, ref string) string {
 func TestPushAfterCommit_BranchPolicyPushesTheOneShotCommit(t *testing.T) {
 	bare, dir := setupBareClone(t)
 	seed := bareHead(t, bare, "main")
+	gitRunT(t, dir, "checkout", "-q", "-b", "work")
 
 	mgr, fake := newTestManagerWithFake(t)
 	alerts := recordAlerts(t)
@@ -138,12 +139,15 @@ func TestPushAfterCommit_BranchPolicyPushesTheOneShotCommit(t *testing.T) {
 	if got.PushWarning != "" {
 		t.Errorf("PushWarning %q — want empty on success", got.PushWarning)
 	}
-	if got := bareHead(t, bare, "main"); got != head {
-		t.Errorf("bare remote main %q — want the pushed commit %q", got, head)
+	if got := bareHead(t, bare, "work"); got != head {
+		t.Errorf("bare remote work %q — want the pushed commit %q", got, head)
+	}
+	if got := bareHead(t, bare, "main"); got != seed {
+		t.Errorf("bare remote main %q — completion must leave it at %q", got, seed)
 	}
 	// --set-upstream: tracking must be established on the local branch.
-	if up := gitOut(t, dir, "config", "branch.main.remote"); up != "origin" {
-		t.Errorf("branch.main.remote %q — want origin (upstream tracking)", up)
+	if up := gitOut(t, dir, "config", "branch.work.remote"); up != "origin" {
+		t.Errorf("branch.work.remote %q — want origin (upstream tracking)", up)
 	}
 	if len(*alerts) != 0 {
 		t.Errorf("alerts expected on a successful push, got %d: %v", len(*alerts), *alerts)
@@ -187,11 +191,11 @@ func TestPushAfterCommit_NoPushWhenOneShotValidationFails(t *testing.T) {
 	}
 }
 
-// Push, default-branch policy: a one-shot finishing on a side branch
-// fast-forwards HEAD onto the remote's default branch — not onto a same-
-// named branch — proving the default-branch refspec was used.
-func TestPushAfterCommit_DefaultBranchPolicyFastForwardsDefaultBranch(t *testing.T) {
+// Push, default-branch policy: completion never moves the remote's default
+// branch, so nothing is pushed and the session says why.
+func TestPushAfterCommit_DefaultBranchPolicyPushesNothing(t *testing.T) {
 	bare, dir := setupBareClone(t)
+	seed := bareHead(t, bare, "main")
 	gitRunT(t, dir, "checkout", "-q", "-b", "feature")
 
 	mgr, fake := newTestManagerWithFake(t)
@@ -202,25 +206,21 @@ func TestPushAfterCommit_DefaultBranchPolicyFastForwardsDefaultBranch(t *testing
 	sess := startFakeOneShot(t, mgr, fake, dir, "create hello.txt", []string{"true"})
 	finishOneShot(t, mgr, sess, dir)
 
-	head := localHead(t, dir)
 	got, ok := mgr.store.Get(sess.FullID)
 	if !ok {
 		t.Fatal("session disappeared")
 	}
-	if got.PushState != "pushed" || got.PushWarning != "" {
-		t.Fatalf("expected a pushed default-branch outcome, got state=%q warning=%q", got.PushState, got.PushWarning)
+	if got.PushState != "not_pushed" || !strings.Contains(got.PushWarning, "default branch") {
+		t.Fatalf("want not_pushed naming the default branch, got state=%q warning=%q", got.PushState, got.PushWarning)
 	}
-	if got.PushedSHA != head {
-		t.Errorf("PushedSHA %q — want %q", got.PushedSHA, head)
-	}
-	if got := bareHead(t, bare, "main"); got != head {
-		t.Errorf("bare remote main %q — want the fast-forwarded HEAD %q", got, head)
+	if got := bareHead(t, bare, "main"); got != seed {
+		t.Errorf("bare remote main %q — must stay at %q", got, seed)
 	}
 	if got := bareHead(t, bare, "feature"); got != "" {
-		t.Errorf("a same-named branch ref must not have been created on the remote (got %q)", got)
+		t.Errorf("nothing may be pushed under this policy (got %q)", got)
 	}
-	if len(*alerts) != 0 {
-		t.Errorf("alerts expected on a successful push, got: %v", *alerts)
+	if len(*alerts) != 1 {
+		t.Errorf("one alert expected, got: %v", *alerts)
 	}
 }
 

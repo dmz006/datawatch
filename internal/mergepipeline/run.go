@@ -1491,8 +1491,11 @@ var ErrMainMoved = errors.New("remote main moved")
 
 // Push implements ShipRunner. It fetches the remote's branch first and
 // refuses with ErrMainMoved unless that branch is an ancestor of HEAD. The
-// push itself never forces, so it can only fast-forward the remote. A project
-// with no remote skips the guard and pushes as it always has.
+// push goes through the outgoing check (internal/git), which refuses when the
+// project's check or the secret scan does not pass, and sends the checked
+// object ids of the branch and the tag in one atomic push. It never forces, so
+// it can only fast-forward the remote. A project with no remote skips the
+// guard and fails at the push.
 func (e ExecShipRunner) Push(ctx context.Context, dir, branch, tag string) error {
 	m := &Merger{Dir: dir}
 	remote := e.Remote
@@ -1506,12 +1509,14 @@ func (e ExecShipRunner) Push(ctx context.Context, dir, branch, tag string) error
 			return err
 		}
 	}
-	args := []string{"push", remote, branch}
+	refs := []git.OutgoingRef{{Src: "refs/heads/" + branch, Dst: "refs/heads/" + branch}}
 	if tag != "" {
-		args = append(args, tag)
+		refs = append(refs, git.OutgoingRef{Src: "refs/tags/" + tag, Dst: "refs/tags/" + tag})
 	}
-	_, err := e.run(ctx, dir, "git", args...)
-	return err
+	if res := git.PushCheckedRefs(ctx, dir, remote, refs); res.Kind != "" {
+		return fmt.Errorf("push %s to %s: %s: %s", branch, remote, res.Kind, redact(res.Reason))
+	}
+	return nil
 }
 
 // hasRemotes reports whether the repository at dir has any remote.

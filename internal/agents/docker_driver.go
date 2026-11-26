@@ -267,16 +267,15 @@ func (d *DockerDriver) Terminate(ctx context.Context, a *Agent) error {
 	return nil
 }
 
-// pushUnpushedScript is run inside the worker container via
-// `docker exec <cid> sh -c <script>`. It locates the cloned repo
-// (workers clone into /workspace/<repo>), reports the current branch
-// and the number of commits on HEAD that are not on any remote ref,
-// then pushes the branch to origin with upstream tracking. The push
-// is a plain `git push --set-upstream` — fast-forward only, never a
-// force. Output lines the driver parses:
+// unpushedWorkScript is run inside the worker container via
+// `docker exec <cid> sh -c <script>`. It locates the cloned repo (workers
+// clone into /workspace/<repo>) and reports the current branch and the number
+// of commits on HEAD that are on no ref of origin. It pushes nothing: the
+// outgoing check cannot run for a push made this way. Output lines the driver
+// parses:
 //
-//	NO_REPO_FOUND | NO_CURRENT_BRANCH | BRANCH=<b> | UNPUSHED=<n> | PUSH_OK | PUSH_FAILED
-func pushUnpushedScript(repoName string) string {
+//	NO_REPO_FOUND | NO_CURRENT_BRANCH | BRANCH=<b> | UNPUSHED=<n|unknown>
+func unpushedWorkScript(repoName string) string {
 	if repoName != "" {
 		repoName = shellQuote(repoName)
 	} else {
@@ -292,12 +291,8 @@ b=$(git -C "$r" symbolic-ref --short HEAD 2>/dev/null)
 if [ -z "$b" ]; then echo NO_CURRENT_BRANCH; exit 1; fi
 echo "BRANCH=$b"
 n=$(git -C "$r" rev-list --count HEAD --not --remotes=origin 2>/dev/null)
-case "$n" in ''|*[!0-9]*) n=0;; esac
+case "$n" in ''|*[!0-9]*) n=unknown;; esac
 echo "UNPUSHED=$n"
-out=$(git -C "$r" push --set-upstream origin "$b" 2>&1)
-status=$?
-echo "$out"
-if [ "$status" -eq 0 ]; then echo PUSH_OK; else echo PUSH_FAILED; exit "$status"; fi
 `
 }
 
@@ -305,45 +300,44 @@ func shellQuote(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
 }
 
-// PushUnpushed implements TeardownPusher: inside the worker container
-// it counts the commits not yet on the remote and pushes the current
-// branch with upstream tracking (fast-forward only, never force), so
-// the container can be destroyed without losing the worker's work.
-// Always returns a report; errors are folded into the report's
-// Reason rather than returned, so termination is never blocked.
+// PushUnpushed implements TeardownPusher: it reports what is left in the
+// worker that never reached its remote. It does not push: a push made by a
+// command run into the container would skip the outgoing check. The worker's
+// own checked push at the end of its task is the only way its commits leave.
+// Pushed is true only when nothing is left behind. Errors are folded into the
+// report's Reason rather than returned, so termination is never blocked.
 func (d *DockerDriver) PushUnpushed(ctx context.Context, a *Agent) (TeardownPushReport, error) {
 	var rep TeardownPushReport
 	if a.DriverInstance == "" {
-		rep.Attempted = false
 		rep.Reason = "agent has no container to exec into"
 		return rep, nil
 	}
 	repoName := repoNameFromGitURL(agentGitURL(a))
-	out, err := d.runDocker(ctx, "exec", a.DriverInstance, "sh", "-c", pushUnpushedScript(repoName))
-	rep.Attempted = true
+	out, err := d.runDocker(ctx, "exec", a.DriverInstance, "sh", "-c", unpushedWorkScript(repoName))
 	if branch := pushScriptField(out, "BRANCH="); branch != "" {
 		rep.Branch = branch
 	}
-	if count, ok := pushScriptCount(out); ok {
+	count, counted := pushScriptCount(out)
+	if counted {
 		rep.Count = count
 	}
+	const why = "not pushed: the outgoing check cannot run for a push made into the container at teardown"
 	switch {
 	case strings.Contains(out, "NO_REPO_FOUND"):
 		rep.Reason = "no git repo found in worker container"
 	case strings.Contains(out, "NO_CURRENT_BRANCH"):
 		rep.Reason = "worker on a detached HEAD (no current branch)"
-	case strings.Contains(out, "PUSH_OK"):
-		rep.Pushed = true
+	case err == nil && counted && count == 0:
+		rep.Pushed = true // nothing is left behind
+	case err == nil && counted:
+		rep.Reason = fmt.Sprintf("%s, so %d commit(s) on %s go with the container", why, count, rep.Branch)
 	default:
-		tail := strings.TrimSpace(outputTail(out, 3))
+		rep.Reason = why + "; whether commits are left in it could not be read"
 		if err != nil {
-			reason := "docker exec failed: " + err.Error()
-			if tail != "" {
-				reason += "; " + tail
-			}
-			rep.Reason = reason
-		} else if tail != "" {
-			rep.Reason = tail + " (fast-forward only; never force)"
+			rep.Reason += ": docker exec failed: " + err.Error()
+		}
+		if tail := strings.TrimSpace(outputTail(out, 3)); tail != "" {
+			rep.Reason += "; " + tail
 		}
 	}
 	return rep, nil
@@ -358,7 +352,7 @@ func outputTail(s string, n int) string {
 }
 
 // pushScriptField extracts the last "KEY=value" line emitted by
-// pushUnpushedScript (e.g. "BRANCH=worker-42").
+// unpushedWorkScript (e.g. "BRANCH=worker-42").
 func pushScriptField(out, key string) string {
 	val := ""
 	for _, line := range strings.Split(out, "\n") {

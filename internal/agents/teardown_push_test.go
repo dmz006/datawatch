@@ -333,12 +333,9 @@ if [ "$1" = "exec" ]; then shift; shift; fi
 exec "$@"
 `
 
-// TestDockerTeardownPushRunsRealPushAndBuildsGitCommands — the docker
-// implementation must build the expected git command line (branch
-// detection, unpushed count, plain `push --set-upstream`, never
-// `--force`) and the script must actually deliver the worker's commits
-// to the bare remote.
-func TestDockerTeardownPushRunsRealPushAndBuildsGitCommands(t *testing.T) {
+// TestDockerTeardownReportsWithoutPushing — the docker implementation reads
+// the branch and the unpushed count, pushes nothing, and says why.
+func TestDockerTeardownReportsWithoutPushing(t *testing.T) {
 	const branch = "worker-42"
 	remotePath, cloneDir := teardownGitFixture(t, branch, 1)
 
@@ -363,11 +360,11 @@ func TestDockerTeardownPushRunsRealPushAndBuildsGitCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PushUnpushed: %v", err)
 	}
-	if !rep.Attempted {
-		t.Errorf("report = %+v, want attempted", rep)
+	if rep.Attempted || rep.Pushed {
+		t.Errorf("report = %+v, want nothing attempted and not pushed", rep)
 	}
-	if !rep.Pushed {
-		t.Errorf("report = %+v, want pushed (reason=%q)", rep, rep.Reason)
+	if !strings.Contains(rep.Reason, "outgoing check") {
+		t.Errorf("reason %q does not say why", rep.Reason)
 	}
 	if rep.Branch != branch {
 		t.Errorf("rep.Branch = %q, want %q", rep.Branch, branch)
@@ -375,7 +372,9 @@ func TestDockerTeardownPushRunsRealPushAndBuildsGitCommands(t *testing.T) {
 	if rep.Count < 1 {
 		t.Errorf("rep.Count = %d, want >= 1", rep.Count)
 	}
-	remoteHasBranch(t, remotePath, branch)
+	if out, _ := exec.Command("git", "-C", remotePath, "for-each-ref").Output(); len(out) != 0 {
+		t.Errorf("teardown put refs on the remote: %s", out)
+	}
 
 	// The driver must have invoked `docker exec <cid> sh -c <script>`
 	// and the script must build the expected git commands.
@@ -392,14 +391,13 @@ func TestDockerTeardownPushRunsRealPushAndBuildsGitCommands(t *testing.T) {
 	for _, want := range []string{
 		"symbolic-ref --short HEAD",
 		"rev-list --count HEAD --not --remotes=origin",
-		"push --set-upstream origin",
 	} {
 		if !strings.Contains(calls, want) {
 			t.Errorf("built script missing git command %q", want)
 		}
 	}
-	if strings.Contains(calls, "--force") {
-		t.Error("built script uses --force; teardown push must be fast-forward-only, never force")
+	if strings.Contains(calls, " push ") {
+		t.Error("the built script pushes; teardown must not push unchecked")
 	}
 }
 
