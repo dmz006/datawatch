@@ -7,6 +7,8 @@ Draft for the datawatch-app mobile client. File only; no issue has been filed.
   `waiting`, `sending`, `sent`, `not_typed` or `review_needed`, with
   `delivery_reason`, `delivery_session_id` and `delivered_at`. All are
   optional; a record without `delivery` says nothing about the send.
+- A task also carries `owed_decisions` (`question_id`, `session_id`,
+  `waiting_noticed`): blocking questions still waiting for their line.
 - New alerts through the existing alert list: *Automaton decision not
   delivered yet*, *Automaton decision: review needed*, *Supervisor wake not
   delivered yet*, *Supervisor wake: review needed*, *Subscription delivery:

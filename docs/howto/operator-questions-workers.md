@@ -210,11 +210,36 @@ task left the running state before the line could be typed), `replaced` (the
 task was resumed for another question before this line could be typed) or
 `no_session`.
 
-If the worker asks a second blocking question while the first line is still
-unsent, the task parks on the second one. When that one is decided, the first
-line is marked `review_needed` (`replaced`) with an alert, and the second line
-is typed. The task's `decision_resume` then describes the second question; the
-alert and the audit log keep the first.
+If the worker asks a second blocking question while the first line is refused
+or still being sent, the task parks on the second one. When that one is
+decided, the first line is marked `review_needed` (`replaced`) with an alert,
+and the second line is typed. The task's `decision_resume` then describes the
+second question; the alert and the audit log keep the first.
+
+### More than one open question
+
+Every blocking question the task's worker asks is owed one line, from the
+moment it is raised. The task's `owed_decisions` lists the ones whose line is
+not yet sent or listed for review. The daemon's own questions about a task, such
+as held or retry questions, are not part of this.
+
+- The task is not re-parked while the question it is parked on has a decision
+  that is not typed yet.
+- A decided question the task is not parked on is typed once the task runs: the
+  coordinator tick parks the task on it and resumes it.
+- If the task is parked on another question that is still open, the decision
+  waits for that one. You get one warning alert (`other_question_open`) naming
+  both. Answer or withdraw the open one. If it expires instead, the waiting
+  decision is typed.
+- If the worker can no longer get a decision (the task ended or was queued
+  again, it has another worker session, the session ended, or verification has
+  started), an answer is listed with a `review_needed` alert and not typed.
+  This includes an unsent line left on a task that ended. A withdrawn question
+  that no worker can take is dropped without an alert.
+
+For a freshly started worker, the task may show as running, and keep its
+capacity slot, while the worker still waits for an earlier question. Its answer
+is typed as described above.
 
 Nothing is typed unless the `sending` state could be saved first. Alerts carry
 ids and these codes, not your words. A record with no `delivery` field was
