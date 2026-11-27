@@ -998,6 +998,11 @@ paths:
         Apply one or more configuration changes using dot-path keys.
         Changes are written to the config file immediately.
 
+        Delivery check keys: `delivery.enabled` (true|false, default true),
+        `delivery.notify` (true|false, default true) and
+        `delivery.interval_seconds` (whole seconds, at least 60; 0 = the default, 300).
+        GET returns their effective values under `delivery`.
+
         Supported keys: `telegram.enabled`, `discord.enabled`, `slack.enabled`,
         `matrix.enabled`, `twilio.enabled`, `ntfy.enabled`, `email.enabled`,
         `webhook.enabled`, `github_webhook.enabled`, `server.enabled`,
@@ -14349,6 +14354,151 @@ paths:
         "403": {description: Missing the dashboard read capability, content: {"text/plain": {schema: {type: string}}}}
         "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
         "503": {description: No session store and no trace store to build the map, content: {"text/plain": {schema: {type: string}}}}
+  /api/delivery:
+    get:
+      summary: The delivery check's current report (the list of unfinished and undelivered work); runs no check. Report only, it blocks nothing. IDs, kinds, states, reason codes and times only. Needs delivery:read
+      operationId: deliveryReport
+      tags: [Singletons]
+      responses:
+        "200":
+          description: The report
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeliveryReport"}
+        "403": {description: "The caller lacks delivery:read", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/delivery/check:
+    post:
+      summary: Run the delivery check now and return its report. It saves the list and may send the one message that is due; it blocks nothing and types nothing into a session. Needs delivery:read
+      operationId: deliveryCheck
+      tags: [Singletons]
+      responses:
+        "200":
+          description: The report
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeliveryReport"}
+        "403": {description: "The caller lacks delivery:read", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "500": {description: "The check failed", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/delivery/ack:
+    post:
+      summary: Mark delivery list entries as seen; their messages stop and they stay listed
+      description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer, and who did it comes from the credential. Needs delivery:write."
+      operationId: deliveryAck
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                keys: {type: array, items: {type: string}, description: "Entry keys, as <kind>:<id>:<state>; alarm keys start alarm:"}
+                kind: {type: string, description: Only entries of this kind}
+                state: {type: string, description: Only entries in this state}
+                match_reason: {type: string, description: Only entries listed for this reason code}
+                backlog: {type: boolean, description: Only the backlog (entries already true at the start mark)}
+                actor: {type: string, enum: [cli, web, channel], description: Surface label, kept only for the operator token; ignored for a session or peer}
+      responses:
+        "200":
+          description: How many entries changed
+          content:
+            application/json:
+              schema: {type: object, properties: {changed: {type: integer}}}
+        "400": {description: "No selector or a bad body", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No listed entry matches", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The caller lacks delivery:write", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/delivery/accept:
+    post:
+      summary: Let delivery list entries wait until a review date at most 30 days ahead
+      description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer, and who did it comes from the credential. Needs delivery:write."
+      operationId: deliveryAccept
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason, until]
+              properties:
+                keys: {type: array, items: {type: string}, description: "Entry keys, as <kind>:<id>:<state>; alarm keys start alarm:"}
+                kind: {type: string, description: Only entries of this kind}
+                state: {type: string, description: Only entries in this state}
+                match_reason: {type: string, description: Only entries listed for this reason code}
+                backlog: {type: boolean, description: Only the backlog (entries already true at the start mark)}
+                reason: {type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,63}$", description: Reason code}
+                until: {type: string, description: "Review date: RFC 3339, or YYYY-MM-DD meaning the end of that day in UTC"}
+                actor: {type: string, enum: [cli, web, channel], description: Surface label, kept only for the operator token; ignored for a session or peer}
+      responses:
+        "200":
+          description: How many entries changed
+          content:
+            application/json:
+              schema: {type: object, properties: {changed: {type: integer}}}
+        "400": {description: "No selector, a bad body, reason code or review date", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No listed entry matches", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The caller lacks delivery:write", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/delivery/drop:
+    post:
+      summary: Close failed or backlog delivery list entries
+      description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer, and who did it comes from the credential. Needs delivery:write."
+      operationId: deliveryDrop
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                keys: {type: array, items: {type: string}, description: "Entry keys, as <kind>:<id>:<state>; alarm keys start alarm:"}
+                kind: {type: string, description: Only entries of this kind}
+                state: {type: string, description: Only entries in this state}
+                match_reason: {type: string, description: Only entries listed for this reason code}
+                backlog: {type: boolean, description: Only the backlog (entries already true at the start mark)}
+                reason: {type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,63}$", description: Reason code}
+                actor: {type: string, enum: [cli, web, channel], description: Surface label, kept only for the operator token; ignored for a session or peer}
+      responses:
+        "200":
+          description: How many entries changed
+          content:
+            application/json:
+              schema: {type: object, properties: {changed: {type: integer}}}
+        "400": {description: "No selector, a bad body or reason code", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No listed entry matches", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "Only failed or backlog entries can be dropped", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The caller lacks delivery:write", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/delivery/test-message:
+    post:
+      summary: Send the delivery check's test message on every message channel that can reach a person, and say what each answered. Needs delivery:write
+      operationId: deliveryTestMessage
+      tags: [Singletons]
+      responses:
+        "200":
+          description: One result for each channel; empty when none can reach a person
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results: {type: array, items: {$ref: "#/components/schemas/DeliverySendResult"}}
+        "403": {description: "The caller lacks delivery:write", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
 
 components:
   securitySchemes:
@@ -14374,6 +14524,74 @@ components:
             example: "unauthorized"
 
   schemas:
+    DeliverySendResult:
+      type: object
+      properties:
+        at: {type: string, format: date-time}
+        channel: {type: string}
+        ok: {type: boolean}
+        code: {type: string, description: "Reason code; a channel's own error text is not kept"}
+    DeliveryEntry:
+      type: object
+      properties:
+        key: {type: string}
+        kind: {type: string}
+        id: {type: string}
+        state: {type: string}
+        invariant: {type: string}
+        reason: {type: string}
+        waits_on: {type: string}
+        since: {type: string, format: date-time}
+        review_by: {type: string, format: date-time}
+        count: {type: integer}
+        sticky: {type: boolean}
+        source: {type: string}
+        episode: {type: integer}
+        backlog: {type: boolean}
+        listed_at: {type: string, format: date-time}
+        age_seconds: {type: integer, format: int64}
+        sends: {type: array, items: {$ref: "#/components/schemas/DeliverySendResult"}}
+        told_at: {type: string, format: date-time}
+        last_sent_at: {type: string, format: date-time}
+        send_fails: {type: integer}
+        next_try_at: {type: string, format: date-time}
+        seen_at: {type: string, format: date-time}
+        seen_by: {type: string}
+        accepted:
+          type: object
+          properties:
+            reason: {type: string}
+            until: {type: string, format: date-time}
+            by: {type: string}
+            at: {type: string, format: date-time}
+        closed_at: {type: string, format: date-time}
+        closed_as: {type: string}
+        closed_by: {type: string}
+        drop_reason: {type: string}
+        present: {type: boolean}
+    DeliveryReport:
+      type: object
+      properties:
+        report_only: {type: boolean}
+        result: {type: string, enum: [green, red]}
+        red: {type: array, items: {type: string}, description: Why the check is red}
+        at: {type: string, format: date-time}
+        pass: {type: integer}
+        items: {type: array, items: {$ref: "#/components/schemas/DeliveryEntry"}}
+        backlog: {type: array, items: {$ref: "#/components/schemas/DeliveryEntry"}}
+        accepted: {type: array, items: {$ref: "#/components/schemas/DeliveryEntry"}}
+        guarded: {type: array, items: {type: string}}
+        unrecorded: {type: integer}
+        by_rule: {type: object, additionalProperties: {type: integer}}
+        by_kind: {type: object, additionalProperties: {type: integer}}
+        sources:
+          type: array
+          items: {type: object, properties: {name: {type: string}, ok: {type: boolean}, candidates: {type: integer}}}
+        channels: {type: array, items: {type: string}}
+        heartbeat: {type: string, enum: [ok, red, cannot_tell]}
+        start_mark: {type: string, format: date-time}
+        non_operator_actions: {type: integer}
+        uncovered: {type: array, items: {type: string}}
     TaskWorktreeCleanup:
       type: object
       description: "What closing an Automaton did with its task worktrees and task branches. Also a field of the Automaton record (task_worktree_cleanup), so the cancel and archive replies carry it. A task worktree with uncommitted or untracked files is never removed; a task branch with commits that are not on the default branch is never deleted. The compact view carries the counts without the kept list."
