@@ -327,6 +327,11 @@ func repairRequests(opts RequestOptions) (*RepairReport, error) {
 	// operator. Newest first, so that one waiting on another is held itself and
 	// not only failed with it.
 	err = s.update(func(w *work) error {
+		// Every restored record is written back, a closed one too: its file
+		// still holds the index that differs.
+		for _, id := range rep.Restored {
+			w.edit(id)
+		}
 		ids := w.ids()
 		slices.Reverse(ids)
 		for _, id := range ids {

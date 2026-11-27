@@ -349,3 +349,41 @@ func TestReqRepairHoldsWhatWaitedForALostRequest(t *testing.T) {
 	}
 	f.held(rep, child)
 }
+
+// Found by the live proof: a closed request whose readable index differs must
+// be written back too, or the store stays damaged. It reads as the sealed copy
+// has it.
+func TestReqRepairRestoresAClosedRequestsIndexToo(t *testing.T) {
+	for name, alsoManifest := range map[string]bool{"sound manifest": false, "damaged manifest": true} {
+		t.Run(name, func(t *testing.T) {
+			f := repairStore(t, testKey(3))
+			gone := f.create(ReqAsk).ID
+			if _, err := f.s.Drop(bg, opCaller, gone, ReasonInput{ReasonCode: "not_needed"}); err != nil {
+				t.Fatal(err)
+			}
+			f.editIndex(gone, func(m map[string]any) { m["state"], m["proof_as"] = "done", "done" })
+			f.editIndex(f.done, func(m map[string]any) { m["state"] = "waiting" })
+			if alsoManifest {
+				f.write(metaFileName, []byte("junk"))
+			}
+			rep := f.repaired()
+			got := slices.Clone(rep.Restored)
+			slices.Sort(got)
+			want := []string{gone, f.done}
+			slices.Sort(want)
+			if !slices.Equal(got, want) || slices.Contains(rep.Held, gone) || slices.Contains(rep.Held, f.done) {
+				t.Fatalf("%+v", rep)
+			}
+			if r := f.want(gone, StateCancelled); r.ProofAs != "" {
+				t.Fatalf("the edited 'done' was believed: %+v", r)
+			}
+			if r := f.want(f.done, StateDone); r.ProofAs != ProofDone {
+				t.Fatalf("%+v", r)
+			}
+			f.reopen()
+			if err := f.s.faultError(); err != nil {
+				t.Fatalf("still damaged: %v", err)
+			}
+		})
+	}
+}
