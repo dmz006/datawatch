@@ -3,6 +3,10 @@ docs:
   index: true
   topics: [delivery, requests, operator, autonomous, messaging]
 exec_steps:
+  - tool: request_list
+    description: List the requests with their states, reason codes and plain readings; no request content
+    args: {}
+    read_only: true
   - tool: delivery_status
     description: Show the delivery list; requests that failed, expired, are overdue or wait on you are listed there with identifiers and reason codes only
     args: {}
