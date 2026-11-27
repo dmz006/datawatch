@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.41 (2026-11-27).** The GitHub CI summary and owasp-zap workflows no longer search all tags to find a release; tested locally, not yet run on GitHub Actions. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.42 (2026-11-27).** Cleanup now treats archived Automata like finished ones, removing nothing while cleanup is off or report-only, and the safe-to-delete report no longer lists an unmerged branch as safe when its base has not moved. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
