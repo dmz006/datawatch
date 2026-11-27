@@ -39,9 +39,15 @@
 #      errors from a dead daemon don't block the CI gate)
 #
 # Release-attach behaviour: the "Attach ZAP reports to GitHub
-# release" step runs only for a real release tag — a plain tag name
-# or a refs/tags/* value; branch refs (refs/heads/*) are ignored, so
-# a branch ref is never passed as a tag name. It uploads the existing
+# release" step runs only when the triggering run was started by a push
+# of a release tag (vX.Y.Z) to this repository. The tag is taken from
+# that event, and finding its commit takes at most two API requests; do
+# not search the tags for a commit (the workflow token has an hourly
+# request limit shared with every other workflow). Any other triggering
+# run, or a tag that has since moved, attaches nothing; a failed tag
+# lookup fails the run. A manual run never attaches. None of this
+# affects the scans. Checked by tests/test-release-ci-summary.sh.
+# The step uploads the existing
 # report files with the gh CLI in a bounded retry loop with a
 # back-off (30s/60s/120s/240s), retrying only when the failure
 # output indicates the API rate limit; a rate-limit failure after the
@@ -277,26 +283,52 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          # For a run started by a tag push, head_branch holds the tag name.
+          RUN_REF: ${{ github.event.workflow_run.head_branch }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          TAG=$(gh api "repos/$REPO/git/refs/tags?per_page=30" --jq '.[].ref | ltrimstr("refs/tags/")' 2>/dev/null | \
-          while read t; do
-            OBJ=$(gh api "repos/$REPO/git/ref/tags/$t" --jq '[.object.type, .object.sha] | @tsv' 2>/dev/null || continue)
-            OBJ_TYPE=$(echo "$OBJ" | cut -f1)
-            OBJ_SHA=$(echo "$OBJ" | cut -f2)
-            if [[ "$OBJ_TYPE" == "tag" ]]; then
-              COMMIT_SHA=$(gh api "repos/$REPO/git/tags/$OBJ_SHA" --jq '.object.sha' 2>/dev/null || echo "")
-            else
-              COMMIT_SHA="$OBJ_SHA"
+          # Only a push of a release tag to this repository names a release
+          # (a pull request can come from a branch with any name). Anything
+          # else leaves the tag empty, so nothing is attached.
+          if [[ "$RUN_EVENT" != "push" || "$RUN_REPO" != "$REPO" || ! "$RUN_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "The triggering run is not for a release tag; not attaching."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TAG="$RUN_REF"
+
+          # Prints "<object type> <object id>".
+          lookup() {
+            gh api "repos/$REPO/$1" --jq '.object.type + " " + .object.sha'
+          }
+
+          if ! OBJ=$(lookup "git/ref/tags/$TAG"); then
+            echo "::error::Could not look up tag $TAG."
+            exit 1
+          fi
+          read -r OBJ_TYPE OBJ_SHA <<< "$OBJ"
+          # An annotated tag points to a tag object, which points to the commit.
+          if [[ "$OBJ_TYPE" == "tag" ]]; then
+            if ! OBJ=$(lookup "git/tags/$OBJ_SHA"); then
+              echo "::error::Could not read the annotated tag $TAG."
+              exit 1
             fi
-            if [[ "$COMMIT_SHA" == "$SHA" ]]; then echo "$t"; fi
-          done | head -1)
-          # Normalize: never emit branch refs; only plain tag names
-          # (a refs/tags/* value is accepted and stripped later).
-          case "$TAG" in
-            refs/heads/*) TAG="" ;;
-          esac
-          echo "tag=${TAG:-}" >> "$GITHUB_OUTPUT"
+            read -r OBJ_TYPE OBJ_SHA <<< "$OBJ"
+          fi
+          if [[ "$OBJ_TYPE" != "commit" || ! "$OBJ_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Tag $TAG does not resolve to a commit."
+            exit 1
+          fi
+
+          if [[ "$OBJ_SHA" != "$RUN_SHA" ]]; then
+            echo "::warning::Tag $TAG now points to $OBJ_SHA, not to this run's commit $RUN_SHA; not attaching."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Attach ZAP reports to GitHub release
         if: >

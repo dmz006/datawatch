@@ -408,6 +408,7 @@ test:
 	bash tests/test-ci-package-listing.sh
 	bash tests/test-no-pwa-when-spec-forbids.sh
 	bash tests/test-codeql-trigger-listing.sh
+	bash tests/test-release-ci-summary.sh
 	bash tests/test-sarif-upload-nonblocking.sh
 	bash tests/test-tidy-plans.sh
 	bash tests/test-plans-registry-archive.sh
