@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.43 — The start-up prompt check keeps watching, answers a screen twice at most, then warns you
+## v9.187.43 — The start-up dialog poller keeps watching, tries a screen at most twice itself, and can warn you
 
 ### Fixed
 - With auto-accept on, the start-up dialog poller of a new Claude session no longer stops after its own first answer. For about 45 seconds, unless the main prompt, task arrival or session end comes first, it retries an accept dialog that is still up or comes back, and answers a following one, with at most two attempts on the same screen (an attempt that held Enter back counts). It waits 5 seconds before answering the same type of dialog again, then needs it unchanged for 2 seconds. After its first successful answer it sends no Esc.
