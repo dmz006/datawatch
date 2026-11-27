@@ -5,6 +5,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.43 — Requests: work that is not lost between sessions (not released: waiting on operator decisions)
+
+### Added
+- Requests: saved items addressed to a role, not to a session. Today the role you can give is the supervisor of a project. They are on REST, assistant tools, chat (`request …`), `datawatch request` and the web app (Settings → Automata, five languages; no create form). Requests are for this computer only; a call forwarded to another datawatch is refused.
+- A request reads done only when its "done when" list reads done. A worker saying done does not mark it done. This needs `acceptance.mode: report`; with it off (the default) requests are saved and never close. A hello, an answer and a rule bundle close on a counted receipt and read "delivered (not the same as done)".
+- Only request lists are checked by datawatch, and no command checks are run. No reviewer is wired, so a review item reads "cannot tell" and keeps the request not done unless it is accepted without proof, which reads "done, accepted without proof".
+- If the holder ends, work it had accepted fails and is listed, and is not sent again. A request it never fetched goes to the next holder after that session takes its hello.
+- A pi confirmation shows datawatch's pi extension saw the text in a completed model call. Until 11.0 datawatch cannot prove that the extension, not other use of that session's credential, sent the report. **In this build pi delivery is not switched on.**
+- A worker with no proven way to fetch gets a request's text typed once. datawatch's tracker records `request <id> typed` only; what the terminal and the worker keep still holds the text.
+- Six settings under `delivery.` for request times and reminder limits. At most 2 reminders per session and 20 per computer each hour by default. The default times (take-by 1 hour, due 24 hours, 15 minutes between reminders) are not yet approved.
+
+### Changed
+- "Done when" lists (`acceptance.mode`, off by default): nothing is blocked, held or merged because of a list. datawatch creates and checks a list only for its requests. On a list made by hand, anything needing a check stays unchecked and the list does not read plain done (accepted without proof it reads "done, accepted without proof"). An item removed before the list is fixed is not required; removed later, the list reads changed, not done.
+- Even with `acceptance.mode` off, new routes, settings, a command and a Settings card appear.
+- With the delivery check on (the default), the work queue moves into `queue.d` at the first start, and `queue.json` becomes a marker that stops an older datawatch. The old plain content may remain on SSD or copy-on-write disks.
+- `datawatch queue` commands and the standalone MCP queue tools now need a running daemon.
+- The work queue records who claimed from the caller's credential; `claimed_by` is ignored.
+- Chat messages that start with `request` and a request command word, or are only `request`, are now commands.
+
+### Before you upgrade
+- To go back: stop datawatch, then run `datawatch queue export` (`--plain` on a secure install; the file is plain content).
+
+### Known
+- Who may create or manage requests, or answer, accept or change a "done when" list, is recorded, not enforced. Do not treat a counted answer as proof of who gave it.
+- Known, also in earlier code: a credential with sessions:list can use the chat test route with operator access; permissions and recorded actor names cannot be relied on.
+- On an install with no server token no session can take, accept or report a request.
+- On a secure install, words a Claude Code session passes into a request tool are kept in plain in the agent trace, and the session record's saved screen text can show them. The request, delivery and list stores did not hold them in our scan.
+- Known, also before this version: on a secure install, if the first `--secure` start is the one that encrypts a plain config file, the next start fails to open a store.
+
+### Not covered
+- Do not use pipelines or graphs for work that must not be lost. Other computers, containers, opencode and other workers are not covered.
+- Delivery is not work: a confirmed delivery does not show that a model understood or did the work.
+
 ## v9.187.42 — Archived Automata join cleanup, and a fault in the safe-to-delete report is fixed
 
 ### Changed
