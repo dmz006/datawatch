@@ -6370,3 +6370,14 @@ An Automation's limit on members running at once, its stage gate and its decisio
 | Comm `acceptance` | **Yes** (`internal/router/acceptance_comm_test.go`: parse, request bodies, secure replies; `acceptance_off_test.go`: an off setting leaves plain messages alone; `cmd/datawatch/acceptance_testmessage_wiring_test.go`: a real daemon's test-message route, off, report and off again) | **No** | No channel backend |
 | PWA table, list view, settings, locales en de es fr ja | **Yes** (`internal/server/web/app-done-when.test.js`) | **No** | Not opened in a browser; no Playwright story yet; no smoke script yet |
 
+
+## Requests: roles, reminders, proof, typed input, pi
+
+| Interface | Tested | Validated | Test conditions and notes |
+|---|---|---|---|
+| Roles, reminder limits, reminders, typed once | **Yes** (`internal/delivery/request_roles_test.go`, `request_notice_test.go`, `request_typed_test.go`) | **No** | Fakes and an injected clock; no live daemon |
+| "Done when" check, receipt probe, version resolver | **Yes** (`internal/delivery/request_proof_test.go`) | **No** | Real list engine and temporary git repositories |
+| Over the real request store | **Yes** (`request_proof_join_test.go`) | **No** | Skips until the store is in the tree; run in a combined copy before the merge |
+| Typed input records only `request <id> typed` | **Yes** (`internal/session/request_typed_test.go`, `cmd/datawatch/delivery_wiring_typer_test.go`) | **No** | Fake tmux; no real terminal. The pane output log is not covered: it shows what was typed |
+| pi extension | **Yes** (`internal/llm/backends/pi/delivery_test.go`) | **No** | Fake pi and fake daemon. **The sandbox proof with a real daemon, pi and model has not been run on the built extension.** Not loaded by any launch |
+| pi launch wiring | **Yes** (`cmd/datawatch/launch_pi_delivery_test.go`) | **No** | No live pi session |

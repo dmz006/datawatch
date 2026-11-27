@@ -1032,6 +1032,33 @@ The **completed migration** moves Automata (and Automations) that ended `cancell
 - **`delivery.notify`** (default `true`) — send listed items to the message channels. Off: nothing is sent and the check is red with `cannot_tell`.
 - **`delivery.interval_seconds`** (default `300`, `60` to `86400`) — seconds between checks. Read at daemon start.
 
+## Requests
+
+**Request** — one saved thing that must happen, addressed to a role in a scope, not to a session. Its states are waiting, delivered, accepted, reported, done, failed, expired and cancelled. Only datawatch's own check sets done; a doer's report stops at reported. This computer only. Pipelines and graphs are not requests: do not use them for work that must not be lost. See [`howto/requests.md`](howto/requests.md).
+
+**Role and holder** — one session holds a role in a scope; today the project supervisor can be given. A held role is refused while its holder is alive unless forced with a reason code.
+
+**Hello** — a request with no work in it, sent to a new holder. Its delivery proves that this session can take; until then it gets no must-deliver work (`take_not_proven`).
+
+**Fetched, in model call, accepted** — *fetched*: the session's own credential took the content; for Claude Code that counts as delivery. *In a completed model call*: pi only, datawatch's pi extension reported that the exact text was in a model call that completed. It does not show the model heeded or did it. pi delivery is not switched on yet. *Accepted*: the holder committed to it.
+
+**Typed, unconfirmed** — the text was typed, once ever, into a worker with no proven take. Typing never counts as delivery. The tracker records only `request <id> typed`; the pane's output log still shows what was typed.
+
+**Delivered (not the same as done)** — how a hello, an answer or a rule bundle reads when a counted receipt closes it.
+
+**Reminder** — one typed line with the number of waiting requests and no content; limited per session and per computer each hour; none while paused, held for usage or rate limited.
+
+### Request settings
+
+All are read live. The three times are provisional defaults that the operator has not approved.
+
+- **`delivery.request_take_by_seconds`** (default `3600`) — how long a request waits to be taken before it is listed.
+- **`delivery.request_due_seconds`** (default `86400`) — how long it has before it is overdue.
+- **`delivery.request_due_seconds_by_kind`** — replaces the due time for single request kinds.
+- **`delivery.reminder_interval_seconds`** (default `900`) — shortest time between two reminders to a session.
+- **`delivery.reminders_per_session_hour`** (default `2`, `0` for none).
+- **`delivery.reminders_per_host_hour`** (default `20`, `0` for none).
+
 ## Dashboard
 
 Mission control for your entire fleet — a live, full-screen view of every running session, active Automata, and system health indicators. Requires `autonomous.enabled: true` in `datawatch.yaml`; the nav button is hidden otherwise.

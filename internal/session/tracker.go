@@ -152,6 +152,19 @@ func (t *Tracker) RecordInputSent(input, source string) error {
 	return t.commitAll("session: input sent")
 }
 
+// RecordRequestTyped records that datawatch typed a request's text. line says
+// which request and nothing of its words.
+func (t *Tracker) RecordRequestTyped(line string) error {
+	entry := fmt.Sprintf("\n## [%s] Typed by datawatch (not the operator)\n\n%s\n", timestamp(), line)
+	if err := t.appendFile("conversation.md", entry); err != nil {
+		return err
+	}
+	if err := t.appendTimeline(fmt.Sprintf("%s | %s", timestamp(), line)); err != nil {
+		return err
+	}
+	return t.commitAll("session: " + line)
+}
+
 // RecordComplete marks the session done, makes final commit. The timeline line
 // carries no attribution; use RecordCompleteWithReason where the end is known.
 func (t *Tracker) RecordComplete(finalState State) error {
