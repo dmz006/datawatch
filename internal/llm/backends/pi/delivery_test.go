@@ -658,7 +658,9 @@ func TestReqPiTheInteractiveLaunchLoadsTheExtensionWhenWired(t *testing.T) {
 	if slices.Contains(run("sh", plain), "-e") {
 		t.Fatalf("not wired: %s", plain)
 	}
-	var _ interface{ SetDeliveryExtension(string) } = New("pi").(interface{ SetDeliveryExtension(string) })
+	if _, ok := New("pi").(interface{ SetDeliveryExtension(string) }); !ok {
+		t.Fatal("the interactive backend takes no extension: no launch would load it")
+	}
 	// One-shot pi is not part of delivery.
 	if _, ok := NewPrompt("pi").(interface{ SetDeliveryExtension(string) }); ok {
 		t.Fatal("the one-shot backend takes the extension")
