@@ -101,6 +101,9 @@ func (s *runState) releasePlan() ReleasePlan {
 		Size:        r.ReleaseSize,
 		Branches:    append([]string(nil), s.req.Branches...),
 	}
+	if s.isolated() && len(plan.Branches) > 0 {
+		plan.Commit = s.releaseCommit(plan.Branches[0])
+	}
 	// The version the release-version step reads, when it can read one.
 	if v, err := r.currentVersion(); err == nil {
 		plan.Version = v

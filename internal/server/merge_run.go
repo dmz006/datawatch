@@ -30,8 +30,9 @@ import (
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 )
 
-// mergeRunTimeout bounds one whole merge run.
-const mergeRunTimeout = 60 * time.Minute
+// mergeRunTimeout bounds one whole merge run. Each step has its own limit;
+// this one leaves room for a project's checks, a long release test among them.
+const mergeRunTimeout = 3 * time.Hour
 
 // mergeLockSource is the optional Manager surface that supplies the
 // repository merge lock. A Manager without it runs with no lock.
@@ -102,6 +103,9 @@ type mergeRunBody struct {
 	Automaton string `json:"automaton,omitempty"`
 }
 
+// mergeReconcileTimeout bounds one pass over the push journal.
+const mergeReconcileTimeout = 5 * time.Minute
+
 // mergeRunMu allows one merge run at a time.
 var mergeRunMu sync.Mutex
 
@@ -138,9 +142,9 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 		Notifier: &mergeNotifier{sink: mr.AlertSink(), project: project},
 		ConflictSettings: func() mergepipeline.ConflictSettings {
 			s := mergepipeline.DefaultConflictSettings()
-			// The LLM registry is not passed here, so the model policy
-			// degrades to stop_and_ask exactly as ResolveConflictPolicy describes.
-			policy, _, _ := cfg.ResolveConflictPolicy(project, nil)
+			// The same registry the settings view reads, so the view and a
+			// run agree on whether the model policy can be used.
+			policy, _, _ := cfg.ResolveConflictPolicy(project, mergeModelLookup(mr))
 			s.Policy = mergepipeline.ConflictPolicy(policy)
 			s.Mode = cfg.EffectiveConflictMode(project)
 			s.ConfirmFirstN = cfg.EffectiveConflictConfirmFirstN(project)
@@ -196,6 +200,7 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 			runner.Locks = locks
 		}
 	}
+	makeMergeRunSafe(runner, mr, cfg, project, dataDir)
 	for _, o := range opts {
 		if o == nil {
 			continue
@@ -286,7 +291,8 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.statePath(), s.mergeShipRunner(), s.planRecordsOption(), s.gitHostsOption()).Run(ctx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.statePath(), s.mergeShipRunner(), s.planRecordsOption(), s.gitHostsOption(),
+		withMergeSwitch(func() bool { return s.cfg != nil && s.cfg.Autonomous.MergeDeployRunEnabled })).Run(ctx, mergepipeline.RunRequest{
 		Title: body.Title, Branches: body.Branches, AutomatonID: body.Automaton,
 	})
 	if err == nil && body.Automaton != "" {

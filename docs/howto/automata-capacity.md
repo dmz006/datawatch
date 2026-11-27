@@ -339,7 +339,8 @@ not a rate limit.
 
 A task holds at most one capacity lease at a time. While its worker runs, that
 is the worker's lease. A task shows `verifying` from the moment its worker has
-started, and the lease stays held while that session runs. When the session
+started, and the lease stays held while that session runs (except while the task
+is parked, see below). When the session
 ends, the lease is released, so its slot is free for other work while the
 verification runs or waits. The verifier then takes its
 own lease, holder `verify:<task>`, on the pools it needs: the node's verifier
@@ -356,7 +357,53 @@ The guardrail judge works the same way. Its lease is `judge:<task>`. A worker
 lease still present when the judge starts is released, not handed over, and the
 judge then waits for its own slot like the verifier does.
 
-**Exceptions and known limits.** A task parked for a question releases its slot while it waits. A worker resumed after a question or an outside wait can lose its slot after about 10 minutes while still running. A resume still queued when its session ends can hold a slot for about 10 minutes. Resuming or adopting a session can put a pool over its limit.
+**Parked and resumed workers.** A task parked for a question or an outside wait
+releases its slot while its session stays open. The same rules apply to every
+way a session is resumed:
+
+- A resume waits for a slot like any new work. This also covers a retry that
+  continues the same session after a failed verification (nothing is sent into
+  the session before it has a slot), and a worker parked on an outside wait that
+  the daemon finds again after a restart with no slot free (it is prompted once
+  it has one).
+- The slot a resume gets is tied to its session, so it is held while the session
+  runs and freed when the session ends.
+- A resume whose session ends while it waits leaves the queue and takes no slot.
+  A retry in that case starts a new session instead. The resume of a parked task
+  also leaves the queue when the task's verification takes over, so a task never
+  holds a worker slot and a verifier slot for one turn. An answer that can no
+  longer be typed this way is listed for review
+  ([worker questions](operator-questions-workers.md#did-the-worker-get-the-line)).
+- While a decided answer waits, the worker is not nudged or ended as stalled.
+  A running worker that is only owed a further decision keeps its slot.
+- A task that is starting or resuming does not wait for the project tree while it
+  holds a slot. When another task has the tree, it gives its slot back, waits for
+  the tree, and is admitted again. Without this, two tasks that share one tree
+  could block each other on a small pool.
+
+**After a restart or a resume.** Running work is taken up first. Every running
+worker is counted before a parked worker is looked at, so a parked worker is not
+prompted into the slot a running one uses. Within one Automaton, tasks get lanes
+in this order: running tasks, then parked tasks (an outside wait, or a question
+kept across the restart), then the rest. Tasks that still wait for a slot
+therefore cannot fill the lanes while a running task has none. No decision line
+is typed until the restart has counted the running workers.
+
+**Known limits.**
+
+- Workers still running when the daemon restarts are counted again at once,
+  without waiting, because they are already using their slots. If more are
+  running than a pool allows (for example after the limit was lowered), the pool
+  reads over its limit until enough of them end.
+- If the restart hold (`autonomous.capacity_adopt_before_admit`) is off or times
+  out, a parked worker can be prompted before another Automaton's running worker
+  is counted.
+- A task whose work is being verified, and that does not have the shared project
+  tree, can keep a slot while it waits for the tree. If the task that has the
+  tree needs that slot, both wait until the capacity wait runs out.
+- A parked worker found again after a restart is prompted without taking the
+  project tree again. It waits only for the compute node it used, even when
+  another node is free, and fails if no slot comes there in time.
 
 
 ## Verifying tasks in the capacity view
@@ -692,7 +739,9 @@ restarts.
    force is needed — the reset keeps its place in the capacity queue,
    retargeting its target pool if the worker resolution changed, with
    a fresh wait budget); cancelling removes it from the queue outright.
-5. After a daemon restart, waiting tasks are put back in the queue.
+5. After a daemon restart, waiting tasks are put back in the queue. A task
+   parked on a worker question is different: it keeps its live worker. See
+   [questions from workers](operator-questions-workers.md#how-the-coordinator-tick-reads-and-resumes).
 
 An alert is raised when a task has waited 30 minutes.
 

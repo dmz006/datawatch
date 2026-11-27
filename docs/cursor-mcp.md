@@ -255,7 +255,7 @@ Selected core tools:
 | `rules_context_status` / `rules_context_set` | Read or change the rules and context settings used when Automata are planned (rules file, context files, digest mode, digest size limit, per-project overrides); `rules_context_status` is read-only and takes optional `project_dir` and `prd`; `rules_context_set` changes only the fields given |
 | `platform_context_status` | Read the platform context state for a session (enabled, project override, text version, delivery); read-only, takes an optional `hint` session id |
 | `automation_set_effort_ceiling` / `autonomous_prd_set_task_effort_ceiling` | Cap the effort of an Automation's task kinds (`docs`, `parity`, `live_check`, `final_gate`) or of one task at `low`, `medium`, `high` or `cheaper_backend`; an empty value clears it |
-| `usage_reading_add` / `usage_reading_delete` | Record (percent or spend, when, session percent, lanes) or delete one reading of the shared series |
+| `usage_reading_add` / `usage_reading_delete` | Record (percent or spend, when, session percent) or delete one reading of the shared series; the daemon stamps each reading with the Claude lanes it sees running, and a `lanes` argument is ignored |
 | `usage_extra_credit_set` / `usage_remaining_work_set` | Set the bought extra credit (shared setting) and the typed remaining work (daemon-local, run-flat-out policy) |
 | `usage_autolanes_status` | Read-only status of the auto-lanes loop (enabled, policy, operator maximum, current cap, target and direction, recent decisions); the `usage.calculator.auto_lanes` settings are changed through the config path |
 | `result_put` / `result_get` / `result_list` / `result_delete` | Result store (BL360) |

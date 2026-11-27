@@ -1415,7 +1415,8 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		}
 	}
 
-	fmt.Printf("[%s] [%s] Received: %q\n", r.hostname, msg.Backend, truncate(msg.Text, 80))
+	// The message text stays out of the log: it can be a command or a secret.
+	fmt.Printf("[%s] [%s] Received a message of %d characters\n", r.hostname, msg.Backend, len(msg.Text))
 	if r.chanTracker != nil {
 		r.chanTracker.RecordRecv(len(msg.Text))
 	}

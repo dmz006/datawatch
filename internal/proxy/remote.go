@@ -194,7 +194,9 @@ func (d *RemoteDispatcher) fetchSessions(sv config.RemoteServerConfig) []*sessio
 }
 
 // ForwardCommand sends a command to a specific remote server via its test/message
-// endpoint and returns the responses.
+// endpoint and returns the responses. Any status other than 2xx is an error, and
+// so is a 2xx answer that is not the endpoint's reply. The errors name the
+// server and the status only: never the command or the peer's body.
 func (d *RemoteDispatcher) ForwardCommand(serverName, text string) ([]string, error) {
 	servers := d.effectiveServers()
 	var sv *config.RemoteServerConfig
@@ -224,13 +226,19 @@ func (d *RemoteDispatcher) ForwardCommand(serverName, text string) ([]string, er
 		return nil, fmt.Errorf("proxy to %s: %w", serverName, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	respBody, _ := io.ReadAll(resp.Body)
-
-	var result struct {
-		Responses []string `json:"responses"`
+	respBody, readErr := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("proxy to %s: HTTP %d %s; the command was not accepted", serverName, resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
-	json.Unmarshal(respBody, &result) //nolint:errcheck
-	return result.Responses, nil
+
+	var fields map[string]json.RawMessage
+	var replies []string
+	if readErr == nil && json.Unmarshal(respBody, &fields) == nil {
+		if raw, ok := fields["responses"]; ok && json.Unmarshal(raw, &replies) == nil {
+			return replies, nil
+		}
+	}
+	return nil, fmt.Errorf("proxy to %s: unreadable reply (HTTP %d); the command may have run", serverName, resp.StatusCode)
 }
 
 // ForwardHTTP forwards an HTTP request to a remote server's API.

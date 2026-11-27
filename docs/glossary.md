@@ -69,7 +69,7 @@ was a fixed value before this setting existed. See
 
 ## Verifying lease release
 
-When a task's worker session ends, the worker's capacity slot is released and the verifier takes a slot of its own. A task shows `verifying` from the moment its worker has started, so the slot stays held while that session runs. A slow verification therefore does not keep a lane shut for other work. The slot is not handed over. See [howto/automata-capacity.md](howto/automata-capacity.md#the-worker-slot-at-verification).
+When a task's worker session ends, the worker's capacity slot is released and the verifier takes a slot of its own. A task shows `verifying` from the moment its worker has started, so the slot stays held while that session runs (except while the task is parked on a question or an outside wait). A slow verification therefore does not keep a lane shut for other work. The slot is not handed over. See [howto/automata-capacity.md](howto/automata-capacity.md#the-worker-slot-at-verification).
 
 ## Allowed fall-through target
 

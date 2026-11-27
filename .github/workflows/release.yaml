@@ -56,7 +56,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
-          args: --timeout=5m
+          args: --timeout=10m
           # See ci.yaml's identical setting for why: the action's default
           # cache key isn't branch/commit-scoped, so this job races the
           # one in ci.yaml (and any concurrent PR) on the same slot.

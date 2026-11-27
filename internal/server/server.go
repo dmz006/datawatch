@@ -521,6 +521,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// and records' system tags from their stored facts.
 	apiMux.HandleFunc("/api/autonomous/tags/sweep", api.handleTagSweep)
 	apiMux.HandleFunc("/api/autonomous/tags/sweep/", api.handleTagSweep)
+	// Tag repair: plan, or with dry_run=false make, the repair of tag IDs
+	// that have no record.
+	apiMux.HandleFunc("/api/autonomous/tags/repair", api.handleTagRepair)
 	// Shared tag registry: the keeper snapshot, forwarded peer writes and the
 	// merge-note dismissal. The exact paths win over the /tags/ subtree above.
 	apiMux.HandleFunc("/api/autonomous/tags/registry", api.handleTagRegistrySnapshot)

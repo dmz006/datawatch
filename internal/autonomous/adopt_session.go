@@ -75,6 +75,9 @@ type AdoptedWait struct {
 	TaskID    string
 	SessionID string
 	NudgedAt  time.Time
+	// decision lets the wait treat the worker's blocking question as the
+	// fresh-worker wait does. Nil means no question handling.
+	decision *adoptedDecision
 }
 
 // adoptedStartWatch is how the start-confirm wait reads an adopted session on
@@ -194,6 +197,8 @@ func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.C
 	}
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
+	// A worker that has asked a question has started: the bound is done with it.
+	asked := false
 	for {
 		select {
 		case err := <-done:
@@ -201,6 +206,9 @@ func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.C
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-tick.C:
+		}
+		if asked = asked || w.decision.asked(); asked {
+			continue
 		}
 		now := clock()
 		state := ""

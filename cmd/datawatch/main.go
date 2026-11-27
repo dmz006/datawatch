@@ -52,6 +52,7 @@ import (
 	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/classifier"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
@@ -127,7 +128,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.28"
+var Version = "9.187.38"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5715,6 +5716,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								}
 								continue
 							}
+							// A decision that is made but not typed yet (it waits for a
+							// capacity slot or the project tree): the worker is still
+							// parked, so nothing is typed into it and no stall detector
+							// runs. Its session ending is seen above.
+							if autonomousMgrRef.DecisionResumeWaiting(task.ID) {
+								waitingInputTicks = 0
+								idleSince = time.Time{}
+								if exitSilenceTracker != nil {
+									exitSilenceTracker.Reset(time.Now())
+								}
+								if descendantStallTracker != nil {
+									descendantStallTracker.Reset(time.Now())
+									descendantOutputObs.reset()
+								}
+								continue
+							}
 						}
 						// Attempt-limit check: every tick, every backend. The
 						// limits are read from the live config object each tick so
@@ -6215,6 +6232,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					}
 				}
 				if doneVerdict != nil {
+					// Not even a finished checkpoint and a passing script make
+					// a worker done whose task never arrived.
+					if ls, ok := mgr.GetSession(task.SessionID); ok {
+						if lerr := neverGivenTaskFailure(ls, mgr.TaskDeliveryFailure(ls.FullID)); lerr != nil {
+							log.Printf("[autonomous] launch failure: task %s/%s: %v", task.PRDID, task.ID, lerr)
+							return autonomouspkg.VerificationResult{}, lerr
+						}
+					}
 					return *doneVerdict, nil
 				}
 				if stallErr != nil {
@@ -6225,16 +6250,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					return autonomouspkg.VerificationResult{}, mapSessionStartError(stallErr)
 				}
 				// A claude-code worker is handed its task after launch (channel
-				// delivery). If it ended without the delivery ever being
-				// recorded, nothing ran: classify it as a launch failure and
-				// retry rather than verifying an untouched tree.
-				if ls, ok := mgr.GetSession(task.SessionID); ok && ls.OneShot && ls.AgentID == "" &&
-					ls.BackendFamily == "claude-code" && !mgr.TaskDelivered(ls.FullID) &&
-					!autonomouspkg.JudgeCompletedByOutput(ls.State == session.StateComplete,
-						ls.CompletionSummary != "", ls.CommitSHA, ls.LastResponse != "") {
-					log.Printf("[autonomous] launch failure: session %s task %s/%s ended (%s) with no task delivery recorded; retrying",
-						ls.FullID, task.PRDID, task.ID, ls.State)
-					return autonomouspkg.VerificationResult{}, autonomouspkg.LaunchFailureErrorWithReason(ls.FullID, ls.BackendFamily, string(ls.State), mgr.TaskDeliveryFailure(ls.FullID))
+				// delivery). If it ended with nothing to show the task arrived,
+				// nothing ran: classify it as a launch failure and retry rather
+				// than verifying an untouched tree.
+				if ls, ok := mgr.GetSession(task.SessionID); ok {
+					if lerr := undeliveredWorkerFailure(ls, mgr.TaskDelivered(ls.FullID), mgr.TaskDeliveryFailure(ls.FullID)); lerr != nil {
+						log.Printf("[autonomous] launch failure: session %s task %s/%s ended (%s) with no task delivery proven; retrying",
+							ls.FullID, task.PRDID, task.ID, ls.State)
+						return autonomouspkg.VerificationResult{}, lerr
+					}
 				}
 			}
 			// The worker wait is over: verify time counts from here.
@@ -6753,7 +6777,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// fallback. Generate mode skips this block entirely and runs the
 			// unchanged path below.
 			if resolvedVLLM.Mode == autonomouspkg.VerifierModeClassify {
-				return runClassifyVerification(ctx, vnode, vbackend, verifyModel, prompt,
+				// The verifier holds its slot here, so a classify call on the
+				// same node runs on it instead of waiting for a second one.
+				vctx := classifier.WithHeldSlot(ctx, autonomouspkg.VerifyHolder(task.ID))
+				return runClassifyVerification(vctx, vnode, vbackend, verifyModel, prompt,
 					autonomouspkg.RecordScoresEnabled(liveCfg.VerificationRecordScores)), nil
 			}
 			// B124 — vkind has no /api/ask adapter but is a real
@@ -7939,6 +7966,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// served-models cache it reads through is wired.
 			startVerifierHeadroomMeasurer(ctx, headroom.Store, httpServer, capLedger, servedModelsCache)
 			classifyWiring.ledger.Store(capLedger)
+			nodeWait := amgr.CapacityWaitDuration
+			classifyWiring.capacityWait.Store(&nodeWait)
 			// Preflight a pi launch on a compute node: a node that fails it is
 			// marked unhealthy in the ledger and the launch is deferred.
 			pibackend.SetLaunchGate(capLedger, func(addr string) string {
@@ -8280,6 +8309,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			})
 			// Supervisor loop: the eight mechanical steps run once per idle
 			// tick, and an escalation raises a question in the queue.
+			wireMergeConflictModel(amgr, cfg, autonomousInferenceReg, inferenceDispatcher)
+			go server.ReconcileMergePushesAtStart(context.Background(), amgr, cfg)
 			if stopWake := wireSupervisorLoop(autoCoord, amgr, aAPI, cfg, autonomousInferenceReg, httpServer, mgr); stopWake != nil {
 				defer stopWake()
 			}

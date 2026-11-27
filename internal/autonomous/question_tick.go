@@ -9,19 +9,22 @@ package autonomous
 //
 //   - It makes no HTTP call and never reads session output.
 //   - An open question leaves its task parked.
-//   - Resume = re-admit through awaitReAdmitAs, re-claim the tree lock if the
-//     park released it, then prompt the session with one line carrying the
+//   - Resume = re-admit and re-claim the tree lock if the park released it
+//     (resumeSlotAndTree), then prompt the session with one line carrying the
 //     decision (BuildDecisionResumeLine).
 //   - Each resume runs in its own goroutine behind a per-task in-flight guard,
 //     so the ticker never waits on a question, a session or capacity.
 //   - The task records the answer it resumed for (Task.DecisionResume), so a
 //     later tick never resumes it twice; a superseding answer is recorded as
 //     the new current answer without a second resume.
+//   - The record also says whether the prompt line arrived
+//     (answer_delivery.go): only a line refused before typing is tried again.
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -45,6 +48,19 @@ type DecisionResume struct {
 	// differs from AnswerID once an answer superseded the one resumed for.
 	CurrentAnswerID string    `json:"current_answer_id,omitempty"`
 	ResumedAt       time.Time `json:"resumed_at"`
+	// OpenAtResume are the task's other blocking questions that were open when
+	// this resume was recorded. None of them may take the task over while the
+	// line is unfinished.
+	OpenAtResume []string `json:"open_at_resume,omitempty"`
+	// Delivery says what is known about the prompt line: waiting, sending,
+	// sent, not_typed or review_needed (answer_delivery.go).
+	Delivery string `json:"delivery,omitempty"`
+	// DeliveryReason is a reason code for not_typed and review_needed.
+	DeliveryReason string `json:"delivery_reason,omitempty"`
+	// DeliverySessionID is the one worker session the line is meant for.
+	DeliverySessionID string `json:"delivery_session_id,omitempty"`
+	// DeliveredAt is when the send returned no error.
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
 }
 
 // QuestionLister is the read side of the question store that the REST layer
@@ -62,7 +78,10 @@ func ReadQuestionsForTick(l QuestionLister, state QuestionState) []Question {
 
 // questionTickState guards the resumes in flight: one per task at a time.
 type questionTickState struct {
-	mu       sync.Mutex
+	mu sync.Mutex
+	// parkMu makes "may this task be parked" and the park one step: the wait
+	// loops and the tick both park.
+	parkMu   sync.Mutex
 	inflight map[string]bool
 	wg       sync.WaitGroup
 }
@@ -204,17 +223,34 @@ func (m *Manager) QuestionTick(ctx context.Context) {
 		}
 	}
 
-	if len(answered) == 0 && len(withdrawn) == 0 {
+	// Open questions are owed from now on, also those no wait loop parked on.
+	open := map[string][]Question{}
+	for _, q := range ReadQuestionsForTick(store, QuestionOpen) {
+		if owedQuestion(&q) {
+			open[q.TaskID] = append(open[q.TaskID], q)
+		}
+	}
+
+	// An expired question can still hold a task parked, so it counts too.
+	if len(answered) == 0 && len(withdrawn) == 0 && len(open) == 0 &&
+		len(ReadQuestionsForTick(store, QuestionExpired)) == 0 {
 		return
 	}
 
 	for _, p := range m.store.ListPRDs() {
 		prd, ok := m.store.SnapshotPRD(p.ID)
-		if !ok || prd.Status == PRDHeld || closedRecordReason(prd) != "" {
-			continue // a held or closed Automaton's tasks are not resumed by an answer
+		if !ok || prd.Status == PRDHeld {
+			continue // a held Automaton's tasks are not resumed by an answer
 		}
+		closed := closedRecordReason(prd) != ""
 		for _, st := range prd.Story {
 			for _, tk := range st.Tasks {
+				if closed {
+					// Nothing is typed; what was never delivered is listed.
+					m.listUndeliveredDecisions(store, tk.ID)
+					continue
+				}
+				m.noteOwedDecisions(tk.ID, parkedQuestionID(tk), open[tk.ID])
 				m.questionTickTask(ctx, store, tk, answered, withdrawn)
 			}
 		}
@@ -232,6 +268,7 @@ func indexQuestions(qs []Question) map[string]Question {
 // questionTickTask handles one task snapshot.
 func (m *Manager) questionTickTask(ctx context.Context, store *QuestionStore, tk Task, answered, withdrawn map[string]Question) {
 	if isTaskTerminal(tk.Status) {
+		m.listUndeliveredDecisions(store, tk.ID)
 		return
 	}
 	// A task already resumed for a question follows the question's newest
@@ -244,7 +281,26 @@ func (m *Manager) questionTickTask(ctx context.Context, store *QuestionStore, tk
 		}
 	}
 
+	// A resume whose prompt line has not been seen to arrive.
+	if dr := tk.DecisionResume; dr != nil && dr.deliveryOpen() {
+		if !parkedOnAnotherQuestion(tk, dr.QuestionID) {
+			if dr.Delivery == DecisionNotTyped {
+				m.noticeOwedBehindLine(store, tk.ID, dr.QuestionID)
+			}
+			m.continueDelivery(ctx, store, tk)
+			return
+		}
+		// Parked on another question with the line open. Nothing parks that
+		// way any more; a held answer queued for capacity is at work (and
+		// left alone), and anything else would never be typed, so it is
+		// listed.
+		if prd, ok := m.store.GetPRD(tk.PRDID); !ok || !m.listUnfinishedLine(prd, tk.ID, dr.QuestionID, deliveryReplaced) {
+			return
+		}
+	}
+
 	if tk.Status != TaskWaitingCapacity || !IsAwaitDecisionWaitReason(tk.WaitReason) {
+		m.settleOwedDecisions(ctx, store, tk.ID)
 		return
 	}
 	qid := AwaitDecisionQuestionID(tk.WaitReason)
@@ -254,18 +310,34 @@ func (m *Manager) questionTickTask(ctx context.Context, store *QuestionStore, tk
 	if dr := tk.DecisionResume; dr != nil && dr.QuestionID == qid {
 		return // already resumed for this question
 	}
-	if q, ok := answered[qid]; ok {
-		ans, ok := store.CurrentAnswer(qid)
-		if !ok {
-			return
+	q, ok := answered[qid]
+	if !ok {
+		if q, ok = withdrawn[qid]; !ok {
+			// Not among the newest decided ones, or not decided.
+			q, ok = store.Get(qid)
 		}
-		m.startQuestionResume(ctx, tk, q, &ans)
-		return
 	}
-	if q, ok := withdrawn[qid]; ok {
+	switch {
+	case ok && q.State == QuestionAnswered:
+		if ans, found := store.CurrentAnswer(qid); found {
+			m.startQuestionResume(ctx, tk, q, &ans)
+		}
+	case ok && q.State == QuestionWithdrawn:
 		m.startQuestionResume(ctx, tk, q, nil)
+	case ok && q.State == QuestionExpired:
+		// An expired question releases its park. A decision the task still
+		// owes takes its place; otherwise the worker is told it expired.
+		if snap, found := m.store.TaskSnapshot(tk.ID); found {
+			if owed, _ := m.decidedOwed(store, snap); len(owed) > 0 {
+				m.settleOwedDecisions(ctx, store, tk.ID)
+				return
+			}
+		}
+		m.startQuestionResume(ctx, tk, q, nil)
+	default:
+		// Open (or unknown): the task stays parked.
+		m.settleOwedDecisions(ctx, store, tk.ID)
 	}
-	// Open (or unknown): the task stays parked.
 }
 
 // recordCurrentAnswer notes the newest answer on a task already resumed for
@@ -309,6 +381,9 @@ func (m *Manager) waitQuestionResumes() {
 // the resume, re-admits the task, re-claims the tree lock if the park released
 // it, and prompts the session with the decision. A failed re-admission undoes
 // the record so the next tick tries again.
+//
+// A record still in the waiting state was never typed (the daemon stopped
+// while the task was queued), so it may be claimed again.
 func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, ans *Answer) {
 	if ctx.Err() != nil {
 		return
@@ -322,7 +397,13 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 		return
 	}
 
+	if cur, ok := m.store.TaskSnapshot(snap.ID); !ok ||
+		(cur.Status == TaskWaitingCapacity && AwaitDecisionQuestionID(cur.WaitReason) == q.ID && !m.closeReplacedDelivery(prd, cur, q.ID)) {
+		return
+	}
+
 	rec := &DecisionResume{QuestionID: q.ID, Withdrawn: ans == nil, ResumedAt: time.Now().UTC()}
+	others := m.otherOpenQuestionIDs(snap.ID, q.ID)
 	if ans != nil {
 		rec.AnswerID, rec.CurrentAnswerID = ans.ID, ans.ID
 	}
@@ -332,10 +413,12 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 		if c.Status != TaskWaitingCapacity || AwaitDecisionQuestionID(c.WaitReason) != q.ID {
 			return
 		}
-		if c.DecisionResume != nil && c.DecisionResume.QuestionID == q.ID {
+		if cur := c.DecisionResume; cur != nil && cur.QuestionID == q.ID && cur.Delivery != DecisionWaiting {
 			return
 		}
 		prev = c.DecisionResume
+		rec.open(c.SessionID)
+		rec.OpenAtResume = others
 		c.DecisionResume = rec
 		claimed = true
 	})
@@ -346,7 +429,11 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 	box := m.treeLockBoxLocked(snap.ID)
 	releasedTree := box != nil && *box == nil
 
-	if err := m.awaitReAdmitAs(ctx, prd, t, AwaitDecisionWaitReasonFor(q.ID), snap.ComputeNode); err != nil {
+	if err := m.resumeSlotAndTree(ctx, prd, t, AwaitDecisionWaitReasonFor(q.ID), snap.ComputeNode, true, releasedTree, box); err != nil {
+		if errors.Is(err, errResumeSessionGone) {
+			m.listDroppedResume(prd, snap.ID, rec)
+			return
+		}
 		if !m.taskCancelled(snap.ID) {
 			m.store.MutateTask(snap.ID, func(c *Task) {
 				if c.DecisionResume == rec {
@@ -361,20 +448,29 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 	if m.taskCancelled(snap.ID) {
 		return
 	}
-	m.reclaimTreeLock(prd, t, releasedTree, box)
 
-	sessionID := snap.SessionID
-	if cur, ok := m.store.TaskSnapshot(snap.ID); ok && cur.SessionID != "" {
-		sessionID = cur.SessionID
+	m.finishResume(prd, snap.ID, q, ans, rec)
+}
+
+// finishResume prompts the resumed session. With no prompt hook there is
+// nothing to deliver, so the resume is recorded and counted at once.
+func (m *Manager) finishResume(prd *PRD, taskID string, q Question, ans *Answer, rec *DecisionResume) {
+	if m.sessionContinueLineFnLocked() != nil {
+		m.sendDecisionLine(prd.ID, taskID, q, ans)
+		return
 	}
-	if fn := m.sessionContinueLineFnLocked(); fn != nil && sessionID != "" {
-		if err := fn(sessionID, BuildDecisionResumeLine(q, ans)); err != nil {
-			log.Printf("[autonomous] %s: decision resume prompt to session %s failed: %v", snap.ID, sessionID, err)
+	m.store.MutateTask(taskID, func(c *Task) {
+		if c.DecisionResume == nil || c.DecisionResume.QuestionID != q.ID {
+			return
 		}
-	}
-	m.emitDecisionResumeAudit(prd, snap.ID, rec)
+		next := *c.DecisionResume
+		next.Delivery, next.DeliverySessionID = "", ""
+		c.DecisionResume = &next
+		c.OwedDecisions = withoutOwed(c.OwedDecisions, q.ID)
+	})
+	m.emitDecisionResumeAudit(prd, taskID, rec)
 	recordWorkerQuestion(WorkerQuestionOutcomeResumed)
-	log.Printf("[autonomous] %s: resumed after decision %s (answer %q, withdrawn=%v); no retry counted", snap.ID, q.ID, rec.AnswerID, rec.Withdrawn)
+	log.Printf("[autonomous] %s: resumed after decision %s (answer %q, withdrawn=%v); no retry counted", taskID, q.ID, rec.AnswerID, rec.Withdrawn)
 }
 
 func (m *Manager) emitDecisionResumeAudit(prd *PRD, taskID string, rec *DecisionResume) {
@@ -387,6 +483,7 @@ func (m *Manager) emitDecisionResumeAudit(prd *PRD, taskID string, rec *Decision
 		"question_id": rec.QuestionID,
 		"answer_id":   rec.AnswerID,
 		"withdrawn":   rec.Withdrawn,
+		"delivery":    rec.Delivery,
 	})
 }
 
@@ -397,6 +494,10 @@ func (m *Manager) emitDecisionResumeAudit(prd *PRD, taskID string, rec *Decision
 // nil) it says so and that no default was applied. Free text is JSON-encoded,
 // so a newline in it cannot break the line.
 func BuildDecisionResumeLine(q Question, ans *Answer) string {
+	if ans == nil && q.State == QuestionExpired {
+		return fmt.Sprintf("[automaton decision] question=%s expired without an answer — no default was applied and no decision was made. Continue only with work that does not depend on it; if you are still blocked, raise a new question with the %s marker.",
+			q.ID, questionMarkerText)
+	}
 	if ans == nil {
 		return fmt.Sprintf("[automaton decision] question=%s was withdrawn — no default was applied and no decision was made. Continue only with work that does not depend on it; if you are still blocked, raise a new question with the %s marker.",
 			q.ID, questionMarkerText)

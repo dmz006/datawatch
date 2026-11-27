@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.28 (2026-11-26).** datawatch now answers a Claude start-up dialog only when the screen ends with it and it has stayed unchanged for two seconds; the changelog lists what can still go wrong. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.38 (2026-11-26).** A resumed Automaton worker now keeps its capacity slot while its session runs, unless it parks again, and a decided answer is typed only once its task holds a slot; tested with stand-in workers, not with live Claude or pi workers, and some waits and restart cases remain (see the changelog). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

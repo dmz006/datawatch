@@ -42,6 +42,10 @@ type ReleasePlan struct {
 	Size string
 	// Branches are the branches the release merges in.
 	Branches []string
+	// Commit is the exact commit selected for the release, in a run that
+	// rebuilds a held release later: the question and its answer then cover
+	// that commit only. Empty in a run that does not.
+	Commit string
 	// Version is the version the release would get.
 	Version string
 	// Checks are the results of the checks run before the release.
@@ -55,9 +59,21 @@ type ReleasePlan struct {
 // project, Automaton and size always map to the same key, so a re-run finds
 // the question that is already open rather than raising a second one.
 func releaseSourceLine(plan ReleasePlan) string {
-	sum := sha256.Sum256([]byte(ReleaseQuestionAsker + "\x00" + plan.Project + "\x00" + plan.AutomatonID + "\x00" + plan.Size))
+	key := ReleaseQuestionAsker + "\x00" + plan.Project + "\x00" + plan.AutomatonID + "\x00" + plan.Size
+	if plan.Commit != "" {
+		key += "\x00" + plan.Commit
+	}
+	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
 }
+
+// releaseQuestionFinder finds a release question already asked, answered
+// ones included. *autonomous.QuestionStore is one.
+type releaseQuestionFinder interface {
+	LatestBySourceLine(askedBy, sourceLineSHA256 string) (autonomous.Question, bool)
+}
+
+var _ releaseQuestionFinder = (*autonomous.QuestionStore)(nil)
 
 // releaseQuestionText writes the merge plan in plain words and ends with the
 // choice the operator has to make.
@@ -116,6 +132,14 @@ func releaseQuestionText(plan ReleasePlan) string {
 func RaiseReleaseDecision(raiser QuestionRaiser, plan ReleasePlan) (questionID string, raised bool, err error) {
 	if raiser == nil {
 		return "", false, ErrNoQuestionChannel
+	}
+	// A release for one exact commit that was already asked about is not
+	// asked again, answered or not: a held run is rebuilt by a later one,
+	// which must find the answer. The answer can still be changed.
+	if finder, ok := raiser.(releaseQuestionFinder); ok && plan.Commit != "" {
+		if have, found := finder.LatestBySourceLine(ReleaseQuestionAsker, releaseSourceLine(plan)); found {
+			return have.ID, false, nil
+		}
 	}
 	q := autonomous.Question{
 		Label:     "decision",

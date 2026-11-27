@@ -1474,6 +1474,9 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
+	// mergeModel is the merge conflict model wiring (merge_run_facts.go).
+	mergeModel atomic.Pointer[mergeModelWiring]
+
 	// idRootsCfg is the live config the id check reads (id_alloc.go).
 	idRootsCfg atomic.Pointer[idRootsSnapshot]
 
@@ -1643,7 +1646,10 @@ type Manager struct {
 	// name of the Automation that takes kind-bug filings lives in
 	// m.cfg.DefectIntakeAutomation (autonomous.defect_intake_automation).
 	// Guarded by mu.
-	tagEventFn   func(TagEvent)
+	tagEventFn    func(TagEvent)
+	tagRecordHook func()
+	// tagRepairMu allows one tag repair at a time (tags_repair.go).
+	tagRepairMu  sync.Mutex
 	defectIntake DefectIntake
 	// autoTagsDaemon supplies the daemon-level autonomous.auto_tags block
 	// that the engine-tag sync resolves against (auto_tags.go). Wired by
@@ -2089,6 +2095,12 @@ type Manager struct {
 	// the alert it recorded ("" when it cannot name one) so an emitter
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
+	// resumes are the resumes of worker sessions under way (resume_slot.go).
+	// It has its own lock.
+	resumes resumeBook
+	// notices are the delivery notices the sink has not taken yet
+	// (delivery_notices.go). It has its own lock.
+	notices noticeBox
 
 	// daemonRulesTextFn — the daemon's session- and config-dependent
 	// rules-file blocks for a directory (SetDaemonRulesTextFn). Guarded
@@ -2781,11 +2793,14 @@ func (m *Manager) budgetsSummary() []BudgetStatus {
 
 // SetAlertSink wires the operator-facing alert callback. Nil disables.
 // The sink returns the id of the alert it recorded ("" when it cannot
-// name one).
+// name one). Delivery notices raised before it are handed to it here.
 func (m *Manager) SetAlertSink(fn func(level, title, body string) (id string)) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.alertSink = fn
+	m.mu.Unlock()
+	if fn != nil {
+		m.flushNotices()
+	}
 }
 
 // AlertSink returns the configured alert callback, or nil when unset.
@@ -2951,9 +2966,9 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 	}
 	var reset []pendingTaskEvent
 	completedCount, requeuedCount := 0, 0
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			t := &prd.Story[si].Tasks[ti]
+	// Parked workers come last: every running worker is counted first.
+	for _, group := range parkedLast(prd) {
+		for _, t := range group {
 			prevStatus := t.Status
 			if t.Kind == TaskKindFinalGate && (prevStatus == TaskInProgress || prevStatus == TaskVerifying || prevStatus == TaskRunningTests) && m.holdFinalGateForRecord(prd, t) {
 				// The final gate outlived the daemon (or finished while it was
@@ -2985,12 +3000,24 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				// the task resumes without having counted a retry.
 				if IsAwaitExternalWaitReason(t.WaitReason) {
 					if t.SessionID != "" && aliveFn != nil && aliveFn(t.SessionID) {
+						// A parked worker holds no slot. When one is not free now, the
+						// run waits for it before prompting the session
+						// (resumeParkedAtRestart); the wait reason stays as it is.
+						if !m.resumeFitsNow(prd, t) {
+							m.store.WithLock(func() {
+								t.AdoptedSession = true
+								t.UpdatedAt = time.Now()
+							})
+							reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+							log.Printf("[autonomous] boot-resume: await-external task %s on live session %s for prd=%s waits for a capacity slot before it is prompted (no retry counted)", t.ID, t.SessionID, prd.ID)
+							continue
+						}
+						m.adoptCapacity(prd, t)
 						if contFn := m.sessionContinueFnLocked(); contFn != nil {
 							if cerr := contFn(t.SessionID); cerr != nil {
 								log.Printf("[autonomous] boot-resume: await-external continue prompt to session %s: %v", t.SessionID, cerr)
 							}
 						}
-						m.adoptCapacity(prd, t)
 						m.store.WithLock(func() {
 							t.Status = TaskInProgress
 							t.AdoptedSession = true
@@ -3002,6 +3029,9 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 						continue
 					}
 					log.Printf("[autonomous] boot-resume: await-external task %s for prd=%s has no live session; re-queueing a fresh attempt", t.ID, prd.ID)
+				}
+				if m.keepDecisionPark(prd, t, aliveFn, agentStartedFn) {
+					continue
 				}
 			case TaskInProgress:
 				switch decideInProgressResume(aliveFn, agentStartedFn, outputFn, t.SessionID) {
@@ -5086,6 +5116,13 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 					// the flag false, so an unconsumed clean restart never carries
 					// over into a later reset.
 					t.CleanRestart = cleanRestart
+					// The supervisor loop retries an infrastructure hold once
+					// for each time the operator has not stepped in.
+					if isOperatorActor(actor) {
+						t.LoopRetriedInfraHold = false
+					} else if review != nil && actor == supervisorLoopActor {
+						t.LoopRetriedInfraHold = true
+					}
 					// An operator review's changes go on last, so the hint they
 					// set replaces the generic one built above.
 					if review != nil {

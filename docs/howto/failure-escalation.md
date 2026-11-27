@@ -317,6 +317,12 @@ one that fails sends the attempt to a fresh session, and the record says why:
 5. **The session's context is at or under that limit.** A size the daemon
    could not measure passes when the other checks do.
 
+A resumed retry takes a capacity slot like any new work. When the pools are
+full, the task waits as `waiting_capacity` and nothing is sent into the session
+until it has a slot. If the session ends during that wait, the attempt starts a
+fresh session. If the wait reaches `autonomous.capacity_wait_timeout_seconds`,
+the task fails the same way a new start would.
+
 When it resumes, the attempt spawns nothing: it waits on the same session,
 and the worktree is whatever the failed attempt left behind — the worker fixes
 in place. The daemon types one line into the session: a marker naming this as
@@ -622,6 +628,24 @@ datawatch config set autonomous.failure_escalation.enabled false
 or, on one Automaton, `datawatch autonomous failure-escalation set <automaton-id> --enabled false`.
 With escalation off, a task that fails its attempts is marked failed, and the
 retry count is still `autonomous.auto_fix_retries`.
+
+## After upgrading: what to check
+
+Two behaviours changed for ladders that include a `claude-code` step:
+
+- A step with no model no longer lands on the backend's built-in or the
+  account's default model (which could be an Opus model). It runs on the daemon
+  default, `sonnet` (`haiku` for a mechanical task kind). If you want a
+  different model for a step, name it on the step.
+- A step whose backend is backed off is skipped for that attempt, so a task
+  pinned to a local model may run on its normally resolved worker for one
+  attempt instead of escalating. Look for `failure_escalation` entries in the
+  decision log to see which attempts were skipped.
+
+Review any ladder you wrote before this change: a step you relied on to reach a
+particular Claude model should name that model explicitly. See
+[explicit model policy](explicit-model-policy.md) and
+[usage back-off](usage-backoff.md).
 
 ## See also
 
