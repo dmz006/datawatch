@@ -170,8 +170,8 @@ func TestFirstPassMakesOneBacklogAndSendsNothing(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		h.cands = append(h.cands, failedWork(fmt.Sprintf("old%04d", i), h.now.Add(-72*time.Hour)))
 	}
-	r := h.pass()
-	r = h.run(time.Hour)
+	h.pass()
+	r := h.run(time.Hour)
 	if len(r.Backlog) != 1000 || len(r.Items) != 0 {
 		t.Fatalf("backlog=%d items=%d, want 1000 and 0", len(r.Backlog), len(r.Items))
 	}
@@ -200,8 +200,8 @@ func TestFiveHundredNewOccurrencesStopAtFifty(t *testing.T) {
 	for i := 0; i < 500; i++ {
 		h.cands = append(h.cands, failedWork(fmt.Sprintf("n%04d", i), h.now))
 	}
+	h.next()
 	r := h.next()
-	r = h.next()
 	listed := 0
 	for _, e := range r.Items {
 		if e.Kind == KindSchedule {
@@ -230,15 +230,20 @@ func TestFiveHundredNewOccurrencesStopAtFifty(t *testing.T) {
 func TestOverLimitIsListedAtTheFirstPassAfterTheLimit(t *testing.T) {
 	h := newHarness(t)
 	h.pass()
-	h.cands = []Candidate{planted("a1", "planning", h.now, LimitPlanning)}
+	noReason := planted("a2", "planning", h.now, LimitPlanning)
+	noReason.Reason = ""
+	h.cands = []Candidate{planted("a1", "planning", h.now, LimitPlanning), noReason}
 	r := h.run(LimitPlanning)
 	if _, ok := findEntry(open(r), "a1"); ok {
 		t.Fatalf("listed before the limit")
 	}
 	r = h.next()
 	e, ok := findEntry(r.Items, "a1")
-	if !ok || e.Invariant != InvOverdue || e.Reason != "over_limit" {
-		t.Fatalf("entry=%+v ok=%v, want an I2 over_limit item", e, ok)
+	if !ok || e.Invariant != InvOverdue || e.Reason != "awaiting_you" {
+		t.Fatalf("entry=%+v ok=%v, want an I2 item that keeps its reason", e, ok)
+	}
+	if e, _ := findEntry(r.Items, "a2"); e.Reason != "over_limit" {
+		t.Fatalf("entry=%+v, want over_limit when there is no other reason", e)
 	}
 }
 
@@ -826,8 +831,8 @@ func TestAHalfSavedFirstEnableMakesNoStorm(t *testing.T) {
 	}
 	h.sender.sent = nil
 	h.open()
+	h.next()
 	r := h.next()
-	r = h.next()
 	if len(r.Backlog) != 200 || len(r.Items) != 0 || h.sender.count() != 0 {
 		t.Fatalf("backlog=%d items=%d sends=%d, want 200, 0 and 0", len(r.Backlog), len(r.Items), h.sender.count())
 	}

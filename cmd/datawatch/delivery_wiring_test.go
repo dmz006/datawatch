@@ -142,6 +142,26 @@ func TestDisabledStartsNoCheckAndWritesNothing(t *testing.T) {
 	}
 }
 
+// imap-mcp with no recipient set would be sent to a made-up one, so an
+// accepted send would not mean anyone was told.
+func TestIMAPWithoutARecipientIsNotAChannel(t *testing.T) {
+	cfg := deliveryTestConfig(t)
+	w := deliveryTestWiring()
+	send := func(string) error { return nil }
+	w.addRouterChannel(cfg, "imap_mcp", send)
+	w.addRouterChannel(cfg, "signal", send)
+	w.addRouterChannel(cfg, "signal", send)
+	cfg.ImapMcp.To = "someone@example.invalid"
+	w.addRouterChannel(cfg, "imap_mcp", send)
+	var names []string
+	for _, c := range w.channelList() {
+		names = append(names, c.Name)
+	}
+	if got := strings.Join(names, " "); got != "signal signal#2 imap_mcp" {
+		t.Fatalf("channels=%q", got)
+	}
+}
+
 // A refused or failed typed send by an output filter is listed.
 func TestFilterSendFailuresAreRecorded(t *testing.T) {
 	w := deliveryTestWiring()

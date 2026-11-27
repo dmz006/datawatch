@@ -3210,7 +3210,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
-		deliveryWire.addChannel(backend.Name(), func(text string) error { return backend.Send(groupID, text) })
+		deliveryWire.addRouterChannel(cfg, backend.Name(), func(text string) error { return backend.Send(groupID, text) })
 		r.SetChannelTracker(chanTracker.Get(backend.Name()))
 		// The standard task reply reads the live task-template settings.
 		r.SetConfig(cfg)

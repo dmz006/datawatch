@@ -76,6 +76,15 @@ func (w *deliveryWiring) addChannel(name string, send func(text string) error) {
 	w.channels = append(w.channels, delivery.Channel{Name: unique, Send: send})
 }
 
+// addRouterChannel registers a chat channel's own send. imap-mcp with no
+// recipient set is left out: its send would go to a made-up address.
+func (w *deliveryWiring) addRouterChannel(cfg *config.Config, name string, send func(text string) error) {
+	if name == "imap_mcp" && strings.TrimSpace(cfg.ImapMcp.To) == "" {
+		return
+	}
+	w.addChannel(name, send)
+}
+
 func (w *deliveryWiring) hasChannelLocked(name string) bool {
 	for _, c := range w.channels {
 		if c.Name == name {

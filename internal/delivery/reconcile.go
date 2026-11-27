@@ -253,6 +253,9 @@ func update(en *Entry, v violation) {
 	}
 	en.Reason = v.c.Problem
 	if en.Reason == "" {
+		en.Reason = v.c.Reason
+	}
+	if en.Reason == "" {
 		en.Reason = reasonOverLimit
 	}
 	en.Invariant = v.c.Invariant
