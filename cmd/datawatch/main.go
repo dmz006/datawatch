@@ -128,7 +128,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.43"
+var Version = "9.187.44"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -267,9 +267,18 @@ func answerLiveStartupDialog(m *session.Manager, sessID string) bool {
 
 // answerStartupDialog sends the answer to dialog a.
 func answerStartupDialog(m *session.Manager, sessID string, a session.StartupDialogAction) bool {
+	sent, _ := tryStartupAnswer(m, sessID, a)
+	return sent
+}
+
+// tryStartupAnswer is answerStartupDialog that also reports an attempt: the
+// dialog had no answer, so the send was made, whether or not it went through
+// (an Enter held back, say).
+func tryStartupAnswer(m *session.Manager, sessID string, a session.StartupDialogAction) (sent, tried bool) {
 	// One answer for each dialog, whichever responder sends it.
 	answer := func(send func() error) (sent bool, err error) {
 		err = m.AnswerStartupScreen(sessID, a.Kind, func() error {
+			tried = true
 			if !a.Retry && a.Kind != session.StartupDialogTrustFolder {
 				// Enter is checked against the screen just before it is
 				// pressed.
@@ -284,7 +293,7 @@ func answerStartupDialog(m *session.Manager, sessID string, a session.StartupDia
 	}
 	switch a.Kind {
 	case session.StartupDialogNone:
-		return false
+		return false, false
 	case session.StartupDialogTrustFolder:
 		// Arrow-key TUI ("❯ No, exit" pre-selected): Down moves the selector
 		// onto the accept option, Enter confirms.
@@ -292,12 +301,12 @@ func answerStartupDialog(m *session.Manager, sessID string, a session.StartupDia
 		if err != nil {
 			fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
 		}
-		return sent
+		return sent, tried
 	case session.StartupDialogUnknownConfirm:
 		// The classifier declined to guess: send nothing and let the
 		// silent-start detector flag the session as a start failure.
 		fmt.Printf("[claude] unrecognised startup dialog on %s — sending nothing\n", sessID)
-		return false
+		return false, false
 	}
 	if a.Retry {
 		// Unsafe dialog (confirm-unsafe / update-prompt): decline with
@@ -308,17 +317,17 @@ func answerStartupDialog(m *session.Manager, sessID string, a session.StartupDia
 		} else if sent {
 			fmt.Printf("[claude] declined %q startup dialog on %s (sent esc)\n", a.Kind, sessID)
 		}
-		return sent
+		return sent, tried
 	}
 	text := session.StartupDialogSendText(a)
 	if text == "" {
-		return false
+		return false, false
 	}
 	sent, err := answer(func() error { return m.SendInput(sessID, text, "auto-accept-disclaimer") })
 	if err != nil {
 		fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
 	}
-	return sent
+	return sent, tried
 }
 
 // claudeStartupAccepted tracks sessions whose startup auto-accept goroutine
@@ -2788,10 +2797,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// to start in loaded environments). Answers any dialog the
 		// classifier recognises — not only the trust dialog:
 		// trust arrow keys, Enter-type accepts, or a single Esc for unsafe
-		// dialogs.
+		// dialogs. It keeps watching after an answer, answers one screen
+		// twice at most and warns when it leaves a dialog for a person
+		// (see startPoller). The extra loop time is for its final check.
 		if claudeAutoAccept && sess.BackendFamily == "claude-code" {
-			go pollStartupDialog(sess.FullID, func(id string) bool { return answerLiveStartupDialog(mgr, id) },
-				500*time.Millisecond, 45*time.Second, mgr.StartupOver)
+			const window = 45 * time.Second
+			respond, atEnd := startWindowPoller(mgr, window)
+			go pollStartupDialog(sess.FullID, respond,
+				500*time.Millisecond, window+startPollEndTime, mgr.StartupOver, atEnd)
 		}
 		// Memory context is not put into the session here. Typing it into the
 		// pane leaves it, unsent, in front of the next thing that is typed:

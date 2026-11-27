@@ -7,6 +7,7 @@
 package autonomous
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,6 +21,8 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // branchNameFor derives the deterministic branch name a PRD's
@@ -229,9 +232,13 @@ func runGitInCtx(ctx context.Context, dir string, args ...string) (string, error
 	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed git subcommands; dir/branch/path come from operator-controlled config and PRD fields, same trust model as every other git shell-out in this codebase (e.g. session.ProjectGit)
 	cmd.Dir = dir
 	cmd.WaitDelay = mergeGitWaitDelay
-	out, err := cmd.CombinedOutput()
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	// Under the limit ctx carries, such as a merge shadow's. These are
+	// datawatch's own reads, so they run also where no limit can be had.
+	err := proclimit.RunWhereHad(ctx, cmd)
 	if cerr := ctx.Err(); cerr != nil && err != nil {
-		return string(out), fmt.Errorf("git %s: %w", args[0], cerr)
+		return out.String(), fmt.Errorf("git %s: %w", args[0], cerr)
 	}
-	return string(out), err
+	return out.String(), err
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/mergeshadow"
 )
 
 var (
@@ -38,6 +39,8 @@ type shippedRecordArgs struct {
 	at         string
 	source     string
 	automation bool
+	// handChecks are the hand merge's check results, name=result.
+	handChecks []string
 }
 
 // resolve builds the request body. at is parsed as RFC 3339; an empty or
@@ -65,6 +68,13 @@ func (a *shippedRecordArgs) body() (map[string]any, error) {
 		body["merged_at"] = t.UTC().Format(time.RFC3339)
 	} else {
 		body["merged_at"] = time.Now().UTC().Format(time.RFC3339)
+	}
+	if len(a.handChecks) > 0 {
+		checks, err := mergeshadow.ParseHandChecks(a.handChecks)
+		if err != nil {
+			return nil, err
+		}
+		body["hand_checks"] = checks
 	}
 	return body, nil
 }
@@ -131,6 +141,8 @@ for real.`,
 	record.Flags().StringVar(&rec.at, "at", "", "Merge time, RFC 3339 (default now)")
 	record.Flags().StringVar(&rec.source, "source", "", "merge_step or backfill (default backfill)")
 	record.Flags().BoolVar(&rec.automation, "automation", false, "Record an Automation instead of a PRD")
+	record.Flags().StringArrayVar(&rec.handChecks, "hand-check", nil,
+		"With --source merge_step: the hand merge's result of one lint or test step of the merge pipeline, name=pass|fail|skip (repeatable, or comma separated). The merge shadow compares them")
 	cmd.AddCommand(record)
 	backfill := &shippedBackfillArgs{}
 	backfillCmd := &cobra.Command{

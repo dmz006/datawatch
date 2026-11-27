@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // GateStatus is the outcome of one gate run against a trial worktree.
@@ -106,6 +108,16 @@ func runGate(ctx context.Context, dir, name string, timeout time.Duration, dataD
 		return res
 	}
 
+	// A gate runs the project's own commands, so under a context that asks
+	// for a memory limit it runs only where the limit can be had.
+	if l, ok := proclimit.From(ctx); ok {
+		if err := l.Available(ctx); err != nil {
+			res.Status = GateSkipped
+			res.Detail = "not run: no hard memory limit for the gate's commands can be had here: " + err.Error()
+			return res
+		}
+	}
+
 	makeBin, err := exec.LookPath("make")
 	if err != nil {
 		res.Status = GateFail
@@ -145,12 +157,27 @@ func runGate(ctx context.Context, dir, name string, timeout time.Duration, dataD
 	// process it started, not only make (see gate_kill.go).
 	configureGateProcessGroup(cmd)
 
+	finish, err := proclimit.Prepare(gateCtx, cmd)
+	if err != nil {
+		res.Status = GateFail
+		res.Detail = "not run: " + err.Error()
+		return res
+	}
+
 	start := time.Now()
 	runErr := cmd.Run()
+	limit := finish()
 	res.Duration = time.Since(start)
 	res.Output = tailLines(out.String(), gateOutputLines)
+	if limit.Failed != "" {
+		res.Output = tailLines(out.String()+"\n"+limit.Failed, gateOutputLines)
+	}
 
 	switch {
+	case limit.Failed != "" && gateCtx.Err() == nil:
+		// Failed with that reason, whatever status make itself left.
+		res.Status = GateFail
+		res.Detail = limit.Failed
 	case errors.Is(gateCtx.Err(), context.DeadlineExceeded):
 		res.Status = GateTimeout
 		res.Detail = fmt.Sprintf("killed after %s", timeout)
@@ -202,7 +229,7 @@ func golangciLintVersion(ctx context.Context) (line, version string) {
 	}
 	vctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(vctx, bin, "version").CombinedOutput()
+	out, err := proclimit.CombinedOutput(vctx, exec.CommandContext(vctx, bin, "version"))
 	if err != nil {
 		return "golangci-lint version unavailable: " + err.Error(), ""
 	}

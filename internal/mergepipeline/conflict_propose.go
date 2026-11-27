@@ -188,7 +188,7 @@ func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req
 	}
 	// The scratch worktree is always removed, whatever happens below, using a
 	// context that outlives a cancelled caller.
-	defer m.discardScratch(scratch)
+	defer m.discardScratch(ctx, scratch)
 
 	if _, err := m.gitOK(ctx, m.Dir, "worktree", "add", "--detach", scratch, "HEAD"); err != nil {
 		return fail(AttemptInfrastructure, err.Error(), 0)
@@ -319,8 +319,8 @@ func (m *Merger) stageTexts(ctx context.Context, dir string, texts map[string]st
 }
 
 // discardScratch removes the scratch worktree and its directory.
-func (m *Merger) discardScratch(scratch string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+func (m *Merger) discardScratch(parent context.Context, scratch string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Minute)
 	defer cancel()
 	_, _ = m.git(ctx, m.Dir, "worktree", "remove", "--force", scratch)
 	_ = os.RemoveAll(scratch)

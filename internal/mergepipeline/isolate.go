@@ -309,12 +309,12 @@ func (i *isolation) deleteBranches(ctx context.Context, prefix string) {
 
 // close removes the scratch tree, its temporary branches and, unless the push
 // was confirmed, the tag the run made.
-func (s *runState) closeIsolation() {
+func (s *runState) closeIsolation(parent context.Context) {
 	i := s.iso
 	if i == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Minute)
 	defer cancel()
 	if s.tagMade != "" {
 		mark := scratchTagMarks + s.tagMade
@@ -419,7 +419,7 @@ func (s *runState) rebaseCandidates(ctx context.Context) (string, error) {
 func (s *runState) rebaseCopy(ctx context.Context, commit, main string) (string, error) {
 	tmp := filepath.Join(s.iso.root, "rebase")
 	defer func() {
-		_, _ = s.m.git(context.Background(), s.r.Dir, "worktree", "remove", "--force", tmp)
+		_, _ = s.m.git(context.WithoutCancel(ctx), s.r.Dir, "worktree", "remove", "--force", tmp)
 		_ = os.RemoveAll(tmp)
 	}()
 	if _, err := s.iso.git.gitOK(ctx, s.iso.git.Dir, "worktree", "add", "--quiet", "--detach", tmp, commit); err != nil {
@@ -428,7 +428,7 @@ func (s *runState) rebaseCopy(ctx context.Context, commit, main string) (string,
 	g := &Merger{Dir: tmp}
 	res, err := g.git(ctx, tmp, "rebase", "--committer-date-is-author-date", "refs/heads/"+main)
 	if err != nil || res.Code != 0 {
-		_, _ = g.git(context.Background(), tmp, "rebase", "--abort")
+		_, _ = g.git(context.WithoutCancel(ctx), tmp, "rebase", "--abort")
 		if err != nil {
 			return "", err
 		}
@@ -503,7 +503,11 @@ func (s *runState) releaseCommit(branch string) string {
 	if pin, ok := s.pins[branch]; ok {
 		return pin
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	parent := s.base
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, time.Minute)
 	defer cancel()
 	at, err := s.iso.git.revParse(ctx, s.iso.git.Dir, "refs/heads/"+branch)
 	if err != nil {
@@ -557,8 +561,15 @@ func (s *runState) shadowPush(ctx context.Context, head, tag string) (string, er
 	}
 	s.run.PushPlan = plan
 	if i.remote != "" {
-		res := git.CheckOutgoing(ctx, i.tree, i.remote, []git.OutgoingRef{{Src: head, Dst: "refs/heads/" + main}})
+		// The scan enforces whatever the daemon's mode is: a shadow run
+		// reports what the push would deliver.
+		res := git.CheckOutgoing(ctx, i.tree, i.remote, []git.OutgoingRef{{Src: head, Dst: "refs/heads/" + main}}, git.EnforcedScanPolicy())
+		s.run.PushCheck = &autonomous.MergePushCheck{
+			ProjectCheckRan: res.ProjectCheckRan, Output: redact(res.ProjectCheckOutput),
+			SecretScanRan: res.SecretScanned, SecretFindings: len(res.SecretFindings),
+		}
 		if res.Kind != "" {
+			s.run.PushCheck.Refusal = redact(string(res.Kind) + ": " + res.Reason)
 			err := fmt.Errorf("the push would be refused: %s: %s", res.Kind, redact(res.Reason))
 			return err.Error(), err
 		}
@@ -743,23 +754,42 @@ func (s *runState) checkEnvironment() []string {
 		version, _ = s.r.currentVersion()
 	}
 	shadow := ""
+	var closed []string
 	if s.shadow() {
 		shadow = "1"
+		closed = shadowCheckEnv
 	}
-	return isolatedEnv(os.Environ(), filepath.Join(i.root, "home"), i.tmux, []string{
-		"MERGE_PROJECT_DIR=" + i.project.Dir,
-		"MERGE_BASE_COMMIT=" + s.baseHead,
-		"MERGE_MAIN_BRANCH=" + i.project.mainBranch(),
-		"MERGE_RELEASE_SIZE=" + s.r.ReleaseSize,
-		"MERGE_RELEASE_VERSION=" + version,
-		"MERGE_SHADOW=" + shadow,
-	})
+	return isolatedEnv(os.Environ(), filepath.Join(i.root, "home"), i.tmux, append(append([]string(nil), closed...),
+		"MERGE_PROJECT_DIR="+i.project.Dir,
+		"MERGE_BASE_COMMIT="+s.baseHead,
+		"MERGE_MAIN_BRANCH="+i.project.mainBranch(),
+		"MERGE_RELEASE_SIZE="+s.r.ReleaseSize,
+		"MERGE_RELEASE_VERSION="+version,
+		"MERGE_SHADOW="+shadow,
+	))
 }
+
+// shadowCheckEnv closes two more ways out for the commands of a shadow run:
+// git over ssh and the system's git settings (a stored credential helper). It
+// is not a sandbox.
+var shadowCheckEnv = []string{"GIT_SSH_COMMAND=false", "GIT_SSH=false", "GIT_CONFIG_NOSYSTEM=1"}
 
 // shadowRuns reports whether a shadow run runs this command step: only checks
 // and the steps that write the release into files.
 func shadowRuns(k Kind) bool {
 	return k == KindTest || k == KindLint || k == KindVersionBump || k == KindChangelog
+}
+
+// StepsAShadowDoesNotRun names the command steps of the pipeline that a shadow
+// run leaves out because of their kind.
+func (d Definition) StepsAShadowDoesNotRun() []string {
+	var out []string
+	for _, s := range d.Steps {
+		if s.Action == "" && !shadowRuns(s.Kind) {
+			out = append(out, s.Name)
+		}
+	}
+	return out
 }
 
 // guardCandidate refuses a command step after which what was checked is not

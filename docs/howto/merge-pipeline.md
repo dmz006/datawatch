@@ -645,13 +645,19 @@ and when the daemon starts.
   is recorded. The deploy and post-ship hooks are **not** run afterwards; run
   them yourself if you need them. The same work is never released again: a run
   for it is refused, saying it was already pushed.
+- **The branch changed after the push** (for example it has new commits): the
+  repair still finishes. The branch is left as it is, and the landing is
+  recorded for the tip that was pushed, which the pushed commit holds. Newer
+  work on that branch was not part of the release; the run note and the
+  Automaton's decision log say so, and the shipped Automaton is not selected
+  again.
 - **It does not, and the remote's main has not moved:** the push may still
   arrive, so the entry is kept (for up to a day). An unpushed tag is removed.
 - **It does not, and main has moved:** it can no longer arrive; the entry goes.
 - **The remote cannot be asked:** nothing is changed, and the tag is kept.
 
-If a repair cannot be finished (for example the branch has new commits since the
-push, or your checkout blocks the fast-forward), the entry stays, the run record
+If a repair cannot be finished (for example your checkout blocks the
+fast-forward, or the landing record cannot be written), the entry stays, the run record
 shows the `reconcile-push` step with the reason, and it is tried again. Until
 then a run for that work is refused. Reconciling records only what the remote
 already holds, so it runs even while merge runs are switched off.
@@ -699,8 +705,16 @@ that changes and sends nothing. It moves no branch, tag or remote-tracking ref,
 pushes nothing, raises no question, runs no hook or deploy, runs only command
 steps of kind `test`, `lint`, `version_bump` and `changelog`, and calls no
 model. Its push step runs the outgoing checks and records the refs and commits
-it would send (`push_plan` on the run record). No surface starts a shadow run
-yet; it is what the merge shadow comparison will run.
+it would send (`push_plan` on the run record). Recording the shipped state of a hand merge starts one: see
+[Shadowing a hand merge](merge-shadow.md#shadowing-a-hand-merge). A pipeline's
+`shadow` block tells it which uncommitted files its checks read:
+
+```yaml
+shadow:
+  private_files: [.leak-patterns.local]   # copied into the shadow's copy
+  check_files: [scripts, Makefile]        # a change restarts the matched count
+  release_text: strict                    # or ignore
+```
 
 ## The order inside the lock
 
@@ -778,7 +792,7 @@ In order:
 3. `check-internal-refs` (`check_internal_refs`) — present only if the project's Makefile defines that target.
 4. `merge-branches` (`merge_branches`) — merge each branch in order. A branch already contained in main is left in place and named as such in the step note. When every branch is already in main, the run has nothing new to release: the release steps 5 through 11 are each recorded as `skipped` (note `nothing new was released: every branch was already merged into main`), nothing is pushed, and the deploy step still runs.
 5. `set-release-version` (`set_release_version`) — set the release version in every version file, after the merge. A file that already carries the run's version is left alone.
-6. `add-changelog-heading` (`insert_changelog_heading`) — add the changelog heading for that version. A changelog that already has a heading for it is left alone.
+6. `add-changelog-heading` (`insert_changelog_heading`) — add the changelog heading for that version, and under it the Automaton's drafted entry when the merged work holds one (`docs/plans/drafts/<id>-changelog.md`, without its own heading). A changelog that already has a heading for it is left alone.
 7. `set-readme-release-line` (`set_readme_release_line`) — rewrite the version and date on the README's `Current release:` line to this release and today's date (UTC). The line must carry the shape `vX.Y.Z (YYYY-MM-DD)` — a line like `**Current release: v1.2.3 (2026-11-08).**` — or the step has nothing to rewrite and the run stops, naming the file and the missing shape. The rest of the line and file is left alone. A line that already names the version is left alone too. A README with no such line stops the run and names the file.
 8. `commit-release-bump` (`commit_release_bump`) — one commit of the version files, the changelog and the README; with nothing staged no commit is made.
 9. `tag-release` (`tag_release`) — tag that commit with the new version. A tag already on that commit is left alone. A tag of that name pointing at another commit fails the step, naming the tag and both commits — the daemon never moves a release tag, so resolving it is an operator call.

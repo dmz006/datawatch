@@ -48,6 +48,31 @@ type mergeShadowCLIView struct {
 		} `json:"counts"`
 		Streak *mergeShadowStreak `json:"streak"`
 	} `json:"projects"`
+	// TurnOn is the turn-on report; its lines are the same on every surface.
+	TurnOn *struct {
+		Merges []json.RawMessage `json:"merges"`
+		Lines  []string          `json:"lines"`
+	} `json:"turn_on"`
+}
+
+func newMergeShadowReportCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "report",
+		Short: "Print the turn-on report: shadowed hand merges, what is eligible, what merging would do",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			v, err := fetchMergeShadow()
+			if err != nil {
+				return err
+			}
+			if v.TurnOn == nil {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no turn-on report: no merge repository is configured (autonomous.worktree_base_repo)")
+				return nil
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.Join(v.TurnOn.Lines, "\n"))
+			return nil
+		},
+	}
 }
 
 func fetchMergeShadow() (*mergeShadowCLIView, error) {
@@ -68,12 +93,15 @@ func newAutonomousMergeShadowCmd() *cobra.Command {
 		Short: "Show merge shadow comparison counts and per-Automaton differences",
 		Long: `The merge shadow compares the merge the daemon planned with what landed.
 
+  report               The turn-on report: matched hand merges in a row, seven
+                       results per merge, eligible and excluded work, the next
+                       push and what is still to apply
   status               Matched and different counts per release size, plus each
                        project's agreement streak against its threshold
   compare <automaton>  The differences found for one Automaton
 `,
 	}
-	c.AddCommand(newMergeShadowStatusCmd(), newMergeShadowCompareCmd())
+	c.AddCommand(newMergeShadowStatusCmd(), newMergeShadowCompareCmd(), newMergeShadowReportCmd())
 	return c
 }
 
@@ -96,6 +124,11 @@ func newMergeShadowStatusCmd() *cobra.Command {
 					matched[sz] += n.Matched
 					different[sz] += n.Different
 				}
+			}
+			if total == 0 && v.TurnOn != nil && len(v.TurnOn.Merges) > 0 && len(v.TurnOn.Lines) > 1 {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.Join(v.TurnOn.Lines[:2], "\n"))
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "full report: datawatch autonomous merge-shadow report")
+				return nil
 			}
 			if total == 0 {
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), mergeShadowNoComparisonLine)

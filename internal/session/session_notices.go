@@ -24,6 +24,28 @@ func noticeLine(snap Session, detail string) string {
 	return fmt.Sprintf("%s: %s", snap.ID, detail)
 }
 
+// ReportStartupDialogLeft raises the notice that session fullID is left at a
+// start-up dialog for a person. title says so; the body names the session and
+// holds nothing from its screen.
+func (m *Manager) ReportStartupDialogLeft(fullID, title string) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return
+	}
+	snap := m.store.Snapshot(sess)
+	name := snap.ID
+	if snap.Name != "" {
+		name = fmt.Sprintf("%s [%s]", snap.Name, snap.ID)
+	}
+	fmt.Printf("[claude] %s: %s\n", fullID, title)
+	m.mu.Lock()
+	hook := m.sessionNotice
+	m.mu.Unlock()
+	if hook != nil {
+		hook(title, "session "+name)
+	}
+}
+
 // noteEndedAtStart remembers a session that ResumeMonitors found dead. It runs
 // before the daemon can send notices.
 func (m *Manager) noteEndedAtStart(sess *Session, was State) {

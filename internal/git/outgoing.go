@@ -42,6 +42,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // OutgoingCheckTarget is the make target a project declares to check what is
@@ -159,7 +161,8 @@ func readGit(ctx context.Context, dir, stdin string, args ...string) (string, er
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
 	full := append([]string{"-c", "core.quotePath=false", "-c", "core.commitGraph=false"}, args...)
-	cmd := exec.CommandContext(ctx, "git", full...)
+	cmd, done := Command(ctx, full...)
+	defer done()
 	cmd.Dir = dir
 	cmd.Env = outgoingEnv()
 	if stdin != "" {
@@ -168,7 +171,7 @@ func readGit(ctx context.Context, dir, stdin string, args ...string) (string, er
 	out := &limitedBuffer{max: outgoingMaxDiffBytes}
 	var stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = out, &stderr
-	err := cmd.Run()
+	err := proclimit.Run(ctx, cmd)
 	if out.overflow {
 		return "", fmt.Errorf("git %s: more than %d bytes of output, too much to check", args[0], outgoingMaxDiffBytes)
 	}
@@ -342,7 +345,8 @@ func materialize(ctx context.Context, dir, commit, dest string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "cat-file", "--batch")
+	cmd, done := Command(ctx, "cat-file", "--batch")
+	defer done()
 	cmd.Dir = dir
 	cmd.Env = outgoingEnv()
 	var ids strings.Builder
@@ -350,6 +354,11 @@ func materialize(ctx context.Context, dir, commit, dest string) error {
 		ids.WriteString(e.id + "\n")
 	}
 	cmd.Stdin = strings.NewReader(ids.String())
+	finish, err := proclimit.Prepare(ctx, cmd)
+	if err != nil {
+		return err
+	}
+	defer finish() // after the command has been waited for
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -532,29 +541,29 @@ func writeManifest(dir string, m *outgoingManifest) error {
 // runProjectCheck runs the base commit's check target over the manifest. The
 // check's output is returned (bounded, secrets redacted) only on failure; a
 // check must not print what it matched.
-func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest, noProjectTree bool) error {
+func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest, noProjectTree bool) (string, error) {
 	tmp, err := os.MkdirTemp("", "dw-outgoing-")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 	tree, manifestDir := filepath.Join(tmp, "base"), filepath.Join(tmp, "manifest")
 	if err := os.MkdirAll(tree, 0o700); err != nil {
-		return err
+		return "", err
 	}
 	if err := materialize(ctx, dir, base, tree); err != nil {
-		return fmt.Errorf("lay out the base commit: %w", err)
+		return "", fmt.Errorf("lay out the base commit: %w", err)
 	}
 	if err := writeManifest(manifestDir, m); err != nil {
-		return fmt.Errorf("write the manifest: %w", err)
+		return "", fmt.Errorf("write the manifest: %w", err)
 	}
 	project := filepath.Join(tmp, "no-project-tree")
 	if noProjectTree {
 		if err := os.Mkdir(project, 0o700); err != nil {
-			return err
+			return "", err
 		}
 	} else if project, err = mainWorkTree(ctx, dir); err != nil {
-		return err
+		return "", err
 	}
 	ctx, cancel := context.WithTimeout(ctx, outgoingCheckTimeout)
 	defer cancel()
@@ -562,9 +571,16 @@ func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest,
 	cmd.Env = checkEnv(manifestDir, project)
 	cmd.WaitDelay = 10 * time.Second
 	configureCheckProcessGroup(cmd)
+	finish, err := proclimit.Prepare(ctx, cmd)
+	if err != nil {
+		return "", fmt.Errorf("the project's %s target was not run: %w", OutgoingCheckTarget, err)
+	}
 	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return nil
+	limit := finish()
+	proclimit.NoteLeft(ctx, limit.Left)
+	if limit.Failed != "" && ctx.Err() == nil {
+		out = append(out, "\n"+limit.Failed...)
+		err = errors.Join(&proclimit.LimitError{Why: limit.Failed}, err)
 	}
 	text, _ := RedactSecrets(redactCreds(strings.TrimSpace(string(out))))
 	if len(text) > outgoingOutputTail {
@@ -573,7 +589,10 @@ func runProjectCheck(ctx context.Context, dir, base string, m *outgoingManifest,
 			text = text[i+1:]
 		}
 	}
-	return fmt.Errorf("the project's %s target (from base commit %.12s) did not pass: %v\n%s", OutgoingCheckTarget, base, err, text)
+	if err == nil {
+		return text, nil
+	}
+	return text, fmt.Errorf("the project's %s target (from base commit %.12s) did not pass: %v\n%s", OutgoingCheckTarget, base, err, text)
 }
 
 // ---- building the manifest ----
@@ -976,7 +995,8 @@ func checkedPush(ctx context.Context, dir, remote, label string, refs []Outgoing
 		return blocked
 	}
 	if rules.checkOnly {
-		return PushResult{Remote: remote, Ref: label, SHA: head, SecretFindings: findings}
+		return PushResult{Remote: remote, Ref: label, SHA: head, SecretFindings: findings,
+			ProjectCheckRan: blocked.ProjectCheckRan, ProjectCheckOutput: blocked.ProjectCheckOutput, SecretScanned: blocked.SecretScanned}
 	}
 
 	args := []string{"-c", "push.followTags=false", "push", "--no-follow-tags", "--recurse-submodules=no"}
@@ -1081,36 +1101,48 @@ func checkOutgoing(ctx context.Context, dir, remote string, st remoteState, refs
 	}
 	// The project's check goes first: when it refuses, nothing else about the
 	// content (a file name it objects to, say) is printed.
+	var ran PushResult
 	if inBase {
-		if err := runProjectCheck(ctx, dir, base, m, noProjectTree); err != nil {
+		output, err := runProjectCheck(ctx, dir, base, m, noProjectTree)
+		ran.ProjectCheckRan, ran.ProjectCheckOutput = true, output
+		if err != nil {
 			reason := "outgoing check refused the push, nothing was pushed: " + err.Error()
 			if noProjectTree {
 				reason += "\n" + noProjectTreeNote
 			}
-			return nil, PushResult{Kind: PushFailCheck, Reason: reason}
+			ran.Kind, ran.Reason = PushFailCheck, reason
+			return nil, ran
 		}
 	}
 	if !scan {
-		return nil, PushResult{}
+		return nil, ran
 	}
+	ran.SecretScanned = true
 	findings := scanManifest(m, detectors, policy.options())
 	if len(findings) == 0 {
-		return nil, PushResult{}
+		return nil, ran
 	}
 	RecordSecretScanFindings(len(findings))
 	summary := RedactedFindingsSummary(findings)
 	if policy.Mode == ScanShadow {
 		RecordSecretScanShadowReport()
 		log.Printf("git: push to %s proceeds with shadow-mode secret findings: %s", remote, summary)
-		return findings, PushResult{}
+		return findings, ran
 	}
 	// Enforce, and any other mode value: refuse.
 	RecordSecretScanRefusal()
-	return findings, PushResult{
-		Kind:           PushFailSecret,
-		Reason:         "secret scan (enforce mode): " + summary + " refuses the push to " + remote,
-		SecretFindings: findings,
-	}
+	ran.Kind = PushFailSecret
+	ran.Reason = "secret scan (enforce mode): " + summary + " refuses the push to " + remote
+	ran.SecretFindings = findings
+	return findings, ran
+}
+
+// EnforcedScanPolicy is the daemon's secret scan settings with the mode set to
+// enforce: what a comparison that must not miss a secret scans with.
+func EnforcedScanPolicy() SecretScanPolicy {
+	p := effectiveScanPolicy(SecretScanPolicy{})
+	p.Mode = ScanEnforce
+	return p
 }
 
 // CheckOutgoing runs every check a push of refs to remote would run and sends

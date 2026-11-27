@@ -31,19 +31,262 @@ agreement streak read from them — are read — never acted on — from the RES
 route, the MCP tool, the CLI and the comm channel; see "Where the shadow state
 is read" below.
 
+There are two shadows. The **finish-time plan** (most of this page) is a quick
+estimate made when an Automaton finishes. The **shadow of a hand merge** is the
+one that counts before you turn datawatch's merging on:
+[Shadowing a hand merge](#shadowing-a-hand-merge).
+
+## Shadowing a hand merge
+
+While merging is off you merge by hand. Record the shipped state with source
+`merge_step`, the **release commit** that holds the work, and the result of each
+lint and test step of the merge pipeline as your hand merge ran it:
+
+```bash
+datawatch autonomous shipped record <id> --source merge_step \
+  --release v1.2.4 --commit <release commit> \
+  --hand-check lint=pass --hand-check build=pass --hand-check go-test=pass
+```
+
+MCP `autonomous_shipped_record` takes `hand_checks`, the comm verb takes
+`hand_checks=lint=pass,build=pass`, and REST takes a `hand_checks` map. Each
+result is `pass`, `fail` or `skip`.
+
+The daemon then builds the same merge with **the engine its own merge runs
+use**, in shadow mode:
+
+- from the hand merge's own base and branch tip, read from the recorded commit
+  (along main, the merge commit that brought the branch in; the commit before it
+  is the base). A fast-forwarded merge, or a release that carried a second merge,
+  cannot be rebuilt, and the stored shadow says so;
+- in a disposable copy of the project under the data directory, with a bare
+  remote of its own. The copy holds the history of the hand merge's base,
+  branch tip and release commit, `main` at the base, the merged branch at the
+  tip and the tags the base already had (a tag of a tag is left out); no other
+  branch or tag. The copy's git settings name neither your repository nor its
+  remote. git over ssh is switched off for its commands;
+- running the recorded pipeline's **lint, test, version and changelog**
+  command steps, and the base commit's `check-outgoing` target. They take as
+  long as a real run's. **One shadow runs at a time** in a daemon, a hand
+  merge's and a finish-time plan's alike; the next one waits, and stays queued.
+
+**Command steps of any other kind** (`custom`, `ship`, `deploy`, `tag`,
+`post_ship_hook`) are not run. A merge whose pipeline has such a step **never
+matches**, and neither does one with **any step left out for a missing make
+target**, built-in steps among them, or whose `check_branch_versions` or
+`validate_release_bump` step did not run. Result 4 names the step and why.
+
+#### Memory and time limit
+
+A shadow starts each of its commands in a **systemd scope of its own**: the
+merge engine's git, the copy, the push checks, the selection rule's git, the
+pipeline's check commands and the base commit's `check-outgoing`.
+
+| What | Limit |
+|---|---|
+| Memory | **16 GiB** and no swap for the processes of one command that stay in its scope, whatever process group or session they move to |
+| Over the memory limit | the kernel stops processes of that command, and the command **reads as failed with that reason**, even if it then exits 0 |
+| At its time limit | the processes in the command's scope are stopped: a git command after 10 minutes, a check after its step's `timeout`, `check-outgoing` after 10 minutes. If datawatch itself is gone, systemd ends the scope shortly after the longest time the command could have had |
+| Left running | what a check leaves running in its scope when it ends is stopped, and reported under result 7 |
+| Git also | **2 GiB** of data memory for each git process of the merge engine, the copy and the push checks (`ulimit -d`) |
+
+So that ordinary tools stay in the scope, **a command is not given** the
+variables that lead to a service outside it: `XDG_RUNTIME_DIR` and the D-Bus
+addresses (tmux uses them to put each pane in a scope of its own), the
+variables a service gets from systemd, the display variables, `TMUX`,
+`SSH_AUTH_SOCK`, `DOCKER_HOST`, `DOCKER_CONTEXT` and `CONTAINER_HOST`. A command also gets a
+`TMUX_TMPDIR` of its own unless a private one was already set for it, so tmux
+without a socket name starts a server inside the scope. A tmux session a check
+starts therefore stays under the limit.
+
+**Code that makes limits like this one**, as datawatch's own `go test` does,
+gets none inside a check: datawatch's limit refuses to make a scope from a
+process that is already in a command's scope. It goes by the control group, so
+setting the variables again does not change it. What those tests start stays in
+the check's scope; a test that needs a scope of its own skips, or runs its
+sandbox shadow with a test stand-in. A passing test step therefore does not
+show that those limit tests ran. (Code from before this rule asks `systemd-run`
+for its scope, which is refused as below.)
+
+**Refused tools.** `systemd-run`, `docker`, `docker-compose`, `podman` and
+`nerdctl` ask a service outside the scope to run work. For each one on a
+command's search path, the command finds a stand-in first. The stand-in runs
+nothing. A command that called one **reads as failed with that reason**, even
+if it ignored the answer and exited 0, and result 7 names the tool, so a shadow
+in which one was asked for **never reads matched**. This includes a harmless
+call such as `docker --version`. Merely looking a tool up (`command -v`) is not
+a call. A command is also given a `DOCKER_HOST` and `CONTAINER_HOST` where
+nothing listens: a container tool started by its full path, or a program that
+reads those variables, does not reach an engine that way. Such a try fails but
+is not named; it shows only if the command reports it.
+
+So **a hand merge whose checks need a container cannot match.** In this
+project's intended pipeline that is a merge for which the parity check builds
+an image (a change to a Dockerfile, the container workflow or the accepted-risk
+list).
+
+**This does not hold everything. It is not a sandbox.** The commands run as the
+daemon's user. Work runs with no such limit, while the result can still read
+matched, when a command:
+
+- finds the user manager itself (it sets `XDG_RUNTIME_DIR` again, or names the
+  socket) and asks it for a unit by another way than a refused name:
+  `systemctl`, the message bus, or `systemd-run` by its full path or from a
+  search path the command set anew;
+- names a container engine itself: its socket, `-H`, `--context default` or a
+  new `DOCKER_HOST`, with the tool's full path or a search path set anew, or
+  with a program or library that does not go through a refused name;
+- reaches another service that is already running: a tmux server by its socket
+  path, or the default one if it drops `TMUX_TMPDIR`; a scheduler; a cluster
+  (`kubectl`); a login to this machine over ssh; and, when datawatch runs as
+  root, the system manager;
+- raises the memory limit of its own scope, which its user may write, or moves
+  itself into another control group that user may write.
+
+**One shadow, with room.** One shadow runs at a time. A hand-merge shadow, and
+a finish-time plan whose gates will run, **do not start unless the machine has
+at least 24 GiB of memory available** (the 16 GiB limit of one command and a
+margin of 8 GiB; swap is not counted). Otherwise the shadow is stored as one
+that could not run, with the amounts. This is checked once, at the start:
+nothing is reserved, and other work on the machine can take the memory later.
+A hand-merge shadow that could not run is run again when you record the same
+commit again.
+
+The 16 GiB is set to hold this project's own whole `go test`: in three runs of
+it, four packages at once under exactly this limit, the peak was between about
+4.2 and 5.5 GB with no process stopped. Its lint and release smoke steps were
+not measured, and a host with more cores may use more.
+
+**It needs Linux with systemd 254 or newer** and a systemd user manager (the
+system manager when datawatch runs as root). Where the limit cannot be put in
+force, **a hand-merge shadow runs none of the project's commands**: it is stored
+as one that could not run, with the reason, and so never matches. The git reads
+that queue it still run.
+
+What else the limit does **not** cover:
+
+- it is per command, not a total for the daemon or the machine;
+- the daemon's own memory, which holds what some git commands print;
+- **disk**: there is no quota or free-space check. The copy holds the fetched
+  history and its checkouts, and a check's output goes to a file with no cap
+  until the step ends;
+- the reads the turn-on report makes when you open it, and the git reads that
+  queue a hand-merge shadow;
+- the lock is the daemon's own: another datawatch on the same machine has its
+  own;
+- merge runs that are not shadows.
+
+Why the copy is made as it is: in a **shallow clone with very many tags**,
+pushing every tag into a repository that is not cut at the same place makes
+git's receiving side use memory that grows with the square of the number of
+tags times the length of the history. The copy is therefore built without any
+push: the commits are fetched by id, the tags are written as refs over copied
+tag objects, and the copy's remote is a file copy that is cut at the same
+place, so a push from the copy to it, such as one a check command makes, has
+nothing to work out. A check command that pushes from the copy into a **new**
+repository of its own can still meet this; the memory limit then stops it.
+
+The merge engine asks, sends, deploys and calls nothing in a shadow. The
+shadow's run is kept with the merge run records, marked as a shadow. A shadow
+runs whether or not merging is switched on.
+`autonomous.merge_shadow.enabled: false` stops it.
+
+**It is not a sandbox.** The checks come from the work being merged. They run as
+the daemon's user and can read or change whatever that user can, by any path or
+address they know or find. A push, tag or removed branch that reaches your
+repository or its remote is reported; other changes are not seen.
+
+### The seven results
+
+| # | Result | Matches when |
+|---|---|---|
+| 1 | selection | the merge selection rule would have merged exactly the commit you merged, with its acceptance or review pass recorded **before** your merge (an operator pause and your own shipped record are set aside) |
+| 2 | content | the two final trees are the same, apart from the date on the README release line, changelog heading dates and the generated docs index |
+| 3 | version | same number and size, and neither side made a tag |
+| 4 | checks | the pipeline has a lint and a test step; every one ran in the shadow, and each has your recorded result and agrees with it. A skipped or missing check never matches; neither does a pipeline with a command step the shadow does not run, a step left out for a missing make target, or a built-in check that did not run; a datawatch pass where yours failed is serious. A check that skips itself and exits successfully counts as passed |
+| 5 | conflicts | the same files conflicted and the results are equal. When datawatch **would ask** you, the merge neither counts nor breaks the run of matches (results 2, 3, 4 and 6 are then not compared) |
+| 6 | leak | the push would move main only, with no tag; the secret scan (enforced here whatever its mode) finds nothing; the project's `check-outgoing` target, taken from the base commit, ran and passed and reported a private pattern count above zero in the form `N private pattern(s) loaded` |
+| 7 | side effects | no command pushed, tagged or moved a ref in the copy or wrote into its checkout; no change to branches, tags, added worktrees or remote refs of your repository is laid to the shadow; no process was left running. Changes others made meanwhile are listed apart. Other writes to your files are not seen |
+
+A merge **matches** only when all seven do. It is **waiting** when everything
+compared matches and your check results are not recorded yet, and **running**
+until the shadow ends. Anything else **differs**, including a shadow that could
+not run or that a daemon restart interrupted. Recording the same commit again
+stores new hand results; it also runs an interrupted or failed shadow again. A
+finished shadow is never run again.
+
+### Release wording
+
+A hand merge usually writes its own changelog text and README release sentence.
+By default (`release_text: strict`) that is a content difference. With
+`release_text: ignore` in the pipeline's `shadow` block, the one changelog
+section added for the release and the wording of the README release line are
+left out; everything else is still compared. Changing it restarts the count.
+
+### The count, and the turn-on report
+
+```bash
+datawatch autonomous merge-shadow report
+```
+
+The count is the newest shadowed hand merges that matched, in a row, against
+`autonomous.merge_shadow.agreement_streak`. "Would ask" is passed over. Any
+other result ends it. So does a change to the merge pipeline (record or file),
+to the conflict policy or any `autonomous.merge_pipeline` setting, or to the
+pipeline's check files on main. Only shadows of hand merges count; finish-time
+plans and earlier comparisons never do.
+
+datawatch sees only hand merges that have a stored shadow. A hand merge with
+none (the shadow switched off, the state never recorded as `merge_step`, or the
+shadow not stored) must not be counted across, so:
+
+- the run goes on only where a shadowed merge **starts at the very commit the
+  one before it recorded**;
+- it counts only while `main` here, and its remote-tracking copy, hold
+  **nothing after the newest recorded commit**; otherwise the count is 0.
+
+Any other commit in between ends the run, because it cannot be told whether it
+was a hand merge with no shadow. **So record each hand merge after its
+release's last commit on `main`, naming that commit.** Commits on the remote
+that your checkout has not fetched are not seen: check the list against your
+releases before you turn merging on.
+
+The report shows the count, one block per merge with the seven results, what is
+eligible now and every excluded branch with its reason, what the next run would
+push, everything merging would do outside a run, what is still to apply, the
+planted faults the product's tests require to be held, and how to turn merging
+off. It is the same text on the CLI, the comm channel
+(`autonomous merge-shadow report`), MCP (`autonomous_merge_shadow_status`,
+`turn_on.lines`), REST (`turn_on` on `GET /api/autonomous/merge/shadow`) and the
+web **Merge shadow** card. **Turning merging on is your decision**; nothing
+turns it on for you.
+
 ## What the merge shadow does — and what it never does
 
 **Does:**
 
 - Write one shadow merge plan per finished Automaton at the supervisor's release:
-  the release size (`patch`, `minor`, `major` or `none`), the version the bump step
-  would set, the changelog heading and body drawn only from the Automaton's own
-  changelog entry task (strict format, empty otherwise — nothing is invented), the
-  README line, the registry row, and the parity-issue flag.
+  the release size (`patch`, `minor`, `major` or `none`, from the Automaton's own
+  release size or its kind), the next version computed from the base ref's
+  version, the changelog heading and body from the Automaton's changelog draft
+  file in its branch, else from its changelog entry task (strict format, empty
+  otherwise — nothing is invented), with the source named in the plan, the README
+  line, the registry row, and the parity-issue flag. An Automaton with neither a
+  release size nor a kind takes both from the changelog heading.
+- When no plan can be made, store one that says why (`plan_not_made`). A base
+  version that cannot be read blocks the plan with `base_version_unread`.
 - Settle merge conflicts in a **throwaway trial worktree** outside the project
   tree, uncommitted (`--no-commit --no-ff`), then remove the scratch tree; the
   conflicts, each with its file class, resolution and resolver, are recorded in
   the plan. No branch, tag or ref is ever created or moved and nothing is pushed.
+- Run each gate under the same scope limit as a hand-merge shadow's commands,
+  with the same gaps ([Memory and time limit](#memory-and-time-limit)), and wait
+  for its turn: one shadow of either kind runs at a time. A gate over the limit
+  fails with that reason. Where the limit cannot be put in force, the gates are
+  recorded `skipped` with the reason and their commands are not run; the plan is
+  still made, and its git then runs without a limit. Where it can, a plan does
+  not start without the same room in memory, and the stored `plan_not_made`
+  says so.
 - Record each gate of the trial merge with its status — `pass`, `fail`,
   `timeout`, `skipped`, or `intermittent` (a test gate that failed first and
   passed when rerun) — and its duration, and each finding with a code and
@@ -199,7 +442,12 @@ therefore cannot move the version twice.
 
 ## Where the shadow state is read
 
-All five surfaces proxy one daemon endpoint and read — none of them writes:
+All five surfaces proxy one daemon endpoint and read — none of them writes.
+Each also carries the [turn-on report](#the-count-and-the-turn-on-report) on
+shadowed hand merges (REST `turn_on`, CLI `merge-shadow report`, comm
+`autonomous merge-shadow report`). The per-size counts and the `streak` field in
+the table below are the older finish-time comparisons, which never count toward
+turning merging on:
 
 | Surface | What it reads |
 | --- | --- |
@@ -229,7 +477,7 @@ to its defaults are indistinguishable.
 
 | Key | Type | Default | What it does |
 | --- | --- | --- | --- |
-| `autonomous.merge_shadow.enabled` | bool | `true` (when unset) | Master switch: when `true` the supervisor's release step runs the shadow plan; when `false` no plan is recorded at all. It is not a mode — there is no `on` state. |
+| `autonomous.merge_shadow.enabled` | bool | `true` (when unset) | Master switch: when `true` the supervisor's release step runs the shadow plan and a `merge_step` shipped record [shadows the hand merge](#shadowing-a-hand-merge); when `false` neither happens. It is not a mode — there is no `on` state. |
 | `autonomous.merge_shadow.gate_timeout` | duration | `20m` | The wait budget each gate of the throwaway trial merge may use before giving up — a per-gate budget, not a cap across all gates. When the budget ends, the gate's whole process group is killed (unix), so a hung suite leaves no children behind (see "Hung gate suite" in the checks section). A value that is not a positive Go duration is refused with the problem named on every write surface (nothing is written); a stored value that fails to parse falls back to the default at read time. |
 | `autonomous.merge_shadow.plan_keep` | int | `200` | How many shadow merge plans are kept per project; anything older than the newest N is pruned. Values below `1` fall back to the default. |
 | `autonomous.merge_shadow.agreement_streak` | int | `5` | The agreement streak threshold: the number of most-recent consecutive stored comparisons a project needs — with **no major difference** in any of them — before its streak reads `met`. It is the machine-readable form of the handover evidence bar, counted continuously. A value below `1` is refused on write; a stored value below `1` falls back to the default at read time. |
@@ -320,6 +568,9 @@ never as failures. Count these as known blind spots when you grade a merge by
 hand.
 
 ## Switching from shadow to on
+
+What you read before turning datawatch's merging on is the
+[turn-on report](#the-count-and-the-turn-on-report).
 
 The shadow itself has no `on` state: `autonomous.merge_shadow.enabled` is only a
 switch for writing the plan. The shadow-to-on decision belongs to the **release

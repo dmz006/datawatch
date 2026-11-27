@@ -68,9 +68,13 @@ type MergePipelineRun struct {
 	Shadow bool `json:"shadow,omitempty"`
 	// PushPlan is what a shadow run would have pushed.
 	PushPlan []MergePushRef `json:"push_plan,omitempty"`
-	Branches []string       `json:"branches"`
-	Source   string         `json:"source"`
-	Reason   string         `json:"reason,omitempty"`
+	// PushCheck is what the push checks found in a shadow run's push list.
+	PushCheck *MergePushCheck `json:"push_check,omitempty"`
+	// Conflicts are the merges of the run that hit a conflict.
+	Conflicts []MergeRunConflict `json:"conflicts,omitempty"`
+	Branches  []string           `json:"branches"`
+	Source    string             `json:"source"`
+	Reason    string             `json:"reason,omitempty"`
 	// ReleaseVersion is the version the run releases, computed once by the
 	// set-release-version step and used by the later steps of the run.
 	ReleaseVersion string `json:"release_version,omitempty"`
@@ -89,6 +93,29 @@ type MergePushRef struct {
 	Old     string   `json:"old,omitempty"`
 	New     string   `json:"new,omitempty"`
 	Commits []string `json:"commits,omitempty"`
+}
+
+// MergePushCheck is what the push checks found in what a shadow run would
+// have pushed.
+type MergePushCheck struct {
+	// ProjectCheckRan says the project's own check target ran; Output is its
+	// account, with secrets removed.
+	ProjectCheckRan bool   `json:"project_check_ran"`
+	Output          string `json:"output,omitempty"`
+	SecretScanRan   bool   `json:"secret_scan_ran"`
+	SecretFindings  int    `json:"secret_findings"`
+	// Refusal is why the push would be refused, empty when it would not.
+	Refusal string `json:"refusal,omitempty"`
+}
+
+// MergeRunConflict is one merge of a run that hit a conflict.
+type MergeRunConflict struct {
+	Branch string   `json:"branch"`
+	Files  []string `json:"files"`
+	// Asked says the conflict was put to the operator, or in a shadow run
+	// would have been.
+	Asked bool   `json:"asked,omitempty"`
+	Note  string `json:"note,omitempty"`
 }
 
 // MergeRunRecorder receives a run each time it changes. *MergeRunRecords is

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.42 (2026-11-27).** Cleanup now treats archived Automata like completed and cancelled ones, removing no files or branches while cleanup is off or report-only, and the safe-to-delete report no longer lists an unmerged branch as safe when its base has not moved. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.44 (2026-11-27).** Recording a hand merge as merge_step of an Automaton now queues a comparison with datawatch's own rebuild of it when merge shadow is on and autonomous.worktree_base_repo names its repository, and this release does not turn merging on; the comparison has been tested on made-up repositories only, and its memory limit is not a sandbox: a command that goes round it can still run work outside it. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

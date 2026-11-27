@@ -3524,6 +3524,13 @@ paths:
         Read-only, same data as the `autonomous_merge_shadow_status` MCP tool; see
         docs/howto/merge-shadow.md. A federated peer needs the autonomous read
         capability.
+
+        `turn_on` is there when a merge repository is configured: the turn-on report.
+        It holds the run of shadowed hand merges that matched (`streak`) against
+        `target`, seven results per merge (`merges[].rows`), the work `eligible` and
+        `excluded` now with why, `next_push`, `actions` (what merging would do outside
+        a run), `still_to_apply`, `planted_faults`, `turn_off` and `lines`, the same
+        report as text. Only shadows of hand merges count toward it.
       operationId: autonomousMergeShadow
       tags: [Autonomous]
       parameters:
@@ -3541,6 +3548,25 @@ paths:
                     type: array
                     items: {type: object, description: The shadow state for one project}
                     description: One entry per project with stored shadow plans
+                  turn_on:
+                    type: object
+                    description: "The turn-on report for the merge repository"
+                    properties:
+                      project: {type: string}
+                      merging_on: {type: boolean}
+                      target: {type: integer}
+                      met: {type: boolean}
+                      streak: {type: object, description: "length, total, bugs, features, with_conflict, asked and stopped_by"}
+                      merges: {type: array, items: {type: object, description: "automaton_id, hand_commit, at, verdict (match, differs, asked, waiting or running) and the seven rows"}}
+                      eligible: {type: array, items: {type: object}}
+                      excluded: {type: array, items: {type: object}}
+                      next_push: {type: array, items: {type: string}}
+                      actions: {type: array, items: {type: string}}
+                      still_to_apply: {type: array, items: {type: string}}
+                      planted_faults: {type: array, items: {type: string}}
+                      turn_off: {type: string}
+                      problems: {type: array, items: {type: string}}
+                      lines: {type: array, items: {type: string}}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
@@ -8154,6 +8180,12 @@ paths:
         no-op that leaves the stored fields, the revision and the updated
         time alone, while a different commit overwrites all four fields.
         Audited as `record_shipped`.
+
+        With `source` `merge_step`, `hand_checks` may carry the hand merge's check
+        results, one per lint and test step of the merge pipeline (`pass`, `fail` or
+        `skip`), and the daemon queues a shadow of the hand merge (while
+        `autonomous.merge_shadow.enabled` is on). Recording the same commit again
+        stores new `hand_checks`, and runs a shadow that could not run before.
       operationId: autonomousPRDShippedRecord
       tags: [Autonomous]
       requestBody:
@@ -15876,6 +15908,13 @@ components:
             properties:
               path: {type: string, description: "A repository-relative path, or a pattern for one folder level"}
               rule: {type: string, enum: [keep_main, keep_both, ask]}
+        shadow:
+          type: object
+          description: "What the shadow of a hand merge needs to know about the project"
+          properties:
+            private_files: {type: array, items: {type: string}, description: "Files of the project's checkout that are never committed and that its checks read"}
+            check_files: {type: array, items: {type: string}, description: "Files and folders whose change restarts the count of matched merges; none means scripts and Makefile"}
+            release_text: {type: string, enum: [strict, ignore], description: "strict allows only release dates to differ; ignore also leaves out the new changelog section and the README release line wording"}
     MergePipelineOverride:
       type: object
       description: The merge pipeline values set for one project. A key that is left out inherits the global value.
@@ -19071,6 +19110,10 @@ components:
       type: object
       required: [merge_commit, source]
       properties:
+        hand_checks:
+          type: object
+          additionalProperties: {type: string, enum: [pass, fail, skip]}
+          description: "The hand merge's result per pipeline check step; only with source merge_step"
         merged_in_release: {type: string, description: "The release the work landed in"}
         merged_at: {type: string, format: date-time, description: "When it merged (RFC 3339). absent means unset"}
         merge_commit: {type: string, description: "The default-branch merge commit — required, non-empty after trimming"}

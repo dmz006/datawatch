@@ -60,6 +60,13 @@ type journalledPush struct {
 	At          time.Time          `json:"at"`
 }
 
+// pushedTipLanding is the optional Landing surface a repair uses when the
+// branch changed after its push: it records the landing for the exact tip that
+// was pushed, which the pushed commit must hold.
+type pushedTipLanding interface {
+	RecordMergeLandingOfPushedTip(ctx context.Context, id, release, commit, tip string, at time.Time) (*autonomous.PRD, error)
+}
+
 // ReconciledPush is what reconciling one journalled push found and did.
 type ReconciledPush struct {
 	RunID, AutomatonID, Commit string
@@ -245,19 +252,30 @@ func (r *Runner) reconcileOne(ctx context.Context, dir string, p journalledPush)
 		return out
 	}
 
-	var problems []string
+	var problems, newer []string
+	// pushedTip is set when a branch no longer is what was pushed.
+	pushedTip := ""
+	byTip, canRecordTip := r.Landing.(pushedTipLanding)
 	for _, b := range p.Branches {
 		cur, err := i.git.revParse(ctx, i.git.Dir, "refs/heads/"+b.Name)
 		switch {
-		case err != nil:
-			problems = append(problems, "branch "+b.Name+" cannot be read")
-		case cur == b.New:
-		case cur == b.Old:
+		case err == nil && cur == b.New:
+		case err == nil && cur == b.Old:
 			if _, err := i.git.gitOK(ctx, i.git.Dir, "update-ref", "refs/heads/"+b.Name, b.New, b.Old); err != nil {
 				problems = append(problems, "branch "+b.Name+" was not moved to what was pushed: "+err.Error())
 			}
 		default:
-			problems = append(problems, "branch "+b.Name+" has changed since the push")
+			// The branch took other work, or went away, after the push. It is
+			// left as it is, as it would be had the run finished first: what is
+			// recorded is the tip that was pushed, which the pushed commit must
+			// hold.
+			holds, herr := i.isAncestor(ctx, b.New, p.Commit)
+			if herr != nil || !holds || (r.Landing != nil && p.AutomatonID != "" && !canRecordTip) {
+				problems = append(problems, "branch "+b.Name+" has changed since the push")
+				continue
+			}
+			pushedTip = b.New
+			newer = append(newer, "branch "+b.Name+" no longer is what was pushed: it was left as it is, and any newer work on it was not part of this push")
 		}
 	}
 	main := r.mainBranch()
@@ -275,7 +293,13 @@ func (r *Runner) reconcileOne(ctx context.Context, dir string, p journalledPush)
 		_, _ = i.git.git(ctx, i.git.Dir, "update-ref", "-d", scratchTagMarks+p.Tag)
 	}
 	if r.Landing != nil && p.AutomatonID != "" {
-		if _, err := r.Landing.RecordMergeLanding(ctx, p.AutomatonID, p.Release, p.Commit, p.At); err != nil {
+		var err error
+		if pushedTip != "" && canRecordTip {
+			_, err = byTip.RecordMergeLandingOfPushedTip(ctx, p.AutomatonID, p.Release, p.Commit, pushedTip, p.At)
+		} else {
+			_, err = r.Landing.RecordMergeLanding(ctx, p.AutomatonID, p.Release, p.Commit, p.At)
+		}
+		if err != nil {
 			problems = append(problems, err.Error())
 		}
 	}
@@ -285,6 +309,9 @@ func (r *Runner) reconcileOne(ctx context.Context, dir string, p journalledPush)
 	}
 	remove()
 	out.Note = "the remote holds commit " + shortSHA(p.Commit) + ": branches, local " + main + " and the landing are recorded. No deploy or post-ship hook was run for it"
+	if len(newer) > 0 {
+		out.Note += ". " + strings.Join(newer, "; ")
+	}
 	return out
 }
 

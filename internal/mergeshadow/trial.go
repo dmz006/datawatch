@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // TrialMerge merges workBranch into defaultBranch inside a throwaway git
@@ -62,8 +64,8 @@ func TrialMergeWith(ctx context.Context, repoPath, defaultBranch, workBranch, sc
 
 	added := false
 	defer func() {
-		// Cleanup must survive a cancelled ctx, so it uses its own context.
-		bg := context.Background()
+		// Cleanup must survive a cancelled ctx, keeping what ctx carries.
+		bg := context.WithoutCancel(ctx)
 		if added {
 			_, _ = runGit(bg, absRepo, "worktree", "remove", "--force", wt)
 		}
@@ -117,7 +119,7 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	if err := proclimit.RunWhereHad(ctx, cmd); err != nil {
 		return stdout.String(), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
