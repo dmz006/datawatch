@@ -151,9 +151,9 @@ it, and a request made while it is off never gets a list. Put it in the config
 before datawatch starts, or run `datawatch config set acceptance.mode report`
 and restart so that the `acceptance_*` tools appear.
 
-**Going back to an older version needs `datawatch queue export` first.** Stop
-datawatch and run it (`--plain` on a secure install; that file is plain
-content), or the older daemon will not start.
+Going back to an older version needs `datawatch queue export` first, also if you never used the queue; without it the older daemon does not start. Stop datawatch, run the export with the new program before you replace it (`--plain` on a secure install; the file is plain content), put the old program back and start only that one (another start of the new one moves the queue again). The older program has no `queue export`; there the command only shows help. With the systemd user service: `systemctl --user stop datawatch`, `datawatch queue export`, put the old program back, `systemctl --user start datawatch`.
+
+Requests need a server token (`server.token`). Without one, datawatch cannot tell a session's request call from the operator's: no session can take, accept or report a request, so no hello counts and no work that waits for one is delivered. You can still create requests and give roles; datawatch may still type reminder lines into a Claude Code session. Queue claims made then are recorded as `admin-token`.
 
 ## Times
 
