@@ -25,7 +25,7 @@ const (
 	DeliveryEnv = "DATAWATCH_PI_DELIVERY"
 	// DeliveryExtensionVersion is what the extension says it is when it
 	// reports "seen". Raise it with any change to the extension.
-	DeliveryExtensionVersion = "datawatch-pi-delivery/1"
+	DeliveryExtensionVersion = "datawatch-pi-delivery-1"
 	// DeliverSteer and DeliverFollowUp are pi's two ways to hand a busy agent
 	// a message: after its current tool calls, or after its run.
 	DeliverSteer    = "steer"

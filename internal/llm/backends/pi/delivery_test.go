@@ -16,11 +16,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+var fkIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$`)
 
 type fkItem struct {
 	ID       string
@@ -103,6 +106,11 @@ func (d *fkDaemon) serve(w http.ResponseWriter, r *http.Request) {
 			if d.seenFails > 0 {
 				d.seenFails--
 				http.Error(w, "cannot record", http.StatusServiceUnavailable)
+				return
+			}
+			// The request store takes only an identifier as a version.
+			if v := c.Body["reporter_version"]; v != "" && !fkIdentifier.MatchString(v) {
+				http.Error(w, "a version is an identifier", http.StatusBadRequest)
 				return
 			}
 			if !it.fetched || c.Body["digest"] != fkSum(it.Content) {
@@ -513,6 +521,9 @@ func TestReqPiNoCredentialDoesNothing(t *testing.T) {
 }
 
 func TestReqPiTheEmbeddedExtensionSaysItsVersion(t *testing.T) {
+	if !fkIdentifier.MatchString(DeliveryExtensionVersion) {
+		t.Fatalf("the request store refuses a seen report with the version %q", DeliveryExtensionVersion)
+	}
 	if !strings.Contains(string(deliveryExtension), `const VERSION = "`+DeliveryExtensionVersion+`";`) {
 		t.Fatal("the extension and the daemon disagree on the version")
 	}

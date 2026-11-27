@@ -19,7 +19,7 @@ import { dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-const VERSION = "datawatch-pi-delivery/1";
+const VERSION = "datawatch-pi-delivery-1";
 const CREDENTIAL_ENV = "DATAWATCH_PI_DELIVERY";
 const VIA = "program";
 const POLL_MS = 2000;
