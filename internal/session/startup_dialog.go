@@ -33,6 +33,9 @@ type StartupDialogAction struct {
 	Kind  StartupKind
 	Keys  []string
 	Retry bool
+	// Screen tells two dialogs of one kind apart. It is set only for a dialog
+	// read on a screen (see startupScreenID), and carries none of its text.
+	Screen string
 }
 
 // Precomputed key sequences. Empty slice is the "send nothing" action.

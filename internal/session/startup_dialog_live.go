@@ -6,6 +6,8 @@
 package session
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"regexp"
 	"strings"
 )
@@ -173,7 +175,16 @@ func readStartupScreen(pane string) (startupScreen, bool) {
 	if !shaped {
 		return none, false
 	}
+	a.Screen = startupScreenID(a.Kind, text)
 	return startupScreen{action: a, text: text, selected: selected, selectedNumber: selectedNumber}, true
+}
+
+// startupScreenID is the same for a dialog of one kind with the same words,
+// wherever its cursor is and however it is spaced.
+func startupScreenID(kind StartupKind, text string) string {
+	words := strings.Join(strings.Fields(strings.ReplaceAll(text, "❯", " ")), "")
+	sum := sha256.Sum256([]byte(string(kind) + "|" + words))
+	return hex.EncodeToString(sum[:])
 }
 
 // LiveStartupDialog returns the start-up dialog on the live screen of session
