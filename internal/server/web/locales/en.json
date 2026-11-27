@@ -6590,7 +6590,7 @@
   "delivery_ack": "Acknowledge",
   "delivery_accept": "Accept until date",
   "delivery_drop": "Drop",
-  "delivery_actions_help": "Tick items, then act. Acknowledge stops messages about them; they stay listed. Accept lets them wait until a date, at most 30 days ahead. Drop closes failed or backlog items.",
+  "delivery_actions_help": "Tick items, then act. Acknowledge stops messages about them; they stay listed. Accept lets them wait until a date; the date lasts to the end of that day (UTC), so choose at most 29 days after today. Drop closes failed or backlog items.",
   "delivery_whole_backlog": "Apply to the whole backlog (%1$s) instead of the ticked items",
   "delivery_reason_label": "Reason code",
   "delivery_reason_hint": "a code, for example waiting-upstream",

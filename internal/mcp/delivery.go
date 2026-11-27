@@ -201,7 +201,7 @@ func (s *Server) toolDeliveryAccept() mcpsdk.Tool {
 	return mcpsdk.NewTool("delivery_accept",
 		deliverySelectorOptions("Let delivery list entries wait until a review date at most 30 days ahead. Alarms and clock-jump notices can only be acknowledged: a choice that includes one is refused.",
 			mcpsdk.WithString("reason", mcpsdk.Required(), mcpsdk.Description("Reason code: a-z, 0-9, dot, dash and underscore, 1 to 64 characters")),
-			mcpsdk.WithString("until", mcpsdk.Required(), mcpsdk.Description("Review date: YYYY-MM-DD or RFC 3339")),
+			mcpsdk.WithString("until", mcpsdk.Required(), mcpsdk.Description("Review date, at most 30 days ahead: YYYY-MM-DD or RFC 3339. A plain date means the end of that day (UTC), so at most 29 days after today")),
 		)...)
 }
 func (s *Server) handleDeliveryAccept(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

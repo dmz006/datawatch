@@ -58,15 +58,27 @@ type Notice struct {
 // false when there is nothing to send. It leaves out closed, backlog, seen and
 // currently accepted entries, and entries waiting for their next try.
 //
-// Entries never told go first, oldest first; only those the message has a line
-// for are marked by it, and the rest follow in later passes. With none of
-// those, one digest covers every told entry once the longest unsent of them was
-// last sent a day ago; because it marks them all, there is one digest a day.
+// Entries never told go first, oldest first. With none of those, there is one
+// reminder a day, once the longest unsent of the told entries was last sent a
+// day ago; it names those that have gone longest without being named. Either
+// way only the entries the message has a line for are marked by it. The rest of
+// a first notice follow in later passes, and the rest of a reminder on later
+// days.
 func DueNotice(host string, entries []*Entry, now time.Time) (Notice, bool) {
 	var fresh, told []*Entry
-	digestDue := false
+	digestDue, retryWaits := false, false
+	var reminded time.Time // when the last accepted reminder went
 	for _, e := range entries {
+		// A time far ahead means the clock went back; it holds nothing back.
+		if e != nil && e.RemindedAt != nil && e.RemindedAt.After(reminded) && e.RemindedAt.Sub(now) <= notifyRetryMax {
+			reminded = *e.RemindedAt
+		}
 		if !notifiable(e, now) {
+			// A told entry that only waits for its retry holds the reminder,
+			// so that a refused one is tried again before another is made.
+			if e != nil && e.ToldAt != nil && e.NextTryAt != nil && wanted(e, now) {
+				retryWaits = true
+			}
 			continue
 		}
 		if e.ToldAt == nil {
@@ -83,18 +95,24 @@ func DueNotice(host string, entries []*Entry, now time.Time) (Notice, bool) {
 	case len(fresh) > 0:
 		text, named := notifyText(host, fresh, false)
 		return Notice{Keys: entryKeys(fresh[:named]), Text: text}, true
-	case digestDue:
-		text, _ := notifyText(host, told, true)
-		return Notice{Keys: entryKeys(told), Text: text, Reminder: true}, true
+	case digestDue && !retryWaits && (reminded.IsZero() || now.Sub(reminded) >= notifyDigestEvery):
+		text, named := notifyText(host, told, true)
+		return Notice{Keys: entryKeys(told[:named]), Text: text, Reminder: true}, true
 	}
 	return Notice{}, false
 }
 
-func notifiable(e *Entry, now time.Time) bool {
+// wanted reports whether messages about the entry are still wanted.
+func wanted(e *Entry, now time.Time) bool {
 	if e == nil || e.Key == "" || e.ClosedAt != nil || e.Backlog || e.SeenAt != nil {
 		return false
 	}
-	if e.Accepted != nil && e.Accepted.Until.After(now) {
+	return e.Accepted == nil || !e.Accepted.Until.After(now)
+}
+
+// notifiable reports whether the entry may be in a message now.
+func notifiable(e *Entry, now time.Time) bool {
+	if !wanted(e, now) {
 		return false
 	}
 	if e.NextTryAt != nil {
@@ -115,11 +133,22 @@ func entryKeys(es []*Entry) []string {
 	return out
 }
 
-// notifyText sorts es oldest first and returns the message and how many of
-// them it has a line for. It uses each entry's key, reason code and count and
-// nothing else.
+// notifyText sorts es, oldest first, or for a reminder longest unsent first,
+// and returns the message and how many of them it has a line for. It uses each
+// entry's key, reason code and count and nothing else.
 func notifyText(host string, es []*Entry, reminder bool) (string, int) {
+	lastSent := func(e *Entry) time.Time {
+		if e.LastSentAt == nil {
+			return time.Time{}
+		}
+		return *e.LastSentAt
+	}
 	sort.SliceStable(es, func(i, j int) bool {
+		if reminder {
+			if a, b := lastSent(es[i]), lastSent(es[j]); !a.Equal(b) {
+				return a.Before(b)
+			}
+		}
 		if !es[i].Since.Equal(es[j].Since) {
 			return es[i].Since.Before(es[j].Since)
 		}
@@ -271,6 +300,10 @@ func ApplySend(entries []*Entry, n Notice, results []SendResult, now time.Time) 
 				e.ToldAt = &first
 			}
 			e.LastSentAt = &at
+			if n.Reminder {
+				again := now
+				e.RemindedAt = &again
+			}
 			e.SendFails, e.NextTryAt = 0, nil
 			continue
 		}

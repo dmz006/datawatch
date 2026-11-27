@@ -39,7 +39,7 @@ var (
 	// ErrReasonCode: the reason is not a code. Records hold codes only.
 	ErrReasonCode = errors.New("the reason must be a code: 1 to 64 of a-z, 0-9, dot, dash and underscore, starting with a letter or digit")
 	// ErrUntil: the review date is missing, past, or too far ahead.
-	ErrUntil = errors.New("the review date must be in the future and at most 30 days ahead")
+	ErrUntil = errors.New("the review date must be in the future and at most 30 days ahead; a date without a time means the end of that day (UTC), so the latest such date is 29 days after today")
 	// ErrNotDroppable: only failed and backlog entries can be dropped.
 	ErrNotDroppable = errors.New("only failed or backlog entries can be dropped; accept the others with a review date")
 	// ErrAlarm: an alarm or a clock-jump notice can only be acknowledged.

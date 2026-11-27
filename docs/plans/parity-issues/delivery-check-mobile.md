@@ -34,7 +34,7 @@ hold identifiers, kinds, states, reason codes and times only. See
 - A delivery view: result, "report only", why it is red (a known code shows its
   text, an unknown one is shown as it is), new, backlog and accepted items,
   check now.
-- Actions: acknowledge, accept with a reason code and a date (at most 30 days
+- Actions: acknowledge (the only one an alarm or clock-jump notice takes), accept with a reason code and a date (a plain date means the end of that day, UTC; at most 30 days
   ahead), drop with a reason code and a confirmation, send test message and its
   result per channel. Show the daemon's refusal text.
 - Never show an empty list as green when the request failed or the check is off.

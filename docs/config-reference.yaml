@@ -5635,7 +5635,7 @@ delivery:
   # true (default): send listed items to the message channels. false: nothing
   # is sent, and the check is red because it cannot tell you.
   notify: true
-  # Seconds between checks. Default 300, at least 60. Read at daemon start.
+  # Seconds between checks. Default 300, 60 to 86400. Read at daemon start.
   interval_seconds: 300
 
 # Operator pause (global and per project). The pause itself is runtime state the

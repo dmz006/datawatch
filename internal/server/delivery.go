@@ -290,7 +290,7 @@ func deliveryInterval(v interface{}) (int, bool) {
 	default:
 		return 0, false
 	}
-	if f != math.Trunc(f) || f > math.MaxInt32 || (f != 0 && f < deliveryMinIntervalSeconds) {
+	if f != math.Trunc(f) || f > config.MaxDeliveryIntervalSeconds || (f != 0 && f < deliveryMinIntervalSeconds) {
 		return 0, false
 	}
 	return int(f), true
@@ -308,8 +308,8 @@ func firstDeliverySettingError(patch map[string]interface{}) error {
 	}
 	if v, ok := patch[deliveryIntervalKey]; ok {
 		if _, good := deliveryInterval(v); !good {
-			return fmt.Errorf("%s: must be a whole number of seconds, at least %d (0 = the default, %d)",
-				deliveryIntervalKey, deliveryMinIntervalSeconds, config.DefaultDeliveryIntervalSeconds)
+			return fmt.Errorf("%s: must be a whole number of seconds, at least %d and at most %d (0 = the default, %d)",
+				deliveryIntervalKey, deliveryMinIntervalSeconds, config.MaxDeliveryIntervalSeconds, config.DefaultDeliveryIntervalSeconds)
 		}
 	}
 	return nil

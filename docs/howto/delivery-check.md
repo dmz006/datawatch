@@ -66,7 +66,9 @@ A record that cannot be read turns the check red. It is never treated as
   each kind of record. It is listed for you to review once. It is **never**
   sent as a message and never turned into an action.
 - **New** items came after that start mark.
-- **Accepted** items wait until a date you chose, at most 30 days ahead. When
+- **Accepted** items wait until a date you chose, at most 30 days ahead (a date
+  without a time means the end of that day, UTC, so at most 29 days after
+  today). When
   the date passes they are listed as new, and you are told again.
 
 Two guards stop a storm. If more than 20 items would run out of time in one
@@ -106,8 +108,10 @@ other hosts). Green does not mean those are fine.
 - A send that does not answer within 45 seconds counts as failed (`timeout`).
   No second send is started on that channel until the first one returns. If a
   late send gets through after all, you can receive the same item again.
-- **A reminder once a day** names the items you were told about and have not
-  acknowledged. One reminder covers all of them.
+- **A reminder once a day** names items you were told about and have not
+  acknowledged, those longest unnamed first, at most 20. Only the items it
+  names count as sent. With more than 20 such items, each one is named every
+  few days, and until it is, the check counts it as not told.
 - An item gets **no more messages** once you acknowledge it, while it is
   accepted, or when it is closed. Backlog items are never sent.
 - If the records cannot be saved or read, one fixed warning is sent from memory
@@ -115,6 +119,11 @@ other hosts). Green does not mean those are fine.
   again after 1 minute, doubling to once an hour.
 
 ### Which channels can reach you
+
+An ntfy send counts only when the ntfy server itself answers with success. A
+redirect, for example to a sign-in page, is a failed send. This applies to
+every ntfy message datawatch sends: set the server address to where ntfy
+answers directly.
 
 | Can tell | Cannot tell |
 |---|---|
@@ -153,7 +162,9 @@ choice, and at least one is needed.
   accepting an alarm would hide what waits behind it. Alarm keys look like
   `alarm:flood:raised`.
 - **Accept** needs a reason **code** (lower-case letters, digits, dot, dash and
-  underscore, up to 64) and a date in the future, at most 30 days ahead. You can
+  underscore, up to 64) and a date in the future, at most 30 days ahead. A date
+  without a time means the end of that day in UTC, so the latest such date is 29
+  days after today; today plus 30 is refused. You can
   accept a whole group with one reason and one date.
 - **Drop** closes **failed** and **backlog** items only. Work that is only stuck
   cannot be dropped off the list; accept it with a date instead.
@@ -161,12 +172,24 @@ choice, and at least one is needed.
 ### Who may act
 
 The rule is that only you acknowledge, accept and drop. **It is recorded, not
-enforced**: no session or federation peer is refused for being one. Who did each
-action is taken from the credential, and the report counts the actions made by a
-session or a peer. Enforcing it waits for real caller identities.
+enforced**: AI sessions may acknowledge, accept, drop and send test messages,
+and the report counts actions recorded under a session or a peer. Enforcing the
+rule waits for real caller identities.
 
-Reading the report and running the check need `delivery:read`. The other actions
-need `delivery:write`.
+On the REST routes and the assistant tools, reading the report and running the
+check need `delivery:read`, and the other actions need `delivery:write`.
+`delivery:write` is in full-control and in the session default grant, and in no
+other built-in peer group.
+
+> **Known problem, also in earlier code: do not rely on these permissions or
+> recorded names yet.** The chat test route (`POST /api/test/message`) needs
+> only `sessions:list` and runs chat commands with operator access. A caller
+> without `delivery:write` can acknowledge, accept, drop and send test messages
+> through it. Some of what it does there is recorded as the operator's, and is
+> then left out of the count of session and peer actions. The same route lets
+> such a caller do far more than the delivery check, including pausing and
+> resuming datawatch. Give no peer or session access you would not give full
+> access while it is open.
 
 ## Settings
 
@@ -174,7 +197,7 @@ need `delivery:write`.
 delivery:
   enabled: true           # default: keep the list and run the check
   notify: true            # default: send messages about listed items
-  interval_seconds: 300   # default 300, at least 60
+  interval_seconds: 300   # default 300, 60 to 86400
 ```
 
 In the web app: Settings → Automata → **Delivery check settings**. `enabled` and

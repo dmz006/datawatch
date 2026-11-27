@@ -119,13 +119,15 @@ type Entry struct {
 	LastSentAt *time.Time   `json:"last_sent_at,omitempty"`
 	SendFails  int          `json:"send_fails,omitempty"`
 	NextTryAt  *time.Time   `json:"next_try_at,omitempty"`
-	SeenAt     *time.Time   `json:"seen_at,omitempty"`
-	SeenBy     string       `json:"seen_by,omitempty"`
-	Accepted   *Accept      `json:"accepted,omitempty"`
-	ClosedAt   *time.Time   `json:"closed_at,omitempty"`
-	ClosedAs   string       `json:"closed_as,omitempty"`
-	ClosedBy   string       `json:"closed_by,omitempty"`
-	DropReason string       `json:"drop_reason,omitempty"`
+	// RemindedAt is when an accepted reminder last named the entry.
+	RemindedAt *time.Time `json:"reminded_at,omitempty"`
+	SeenAt     *time.Time `json:"seen_at,omitempty"`
+	SeenBy     string     `json:"seen_by,omitempty"`
+	Accepted   *Accept    `json:"accepted,omitempty"`
+	ClosedAt   *time.Time `json:"closed_at,omitempty"`
+	ClosedAs   string     `json:"closed_as,omitempty"`
+	ClosedBy   string     `json:"closed_by,omitempty"`
+	DropReason string     `json:"drop_reason,omitempty"`
 	// Present is false once the source stops reporting a closed entry.
 	Present bool `json:"present,omitempty"`
 }

@@ -1018,11 +1018,11 @@ The **completed migration** moves Automata (and Automations) that ended `cancell
 
 **Delivery check** — one list of the work that was not delivered or is not finished (Automata, tasks, bugs, unfinished branches, schedules, waiting sessions, questions, answers, pipelines, deploys), checked every few minutes. It **only reports**: a red result blocks nothing and nothing is typed into a session. The list and its messages hold identifiers, kinds, states, reason codes and times only. See [`howto/delivery-check.md`](howto/delivery-check.md).
 
-**Listed and told** — an item is *listed* when it is on the list. It is *told* when a message channel accepted a send that named it; that does not show you read it. At most one message goes out per check, with at most 20 item lines and 1500 characters; only items with a line are marked as told. A failed send is tried again after 1 minute, doubling to at most 1 hour, and told items you have not acknowledged are named again in one reminder a day. The generic webhook, GitHub webhook and DNS channels cannot tell: their send succeeds without sending anything.
+**Listed and told** — an item is *listed* when it is on the list. It is *told* when a message channel accepted a send that named it; that does not show you read it. At most one message goes out per check, with at most 20 item lines and 1500 characters; only items with a line are marked as told. A failed send is tried again after 1 minute, doubling to at most 1 hour, and told items you have not acknowledged are named again in one reminder a day, those longest unnamed first; only the items a reminder names count as sent. The generic webhook, GitHub webhook and DNS channels cannot tell: their send succeeds without sending anything.
 
 **Backlog** (delivery check) — what was already wrong when the check first read each kind of record. It is listed to be reviewed once, is never sent as a message and never becomes an action.
 
-**Acknowledge, accept, drop** (delivery check) — *acknowledge* stops the messages about an item, which stays listed; *accept* lets it wait until a review date at most 30 days ahead, for a reason code, after which it is new again; *drop* closes a failed or backlog item. The rule that only the operator does these is recorded (who did it comes from the credential) and not enforced.
+**Acknowledge, accept, drop** (delivery check) — *acknowledge* stops the messages about an item, which stays listed; *accept* lets it wait until a review date at most 30 days ahead (a plain date means the end of that day, UTC, so at most 29 days after today), for a reason code, after which it is new again; *drop* closes a failed or backlog item. Alarms and clock-jump notices can only be acknowledged. The rule that only the operator does these is recorded and not enforced. **Known, also in earlier code:** the chat test route (`POST /api/test/message`) runs commands with operator access for any caller with `sessions:list`, so neither the `delivery:write` permission nor the recorded name can be relied on while it is open.
 
 **Delivery heartbeat and outside timer** — after each completed and saved check datawatch writes `<data dir>/delivery/heartbeat.json` with the time, the check interval and a state: `ok`, `red` or `cannot_tell` (no channel can reach you, every channel refused the last message, or the records cannot be used). `scripts/delivery-outside-timer.sh`, run by units that are shipped and not installed, reports a missing, unreadable, stale (older than two intervals plus 60 seconds), future-dated or `cannot_tell` heartbeat. **It has no message route yet**: as shipped it prints what it would report and fails.
 
@@ -1030,7 +1030,7 @@ The **completed migration** moves Automata (and Automations) that ended `cancell
 
 - **`delivery.enabled`** (default `true`) — keep the list and run the check. Read at daemon start. Web app: Settings → Automata → **Delivery check settings**.
 - **`delivery.notify`** (default `true`) — send listed items to the message channels. Off: nothing is sent and the check is red with `cannot_tell`.
-- **`delivery.interval_seconds`** (default `300`, at least `60`) — seconds between checks. Read at daemon start.
+- **`delivery.interval_seconds`** (default `300`, `60` to `86400`) — seconds between checks. Read at daemon start.
 
 ## Dashboard
 

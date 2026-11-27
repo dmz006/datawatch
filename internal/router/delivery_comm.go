@@ -254,7 +254,7 @@ var deliveryConfigKeys = []string{"enabled", "notify", "interval_seconds"}
 
 const deliveryConfigHelp = "delivery.enabled (true|false, default true: the list of unfinished and undelivered work and its report-only check), " +
 	"delivery.notify (true|false, default true: send listed entries to the message channels), " +
-	"delivery.interval_seconds (whole seconds, at least 60; 0 = the default, 300); configure delivery reads them back"
+	"delivery.interval_seconds (whole seconds, 60 to 86400; 0 = the default, 300); configure delivery reads them back"
 
 // isDeliveryConfigRead reports whether a bare configure argument asks for the
 // delivery settings.

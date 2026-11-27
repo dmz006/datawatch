@@ -328,8 +328,8 @@ func TestNotifyMessageFitsTheSmallestChannelLimit(t *testing.T) {
 		e.ToldAt, e.LastSentAt = &at, &at
 	}
 	n, ok = DueNotice("host1", es, notifyNow)
-	if !ok || !n.Reminder || len(n.Text) > notifyMaxBytes || len(n.Keys) != 40 {
-		t.Fatalf("digest: ok=%v bytes=%d keys=%d (a digest covers all of them)", ok, len(n.Text), len(n.Keys))
+	if !ok || !n.Reminder || len(n.Text) > notifyMaxBytes || len(n.Keys) == 0 || len(n.Keys) != strings.Count(n.Text, "\n- ") {
+		t.Fatalf("digest: ok=%v bytes=%d keys=%d (a reminder records only what it names)", ok, len(n.Text), len(n.Keys))
 	}
 }
 

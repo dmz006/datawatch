@@ -2092,7 +2092,7 @@ resume [all] [project=<p>] [peers=all|a,b]  resume the global pause, one project
 delivery                         show the delivery check's report: unfinished and undelivered work (report only, blocks nothing)
 delivery check                   run the delivery check now and show the report
 delivery ack <key…>|backlog      mark listed entries as seen; they stay listed
-delivery accept <key…>|backlog|kind=<k> reason=<code> until=<date>  let entries wait until a review date at most 30 days ahead
+delivery accept <key…>|backlog|kind=<k> reason=<code> until=<date>  let entries wait until a review date at most 30 days ahead (a plain date means the end of that day, UTC: at most 29 days after today)
 delivery drop <key…>|backlog reason=<code>  close failed or backlog entries
 delivery test                    send a test message on every message channel
 usage_backoff                    show per-backend usage back-off flags, the effective config (incl. the backoff_reserve_for_review and backoff_reserve_tokens_per_hour reserve settings) and the live reserve usage (reserve array), plus the patterns_version/patterns_stale/claude_cli_version drift guard

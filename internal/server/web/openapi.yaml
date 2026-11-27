@@ -1000,7 +1000,7 @@ paths:
 
         Delivery check keys: `delivery.enabled` (true|false, default true),
         `delivery.notify` (true|false, default true) and
-        `delivery.interval_seconds` (whole seconds, at least 60; 0 = the default, 300).
+        `delivery.interval_seconds` (whole seconds, 60 to 86400; 0 = the default, 300).
         GET returns their effective values under `delivery`.
 
         Supported keys: `telegram.enabled`, `discord.enabled`, `slack.enabled`,
@@ -14416,7 +14416,7 @@ paths:
         "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
   /api/delivery/accept:
     post:
-      summary: Let delivery list entries wait until a review date at most 30 days ahead
+      summary: Let delivery list entries wait until a review date at most 30 days ahead (a plain date means the end of that day, UTC, so at most 29 days after today)
       description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer, and who did it comes from the credential. Needs delivery:write."
       operationId: deliveryAccept
       tags: [Singletons]

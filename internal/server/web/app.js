@@ -27361,7 +27361,7 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'delivery_check', sectionKey: 'delivery_settings_title', section: 'Delivery check settings', docs: 'howto/delivery-check.md', fields: [
     { key: 'delivery.enabled', label: 'Keep the delivery list and run the check', labelKey: 'settings_delivery_enabled', type: 'toggle', default: true },
     { key: 'delivery.notify', label: 'Send me messages about listed items', labelKey: 'settings_delivery_notify', type: 'toggle', default: true },
-    { key: 'delivery.interval_seconds', label: 'Time between checks (seconds, at least 60)', labelKey: 'settings_delivery_interval_seconds', type: 'number', min: 60, placeholder: '300', onchange: "savePromptNumberSetting('delivery.interval_seconds', this.value, 60)" },
+    { key: 'delivery.interval_seconds', label: 'Time between checks (seconds, at least 60)', labelKey: 'settings_delivery_interval_seconds', type: 'number', min: 60, max: 86400, placeholder: '300', onchange: "savePromptNumberSetting('delivery.interval_seconds', this.value, 60)" },
   ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval

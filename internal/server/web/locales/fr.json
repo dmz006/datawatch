@@ -6590,7 +6590,7 @@
   "delivery_ack": "Accuser réception",
   "delivery_accept": "Accepter jusqu’à la date",
   "delivery_drop": "Abandonner",
-  "delivery_actions_help": "Cochez des éléments, puis agissez. L’accusé de réception arrête les messages à leur sujet ; ils restent listés. Accepter les laisse attendre jusqu’à une date, 30 jours au plus. Abandonner clôt les éléments en échec ou de l’arriéré.",
+  "delivery_actions_help": "Cochez des éléments, puis agissez. L’accusé de réception arrête les messages à leur sujet ; ils restent listés. Accepter les laisse attendre jusqu’à une date ; la date vaut jusqu’à la fin de ce jour (UTC) : choisissez au plus 29 jours après aujourd’hui. Abandonner clôt les éléments en échec ou de l’arriéré.",
   "delivery_whole_backlog": "Appliquer à tout l’arriéré (%1$s) au lieu des éléments cochés",
   "delivery_reason_label": "Code de motif",
   "delivery_reason_hint": "un code, par exemple waiting-upstream",

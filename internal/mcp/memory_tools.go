@@ -989,7 +989,7 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"Archive grace key: autonomous.archive_grace_minutes (whole minutes >= 0; how long a cancelled Automaton is kept before it is archived, 0 = archive at once, default 60); read it back with get_config section=autonomous. "+
 			"Archive keep key: autonomous.archive_keep_unmerged (true|false, default true; keeps a finished Automaton whose branch still holds unmerged commits from being archived); read it back with get_config section=autonomous. "+
 			"Delivery check keys: delivery.enabled (true|false; default true), delivery.notify (true|false, default true; false sends no message and the check says it cannot tell anyone) and "+
-			"delivery.interval_seconds (whole seconds, at least 60; 0 = the default, 300); read them back with get_config section=delivery. "+
+			"delivery.interval_seconds (whole seconds, 60 to 86400; 0 = the default, 300); read them back with get_config section=delivery. "+
 			"A refused value returns the daemon's message and changes nothing."),
 		mcpsdk.WithString("key",
 			mcpsdk.Required(),

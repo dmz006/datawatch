@@ -6590,7 +6590,7 @@
   "delivery_ack": "Confirmar",
   "delivery_accept": "Aceptar hasta la fecha",
   "delivery_drop": "Descartar",
-  "delivery_actions_help": "Marque elementos y actúe. Confirmar detiene los mensajes sobre ellos; siguen en la lista. Aceptar les permite esperar hasta una fecha, como máximo 30 días. Descartar cierra elementos fallidos o pendientes anteriores.",
+  "delivery_actions_help": "Marque elementos y actúe. Confirmar detiene los mensajes sobre ellos; siguen en la lista. Aceptar les permite esperar hasta una fecha; la fecha vale hasta el final de ese día (UTC), así que elija como máximo 29 días después de hoy. Descartar cierra elementos fallidos o pendientes anteriores.",
   "delivery_whole_backlog": "Aplicar a todos los pendientes anteriores (%1$s) en lugar de a los marcados",
   "delivery_reason_label": "Código de motivo",
   "delivery_reason_hint": "un código, por ejemplo waiting-upstream",

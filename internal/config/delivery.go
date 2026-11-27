@@ -5,6 +5,10 @@ import "time"
 // DefaultDeliveryIntervalSeconds is how often the delivery check runs.
 const DefaultDeliveryIntervalSeconds = 300
 
+// MaxDeliveryIntervalSeconds is the longest time between checks: the outside
+// timer reads a heartbeat with a longer one as unreadable.
+const MaxDeliveryIntervalSeconds = 86400
+
 // DeliveryConfig is the delivery check: one list of undelivered and unfinished
 // work, a check that reports and blocks nothing, and messages to the operator.
 type DeliveryConfig struct {
@@ -12,7 +16,7 @@ type DeliveryConfig struct {
 	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	// Notify sends listed entries to the message channels. Default true.
 	Notify *bool `yaml:"notify,omitempty" json:"notify,omitempty"`
-	// IntervalSeconds is the time between checks. Default 300, at least 60.
+	// IntervalSeconds is the time between checks. Default 300, 60 to 86400.
 	IntervalSeconds int `yaml:"interval_seconds,omitempty" json:"interval_seconds,omitempty"`
 }
 
@@ -28,8 +32,6 @@ func (c DeliveryConfig) Interval() time.Duration {
 	if s <= 0 {
 		s = DefaultDeliveryIntervalSeconds
 	}
-	if s < 60 {
-		s = 60
-	}
+	s = min(max(s, 60), MaxDeliveryIntervalSeconds)
 	return time.Duration(s) * time.Second
 }

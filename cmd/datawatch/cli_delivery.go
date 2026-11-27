@@ -225,7 +225,7 @@ kinds, states, reason codes and times only.`,
 		func(n int) string { return fmt.Sprintf("%d accepted until %s", n, strings.TrimSpace(until)) },
 		func(cmd *cobra.Command) func(map[string]any) error {
 			cmd.Flags().StringVar(&acceptReason, "reason", "", "Reason code (required): a-z, 0-9, dot, dash and underscore")
-			cmd.Flags().StringVar(&until, "until", "", "Review date (required): YYYY-MM-DD or RFC 3339")
+			cmd.Flags().StringVar(&until, "until", "", "Review date (required), at most 30 days ahead: YYYY-MM-DD or RFC 3339; a plain date means the end of that day (UTC), so at most 29 days after today")
 			return func(body map[string]any) error {
 				if err := deliveryRequired(body, "reason", acceptReason); err != nil {
 					return err

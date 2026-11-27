@@ -6590,7 +6590,7 @@
   "delivery_ack": "Bestätigen",
   "delivery_accept": "Bis Datum akzeptieren",
   "delivery_drop": "Verwerfen",
-  "delivery_actions_help": "Einträge ankreuzen, dann handeln. Bestätigen beendet die Nachrichten dazu; sie bleiben gelistet. Akzeptieren lässt sie bis zu einem Datum warten, höchstens 30 Tage im Voraus. Verwerfen schließt fehlgeschlagene Einträge und Rückstand.",
+  "delivery_actions_help": "Einträge ankreuzen, dann handeln. Bestätigen beendet die Nachrichten dazu; sie bleiben gelistet. Akzeptieren lässt sie bis zu einem Datum warten; das Datum gilt bis zum Ende dieses Tages (UTC), also höchstens 29 Tage nach heute wählen. Verwerfen schließt fehlgeschlagene Einträge und Rückstand.",
   "delivery_whole_backlog": "Auf den ganzen Rückstand (%1$s) statt auf die angekreuzten Einträge anwenden",
   "delivery_reason_label": "Grundcode",
   "delivery_reason_hint": "ein Code, zum Beispiel waiting-upstream",
