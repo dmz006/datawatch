@@ -25,7 +25,7 @@ const (
 	DeliveryEnv = "DATAWATCH_PI_DELIVERY"
 	// DeliveryExtensionVersion is what the extension says it is when it
 	// reports "seen". Raise it with any change to the extension.
-	DeliveryExtensionVersion = "datawatch-pi-delivery-1"
+	DeliveryExtensionVersion = "datawatch-pi-delivery-2"
 	// DeliverSteer and DeliverFollowUp are pi's two ways to hand a busy agent
 	// a message: after its current tool calls, or after its run.
 	DeliverSteer    = "steer"
@@ -44,10 +44,11 @@ type DeliveryCredential struct {
 	CACertPath string `json:"ca_cert_path,omitempty"`
 	// StateFile keeps the reports not yet recorded: request IDs and digests.
 	StateFile string `json:"state_file,omitempty"`
-	// DeliverAs is DeliverSteer or DeliverFollowUp. Empty, as datawatch writes
-	// it today, means the extension fetches nothing.
+	// DeliverAs is DeliverSteer or DeliverFollowUp. datawatch writes follow-up.
+	// Empty means the extension fetches nothing.
 	DeliverAs string `json:"deliver_as,omitempty"`
-	// Guidance adds the text that tells pi's model what these messages are.
+	// Guidance adds the short note that tells pi's model these messages are real.
+	// datawatch sets it.
 	Guidance bool `json:"guidance,omitempty"`
 	// PollMillis overrides how often the extension asks; zero is 2 seconds.
 	PollMillis int `json:"poll_ms,omitempty"`

@@ -50,9 +50,10 @@ func TestReqPiLaunchWritesAPrivateCredential(t *testing.T) {
 		!strings.HasPrefix(path, f.dataDir) || filepath.Dir(c.StateFile) != filepath.Dir(path) {
 		t.Fatalf("%s %+v", path, c)
 	}
-	// The timing and guidance are not chosen: nothing may set them.
-	if c.DeliverAs != "" || c.Guidance {
-		t.Fatalf("a choice nobody made: %+v", c)
+	// The operator's decision: after the current task, with the note that the
+	// message is real.
+	if c.DeliverAs != pi.DeliverFollowUp || !c.Guidance {
+		t.Fatalf("not follow-up with the note: %+v", c)
 	}
 	for p, mode := range map[string]fs.FileMode{path: 0o600, filepath.Dir(path): 0o700} {
 		if st, err := os.Stat(p); err != nil || st.Mode().Perm() != mode {

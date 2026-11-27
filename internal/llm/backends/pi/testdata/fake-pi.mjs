@@ -46,8 +46,9 @@ for await (const line of createInterface({ input: process.stdin })) {
 		}
 		if (cmd.cmd === "tool") {
 			try {
-				await tools[cmd.name].execute("call-1", cmd.params);
+				const res = await tools[cmd.name].execute("call-1", cmd.params);
 				out.ok = true;
+				out.result = res?.content?.[0]?.text ?? "";
 			} catch (e) {
 				out.toolError = String(e.message ?? e);
 			}

@@ -7,10 +7,9 @@
 // credential, and puts the credential's path (never the token) in the session's
 // environment. No launch command loads the extension yet.
 
-// When a busy pi is handed a request (after its run, or mid-task), and what
-// the extension tells the model about such messages, are not decided: see the
-// design questions in build/d4-split-final.md. Until they are, the credential
-// names no timing and the extension, even if loaded, fetches nothing.
+// A busy pi is handed a request after its current task (follow-up), and the
+// extension adds a short note that tells pi's model such messages are real: the
+// operator's choice, 2026-11-27. The two were proven together.
 
 package main
 
@@ -80,6 +79,7 @@ func wirePiDelivery(sess *session.Session, in piDeliveryLaunch) error {
 	if err := pi.WriteDeliveryCredential(path, pi.DeliveryCredential{
 		APIURL: in.APIURL, Token: in.Token, CACertPath: in.CACertPath,
 		StateFile: filepath.Join(dir, piReportsFile),
+		DeliverAs: pi.DeliverFollowUp, Guidance: true,
 	}); err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -32,6 +33,7 @@ type fkItem struct {
 	ReadOnly bool
 	fetched  bool
 	seen     bool
+	accepted bool
 }
 
 type fkCall struct {
@@ -124,6 +126,14 @@ func (d *fkDaemon) serve(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "wrong code", http.StatusBadRequest)
 				return
 			}
+			it.accepted = true
+			reply(map[string]any{"id": it.ID})
+		case "report":
+			if !it.accepted {
+				http.Error(w, "state", http.StatusConflict)
+				return
+			}
+			it.State = "reported"
 			reply(map[string]any{"id": it.ID})
 		default:
 			http.Error(w, "no", http.StatusNotFound)
@@ -178,7 +188,7 @@ func newFkEnv(t *testing.T, d *fkDaemon, deliverAs string) *fkEnv {
 	must(os.MkdirAll(tb, 0o700))
 	must(os.WriteFile(filepath.Join(tb, "package.json"), []byte(`{"name":"typebox","type":"module","exports":"./index.js"}`), 0o600))
 	must(os.WriteFile(filepath.Join(tb, "index.js"), []byte(
-		`export const Type = { Object: (p) => ({ type: "object", properties: p }), String: (o) => ({ type: "string", ...o }) };`), 0o600))
+		`export const Type = { Object: (p) => ({ type: "object", properties: p }), String: (o) => ({ type: "string", ...o }), Optional: (s) => ({ ...s, optional: true }) };`), 0o600))
 	must(os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"type":"module"}`), 0o600))
 	ext, err := WriteDeliveryExtension(dir)
 	must(err)
@@ -206,6 +216,7 @@ type fkPi struct {
 type fkReply struct {
 	Error     string            `json:"error"`
 	ToolError string            `json:"toolError"`
+	Result    string            `json:"result"`
 	OK        bool              `json:"ok"`
 	Sections  map[string]string `json:"sections"`
 	Tools     []string          `json:"tools"`
@@ -473,12 +484,52 @@ func TestReqPiTheCredentialIsReadForEveryCall(t *testing.T) {
 	fkWait(t, "the new token", func() bool { return d.last("/mine").Token == "token-two" })
 }
 
-func TestReqPiTheReceiptToolAcceptsAndThereIsNoReportTool(t *testing.T) {
+// The operator's decision of 2026-11-27: pi says it finished with a report
+// tool, as Claude does with request_report. A report only starts datawatch's
+// check.
+func TestReqPiTheReportToolReportsAndNeverSaysDone(t *testing.T) {
+	d := newFkDaemon(t)
+	d.add("r-1", fkContent, false)
+	p := newFkEnv(t, d, DeliverFollowUp).start()
+	tool := func(name string, params map[string]string) fkReply {
+		return p.do(map[string]any{"cmd": "tool", "name": name, "params": params})
+	}
+	early := tool("datawatch_report", map[string]string{"request_id": "r-1"})
+	if early.OK || !strings.Contains(early.ToolError, "datawatch_ack") {
+		t.Fatalf("a report before the accept must say what to do first: %+v", early)
+	}
+	if r := tool("datawatch_ack", map[string]string{"request_id": "r-1", "code": "c0de"}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	r := tool("datawatch_report", map[string]string{"request_id": "r-1", "summary": "wrote the file"})
+	if !r.OK || !strings.Contains(r.Result, "not done") || !strings.Contains(r.Result, "check") {
+		t.Fatalf("%+v", r)
+	}
+	if got := d.last("/report"); got.Path != "/api/requests/r-1/report" || got.Body["text"] != "wrote the file" ||
+		got.Token != "token-one" {
+		t.Fatalf("%+v", got)
+	}
+	before := d.count("/report")
+	for name, params := range map[string]map[string]string{
+		"a made-up id":    {"request_id": "r-9"},
+		"a path as an id": {"request_id": "r-1/../mine"},
+	} {
+		if r := tool("datawatch_report", params); r.OK || r.ToolError == "" {
+			t.Errorf("%s: %+v", name, r)
+		}
+	}
+	if d.count("/report") != before+1 {
+		t.Fatalf("a path left the extension: %d", d.count("/report"))
+	}
+}
+
+func TestReqPiTheReceiptToolAccepts(t *testing.T) {
 	d := newFkDaemon(t)
 	d.add("r-1", fkContent, false)
 	p := newFkEnv(t, d, DeliverSteer).start()
 	r := p.do(map[string]any{"cmd": "tool", "name": "datawatch_ack", "params": map[string]string{"request_id": "r-1", "code": "c0de"}})
-	if !r.OK || len(r.Tools) != 1 || r.Tools[0] != "datawatch_ack" {
+	slices.Sort(r.Tools)
+	if !r.OK || !slices.Equal(r.Tools, []string{"datawatch_ack", "datawatch_report"}) {
 		t.Fatalf("%+v", r)
 	}
 	if got := d.last("/accept"); got.Path != "/api/requests/r-1/accept" || got.Body["code"] != "c0de" || got.Token != "token-one" {
@@ -504,8 +555,11 @@ func TestReqPiGuidanceOnlyWhenChosen(t *testing.T) {
 	}
 	e.cred.Guidance = true
 	e.save()
-	if r := p.do(map[string]any{"cmd": "agent_start"}); !strings.Contains(r.Sections["datawatch_requests"], "[datawatch request <id> begin]") {
-		t.Fatalf("%+v", r.Sections)
+	note := p.do(map[string]any{"cmd": "agent_start"}).Sections["datawatch_requests"]
+	for _, want := range []string{"[datawatch request <id> begin]", "real instruction", "datawatch_ack", "datawatch_report"} {
+		if !strings.Contains(note, want) {
+			t.Fatalf("the note lacks %q: %q", want, note)
+		}
 	}
 }
 
@@ -526,9 +580,6 @@ func TestReqPiTheEmbeddedExtensionSaysItsVersion(t *testing.T) {
 	}
 	if !strings.Contains(string(deliveryExtension), `const VERSION = "`+DeliveryExtensionVersion+`";`) {
 		t.Fatal("the extension and the daemon disagree on the version")
-	}
-	if strings.Contains(string(deliveryExtension), "report_text") || strings.Contains(string(deliveryExtension), "datawatch_report") {
-		t.Fatal("there is no report tool (design question Q2)")
 	}
 	dir := t.TempDir()
 	path, err := WriteDeliveryExtension(dir)
