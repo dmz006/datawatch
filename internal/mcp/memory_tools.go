@@ -990,6 +990,10 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"Archive keep key: autonomous.archive_keep_unmerged (true|false, default true; keeps a finished Automaton whose branch still holds unmerged commits from being archived); read it back with get_config section=autonomous. "+
 			"Delivery check keys: delivery.enabled (true|false; default true), delivery.notify (true|false, default true; false sends no message and the check says it cannot tell anyone) and "+
 			"delivery.interval_seconds (whole seconds, 60 to 86400; 0 = the default, 300); read them back with get_config section=delivery. "+
+			"Request keys (read live): delivery.request_take_by_seconds, delivery.request_due_seconds and delivery.reminder_interval_seconds (whole seconds; 0 = the default), "+
+			"delivery.request_due_seconds_by_kind (a JSON object of request kind to seconds, or kind=seconds pairs; {} clears it), "+
+			"delivery.reminders_per_session_hour (default 2) and delivery.reminders_per_host_hour (default 20; 0 = no reminders); "+
+			"read the values in force with get_config section=delivery_requests. "+
 			"A refused value returns the daemon's message and changes nothing."),
 		mcpsdk.WithString("key",
 			mcpsdk.Required(),

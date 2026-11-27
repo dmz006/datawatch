@@ -7316,6 +7316,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		// delivery check: effective values (unset keys read their defaults).
 		"delivery": deliveryConfigSurface(s.cfg.Delivery),
+		// request settings (delivery job 4): every one at its value in force.
+		"delivery_requests": requestSettingsSurface(s.cfg.Delivery),
 		// scheduled-jobs results: per-schedule result history store.
 		"results": map[string]interface{}{
 			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),

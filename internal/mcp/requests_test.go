@@ -471,3 +471,18 @@ func TestReqSurfaceMCPToolsAndCaps(t *testing.T) {
 		}
 	}
 }
+
+// The assistant tool's config description names the six settings and where the
+// values in force are read.
+func TestReqSurfaceMCPSettingsAreDescribed(t *testing.T) {
+	s, _ := newRequestMCP(t)
+	desc := s.toolConfigSet().Description
+	for _, key := range delivery.RequestSettingKeys {
+		if !strings.Contains(desc, "delivery."+key) {
+			t.Errorf("config_set does not name delivery.%s", key)
+		}
+	}
+	if !strings.Contains(desc, "section=delivery_requests") {
+		t.Error("config_set does not say where to read them")
+	}
+}

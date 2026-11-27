@@ -12,6 +12,7 @@ import (
 	"io"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -203,4 +204,26 @@ func orDefault(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// RequestSettingKeys are the request settings under "delivery.", in the order
+// they are shown.
+var RequestSettingKeys = []string{"request_take_by_seconds", "request_due_seconds", "request_due_seconds_by_kind",
+	"reminder_interval_seconds", "reminders_per_session_hour", "reminders_per_host_hour"}
+
+// RenderSetting is one setting value as the command line and chat show it: a
+// whole number without an exponent, and a table as kind=seconds pairs.
+func RenderSetting(v any) string {
+	switch x := v.(type) {
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case map[string]any:
+		pairs := make([]string, 0, len(x))
+		for kind, secs := range x {
+			pairs = append(pairs, kind+"="+RenderSetting(secs))
+		}
+		slices.Sort(pairs)
+		return strings.Join(pairs, ",")
+	}
+	return fmt.Sprint(v)
 }

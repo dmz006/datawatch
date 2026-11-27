@@ -229,3 +229,37 @@ func TestReqSurfaceChatHelp(t *testing.T) {
 		}
 	}
 }
+
+func TestReqSurfaceChatSettingsRead(t *testing.T) {
+	r, f := newDeliveryRouter(t)
+	r.SetConfigureFunc(func(string, string) error { return nil })
+	f.reply["/api/config"] = `{"delivery":{"enabled":true,"notify":true,"interval_seconds":300},"delivery_requests":{"request_take_by_seconds":3600,"request_due_seconds":1000000,"request_due_seconds_by_kind":{"bug":60,"ask":120},"reminder_interval_seconds":900,"reminders_per_session_hour":0,"reminders_per_host_hour":20}}`
+	for key, want := range map[string]string{
+		"delivery.request_take_by_seconds":     "delivery.request_take_by_seconds = 3600",
+		"delivery.request_due_seconds":         "delivery.request_due_seconds = 1000000",
+		"delivery.request_due_seconds_by_kind": "delivery.request_due_seconds_by_kind = ask=120,bug=60",
+		"delivery.reminder_interval_seconds":   "delivery.reminder_interval_seconds = 900",
+		"delivery.reminders_per_session_hour":  "delivery.reminders_per_session_hour = 0",
+		"delivery.reminders_per_host_hour":     "delivery.reminders_per_host_hour = 20",
+	} {
+		if reply := deliverySay(r, "configure "+key, ""); !strings.Contains(reply, want) {
+			t.Errorf("configure %s: %q", key, reply)
+		}
+		if reply := deliverySay(r, "configure delivery", ""); !strings.Contains(reply, want) || !strings.Contains(reply, "delivery.enabled = true") {
+			t.Errorf("configure delivery lacks %q: %q", want, reply)
+		}
+	}
+}
+
+// What chat writes is what the daemon reads: the key and the text value.
+func TestReqSurfaceChatSettingsWrite(t *testing.T) {
+	r, _ := newDeliveryRouter(t)
+	var got []string
+	r.SetConfigureFunc(func(k, v string) error { got = append(got, k+"|"+v); return nil })
+	deliverySay(r, "configure delivery.reminders_per_session_hour=0", "")
+	deliverySay(r, "configure delivery.request_due_seconds_by_kind=ask=300,bug=600", "")
+	want := []string{"delivery.reminders_per_session_hour|0", "delivery.request_due_seconds_by_kind|ask=300,bug=600"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("writes = %v", got)
+	}
+}

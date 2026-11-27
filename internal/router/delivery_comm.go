@@ -254,7 +254,10 @@ var deliveryConfigKeys = []string{"enabled", "notify", "interval_seconds"}
 
 const deliveryConfigHelp = "delivery.enabled (true|false, default true: the list of unfinished and undelivered work and its report-only check), " +
 	"delivery.notify (true|false, default true: send listed entries to the message channels), " +
-	"delivery.interval_seconds (whole seconds, 60 to 86400; 0 = the default, 300); configure delivery reads them back"
+	"delivery.interval_seconds (whole seconds, 60 to 86400; 0 = the default, 300), " +
+	"delivery.request_take_by_seconds / delivery.request_due_seconds / delivery.reminder_interval_seconds (whole seconds; 0 = the default), " +
+	"delivery.request_due_seconds_by_kind (kind=seconds pairs; empty value as {} clears it), " +
+	"delivery.reminders_per_session_hour (default 2) and delivery.reminders_per_host_hour (default 20; 0 = no reminders); configure delivery reads them back"
 
 // isDeliveryConfigRead reports whether a bare configure argument asks for the
 // delivery settings.
@@ -263,7 +266,7 @@ func isDeliveryConfigRead(text string) bool {
 		return true
 	}
 	key, ok := strings.CutPrefix(text, "delivery.")
-	return ok && slices.Contains(deliveryConfigKeys, key)
+	return ok && (slices.Contains(deliveryConfigKeys, key) || slices.Contains(delivery.RequestSettingKeys, key))
 }
 
 // handleDeliveryConfigRead replies with the effective value of one delivery
@@ -276,6 +279,7 @@ func (r *Router) handleDeliveryConfigRead(text string) {
 	}
 	var view struct {
 		Delivery map[string]any `json:"delivery"`
+		Requests map[string]any `json:"delivery_requests"`
 	}
 	if err := json.Unmarshal([]byte(out), &view); err != nil || view.Delivery == nil {
 		r.reply("configure "+text+" failed", "the daemon reported no delivery settings")
@@ -285,6 +289,11 @@ func (r *Router) handleDeliveryConfigRead(text string) {
 	for _, key := range deliveryConfigKeys {
 		if text == "delivery" || text == "delivery."+key {
 			lines = append(lines, fmt.Sprintf("delivery.%s = %v", key, view.Delivery[key]))
+		}
+	}
+	for _, key := range delivery.RequestSettingKeys {
+		if v, ok := view.Requests[key]; ok && (text == "delivery" || text == "delivery."+key) {
+			lines = append(lines, fmt.Sprintf("delivery.%s = %s", key, delivery.RenderSetting(v)))
 		}
 	}
 	r.reply("configure", strings.Join(lines, "\n"))

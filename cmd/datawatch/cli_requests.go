@@ -25,7 +25,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -312,10 +311,6 @@ func requestCLIBody(required, optional [][3]string) func(*cobra.Command) func(ma
 	}
 }
 
-// requestSettingKeys are the request settings, in the order they are shown.
-var requestSettingKeys = []string{"request_take_by_seconds", "request_due_seconds", "request_due_seconds_by_kind",
-	"reminder_interval_seconds", "reminders_per_session_hour", "reminders_per_host_hour"}
-
 func requestCLISettingsText(b []byte) (string, error) {
 	var view struct {
 		Requests map[string]any `json:"delivery_requests"`
@@ -326,18 +321,9 @@ func requestCLISettingsText(b []byte) (string, error) {
 	if view.Requests == nil {
 		return "", errors.New("the daemon reported no request settings")
 	}
-	lines := make([]string, 0, len(requestSettingKeys))
-	for _, key := range requestSettingKeys {
-		value := view.Requests[key]
-		if byKind, ok := value.(map[string]any); ok {
-			pairs := make([]string, 0, len(byKind))
-			for kind, v := range byKind {
-				pairs = append(pairs, fmt.Sprintf("%s=%v", kind, v))
-			}
-			sort.Strings(pairs)
-			value = strings.Join(pairs, ",")
-		}
-		lines = append(lines, fmt.Sprintf("delivery.%s = %v", key, value))
+	lines := make([]string, 0, len(delivery.RequestSettingKeys))
+	for _, key := range delivery.RequestSettingKeys {
+		lines = append(lines, fmt.Sprintf("delivery.%s = %s", key, delivery.RenderSetting(view.Requests[key])))
 	}
 	return strings.Join(lines, "\n"), nil
 }
