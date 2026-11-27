@@ -579,6 +579,13 @@ func loadConfigSecure() (*config.Config, error) {
 // loadConfigAndDeriveKey loads the config and, when --secure is set (or auto-detected),
 // derives a 32-byte AES key for encrypting all data stores.
 func loadConfigAndDeriveKey() (*config.Config, []byte, error) {
+	return loadConfigDeriveKeys(nil)
+}
+
+// loadConfigDeriveKeys is loadConfigAndDeriveKey that also hands the loaded
+// config and the secure password to withPassword before the password is
+// wiped. withPassword is not called on a non-secure install.
+func loadConfigDeriveKeys(withPassword func(*config.Config, []byte) error) (*config.Config, []byte, error) {
 	path := resolveConfigPath()
 	// Auto-detect encrypted config
 	if !secureMode && isConfigEncrypted(path) {
@@ -615,6 +622,12 @@ func loadConfigAndDeriveKey() (*config.Config, []byte, error) {
 		}
 	}
 	key := config.DeriveKey(pw, salt)
+	if withPassword != nil {
+		if err := withPassword(cfg, pw); err != nil {
+			zeroBytes(pw)
+			return nil, nil, err
+		}
+	}
 	zeroBytes(pw)
 	return cfg, key, nil
 }
@@ -957,6 +970,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	var cfg *config.Config
 	var encKey []byte
+	deliveryWire := newDeliveryWiring()
 	var acmeMgr *acme.Manager              // BL397, set below when acme.enabled; nil otherwise
 	var apnsDispatcher *apnspkg.Dispatcher // BL397 Phase 4 / BL335, set below when push.apns.enabled; nil otherwise
 	if workerBootstrap != nil {
@@ -966,9 +980,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		cfg = config.DefaultConfig()
 	} else {
 		var err error
-		cfg, encKey, err = loadConfigAndDeriveKey()
+		cfg, encKey, err = loadConfigDeriveKeys(deliveryWire.openKey)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
+		}
+		if encKey == nil {
+			// A sealed delivery store refuses a non-secure start.
+			if err := deliveryWire.openKey(cfg, nil); err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
 		}
 	}
 	// v9.0.7: a daemon started without inheriting datawatch.env's
@@ -2667,7 +2687,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Wire filter engine to session output
-	filterEngine := session.NewFilterEngine(filterStore, session.ActionHandlers{
+	filterEngine := session.NewFilterEngine(filterStore, deliveryWire.wrapFilterHandlers(session.ActionHandlers{
 		MayType: mgr.FilterMayType,
 		SendInput: func(sessID, filterID, text string) error {
 			return mgr.SendInput(sessID, text, session.FilterSource(filterID))
@@ -2715,7 +2735,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				respondToStartupScreens(mgr, sessID, answerLiveStartupDialog, startupRespondWindow, startupRespondPause)
 			}()
 		},
-	})
+	}))
 	// Create an alert when any session starts so it appears in alerts view for all backends
 	mgr.AddOnSessionStart(func(sess *session.Session) {
 		alertStore.Add(alertspkg.LevelInfo,
@@ -3190,6 +3210,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
+		deliveryWire.addChannel(backend.Name(), func(text string) error { return backend.Send(groupID, text) })
 		r.SetChannelTracker(chanTracker.Get(backend.Name()))
 		// The standard task reply reads the live task-template settings.
 		r.SetConfig(cfg)
@@ -3504,6 +3525,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	var ntfyBackend *ntfymsg.Backend
 	if cfg.Ntfy.Enabled && cfg.Ntfy.Topic != "" {
 		ntfyBackend = ntfymsg.New(cfg.Ntfy.ServerURL, cfg.Ntfy.Topic, cfg.Ntfy.Token)
+		deliveryWire.addChannel(ntfyBackend.Name(), func(text string) error { return ntfyBackend.Send("", text) })
 		fmt.Printf("[%s] ntfy notifications enabled (topic: %s)\n", cfg.Hostname, cfg.Ntfy.Topic)
 	}
 
@@ -3511,6 +3533,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	var emailBackend *emailmsg.Backend
 	if cfg.Email.Enabled && cfg.Email.Host != "" {
 		emailBackend = emailmsg.New(cfg.Email.Host, cfg.Email.Port, cfg.Email.Username, cfg.Email.Password, cfg.Email.From, cfg.Email.To)
+		deliveryWire.addChannel(emailBackend.Name(), func(text string) error { return emailBackend.Send("", text) })
 		fmt.Printf("[%s] Email notifications enabled (%s -> %s)\n", cfg.Hostname, cfg.Email.From, cfg.Email.To)
 	}
 
@@ -7435,6 +7458,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			); err != nil {
 				log.Printf("[warn] lifecycle subscription store: %v", err)
 			} else {
+				deliveryWire.subs = lifeSubStore
 				lifeSubCommSend := func(text string) {
 					// Same notify pipeline as the CommSink above, honouring
 					// notify_exclude per send.
@@ -7650,6 +7674,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					if lifecycleAuditFn != nil {
 						qstore.SetAuditFn(lifecycleAuditFn)
 					}
+					deliveryWire.questions = qstore
 					// Every question raised with an Automaton id lands on that
 					// Automaton's decision log, and its answer as a second
 					// entry; the store calls this after each change, outside
@@ -10031,6 +10056,15 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 
 	// Start the scheduler goroutine (fires timed commands and on-input-prompt commands)
 	go runScheduler(ctx, schedStore, mgr)
+
+	// The delivery check. Here every other store has opened, so a start that
+	// failed earlier has written none of its records. It reports only.
+	if workerBootstrap == nil {
+		if _, err := deliveryWire.start(ctx, deliveryDeps{cfg: cfg, sessions: mgr, schedules: schedStore,
+			autonomy: autonomousMgrRef, pipelines: pipeExec, http: httpServer}); err != nil {
+			return fmt.Errorf("start the delivery check: %w", err)
+		}
+	}
 
 	// BL357 — background goroutine to expire stale queue leases every 30 seconds.
 	go func() {
