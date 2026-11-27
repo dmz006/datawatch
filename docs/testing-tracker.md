@@ -6350,10 +6350,10 @@ An Automation's limit on members running at once, its stage gate and its decisio
 
 | Interface | Tested | Validated | Test conditions and notes |
 |---|---|---|---|
-| Core rules against a false done (`internal/acceptance`) | **Yes** (`rules_test.go`, `git_test.go`, `receipt_test.go`, `close_test.go`, `kind_test.go`, `asks_marker_test.go`: fakes, an injected clock and temporary git repositories) | **No** | Rule 10 (reviewer quotes) belongs to the reviewer build |
+| Core rules against a false done (`internal/acceptance`) | **Yes** (`rules_test.go`, `git_test.go`, `receipt_test.go`, `close_test.go`, `kind_test.go`, `asks_marker_test.go`, `start_guard_test.go`: fakes, an injected clock and temporary git repositories) | **No** | Rule 10 (reviewer quotes) belongs to the reviewer build |
 | REST `/api/acceptance*`, config keys, audit event | **Yes** (`internal/server/acceptance_test.go`, `internal/audit/cef_acceptance_test.go`) | **No** | Handlers called directly; no daemon started |
 | MCP tools, registered only in report mode | **Yes** (`internal/mcp/acceptance_test.go`) | **No** | No live tool call |
 | CLI `datawatch acceptance` | **Yes** (`cmd/datawatch/cli_acceptance_test.go`: body and verbs) | **No** | Not run against a daemon |
-| Comm `acceptance` | **Yes** (`internal/router/acceptance_comm_test.go`: parse, request bodies, secure replies; `acceptance_off_test.go`: an off setting leaves plain messages alone) | **No** | No channel backend |
+| Comm `acceptance` | **Yes** (`internal/router/acceptance_comm_test.go`: parse, request bodies, secure replies; `acceptance_off_test.go`: an off setting leaves plain messages alone; `cmd/datawatch/acceptance_testmessage_wiring_test.go`: a real daemon's test-message route, off, report and off again) | **No** | No channel backend |
 | PWA table, list view, settings, locales en de es fr ja | **Yes** (`internal/server/web/app-done-when.test.js`) | **No** | Not opened in a browser; no Playwright story yet; no smoke script yet |
 

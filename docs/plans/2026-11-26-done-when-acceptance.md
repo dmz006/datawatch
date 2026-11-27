@@ -59,6 +59,8 @@ These replace the matching words above. Each is the stricter reading.
 - **Closing (rules 5, 16):** only a run that re-reads every version closes a list that holds anything a run reads. A counted answer reopens it. A run that an answer arrived during does not close it.
 - **Kind (rule 14):** a caller's source only adds default items; its list is `other` or `change`, and every rule applies. Only datawatch's own request sources make `delivery` or `deliverable` lists. Later words on a delivery draft open items. A removed or changed daemon default shows as a change.
 - **No change (rules 2, 8):** once a check turns out to have passed before the work, only a command or state item that had to see a change can show one, on every list but delivery.
+- **Unknown start (rule 1):** a command or state item with no finished start run or no fresh start value reads cannot tell, with or without `change`. Only a single reading tied to a scheduled run needs none.
+- **Ending the no-change guard:** only a change check that shows a change, or accepting without proof each already true check or a check that had to see the change. A line that says no tests ran is not a pass.
 - **Ask text (rule 12):** heading and colon lines open items; signs that change a sentence are kept.
 - **Proof lines (rule 2):** a pass line, and the start run's failing line, must start an output line and carry no skip or to-do words.
 - **Replacement (rule 14):** replacing the unit drops answers, acceptances, readings and holders; the earlier holders stay doers.

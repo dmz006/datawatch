@@ -135,15 +135,30 @@ acceptance:
 - Exit 0 alone proves nothing: every `pass` line must appear. A line counts only
   when it **starts** with the text (spaces before it are ignored) and says
   nothing after it about being skipped or to do (`SKIP`, `skipped`, `TODO`,
-  `xfail`, `deselected`, `ignored`, `not run`). A timestamp or other prefix
-  makes the item read cannot tell. The `fail` line of the start run is read the
+  `xfail`, `deselected`, `ignored`, `not run`) or that no tests ran (`no tests to
+  run`, `no tests ran`, `no test files`, `collected 0 items`, `running 0
+  tests`). Only the matched line is read: a short text such as `PASS` can sit on
+  a line of its own while another line says no tests ran, so name the test. A
+  timestamp or other prefix makes the item read cannot tell. The `fail` line of the start run is read the
   same way.
 - An item that has to show work was done (`change: true`,
   `before: fail_first`) needs a start run that finished and showed the `fail`
   line.
+- **An unknown start closes nothing.** A command or state item reads cannot tell
+  when how it stood before the work is not known, also without `change: true`:
+  the start run timed out, was killed, was cut or missed a tool; no start
+  version could be read; or a source gave no fresh answer at the start. A
+  command or script the work itself adds can be such a missing tool. Saving the
+  item again runs its start run again if a start version was recorded (and shows
+  as a change); otherwise accept it without proof. On a scheduled run's own list,
+  one reading tied to that run needs no start value; a file item or an
+  observation window still does, and reads cannot tell there.
 - Once any check turns out to have passed before the work, the list reads done
   only if some other command or state item that had to see a change shows one. A
-  person's yes does not. (Accepting an item without proof shows as that.)
+  person's yes does not. The one other way is to accept the missing proof itself
+  without proof: each already true check (it then reads accepted without proof),
+  or a command or state item that had to see a change. The list then reads
+  "done, accepted without proof". Accepting any other item changes nothing.
 - `inputs` are frozen. If one differs, the item reads cannot tell until you save
   the item again after reviewing it. That shows as a change.
 
