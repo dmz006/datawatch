@@ -48,7 +48,7 @@ func (e *Engine) Report() Report {
 	case e.rec.AllFailed:
 		red[RedSendsFail] = true
 	}
-	if e.cannotRecord {
+	if e.cannotRecord || len(e.unsaved) > 0 || e.lost > 0 {
 		red[RedCannotRecord] = true
 	}
 

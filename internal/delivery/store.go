@@ -75,6 +75,30 @@ func newRecords() *records {
 	return &records{Version: recordsVersion, Tracks: map[string]*track{}, Entries: map[string]*Entry{}}
 }
 
+// whole reports that no part of a record that was read is missing.
+func (r *records) whole() bool {
+	for _, en := range r.Entries {
+		if en == nil {
+			return false
+		}
+	}
+	for _, t := range r.Tracks {
+		if t == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *startMark) whole() bool {
+	for _, s := range m.Sources {
+		if s == nil {
+			return false
+		}
+	}
+	return true
+}
+
 func cloneJSON[T any](v *T) *T {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -171,9 +195,13 @@ func (e *Engine) load() {
 	rec := newRecords()
 	adopted, err := readRecord(statePath, e.opts.Key, e.opts.AdoptPlain, rec)
 	switch {
+	case errors.Is(err, fs.ErrNotExist) && exists(filepath.Join(e.opts.Dir, HeartbeatFile)):
+		// A heartbeat follows a saved list: this one was lost.
+		e.broken = append(e.broken, RedRecords)
+		rec = newRecords()
 	case errors.Is(err, fs.ErrNotExist):
 		rec = newRecords()
-	case err != nil:
+	case err != nil || !rec.whole():
 		e.broken = append(e.broken, RedRecords)
 		rec = newRecords()
 	}
@@ -187,7 +215,7 @@ func (e *Engine) load() {
 		if exists(statePath) || exists(filepath.Join(e.opts.Dir, HeartbeatFile)) {
 			e.broken = append(e.broken, RedStartMark)
 		}
-	case err != nil || mark.At.IsZero():
+	case err != nil || mark.At.IsZero() || !mark.whole():
 		mark = nil
 		e.broken = append(e.broken, RedStartMark)
 	}

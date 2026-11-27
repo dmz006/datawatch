@@ -195,7 +195,8 @@ type Report struct {
 }
 
 // Selector names the entries an operator action applies to. Every set field
-// narrows the choice; at least one must be set.
+// narrows the choice; at least one must be set. Accept and Drop refuse a
+// choice that includes an alarm or a clock-jump notice.
 type Selector struct {
 	Keys    []string `json:"keys,omitempty"`
 	Kind    Kind     `json:"kind,omitempty"`

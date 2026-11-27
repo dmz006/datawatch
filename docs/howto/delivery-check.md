@@ -74,6 +74,12 @@ check, none of them does, and one alarm is listed; acknowledge the alarm to let
 them through. At most 50 new items are listed by one check; the rest raise one
 alarm, and **no further new item is listed until you acknowledge it**.
 
+While items wait behind an alarm they are counted and not named in any message,
+and the heartbeat is `red`, which the outside timer does not report. A failure
+whose record goes away while it waits is never listed. So acknowledge an alarm
+soon. Acceptances that reach their date are all listed again at once: the guard
+does not hold them back.
+
 ## Green and red
 
 The check is **green** only when nothing unaccepted is listed and the check
@@ -105,7 +111,8 @@ other hosts). Green does not mean those are fine.
 - An item gets **no more messages** once you acknowledge it, while it is
   accepted, or when it is closed. Backlog items are never sent.
 - If the records cannot be saved or read, one fixed warning is sent from memory
-  and nothing else.
+  and nothing else: once for each fault. Until a channel accepts it, it is tried
+  again after 1 minute, doubling to once an hour.
 
 ### Which channels can reach you
 
@@ -120,7 +127,8 @@ check is **red** and its heartbeat says `cannot_tell`.
 
 Use **Send test message** to see what each channel answers. An accepted send
 shows that the channel took the message. Look on your device to see that it
-arrived.
+arrived. The test message is limited to one a minute and 6 an hour, and refused
+while `delivery.notify` is off. The limit starts over when the daemon restarts.
 
 ## Surfaces
 
@@ -140,6 +148,10 @@ choice, and at least one is needed.
 
 - **Acknowledge** stops the messages. The item stays listed. An alarm or a
   clock-jump notice closes when you acknowledge it.
+- **Alarms and clock-jump notices can only be acknowledged.** Accept and drop
+  refuse any choice that includes one, however it is named, and change nothing:
+  accepting an alarm would hide what waits behind it. Alarm keys look like
+  `alarm:flood:raised`.
 - **Accept** needs a reason **code** (lower-case letters, digits, dot, dash and
   underscore, up to 64) and a date in the future, at most 30 days ahead. You can
   accept a whole group with one reason and one date.
@@ -199,10 +211,24 @@ turned on are sealed at that start.
 Keep `store.key` in your backups of the data folder. Changing a setting does not
 change this key.
 
-If the list or the start mark is damaged, or the start mark is missing, the
+If the list or the start mark is damaged or has missing parts, the start mark
+is missing, or the list file is gone while a heartbeat shows one was saved, the
 check does nothing, changes nothing and is red. Restore the files. Removing the
 whole `delivery` folder starts the check over: everything then wrong becomes a
 new backlog, and acknowledgements and acceptances are lost.
+
+These refusals to start apply **also with `delivery.enabled: false`**. To leave
+secure mode on purpose, stop datawatch and remove both `queue.d/store.key` and
+the `delivery` folder; removing only the key still refuses. That ends this
+refusal only. The other sealed stores have their own rules.
+
+If datawatch stops during the first secure start, after the key is written and
+before the older plain records are sealed, the next start seals them.
+
+A failed output-filter send that cannot be saved is held in memory and saved
+once the records work again; the check stays red until then. At most 200 are
+held, and an alarm says how many more were lost. A daemon restart before they
+are saved loses them.
 
 ## The outside timer
 

@@ -23,6 +23,10 @@ func (s Selector) matches(en *Entry) bool {
 		(s.Reason == "" || s.Reason == en.Reason) && (!s.Backlog || en.Backlog)
 }
 
+// ackOnly reports an entry the engine raised about the check itself. While one
+// is open it can be what keeps other items off the list.
+func ackOnly(en *Entry) bool { return en.Kind == KindAlarm || en.Kind == KindClock }
+
 // act applies change to the open entries sel names, and saves. Nothing
 // changes when check refuses or the save fails.
 func (e *Engine) act(sel Selector, by string, check func(*Entry) error, change func(*records, *Entry, time.Time)) (int, error) {
@@ -80,7 +84,7 @@ func (e *Engine) Ack(sel Selector, by string) (int, error) {
 		if en.Kind == KindAlarm && en.ID == alarmMassExpiry {
 			rec.Release = true
 		}
-		if en.Kind == KindAlarm || en.Kind == KindClock {
+		if ackOnly(en) {
 			closeEntry(en, "acknowledged", by, now)
 			en.Present = false
 		}
@@ -99,7 +103,14 @@ func (e *Engine) Accept(sel Selector, reason string, until time.Time, by string)
 	if !until.After(now) || until.Sub(now) > LimitHeldMax {
 		return 0, ErrUntil
 	}
-	return e.act(sel, by, nil, func(_ *records, en *Entry, now time.Time) {
+	// One alarm among the choice refuses all of it.
+	noAlarm := func(en *Entry) error {
+		if ackOnly(en) {
+			return ErrAlarm
+		}
+		return nil
+	}
+	return e.act(sel, by, noAlarm, func(_ *records, en *Entry, now time.Time) {
 		en.Accepted = &Accept{Reason: reason, Until: until.UTC(), By: by, At: now.UTC()}
 		en.NextTryAt = nil
 	})
@@ -115,6 +126,9 @@ func (e *Engine) Drop(sel Selector, reason, by string) (int, error) {
 		return 0, err
 	}
 	droppable := func(en *Entry) error {
+		if ackOnly(en) {
+			return ErrAlarm
+		}
 		if !en.Sticky && !en.Backlog {
 			return ErrNotDroppable
 		}
@@ -130,12 +144,15 @@ func (e *Engine) Drop(sel Selector, reason, by string) (int, error) {
 }
 
 // Record saves a failure that no source can be asked about later, such as a
-// refused send. A repeat of one still listed raises its count.
+// refused send. A repeat of one still listed raises its count. One that cannot
+// be saved now is held, and saved with the next change that can be: nothing
+// else knows it happened. A daemon restart loses what is still held.
 func (e *Engine) Record(c Candidate) error {
 	now := e.opts.Now()
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if len(e.broken) > 0 {
+		e.holdLocked(c)
 		return ErrRecords
 	}
 	next, mark, markDirty := e.rec.clone(), e.mark, false
@@ -143,28 +160,63 @@ func (e *Engine) Record(c Candidate) error {
 		mark = &startMark{Version: recordsVersion, At: now, Sources: map[string]*sourceMark{}}
 		markDirty = true
 	}
-	key := entryKey(c.Kind, c.ID, c.State)
-	if isOpen(next, key) {
-		next.Entries[key].Count++
-	} else {
-		episode := 1
-		if old := next.Entries[key]; old != nil {
-			episode = old.Episode + 1
-		}
-		if c.Problem == "" {
-			c.Problem = c.State
-		}
-		if c.Invariant == "" {
-			c.Invariant = InvFailed
-		}
-		c.Sticky = true
-		en := newEntry(key, violation{c: c, source: sourceEvent}, episode, false, now)
-		en.Count = 1
-		next.Entries[key] = en
-	}
+	e.foldHeldLocked(next, now)
+	addEvent(next, c, 1, now)
 	if err := e.persistLocked(next, mark, markDirty); err != nil {
 		e.cannotRecord = true
+		e.holdLocked(c)
 		return ErrCannotRecord
 	}
+	e.clearHeldLocked()
 	return nil
 }
+
+// addEvent lists n occurrences of a recorded failure.
+func addEvent(rec *records, c Candidate, n int, now time.Time) {
+	key := entryKey(c.Kind, c.ID, c.State)
+	if isOpen(rec, key) {
+		rec.Entries[key].Count += n
+		return
+	}
+	episode := 1
+	if old := rec.Entries[key]; old != nil {
+		episode = old.Episode + 1
+	}
+	if c.Problem == "" {
+		c.Problem = c.State
+	}
+	if c.Invariant == "" {
+		c.Invariant = InvFailed
+	}
+	c.Sticky = true
+	en := newEntry(key, violation{c: c, source: sourceEvent}, episode, false, now)
+	en.Count = n
+	rec.Entries[key] = en
+}
+
+func (e *Engine) holdLocked(c Candidate) {
+	key := entryKey(c.Kind, c.ID, c.State)
+	for i := range e.unsaved {
+		if h := &e.unsaved[i]; entryKey(h.c.Kind, h.c.ID, h.c.State) == key {
+			h.count++
+			return
+		}
+	}
+	if len(e.unsaved) >= maxUnsaved {
+		e.lost++
+		return
+	}
+	e.unsaved = append(e.unsaved, heldEvent{c: c, count: 1})
+}
+
+// foldHeldLocked adds what is held to rec. It stays held until rec is saved.
+func (e *Engine) foldHeldLocked(rec *records, now time.Time) {
+	for _, h := range e.unsaved {
+		addEvent(rec, h.c, h.count, now)
+	}
+	if e.lost > 0 {
+		raise(rec, KindAlarm, alarmEventsLost, alarmState, InvFailed, e.lost, now)
+	}
+}
+
+func (e *Engine) clearHeldLocked() { e.unsaved, e.lost = nil, 0 }

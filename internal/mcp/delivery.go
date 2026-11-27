@@ -199,7 +199,7 @@ func (s *Server) handleDeliveryAck(ctx context.Context, req mcpsdk.CallToolReque
 
 func (s *Server) toolDeliveryAccept() mcpsdk.Tool {
 	return mcpsdk.NewTool("delivery_accept",
-		deliverySelectorOptions("Let delivery list entries wait until a review date at most 30 days ahead.",
+		deliverySelectorOptions("Let delivery list entries wait until a review date at most 30 days ahead. Alarms and clock-jump notices can only be acknowledged: a choice that includes one is refused.",
 			mcpsdk.WithString("reason", mcpsdk.Required(), mcpsdk.Description("Reason code: a-z, 0-9, dot, dash and underscore, 1 to 64 characters")),
 			mcpsdk.WithString("until", mcpsdk.Required(), mcpsdk.Description("Review date: YYYY-MM-DD or RFC 3339")),
 		)...)
@@ -210,7 +210,7 @@ func (s *Server) handleDeliveryAccept(ctx context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolDeliveryDrop() mcpsdk.Tool {
 	return mcpsdk.NewTool("delivery_drop",
-		deliverySelectorOptions("Close failed or backlog delivery list entries. Other entries cannot be dropped; accept them with a review date.",
+		deliverySelectorOptions("Close failed or backlog delivery list entries. Other entries cannot be dropped; accept them with a review date. Alarms and clock-jump notices can only be acknowledged.",
 			mcpsdk.WithString("reason", mcpsdk.Required(), mcpsdk.Description("Reason code: a-z, 0-9, dot, dash and underscore, 1 to 64 characters")),
 		)...)
 }
@@ -220,7 +220,7 @@ func (s *Server) handleDeliveryDrop(ctx context.Context, req mcpsdk.CallToolRequ
 
 func (s *Server) toolDeliveryTestMessage() mcpsdk.Tool {
 	return mcpsdk.NewTool("delivery_test_message",
-		mcpsdk.WithDescription("Send the delivery check's test message on every message channel that can reach a person, and report what each answered."),
+		mcpsdk.WithDescription("Send the delivery check's test message on every message channel that can reach a person, and report what each answered. At most one a minute and 6 an hour; refused while delivery.notify is off."),
 	)
 }
 func (s *Server) handleDeliveryTestMessage(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

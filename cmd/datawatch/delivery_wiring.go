@@ -119,7 +119,7 @@ func (w *deliveryWiring) filterFailed(filterID, sessionID, how string) {
 	w.mu.Unlock()
 	if e != nil {
 		if err := e.Record(c); err != nil {
-			log.Printf("[delivery] filter %s session %s: %s not recorded: %v", filterID, sessionID, how, err)
+			log.Printf("[delivery] filter %s session %s: %s held in memory until it can be saved: %v", filterID, sessionID, how, err)
 		}
 	}
 }
@@ -177,10 +177,10 @@ func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.E
 		return nil, nil
 	}
 	dataDir := expandHome(d.cfg.DataDir)
-	adopt := w.key.IsNew()
 	if err := w.key.Commit(); err != nil {
 		return nil, err
 	}
+	adopt := w.key.AdoptPlain()
 	dir := filepath.Join(dataDir, delivery.HeartbeatDir)
 
 	var journal *pipelinePkg.Journal
@@ -208,9 +208,14 @@ func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.E
 	if err != nil {
 		return nil, err
 	}
-	// Secure mode was just turned on: seal what was plain before anything else.
+	// Secure mode was just turned on: seal what was plain before anything
+	// else. Until that and the journal worked, the next start adopts again.
 	if err := e.SealAdopted(); err != nil {
 		log.Printf("[delivery] sealing the plain records failed: %v", err)
+	} else if journalErr == nil {
+		if err := w.key.SealDone(); err != nil {
+			log.Printf("[delivery] %v", err)
+		}
 	}
 
 	w.mu.Lock()
@@ -220,7 +225,7 @@ func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.E
 	w.mu.Unlock()
 	for _, c := range pending {
 		if err := e.Record(c); err != nil {
-			log.Printf("[delivery] %s not recorded: %v", c.ID, err)
+			log.Printf("[delivery] %s held in memory until it can be saved: %v", c.ID, err)
 		}
 	}
 	if d.http != nil {

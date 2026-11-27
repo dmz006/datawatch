@@ -123,8 +123,10 @@ func deliveryError(w http.ResponseWriter, err error) {
 		code = http.StatusBadRequest
 	case errors.Is(err, delivery.ErrNoMatch):
 		code = http.StatusNotFound
-	case errors.Is(err, delivery.ErrNotDroppable):
+	case errors.Is(err, delivery.ErrNotDroppable), errors.Is(err, delivery.ErrAlarm), errors.Is(err, delivery.ErrNotifyOff):
 		code = http.StatusConflict
+	case errors.Is(err, delivery.ErrTestTooSoon):
+		code = http.StatusTooManyRequests
 	case errors.Is(err, delivery.ErrCannotRecord), errors.Is(err, delivery.ErrRecords):
 		code = http.StatusServiceUnavailable
 	}
@@ -228,7 +230,11 @@ func (s *Server) handleDeliveryTestMessage(w http.ResponseWriter, r *http.Reques
 	if d == nil {
 		return
 	}
-	results, _ := d.TestMessage(context.WithoutCancel(r.Context()))
+	results, err := d.TestMessage(context.WithoutCancel(r.Context()))
+	if err != nil {
+		deliveryError(w, err)
+		return
+	}
 	if results == nil {
 		results = []delivery.SendResult{}
 	}

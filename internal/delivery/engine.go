@@ -52,10 +52,18 @@ type Engine struct {
 	// set the check does nothing.
 	broken       []string
 	cannotRecord bool
-	// unsaved are recorded failures that could not be saved yet.
+	// unsaved are recorded failures that could not be saved yet; lost counts
+	// those there was no room to hold.
 	unsaved []heldEvent
-	// warned: the one warning from memory has been sent for this fault.
-	warned bool
+	lost    int
+	// warned: a channel accepted the warning from memory for this fault. It
+	// is cleared only by a whole pass that worked. warnFails and warnNext
+	// space the tries until one is accepted.
+	warned    bool
+	warnFails int
+	warnNext  time.Time
+	// tests are the times of the test messages of the last hour.
+	tests []time.Time
 }
 
 // New returns an engine over the records in opts.Dir. It writes nothing:
@@ -81,7 +89,10 @@ func New(opts Options) (*Engine, error) {
 func (e *Engine) SealAdopted() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if len(e.broken) > 0 || !e.markDirty {
+	if len(e.broken) > 0 {
+		return ErrRecords
+	}
+	if !e.markDirty {
 		return nil
 	}
 	return e.persistLocked(e.rec, e.mark, true)
@@ -140,7 +151,11 @@ func (e *Engine) Pass(ctx context.Context) (Report, error) {
 	if e.apply(next, mark, reads, now) {
 		markDirty = true
 	}
+	e.foldHeldLocked(next, now)
 	err := e.persistLocked(next, mark, markDirty)
+	if err == nil {
+		e.clearHeldLocked()
+	}
 	if err == nil {
 		err = e.diskTest(now)
 	}
@@ -150,7 +165,7 @@ func (e *Engine) Pass(ctx context.Context) (Report, error) {
 		e.warn(ctx)
 		return e.Report(), ErrCannotRecord
 	}
-	e.cannotRecord, e.warned = false, false
+	e.cannotRecord = false
 
 	var notice Notice
 	due := false
@@ -188,21 +203,35 @@ func (e *Engine) Pass(ctx context.Context) (Report, error) {
 		e.warn(ctx)
 		return e.Report(), ErrCannotRecord
 	}
+	// The whole pass worked: a later fault is a new one.
+	e.mu.Lock()
+	e.warned, e.warnFails, e.warnNext = false, 0, time.Time{}
+	e.mu.Unlock()
 	return rep, nil
 }
 
-// warn sends the one content-free warning kept in memory, once for each time
-// the records stop working.
+// warn sends the content-free warning kept in memory: once a channel accepts
+// it, no more for this fault. Until then it is tried again, backing off to
+// once an hour. Only Pass calls it.
 func (e *Engine) warn(ctx context.Context) {
+	now := e.opts.Now()
 	e.mu.Lock()
-	send := !e.warned && e.notifyOn() && e.opts.Sender != nil
-	if send {
-		e.warned = true
-	}
+	// A next try further off than the longest wait means the clock went back.
+	waiting := now.Before(e.warnNext) && e.warnNext.Sub(now) <= notifyRetryMax
+	send := !e.warned && !waiting && e.canSend()
 	e.mu.Unlock()
-	if send {
-		Deliver(ctx, e.opts.Sender, CannotRecordText(e.opts.Host), e.opts.Now())
+	if !send {
+		return
 	}
+	accepted := Told(Deliver(ctx, e.opts.Sender, CannotRecordText(e.opts.Host), now))
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if accepted {
+		e.warned = true
+		return
+	}
+	e.warnFails++
+	e.warnNext = now.Add(notifyBackoff(e.warnFails))
 }
 
 func (e *Engine) notifyOn() bool { return e.opts.Notify == nil || e.opts.Notify() }
@@ -215,8 +244,35 @@ func (e *Engine) canSend() bool {
 
 // TestMessage sends a test message on every channel and says what each
 // answered. What they answer is the newest word on whether anyone can be told.
+// A session may call it, so it is limited, and refused while messages are off.
+// The limit is kept in memory.
 func (e *Engine) TestMessage(ctx context.Context) ([]SendResult, error) {
-	results := Deliver(ctx, e.opts.Sender, TestText(e.opts.Host), e.opts.Now())
+	now := e.opts.Now()
+	e.mu.Lock()
+	if !e.notifyOn() {
+		e.mu.Unlock()
+		return nil, ErrNotifyOff
+	}
+	if !e.canSend() {
+		e.mu.Unlock()
+		return nil, nil // no channel: nothing is sent and nothing counted
+	}
+	var kept []time.Time
+	for _, at := range e.tests {
+		// A time ahead of now means the clock went back; it does not count.
+		if since := now.Sub(at); since >= 0 && since < time.Hour {
+			kept = append(kept, at)
+		}
+	}
+	e.tests = kept
+	if len(kept) >= testsPerHour || (len(kept) > 0 && now.Sub(kept[len(kept)-1]) < time.Minute) {
+		e.mu.Unlock()
+		return nil, ErrTestTooSoon
+	}
+	e.tests = append(e.tests, now) // taken before the send, which is slow
+	e.mu.Unlock()
+
+	results := Deliver(ctx, e.opts.Sender, TestText(e.opts.Host), now)
 	if len(results) > 0 {
 		e.mu.Lock()
 		e.rec.AllFailed = !Told(results) // saved with the next pass

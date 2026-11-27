@@ -14445,6 +14445,7 @@ paths:
               schema: {type: object, properties: {changed: {type: integer}}}
         "400": {description: "No selector, a bad body, reason code or review date", content: {"text/plain": {schema: {type: string}}}}
         "404": {description: "No listed entry matches", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The choice includes an alarm or a clock-jump notice, which can only be acknowledged", content: {"text/plain": {schema: {type: string}}}}
         "403": {description: "The caller lacks delivery:write", content: {"text/plain": {schema: {type: string}}}}
         "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
         "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
@@ -14478,7 +14479,7 @@ paths:
               schema: {type: object, properties: {changed: {type: integer}}}
         "400": {description: "No selector, a bad body or reason code", content: {"text/plain": {schema: {type: string}}}}
         "404": {description: "No listed entry matches", content: {"text/plain": {schema: {type: string}}}}
-        "409": {description: "Only failed or backlog entries can be dropped", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "Only failed or backlog entries can be dropped, and the choice may include no alarm or clock-jump notice", content: {"text/plain": {schema: {type: string}}}}
         "403": {description: "The caller lacks delivery:write", content: {"text/plain": {schema: {type: string}}}}
         "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
         "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
@@ -14497,6 +14498,8 @@ paths:
                 properties:
                   results: {type: array, items: {$ref: "#/components/schemas/DeliverySendResult"}}
         "403": {description: "The caller lacks delivery:write", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "Messages are switched off (delivery.notify: false)", content: {"text/plain": {schema: {type: string}}}}
+        "429": {description: "Too many test messages: at most one a minute and 6 an hour", content: {"text/plain": {schema: {type: string}}}}
         "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
         "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
 

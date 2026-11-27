@@ -37,6 +37,10 @@ var maxKeyParams = KeyParams{Time: 20, MemoryKiB: 2 * 1024 * 1024, Threads: 64}
 // under the data folder. The delivery request store will share it.
 const KeyFile = "queue.d/store.key"
 
+// adoptMarker is there from the moment a new key is written until the records
+// that were plain have been sealed with it. It holds nothing.
+const adoptMarker = HeartbeatDir + "/.adopt-plain"
+
 // ErrStoreKey wraps every reason the daemon must not start.
 var ErrStoreKey = errors.New("delivery store key")
 
@@ -58,8 +62,9 @@ type keyFile struct {
 
 // StoreKey is the key that seals the delivery records.
 type StoreKey struct {
-	path string
-	key  []byte
+	path   string
+	marker string
+	key    []byte
 	// pending is a new key file that Commit has yet to write.
 	pending []byte
 }
@@ -92,17 +97,19 @@ func OpenStoreKey(dataDir string, password []byte, params KeyParams) (*StoreKey,
 		return nil, fmt.Errorf("%w: %s", ErrStoreKey, fmt.Sprintf(format, a...))
 	}
 	path := filepath.Join(dataDir, filepath.FromSlash(KeyFile))
+	marker := filepath.Join(dataDir, filepath.FromSlash(adoptMarker))
+	leave := "To leave secure mode on purpose, stop datawatch and remove that file and the delivery folder beside queue.d; the delivery list and its history are then lost"
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return refuse("cannot read %s: %v", path, err)
 	}
 	if err == nil {
 		if password == nil {
-			return refuse("%s says the delivery records are sealed, but datawatch runs without secure mode. Start with --secure and the same password; datawatch never writes them plain", path)
+			return refuse("%s says the delivery records are sealed, but datawatch runs without secure mode. Start with --secure and the same password; datawatch never writes them plain. %s", path, leave)
 		}
 		var kf keyFile
 		if err := json.Unmarshal(data, &kf); err != nil {
-			return refuse("%s is damaged: %v", path, err)
+			return refuse("%s is damaged: %v. Restore it. %s", path, err, leave)
 		}
 		if kf.Version != keyFileVersion || kf.KDF != keyKDF || len(kf.Salt) != keySaltLen ||
 			kf.Time < 1 || kf.Time > maxKeyParams.Time || kf.Threads < 1 || kf.Threads > maxKeyParams.Threads ||
@@ -113,7 +120,7 @@ func OpenStoreKey(dataDir string, password []byte, params KeyParams) (*StoreKey,
 		if got, err := secfile.Decrypt([]byte(kf.Test), key); err != nil || string(got) != keyTestValue {
 			return refuse("the password does not open %s (wrong password?)", path)
 		}
-		return &StoreKey{path: path, key: key}, nil
+		return &StoreKey{path: path, marker: marker, key: key}, nil
 	}
 
 	sealed, err := sealedRecords(dataDir)
@@ -124,7 +131,7 @@ func OpenStoreKey(dataDir string, password []byte, params KeyParams) (*StoreKey,
 		return refuse("%s is missing but sealed delivery records exist. It is never recreated, because a new key could not open them. Restore the file", path)
 	}
 	if password == nil {
-		return &StoreKey{path: path}, nil
+		return &StoreKey{path: path, marker: marker}, nil
 	}
 	kf := keyFile{Version: keyFileVersion, KDF: keyKDF, KeyParams: params, Salt: make([]byte, keySaltLen)}
 	if _, err := rand.Read(kf.Salt); err != nil {
@@ -140,18 +147,36 @@ func OpenStoreKey(dataDir string, password []byte, params KeyParams) (*StoreKey,
 	if err != nil {
 		return refuse("encode the key file: %v", err)
 	}
-	return &StoreKey{path: path, key: key, pending: pending}, nil
+	return &StoreKey{path: path, marker: marker, key: key, pending: pending}, nil
 }
 
 func deriveStoreKey(password, salt []byte, p KeyParams) []byte {
 	return argon2.IDKey(password, salt, p.Time, p.MemoryKiB, p.Threads, 32)
 }
 
-// AdoptPlain reports whether plain records may still be read and sealed.
-func (k *StoreKey) AdoptPlain() bool { return k.IsNew() }
+// AdoptPlain reports whether plain records may still be read and sealed: the
+// key is new, or an earlier start wrote it and stopped before it had sealed
+// them.
+func (k *StoreKey) AdoptPlain() bool {
+	if k == nil || k.key == nil {
+		return false
+	}
+	return k.pending != nil || exists(k.marker)
+}
 
 // SealDone ends the time in which plain records are adopted.
-func (k *StoreKey) SealDone() error { return nil }
+func (k *StoreKey) SealDone() error {
+	if k == nil || k.key == nil {
+		return nil
+	}
+	if err := os.Remove(k.marker); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return syncFolder(filepath.Dir(k.marker))
+}
 
 // Key returns the 32-byte key, or nil on a non-secure install.
 func (k *StoreKey) Key() []byte {
@@ -171,7 +196,13 @@ func (k *StoreKey) Commit() error {
 		return nil
 	}
 	dir := filepath.Dir(k.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	for _, d := range []string{dir, filepath.Dir(k.marker)} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			return fmt.Errorf("%w: %v", ErrStoreKey, err)
+		}
+	}
+	// Before the key: a stop after the key must find this.
+	if err := secfile.WriteFileDurable(k.marker, nil, 0o600, nil); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreKey, err)
 	}
 	tmp := k.path + ".new"

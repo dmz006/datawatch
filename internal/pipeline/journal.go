@@ -45,22 +45,35 @@ type Journal struct {
 
 // NewJournal opens the journal at path, sealing it with key when set. Runs
 // still marked running are marked interrupted. A journal that cannot be read
-// is an error and is left as it is.
+// is an error and is left as it is. With a key, a plain journal is sealed at
+// once when adoptPlain says secure mode is being turned on, and is an error
+// otherwise.
 func NewJournal(path string, key []byte, adoptPlain bool) (*Journal, error) {
 	j := &Journal{path: path, key: key}
-	data, err := secfile.ReadFile(path, key)
+	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return j, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("pipeline journal: %w", err)
 	}
+	plain := !secfile.IsEncrypted(data)
+	switch {
+	case !plain && key == nil:
+		return nil, fmt.Errorf("pipeline journal %s is sealed and there is no key", path)
+	case !plain:
+		if data, err = secfile.Decrypt(data, key); err != nil {
+			return nil, fmt.Errorf("pipeline journal: %w", err)
+		}
+	case key != nil && !adoptPlain:
+		return nil, fmt.Errorf("pipeline journal %s is plain in a sealed store", path)
+	}
 	var f journalFile
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("pipeline journal %s: %w", path, err)
 	}
 	j.runs = f.Runs
-	changed := false
+	changed := plain && key != nil
 	for i := range j.runs {
 		if j.runs[i].EndedAt == nil && !j.runs[i].Interrupted {
 			j.runs[i].Interrupted, changed = true, true

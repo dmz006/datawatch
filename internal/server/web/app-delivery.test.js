@@ -264,3 +264,19 @@ test('every delivery key the page uses is in all five locales', () => {
     }
   }
 });
+
+test('choosing an alarm with other items: the daemon refuses accept, and the page says why', async () => {
+  const why = 'an alarm or a clock-jump notice can only be acknowledged: accepting or dropping it could hide the items behind it; acknowledge it, or name only other entries';
+  const { sandbox, panel, calls } = await loaded({
+    'GET /api/delivery': report(),
+    'POST /api/delivery/accept': { status: 409, text: why },
+  });
+  sandbox.deliveryToggle('alarm:flood:raised', true);
+  sandbox.deliveryToggle('automaton:a1b2:blocked', true);
+  sandbox.deliveryField('reason', 'parked');
+  sandbox.deliveryField('until', '2026-12-01');
+  await sandbox.deliveryAction('accept');
+  await flushAsync();
+  assert.deepEqual(plain(calls[1].body).keys.sort(), ['alarm:flood:raised', 'automaton:a1b2:blocked']);
+  assert.ok(panel.innerHTML.includes('can only be acknowledged'));
+});

@@ -31,7 +31,10 @@ const (
 	alarmFlood      = "flood"
 	alarmMassExpiry = "mass_expiry"
 	alarmEventsLost = "events_lost"
-	alarmState      = "held"
+	// alarmState and alarmReason belong to alarms alone, so that a choice of
+	// work by state or reason never takes an alarm with it.
+	alarmState      = "raised"
+	alarmReason     = "acknowledge_alarm"
 	reasonOverLimit = "over_limit"
 )
 
@@ -225,8 +228,12 @@ func raise(rec *records, kind Kind, id, state, rule string, count int, now time.
 	if old := rec.Entries[key]; old != nil {
 		episode = old.Episode + 1
 	}
+	reason := state
+	if kind == KindAlarm {
+		reason = alarmReason
+	}
 	rec.Entries[key] = &Entry{
-		Key: key, Kind: kind, ID: id, State: state, Invariant: rule, Reason: state, WaitsOn: WaitsOnOperator,
+		Key: key, Kind: kind, ID: id, State: state, Invariant: rule, Reason: reason, WaitsOn: WaitsOnOperator,
 		Since: now, ReviewBy: now, Count: count, Sticky: true, Source: sourceCheck, Episode: episode, ListedAt: now,
 	}
 }
@@ -273,7 +280,8 @@ func closeResolved(rec *records, violations map[string]violation, readOK map[str
 			continue
 		}
 		if !readOK[en.Source] {
-			if en.ClosedAt != nil && en.Source == sourceCheck && now.Sub(*en.ClosedAt) > closedKept {
+			own := en.Source == sourceCheck || en.Source == sourceEvent
+			if en.ClosedAt != nil && own && now.Sub(*en.ClosedAt) > closedKept {
 				delete(rec.Entries, key)
 			}
 			continue
