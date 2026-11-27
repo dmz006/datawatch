@@ -12,7 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Three smaller input checks around recording a merged commit are stricter.
 
 ### Changed
-- A Makefile that links outside the project now counts as having no targets: steps that require a make target are skipped, and build detection looks at go.mod instead.
+- A Makefile that links outside the project is not followed: a step that requires a make target now fails and the merge run stops, also for a step set to continue after a failure, and build detection looks at go.mod instead. A Makefile that only lacks the target still skips the step.
 
 ### Not covered
 - Two other places that look at files in a project (the check for a Makefile gate target in merge comparisons, and the registry-row step after a merge) are unchanged. Tested on made-up repositories only.
