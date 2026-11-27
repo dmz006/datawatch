@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.39 (2026-11-26).** When datawatch ends a scheduled command without typing it, it now raises a warning, and Claude Code status hooks and the start-up dialog poller, which did not run in v9.187.38, now run; none of this was run with a real Claude Code, and the changelog lists what to check before upgrading and the limits. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.40 (2026-11-26).** A new delivery check keeps one list of unfinished and undelivered work and can message you about it; it is on by default, only reports, and was tested with made-up records and stand-in channels, with its limits listed in the changelog. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

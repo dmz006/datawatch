@@ -5,6 +5,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.40 — One delivery check lists unfinished and undelivered work; it reports and blocks nothing
+
+### Added
+- New delivery check: one list of unfinished and undelivered work. It only reports; its result blocks nothing. It is on REST, MCP, CLI, chat and the web app (Settings → Automata), with web text in five languages.
+- delivery:write is in full-control and the session default, not other built-in peer groups. AI sessions may acknowledge, accept, drop and send test messages; operator-only is not enforced.
+- 'Told' is based on a channel reporting a successful send; it does not prove anyone received or read it. An item message has at most 20 item lines. The generic webhook, GitHub webhook and DNS channels do not count.
+
+### Before you upgrade
+- The check is on by default, so after the upgrade it can send messages on your message channels.
+- An ntfy send counts only on a 2xx answer to the request itself; redirects are not followed. This applies to every ntfy message datawatch sends, so a server address that redirects (also with 307 or 308, which used to work) now fails.
+- Secure mode: delivery records use their own key (`queue.d/store.key`; keep it in backups). datawatch will not start if that file is damaged or the password is wrong, if it exists and secure mode is off, or if it is missing while sealed records exist, **also with `delivery.enabled: false`**. To end this refusal when leaving secure mode on purpose, stop datawatch and remove both `queue.d/store.key` and the `delivery` folder; the other sealed stores have their own rules. A first secure start that stops before the older plain records are sealed finishes at the next start. By code, each secure start uses 512 MiB to derive the key. The heartbeat is not sealed.
+- Pipeline starts and ends are saved; one cut off by a restart is listed, not resumed. With the check on, a pipeline whose start cannot be written to a working journal does not start. If `pipelines.rec` cannot be read when datawatch starts, pipelines still start and are NOT saved until it is repaired and datawatch restarted (restart: by code). The check is red (source unreadable); no message is sent about it.
+
+### How it behaves
+- A list message goes at most once per check, on every channel that can reach a person (`notify_exclude` does not apply to it). A failed send is tried again after about 1 minute, doubling to 1 hour. Once no new item is waiting, one reminder a day names up to 20 unacknowledged items, those longest unnamed first, and only those count as sent; with more than 20, the rest are counted as not told (the check is red) until their turn.
+- Above 50 new items in one check, the rest wait until you acknowledge the alarm; while more than 20 have run out of time at once, all of those wait until you acknowledge. Alarms and clock-jump notices can only be acknowledged: accepting or dropping them is refused however they are named.
+- While items wait behind an alarm they are counted, not named in any message, and the heartbeat is `red`, which the outside timer does not report. A failure whose record disappears while it waits is never listed.
+- Acceptances that reach their date are listed again all at once (the 20 limit does not cover them); messages still go one per check.
+- After a completed check, if `state.rec` is gone, or `state.rec` or `startmark.rec` cannot be read or holds a null entry, the check changes nothing, sends only the cannot-save warning and is red until restored. A file that still reads but was emptied is not detected: what is wrong can go to the silent backlog. To start over, stop datawatch and remove the whole `delivery` folder.
+- A failed output-filter send that cannot be saved is held in memory (up to 200; an alarm says how many more were lost) and saved once the records work again. A daemon restart before that loses what is held.
+- When the records cannot be saved or read, one fixed warning is sent for each fault. It is tried again, after 1 minute doubling to 1 hour, until a channel accepts it. A fault ends at the first whole check that works; a disk failing every other check warned 144 times in a simulated day.
+- The test message is limited to one a minute and 6 an hour, and refused while `delivery.notify` is off. The limit is kept in memory, so a restart resets it.
+- Bug IDs are part of item keys, kept as given in the saved list and reports; in messages each whole key is cleaned and cut to 160 characters.
+- `delivery.interval_seconds` is 60 to 86400. A review date given without a time means the end of that day in UTC, so the latest such date is 29 days after today.
+- An accepted test message clears "every channel refused the last send". imap-mcp's answers were not checked for the redirect problem.
+
+### Not covered
+- The outside timer is shipped, not installed, and has no message route: if datawatch is dead, it tells nobody.
+- Known, also in earlier code: a credential with sessions:list can use the chat test route with operator access; permissions and recorded actor names cannot be relied on.
+- Nothing here was tried with real records, a real message channel or a phone: tests used made-up records and stand-ins.
+
 ## v9.187.39 — Schedules that datawatch ends say so; session hooks and the start-up dialog poller now run
 
 ### Fixed
