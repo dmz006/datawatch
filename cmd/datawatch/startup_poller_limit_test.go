@@ -59,6 +59,23 @@ func limitManager(t *testing.T, pane string) limitSession {
 
 func (s limitSession) name() string { return "session " + strings.TrimPrefix(s.id, "testhost-") }
 
+// saveChanged saves a changed copy of a session. GetSession returns the stored
+// record itself, which the store's writer may be reading: a test must not write
+// to it.
+func saveChanged(t *testing.T, m *session.Manager, id string, change func(*session.Session)) {
+	t.Helper()
+	sess, ok := m.GetSession(id)
+	if !ok {
+		t.Errorf("no session %s", id)
+		return
+	}
+	c := *sess
+	change(&c)
+	if err := m.SaveSession(&c); err != nil {
+		t.Error(err)
+	}
+}
+
 // watchStartupDialogs runs the poll loop as the daemon does for a new session.
 // over is asked first at every tick.
 func watchStartupDialogs(m *session.Manager, sessID string, interval, window time.Duration, over ...func(string) bool) {
@@ -267,9 +284,7 @@ func TestPollerRaisesNoWarning(t *testing.T) {
 		s.m.MarkTaskDelivered(s.id)
 	}
 	sessionEnds := func(s limitSession) {
-		sess, _ := s.m.GetSession(s.id)
-		sess.State = session.StateComplete
-		_ = s.m.SaveSession(sess)
+		saveChanged(t, s.m, s.id, func(c *session.Session) { c.State = session.StateComplete })
 	}
 	unknown := liveRule + "\n  Which colour?\n\n  ❯ 1. Red\n    2. Blue" + watchFoot
 	approval := liveRule + "\n Bash command\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\n Esc to cancel"
@@ -326,11 +341,7 @@ func TestPollerRaisesNoWarning(t *testing.T) {
 func TestPollerWarningNamesTheSession(t *testing.T) {
 	t.Parallel()
 	s := limitManager(t, channelsPane)
-	sess, _ := s.m.GetSession(s.id)
-	sess.Name = "lane-7"
-	if err := s.m.SaveSession(sess); err != nil {
-		t.Fatal(err)
-	}
+	saveChanged(t, s.m, s.id, func(c *session.Session) { c.Name = "lane-7" })
 	n := watchNotices(s.m)
 	s.watch(time.Second, nil)
 	n.wantOne(t, lateWarning, "session lane-7 ["+strings.TrimPrefix(s.id, "testhost-")+"]")

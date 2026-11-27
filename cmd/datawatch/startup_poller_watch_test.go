@@ -199,11 +199,7 @@ func TestPollerSendsNothingElseAfterItsAnswer(t *testing.T) {
 func TestPollerStopsWhenTheSessionEndsOrTheTaskArrives(t *testing.T) {
 	for label, end := range map[string]func(*testing.T, *session.Manager){
 		"ended": func(t *testing.T, m *session.Manager) {
-			sess, _ := m.GetSession(startupTestFullID)
-			sess.State = session.StateComplete
-			if err := m.SaveSession(sess); err != nil {
-				t.Error(err)
-			}
+			saveChanged(t, m, startupTestFullID, func(c *session.Session) { c.State = session.StateComplete })
 		},
 		"task arrived": func(_ *testing.T, m *session.Manager) {
 			m.ClaimTaskDelivery(startupTestFullID)
