@@ -450,6 +450,15 @@ func (s *Requests) byKey(key string) (Request, bool, error) {
 	return Request{}, false, nil
 }
 
+// daemonOnly refuses a kind that closes on receipt from anyone but datawatch:
+// it would close without any work being proven.
+func daemonOnly(c Caller, kind RequestKind, rule KindRule) error {
+	if rule.DeliveryOnly && c.Kind != CallerDatawatch {
+		return inputErr("only datawatch itself creates a %s request, because it closes on receipt; nothing was saved", kind)
+	}
+	return nil
+}
+
 // createLocked is Create with s.opMu held.
 func (s *Requests) createLocked(ctx context.Context, c Caller, in CreateInput) (RequestView, bool, error) {
 	if err := refusePeer(c); err != nil {
@@ -457,6 +466,9 @@ func (s *Requests) createLocked(ctx context.Context, c Caller, in CreateInput) (
 	}
 	rule, err := s.checkCreate(&in)
 	if err != nil {
+		return RequestView{}, false, err
+	}
+	if err := daemonOnly(c, in.Kind, rule); err != nil {
 		return RequestView{}, false, err
 	}
 	if in.Key == "" {
@@ -921,6 +933,9 @@ func (s *Requests) Reissue(ctx context.Context, c Caller, id string, in ReasonIn
 	refuse := func(no refusal) (RequestView, error) {
 		_, err := s.recorded(c, id, VerbReissue, true, func(*work, *storedRequest) *refusal { return &no })
 		return RequestView{}, err
+	}
+	if err := daemonOnly(c, old.Kind, rule); err != nil {
+		return refuse(refusal{refusedInput, err})
 	}
 	if old.ReissuedAs != "" {
 		return s.viewOf(old.ReissuedAs), nil

@@ -1046,6 +1046,8 @@ The command line:
 | `datawatch request from-backlog <entry key> --scope <project> [--ask]` | Make a request from a backlog entry |
 | `datawatch request settings` | The six request settings in force |
 
+Only datawatch itself creates the kinds that close on receipt (`hello`, `answer`, `rules`). Create and reissue refuse them on every surface and give that reason.
+
 `--json` prints the daemon's answer. The command line sends `DATAWATCH_TOKEN` when it is set (inside a session, the session's own credential), else the daemon's token. With `--server <name>` the command is refused and nothing is sent. There is no `seen` command: only a worker's own program reports that.
 
 Settings (`datawatch config set delivery.<key> <value>`, chat `configure delivery.<key>=<value>`; read live): `request_take_by_seconds`, `request_due_seconds`, `reminder_interval_seconds` (0 = the default), `request_due_seconds_by_kind` (`ask=3600,bug=7200`), `reminders_per_session_hour` (default 2) and `reminders_per_host_hour` (default 20; 0 = no reminders). A negative value is refused. `config get delivery_requests` shows every value in force; `config get delivery.<key>` finds only a key that has been set.

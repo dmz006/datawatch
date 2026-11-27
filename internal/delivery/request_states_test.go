@@ -73,7 +73,12 @@ func TestReqStateFetchedUncountedWorkFailsWithItsHolder(t *testing.T) {
 func TestReqStateEndedWithoutAReportIsFoundByTheCheck(t *testing.T) {
 	f := newReqFx(t, nil)
 	f.sessions.add("s", "claude-code")
-	v := f.create(ReqHello, func(in *CreateInput) { in.Role, in.Scope = RoleSession, Scope{Kind: ScopeSession, ID: "s"} })
+	// Only datawatch itself creates a hello.
+	v, _, err := f.s.Create(bg, Caller{Kind: CallerDatawatch, Surface: SurfaceDaemon}, CreateInput{Kind: ReqHello,
+		Role: RoleSession, Scope: Scope{Kind: ScopeSession, ID: "s"}, Key: "hello:s:ended", Content: RequestContent{Ask: "do the thing"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.sessions.end("s")
 	f.reopen()
 	f.tick(time.Minute)
