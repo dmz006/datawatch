@@ -71,8 +71,8 @@ func TestStartupAnswerRules(t *testing.T) {
 	}
 	fake.Pane[sess.TmuxSession] = channelsPane
 	mgr.startupScreenLeft(sess, StartupDialogTrustFolder)
-	if !answer(StartupDialogTrustFolder) {
-		t.Fatal("a screen that left and came back is answered")
+	if answer(StartupDialogTrustFolder) {
+		t.Fatal("an accept is not typed again at once")
 	}
 	// A failed send leaves the screen unanswered.
 	boom := errors.New("tmux failed")
