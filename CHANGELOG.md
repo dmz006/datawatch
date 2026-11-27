@@ -5,10 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.42 — Cleanup can release archived work safely, and the safe-to-delete report counts correctly
+## v9.187.42 — Archived Automata join cleanup, and a fault in the safe-to-delete report is fixed
 
 ### Changed
-- Cleanup now treats archived Automata like completed and cancelled ones (`autonomous.automation.cleanup_archived`, on by default; `false` leaves them out). Nothing is removed with `cleanup_mode` `off` or `report`. Only the periodic cleanup releases archived work, after the retention time and within the per-pass limit; archiving releases nothing more than before. A clean task worktree can go while its unmerged branch is kept. A task branch is deleted only if its commits or identical changes are on the default branch; the work branch only if its commits are on its base.
+- Cleanup now treats archived Automata like completed and cancelled ones (`autonomous.automation.cleanup_archived`, on by default; `false` leaves them out). Nothing is removed with `cleanup_mode` `off` or `report`, except git's own leftover entry for a worktree whose folder is already gone, which can be cleared when that Automaton's worktree is made again. Only the periodic cleanup releases archived work, after the retention time and within the per-pass limit; archiving releases nothing more than before. A clean task worktree can go while its unmerged branch is kept. A task branch is deleted only if its commits or identical changes are on the default branch; the work branch only if its commits are on its base.
 - Removing a branch records no landing. The finished-work audit lists an archived Automaton as `branch_gone_unlanded` if its work branch is gone, it has a completed task, and no shipped record, merge commit or landing decision covers it; this can include merged work never recorded. Cleanup keeps anything an unfinished Automaton points at. An Automaton's own missing worktree is made again at its next plan or run (on its branch, or from the base if that is gone), unless git has it locked or it held detached commits not on the branch; lane fill no longer refuses it for being missing.
 - Cleanup no longer looks at Go build cache (`go-build`) or Trivy scan-cache folders in the temp folder unless you turn on the new setting `autonomous.automation.cleanup_shared_cache_sweep` (off by default). With it on, the cleanup mode decides as before, and mode `on` removes such folders whichever program made them.
 - The temp-file cleanup now lists only the temp folder itself, not what is inside the folders there. It no longer reports an error just after removing one of its own folders.
@@ -26,7 +26,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - With the setting on, there is no per-pass removal limit, and a program only running from a cache folder does not keep it.
 - If you withdraw an older question while another is open for the same Automaton, a later "I will land it" on the other may not be asked again for up to 14 days from the withdrawal, instead of 3, unless the branch moves.
 - If git cannot read the branch when you withdraw, a move made before git can read it again is not noticed.
-- Known gap, accepted for this release line and planned for 11.0: the `datawatch schedule` commands do not verify the TLS certificate of the server they connect to.
+- Known gap, accepted for this release line and planned for 11.0: `datawatch schedule add`, `list`, `cancel` and `spawn` do not verify the TLS certificate of the server they connect to.
 
 ## v9.187.41 — The GitHub release summary no longer searches all tags
 
