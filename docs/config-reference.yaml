@@ -5625,6 +5625,19 @@ tailscale:
 #   CLI           `datawatch config set usage.calculator.<key> <value>`
 #   Web UI        the Settings field arrives with the calculator screen; until
 #                 then use one of the methods above.
+# Delivery check: one list of the work that was not delivered or is not
+# finished, a check that reports and blocks nothing, and messages about what is
+# listed. See docs/howto/delivery-check.md. Also on REST (GET/PUT /api/config),
+# MCP config_set, chat `configure` and the web app (Settings -> Automata).
+delivery:
+  # true (default): keep the list and run the check. Read at daemon start.
+  enabled: true
+  # true (default): send listed items to the message channels. false: nothing
+  # is sent, and the check is red because it cannot tell you.
+  notify: true
+  # Seconds between checks. Default 300, at least 60. Read at daemon start.
+  interval_seconds: 300
+
 # Operator pause (global and per project). The pause itself is runtime state the
 # operator sets (datawatch pause / resume, REST /api/pause, MCP pause_set,
 # chat `pause`, the PWA header button); this is only its default.
