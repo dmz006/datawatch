@@ -177,3 +177,8 @@ func WriteFile(path string, data []byte, perm os.FileMode, key []byte) error {
 	}
 	return os.Rename(tmp, path)
 }
+
+// WriteFileDurable is WriteFile that also syncs the folder after the rename.
+func WriteFileDurable(path string, data []byte, perm os.FileMode, key []byte) error {
+	return fmt.Errorf("secfile: not built")
+}

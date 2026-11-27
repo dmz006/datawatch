@@ -24,9 +24,25 @@ type Options struct {
 	// tell anyone.
 	Notify func() bool
 
+	// AdoptPlain lets plain records be read once and sealed: secure mode was
+	// just turned on and the store key is new.
+	AdoptPlain bool
+
 	// writeFile replaces the durable write in tests (a full disk).
-	writeFile func(path string, data []byte) error
+	writeFile func(path string, data, key []byte) error
 }
+
+// Record file names inside Options.Dir.
+const (
+	stateFileName = "state.rec"
+	startMarkFile = "startmark.rec"
+	diskTestFile  = ".disktest"
+)
+
+func writeRecordFile(path string, data, key []byte) error { return errNotBuilt }
+
+// ReadHeartbeat reads the heartbeat file at path.
+func ReadHeartbeat(path string) (Heartbeat, error) { return Heartbeat{}, errNotBuilt }
 
 // Engine runs the check and keeps the list.
 type Engine struct{ opts Options }

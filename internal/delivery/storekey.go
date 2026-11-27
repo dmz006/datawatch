@@ -29,6 +29,9 @@ func OpenStoreKey(dataDir string, password []byte, params KeyParams) (*StoreKey,
 	return &StoreKey{}, nil
 }
 
+// IsNew reports whether the key was made by this open and is not on disk yet.
+func (k *StoreKey) IsNew() bool { return false }
+
 // Key returns the 32-byte key, or nil on a non-secure install.
 func (k *StoreKey) Key() []byte { return nil }
 
