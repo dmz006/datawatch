@@ -120,15 +120,18 @@ func (s *Service) mutate(id string, fn func(l *List) error) (*List, error) {
 	if err := fn(l); err != nil {
 		return nil, err
 	}
-	return s.commit(l, before)
+	return s.commit(l, before, false)
 }
 
-// commit stores l; the lock is held.
-func (s *Service) commit(l *List, historyBefore int) (*List, error) {
-	if r := Read(l); r.Done && l.ClosedAt.IsZero() {
-		l.ClosedAt = s.o.Now()
-	} else if !r.Done {
+// commit stores l; the lock is held. ran says that a run has just read the
+// current versions. Otherwise a list is closed only when it holds nothing a run
+// would read.
+func (s *Service) commit(l *List, historyBefore int, ran bool) (*List, error) {
+	switch r := rollUp(l); {
+	case !r.Done:
 		l.ClosedAt = time.Time{}
+	case l.ClosedAt.IsZero() && (!l.needsRun() || ran && l.boundToVersions()):
+		l.ClosedAt = s.o.Now()
 	}
 	l.Serial++
 	old, had := s.data.Lists[l.RequestID]
@@ -395,7 +398,7 @@ func (s *Service) Edit(ctx context.Context, in EditInput, by Caller) (*List, err
 	if ok {
 		histBefore = min(histBefore, len(now.History))
 	}
-	return s.commit(l, histBefore)
+	return s.commit(l, histBefore, false)
 }
 
 func (s *Service) newList(id string, in EditInput, set Settings) (*List, error) {
@@ -541,7 +544,7 @@ func (s *Service) Freeze(ctx context.Context, id, approved string, by Caller, wo
 	if !ok || cur.Serial != wasSerial {
 		return nil, ErrListChanged
 	}
-	return s.commit(l, len(cur.History))
+	return s.commit(l, len(cur.History), false)
 }
 
 // Evaluate runs the deterministic checks and, when a reviewer is wired, the
@@ -558,14 +561,17 @@ func (s *Service) Evaluate(ctx context.Context, id string) (*List, error) {
 	if !l.Frozen() || Read(l).Done {
 		return l, nil
 	}
-	was, generation := l.Hash(), l.Generation
+	was, generation, serial := l.Hash(), l.Generation, l.Serial
 	s.mu.Lock()
 	verdicts, err := clone(s.data.Verdicts)
 	s.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	s.evaluatorFor(set, verdicts).run(ctx, l)
+	e := s.evaluatorFor(set, verdicts)
+	e.run(ctx, l)
+	// The work may have moved while the checks ran.
+	e.recheckVersions(ctx, l)
 
 	if err := s.lock(); err != nil {
 		return nil, err
@@ -612,7 +618,9 @@ func (s *Service) Evaluate(ctx context.Context, id string) (*List, error) {
 		to.Result, to.CurrentSubject, to.Runs, to.InfraTries = from.Result, from.CurrentSubject, from.Runs, from.InfraTries
 		to.Baseline, to.WaitAnchor, to.Samples = from.Baseline, from.WaitAnchor, from.Samples
 	}
-	return s.commit(merged, len(merged.History))
+	// An answer given while the run was working was not looked at by it, so
+	// that run does not close the list.
+	return s.commit(merged, len(merged.History), cur.Serial == serial)
 }
 
 // Confirm records a person's answer on a confirm item, or on "list" that the
@@ -643,6 +651,10 @@ func (s *Service) Confirm(id, item string, yes bool, words, relayedFor, hash str
 			return ErrListChanged
 		}
 		c := &Confirmation{Yes: yes, Words: words, RelayedFor: relayedFor, By: by, At: s.o.Now(), Counts: l.independent(by)}
+		if c.Counts {
+			// A run has to read the versions again before the list can close.
+			l.ClosedAt = time.Time{}
+		}
 		if item == coverageItem {
 			if hash == "" {
 				return invalid("confirming that the list covers the ask needs the list hash")
@@ -690,7 +702,11 @@ func (s *Service) Accept(id, item, reason, words, hash string, by Caller) (*List
 		if _, it := l.item(item); it == nil {
 			return invalid("no item %q", item)
 		}
-		l.state(item).Accept = &Acceptance{Reason: reason, Words: words, By: by, At: s.o.Now(), Counts: l.independent(by)}
+		counts := l.independent(by)
+		if counts {
+			l.ClosedAt = time.Time{}
+		}
+		l.state(item).Accept = &Acceptance{Reason: reason, Words: words, By: by, At: s.o.Now(), Counts: counts}
 		s.event(l, ActionAccept, item, words, by)
 		return nil
 	})
@@ -743,7 +759,7 @@ func (s *Service) add(l *List) (*List, error) {
 	if _, ok := s.data.Lists[l.RequestID]; ok {
 		return nil, invalid("request %q already has a list; change that one", l.RequestID)
 	}
-	return s.commit(l, 0)
+	return s.commit(l, 0, false)
 }
 
 // derive copies a list for another request id with every item and revision, so

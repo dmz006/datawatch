@@ -23,7 +23,10 @@ const (
 	// StatusChangedList is met on a list changed after work began. How it
 	// should read is an open operator choice (choice 5); until then it is not
 	// done.
-	StatusChangedList  Status = "met_on_changed_list"
+	StatusChangedList Status = "met_on_changed_list"
+	// StatusNeedsRun: everything is answered, and no run has read the current
+	// versions since. It is not done.
+	StatusNeedsRun     Status = "answered_not_checked"
 	StatusDoneAccepted Status = "done_accepted"
 	StatusDone         Status = "done"
 	StatusDelivered    Status = "delivered"
@@ -41,6 +44,7 @@ var statusLabels = map[Status]string{
 	StatusThinList:     "the list is too thin for the ask",
 	StatusNotReviewed:  "met, but nobody has checked that the list covers the ask",
 	StatusChangedList:  "met on a changed list (not plain done; how this reads is an open operator choice)",
+	StatusNeedsRun:     "answered, but datawatch has not checked the current versions since (not done)",
 	StatusDoneAccepted: "done, accepted without proof",
 	StatusDone:         "done",
 	StatusDelivered:    "delivered (not the same as done)",
@@ -165,8 +169,61 @@ func covered(l *List) bool {
 	return c != nil && c.Counts && c.Yes && c.Subject == h
 }
 
-// Read rolls a list up. A nil list reads "no criteria".
+// versionBound reports whether an item's result belongs to a version.
+func versionBound(it Item) bool {
+	base, name := it.methodBase()
+	switch base {
+	case MethodCommand, MethodReview:
+		return true
+	case MethodState:
+		return name == "file" || name == "build_commit"
+	case MethodConfirm:
+		return readsThePlace(it.Effect)
+	}
+	return false
+}
+
+// needsRun reports whether closing the list depends on something only a run
+// reads: any item that is not accepted without proof, except a person's answer
+// that is not about a version of the work.
+func (l *List) needsRun() bool {
+	for _, it := range l.Items {
+		if base, _ := it.methodBase(); (base != MethodConfirm || versionBound(it)) && !effective(l, it).Accepted {
+			return true
+		}
+	}
+	return false
+}
+
+// boundToVersions reports whether every met result that belongs to a version
+// names it, and it is the version last read.
+func (l *List) boundToVersions() bool {
+	for _, it := range l.Items {
+		if r := effective(l, it); !versionBound(it) || r.Accepted || r.Result.Value != ResultMet {
+			continue
+		}
+		if st := l.State[it.ID]; st.Result.Subject == "" || st.Result.Subject != st.CurrentSubject {
+			return false
+		}
+	}
+	return true
+}
+
+// Read says how a list reads. A list that a run has not closed since its last
+// answer is not done, however its stored results look. A nil list reads "no
+// criteria".
 func Read(l *List) Rollup {
+	r := rollUp(l)
+	if r.Done && l.ClosedAt.IsZero() && l.needsRun() {
+		out := status(StatusNeedsRun)
+		out.Items = r.Items
+		return out
+	}
+	return r
+}
+
+// rollUp rolls the stored results up.
+func rollUp(l *List) Rollup {
 	if l == nil || len(l.Items) == 0 {
 		return status(StatusNoCriteria)
 	}

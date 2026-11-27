@@ -40,6 +40,7 @@
     thin_list: 'the list is too thin for the ask',
     met_not_reviewed: 'met, but nobody has checked that the list covers the ask',
     met_on_changed_list: 'met on a changed list (not plain done)',
+    answered_not_checked: 'answered, but the current versions have not been checked since (not done)',
     done_accepted: 'done, accepted without proof',
     done: 'done',
     delivered: 'delivered (not the same as done)',

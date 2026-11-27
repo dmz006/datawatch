@@ -6549,6 +6549,7 @@
   "done_when_status_thin_list": "die Liste ist für die Anfrage zu dünn",
   "done_when_status_met_not_reviewed": "erfüllt, aber niemand hat geprüft, ob die Liste die Anfrage abdeckt",
   "done_when_status_met_on_changed_list": "auf geänderter Liste erfüllt (nicht einfach fertig)",
+  "done_when_status_answered_not_checked": "beantwortet, aber die aktuellen Versionen wurden seitdem nicht geprüft (nicht erledigt)",
   "done_when_status_done_accepted": "fertig, ohne Nachweis akzeptiert",
   "done_when_status_done": "fertig",
   "done_when_status_delivered": "zugestellt (nicht dasselbe wie fertig)",

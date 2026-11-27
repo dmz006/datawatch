@@ -531,7 +531,7 @@ func TestRule13TheAskChangesLater(t *testing.T) {
 	w.cover("r1")
 	w.work("r1", "c1")
 	must[*List](t)(w.svc.Confirm("r1", "c", true, "seen", "", "", operator))
-	wantStatus(t, must[*List](t)(w.svc.Get("r1")), StatusDone)
+	wantStatus(t, w.work("r1", "c1"), StatusDone)
 	// "A" alone adds nothing.
 	l := must[*List](t)(w.svc.NoteAnswer("r1", "A", " a. ", operator))
 	wantStatus(t, l, StatusDone)
@@ -771,6 +771,8 @@ func TestDoneClosesWithItsVersions(t *testing.T) {
 		must[*List](t)(w.svc.Evaluate(context.Background(), "r1"))
 	}
 	must[*List](t)(w.svc.Confirm("r1", "c", true, "seen", "", "", operator))
+	// A run closes it on the versions it reads; later commits do not reopen it.
+	wantStatus(t, w.work("r1", "c1"), StatusDone)
 	wantStatus(t, w.work("r1", "c2"), StatusDone)
 	if rev.calls != before {
 		t.Fatalf("reviewer runs = %d, want %d", rev.calls, before)

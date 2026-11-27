@@ -6549,6 +6549,7 @@
   "done_when_status_thin_list": "依頼に対して一覧が不十分です",
   "done_when_status_met_not_reviewed": "達成。ただし一覧が依頼全体を網羅するかは未確認です",
   "done_when_status_met_on_changed_list": "変更後の一覧で達成（通常の完了ではありません）",
+  "done_when_status_answered_not_checked": "回答済みですが、その後の現在のバージョンは確認されていません（未完了）",
   "done_when_status_done_accepted": "完了（証拠なしで承認）",
   "done_when_status_done": "完了",
   "done_when_status_delivered": "配信済み（完了とは異なります）",

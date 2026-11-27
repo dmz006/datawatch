@@ -647,6 +647,9 @@ func (e *evaluator) evalWindow(ctx context.Context, l *List, it Item, st *ItemSt
 	st.Samples = append(st.Samples, s)
 	final := func(out Result) Result {
 		out.At = now
+		if _, name := it.methodBase(); name == "build_commit" {
+			out.Subject = sub.Commit
+		}
 		out.Evidence = []Evidence{{Origin: OriginDatawatch, What: fmt.Sprintf("%d readings from %s to %s", len(st.Samples), due.Format(time.RFC3339), end.Format(time.RFC3339)), At: now}}
 		e.store(st, key, out)
 		return out
@@ -881,6 +884,22 @@ func (e *evaluator) evalItem(ctx context.Context, l *List, it Item, st *ItemStat
 		return e.evalReview(ctx, l, it, st)
 	}
 	return cannot("datawatch does not know the check method %q", it.Method)
+}
+
+// recheckVersions reads again the version of every met result that belongs to
+// one. A version that moved, or cannot be read, makes the result stale.
+func (e *evaluator) recheckVersions(ctx context.Context, l *List) {
+	for _, it := range l.Items {
+		st := l.State[it.ID]
+		if st == nil || !versionBound(it) || st.Result.Value != ResultMet {
+			continue
+		}
+		if sub, err := e.subjectFor(ctx, l, it); err == nil {
+			st.CurrentSubject = sub.Commit
+		} else {
+			st.CurrentSubject = "unknown"
+		}
+	}
 }
 
 // run evaluates a list: deterministic items first, and no reviewer while one

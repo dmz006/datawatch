@@ -6549,6 +6549,7 @@
   "done_when_status_thin_list": "la liste est insuffisante pour la demande",
   "done_when_status_met_not_reviewed": "rempli, mais personne n'a vérifié que la liste couvre la demande",
   "done_when_status_met_on_changed_list": "rempli sur une liste modifiée (pas simplement terminé)",
+  "done_when_status_answered_not_checked": "répondu, mais les versions actuelles n’ont pas été vérifiées depuis (pas terminé)",
   "done_when_status_done_accepted": "terminé, accepté sans preuve",
   "done_when_status_done": "terminé",
   "done_when_status_delivered": "livré (différent de terminé)",
