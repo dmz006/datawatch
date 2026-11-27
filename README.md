@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.40 (2026-11-26).** A new delivery check keeps one list of unfinished and undelivered work and can message you about it; it is on by default, only reports, and was tested with made-up records and stand-in channels, with its limits listed in the changelog. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.40 (2026-11-26).** A new delivery check keeps one list of unfinished and undelivered work and can message you about it; it is on by default, its result blocks nothing, and it was tested with made-up records and stand-in channels, with its limits listed in the changelog. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

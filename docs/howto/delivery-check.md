@@ -115,14 +115,12 @@ other hosts). Green does not mean those are fine.
 - An item gets **no more messages** once you acknowledge it, while it is
   accepted, or when it is closed. Backlog items are never sent.
 - If the records cannot be saved or read, one fixed warning is sent from memory
-  and nothing else: once for each fault. Until a channel accepts it, it is tried
-  again after 1 minute, doubling to once an hour.
+  and nothing else: once for each fault. Until a channel accepts it, it is tried again only at a check, not between checks. With the default 5-minute checks and every try failing, retries come 5, 10, 15, 25, 45 and 80 minutes after the first try, then hourly; with `delivery.interval_seconds` above 3600, once per check.
 
 ### Which channels can reach you
 
 An ntfy send counts only on a 2xx answer to the request itself; redirects are
-not followed. This applies to
-every ntfy message datawatch sends: set the server address to where ntfy
+not followed. This applies to every message on datawatch's ntfy channel: set the server address to where ntfy
 answers directly.
 
 | Can tell | Cannot tell |
