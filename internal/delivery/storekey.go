@@ -81,7 +81,8 @@ func sealedRecords(dataDir string) (bool, error) {
 			if err != nil {
 				return false, err
 			}
-			if secfile.IsEncrypted(data) {
+			// A request record is sealed inside a readable index.
+			if secfile.IsEncrypted(data) || secfile.IsEncrypted(bodyOf(data)) {
 				return true, nil
 			}
 		}
