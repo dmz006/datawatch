@@ -482,6 +482,23 @@ A review date is at most 30 days ahead. A date without a time means the end of t
 
 ---
 
+### `acceptance`
+
+"Done when" lists. The command exists only while `acceptance.mode` is `report`; otherwise a message that starts with the word is an ordinary message. They block nothing.
+
+| Message | Does |
+|---|---|
+| `acceptance` | every list in short |
+| `acceptance show <id>` | each item's result and the list hash (ids and results only on an encrypted install) |
+| `acceptance confirm <id> <item> yes\|no <words>` | record your answer on a confirm item |
+| `acceptance confirm <id> list yes\|no <list hash> <words>` | say whether the list covers the whole ask |
+| `acceptance accept <id> <item> <why>` | accept an item without proof (it never reads met) |
+| `acceptance edit <id> <json>` | create or change a list |
+| `acceptance freeze <id> <list hash>` | fix the list you read |
+| `acceptance report` / `acceptance catalog` | the standing check; methods and default items |
+
+See [howto/done-when.md](howto/done-when.md).
+
 ## Implicit Reply
 
 If exactly one session on a machine is in `waiting_input` state, you can reply without specifying the session ID. Just type your response directly.
@@ -984,6 +1001,60 @@ identity restore identity-20261028T080000.000Z.yaml
 ```
 
 ---
+
+## Requests
+
+A request is one saved thing that must happen, addressed to a role in a scope. See [howto/requests.md](howto/requests.md). Lists and replies hold identifiers, states, reason codes and a plain reading, never a request's words; only a request datawatch's own check proved reads "done". Only the holder's own session credential may take, accept, report or decline: chat uses the daemon's token, so those are refused from chat. Requests are for this computer only.
+
+```
+request [list] [state=<s>] [kind=<k>] [role=<r>] [scope=<id>] [holder=<s>]
+request show <id>
+request mine                      what a session holds (refused from chat)
+request roles                     who holds which role
+request role give session=<id> scope=<project> [force=true reason=<code>]
+request role release scope=<project>
+request create scope=<project> [kind=ask] [key=<k>] [take_by=30m] [due=24h] ask=<words to the end>
+request take|accept|report|decline <id>          the holder's calls
+request reissue <id> reason=<code> [repeat_ok=true] [words=<words to the end>]
+request drop <id> reason=<code> [words=<words to the end>]
+request force <id> reason=<code> [to=<session>]  it may run twice
+request accept-unproven <id> reason=<code> words=<words to the end>
+request from-backlog <entry key> scope=<project> [ask=<words to the end>]
+```
+
+In chat, only `request` followed by one of these words (or `request` alone) is a command.
+
+The command line:
+
+| Command | What it does |
+|---|---|
+| `datawatch request list [--state --kind --role --scope-kind --scope --holder]` | List requests |
+| `datawatch request <id>` or `show <id>` | One request, without its content |
+| `datawatch request mine` | What the calling session holds |
+| `datawatch request roles` | Who holds which role |
+| `datawatch request role give --session <id> --scope <project> [--force --reason <code>]` | Give a role |
+| `datawatch request role release --scope <project>` | Release a role |
+| `datawatch request create --scope <project> --ask <words> [--detail --param name=value --items <json> --project-dir --kind --role --scope-kind --key --after --take-by --due --source-type --source-id --host]` | Save a request |
+| `datawatch request take <id>` | Fetch the content (holder only) |
+| `datawatch request accept <id> [--code]` | The holder will do it |
+| `datawatch request report <id> [--text --result-id --rules-version]` | The holder says it is finished; it is not thereby done |
+| `datawatch request decline <id> --reason <code> [--text]` | The holder will not do it |
+| `datawatch request reissue <id> --reason <code> [--repeat-ok --words]` | New request from a failed, expired or cancelled one |
+| `datawatch request drop <id> --reason <code> [--words]` | Cancel or close |
+| `datawatch request force <id> --reason <code> [--to-session --words]` | Move off its holder; it may run twice |
+| `datawatch request accept-unproven <id> --reason <code> --words <words>` | Accept without proof |
+| `datawatch request from-backlog <entry key> --scope <project> [--ask]` | Make a request from a backlog entry |
+| `datawatch request settings` | The six request settings in force |
+
+Only datawatch itself creates the kinds that close on receipt (`hello`, `answer`, `rules`). Create and reissue refuse them on every surface and give that reason.
+
+`--json` prints the daemon's answer. The command line sends `DATAWATCH_TOKEN` when it is set (inside a session, the session's own credential), else the daemon's token. With `--server <name>` the command is refused and nothing is sent. There is no `seen` command: only a worker's own program reports that.
+
+Settings (`datawatch config set delivery.<key> <value>`, chat `configure delivery.<key>=<value>`; read live): `request_take_by_seconds`, `request_due_seconds`, `reminder_interval_seconds` (0 = the default), `request_due_seconds_by_kind` (`ask=3600,bug=7200`), `reminders_per_session_hour` (default 2) and `reminders_per_host_hour` (default 20; 0 = no reminders). A negative value is refused. `config get delivery_requests` shows every value in force; `config get delivery.<key>` finds only a key that has been set.
+
+## The work queue
+
+With the delivery check on, the work queue is kept in the request store. `datawatch queue` commands and the standalone MCP queue tools need a running daemon. To go back to an older datawatch, stop the daemon and run `datawatch queue export` (`--plain` on a secure install; the file is then plain content). Who a claim is recorded for comes from the credential; `claimed_by` is not used. `queue complete` and `queue fail` with a request id (`r-…`) are the holder's report and decline.
 
 ## CLI Commands
 

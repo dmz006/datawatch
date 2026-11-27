@@ -1,7 +1,9 @@
 // The delivery store key. It is derived from the secure-mode password and a
 // salt of its own, so a settings change that gives the config a new salt
 // leaves the delivery records readable. It fails closed: when it cannot be
-// used, datawatch does not start, and nothing is ever written plain.
+// used, the delivery check and requests do not run, and nothing is ever written
+// plain. datawatch itself still starts, except without secure mode over sealed
+// records.
 
 package delivery
 
@@ -41,7 +43,7 @@ const KeyFile = "queue.d/store.key"
 // that were plain have been sealed with it. It holds nothing.
 const adoptMarker = HeartbeatDir + "/.adopt-plain"
 
-// ErrStoreKey wraps every reason the daemon must not start.
+// ErrStoreKey wraps every reason the delivery key cannot be used.
 var ErrStoreKey = errors.New("delivery store key")
 
 const (
@@ -70,7 +72,10 @@ type StoreKey struct {
 }
 
 // sealedRecords reports whether any sealed delivery record is under dataDir.
+// A record that cannot be read does not end the look: the error comes back only
+// when no sealed one was found.
 func sealedRecords(dataDir string) (bool, error) {
+	var unread error
 	for _, dir := range []string{HeartbeatDir, filepath.Dir(filepath.FromSlash(KeyFile))} {
 		files, err := filepath.Glob(filepath.Join(dataDir, dir, "*.rec"))
 		if err != nil {
@@ -79,14 +84,18 @@ func sealedRecords(dataDir string) (bool, error) {
 		for _, f := range files {
 			data, err := os.ReadFile(f)
 			if err != nil {
-				return false, err
+				if unread == nil {
+					unread = err
+				}
+				continue
 			}
-			if secfile.IsEncrypted(data) {
+			// A request record is sealed inside a readable index.
+			if secfile.IsEncrypted(data) || secfile.IsEncrypted(bodyOf(data)) {
 				return true, nil
 			}
 		}
 	}
-	return false, nil
+	return false, unread
 }
 
 // OpenStoreKey opens or prepares the store key. password is nil on a
@@ -124,7 +133,10 @@ func OpenStoreKey(dataDir string, password []byte, params KeyParams) (*StoreKey,
 	}
 
 	sealed, err := sealedRecords(dataDir)
-	if err != nil {
+	// With a password, no new key is made unless every record was looked at.
+	// Without one nothing is made, and a damaged record is left to its store:
+	// it must not stop datawatch.
+	if err != nil && password != nil {
 		return refuse("cannot look for sealed records: %v", err)
 	}
 	if sealed {

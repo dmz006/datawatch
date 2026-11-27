@@ -86,6 +86,10 @@ func KnownStates() []State {
 
 // Session holds metadata about a single claude-code session.
 type Session struct {
+	// DeliveryExtension is the pi extension this launch loads, set by the
+	// pre-launch hook when it wired the session for requests. Never stored.
+	DeliveryExtension string `json:"-"`
+
 	ID          string    `json:"id"`             // 4-char hex
 	FullID      string    `json:"full_id"`        // hostname-id
 	Name        string    `json:"name,omitempty"` // optional human-readable name

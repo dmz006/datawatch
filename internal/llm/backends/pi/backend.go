@@ -334,6 +334,8 @@ type Backend struct {
 	thinkingLevel string
 	sessionName   string
 	nodeHost      string // compute node address; empty uses pi's own provider table
+	// deliveryExtension — see SetDeliveryExtension.
+	deliveryExtension string
 }
 
 // New creates an interactive pi backend. binary defaults to "pi".
@@ -371,6 +373,10 @@ func (b *Backend) SetThinkingLevel(level string) { b.thinkingLevel = level }
 // arbitrary caller-supplied ID — unlike opencode's own "ses_"-prefixed
 // IDs, no ID-format translation is needed.
 func (b *Backend) SetSessionName(name string) { b.sessionName = name }
+
+// SetDeliveryExtension is the extension the next launch loads with pi's -e;
+// empty loads none. The session manager sets it on every launch.
+func (b *Backend) SetDeliveryExtension(path string) { b.deliveryExtension = path }
 
 func (b *Backend) Version() string { return versionOf(b.binary) }
 
@@ -426,7 +432,7 @@ func buildInteractiveCmdWithAgentDir(binary, model, thinkingLevel, sessionID, ta
 // its stderr text in the returned error.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	return sendLaunch(ctx, "pi interactive launch", tmuxSession, b.nodeHost, b.model, func(agentDir string) (string, error) {
-		return buildInteractiveCmdWithAgentDir(b.binary, b.model, b.thinkingLevel, b.sessionName, task, projectDir, tmuxSession, agentDir)
+		return interactiveCmd(b.binary, b.model, b.thinkingLevel, b.sessionName, task, projectDir, tmuxSession, agentDir, b.deliveryExtension)
 	})
 }
 
@@ -438,7 +444,7 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 		id = b.sessionName
 	}
 	return sendLaunch(ctx, "pi interactive resume", tmuxSession, b.nodeHost, b.model, func(agentDir string) (string, error) {
-		return buildInteractiveCmdWithAgentDir(b.binary, b.model, b.thinkingLevel, id, task, projectDir, tmuxSession, agentDir)
+		return interactiveCmd(b.binary, b.model, b.thinkingLevel, id, task, projectDir, tmuxSession, agentDir, b.deliveryExtension)
 	})
 }
 

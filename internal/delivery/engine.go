@@ -31,6 +31,10 @@ type Options struct {
 	// just turned on and the store key is new.
 	AdoptPlain bool
 
+	// Healthy, when set, says that the request store can save. While it
+	// cannot, no heartbeat is written, so the outside timer sees it go stale.
+	Healthy func() error
+
 	// writeFile replaces the durable write in tests (a full disk).
 	writeFile func(path string, data, key []byte) error
 }
@@ -196,6 +200,11 @@ func (e *Engine) Pass(ctx context.Context) (Report, error) {
 	}
 
 	rep := e.Report()
+	if e.opts.Healthy != nil {
+		if err := e.opts.Healthy(); err != nil {
+			return rep, ErrCannotRecord
+		}
+	}
 	if err := e.writeHeartbeat(rep, now); err != nil {
 		e.mu.Lock()
 		e.cannotRecord = true

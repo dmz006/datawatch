@@ -1003,6 +1003,15 @@ paths:
         `delivery.interval_seconds` (whole seconds, 60 to 86400; 0 = the default, 300).
         GET returns their effective values under `delivery`.
 
+        Request keys (read live): `delivery.request_take_by_seconds`,
+        `delivery.request_due_seconds`, `delivery.reminder_interval_seconds`
+        (whole seconds, 0 = the default), `delivery.request_due_seconds_by_kind`
+        (an object of request kind to seconds, or kind=seconds pairs; empty
+        clears it), `delivery.reminders_per_session_hour` (default 2) and
+        `delivery.reminders_per_host_hour` (default 20; 0 = no reminders).
+        A negative value is refused. GET returns every one at its value in force
+        under `delivery_requests`, and the ones that are set under `delivery` too.
+
         Supported keys: `telegram.enabled`, `discord.enabled`, `slack.enabled`,
         `matrix.enabled`, `twilio.enabled`, `ntfy.enabled`, `email.enabled`,
         `webhook.enabled`, `github_webhook.enabled`, `server.enabled`,
@@ -12372,6 +12381,117 @@ paths:
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
+  /api/acceptance:
+    get:
+      summary: The "done when" lists. Without id, every list in short with open items grouped by reason; with id, one list and how each item reads. Answers {mode off} when acceptance.mode is not report. Saved command and script text is shown only as a hash
+      operationId: acceptanceView
+      tags: [Singletons]
+      parameters:
+        - {name: id, in: query, required: false, schema: {type: string}, description: Request id}
+      responses:
+        "200": {description: OK}
+        "404": {description: No list for that request (it reads no criteria)}
+        "503": {description: Lists are not available}
+  /api/acceptance/edit:
+    post:
+      summary: Create or change a list, or fix it before work starts. A change to a fixed list is recorded as a revision. No field carries command or script text; an unknown field is refused
+      operationId: acceptanceEdit
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              additionalProperties: false
+              properties:
+                id: {type: string}
+                source: {type: string, description: "New list only; adds that source's default items. It never gives the list lighter rules than an unknown source has"}
+                ask: {type: string, description: New list only; kept word for word}
+                add_ask: {type: string, description: Later words; they open new items}
+                scheduled: {type: boolean}
+                packs: {type: array, items: {type: string}}
+                items: {type: array, items: {type: object}, description: "Items to add or replace: id, statement, from, source, method, project_check, inputs, expect, timeout_seconds, state, wait, before, change, negative, report_only, checker, effect"}
+                remove: {type: array, items: {type: string}}
+                needed_by: {type: string, format: date-time}
+                words: {type: string}
+                hash: {type: string, description: The list hash that was read; required with freeze}
+                freeze: {type: boolean, description: Fix the list named by hash; sent without other changes}
+                actor: {type: string, description: Name recorded beside the observed caller}
+                via: {type: string, description: Set by model tools and the command line to say how they called. Not verified; who counts is recorded and not enforced}
+                via_session: {type: string, description: The calling session as the request states it, not verified. Ignored for a session or federation credential}
+      responses:
+        "200": {description: OK}
+        "400": {description: Invalid request or unknown field}
+        "409": {description: Off, or the list changed since it was read}
+  /api/acceptance/confirm:
+    post:
+      summary: A person's answer on a confirm item, or on item list that the list covers the ask. An answer that cannot be shown to come from someone other than the doer is kept as a claim and does not count
+      operationId: acceptanceConfirm
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, item, answer, words]
+              properties:
+                id: {type: string}
+                item: {type: string, description: Item id, or list (needs hash)}
+                answer: {type: string, enum: ["yes", "no"]}
+                words: {type: string}
+                relayed_for: {type: string}
+                hash: {type: string}
+                actor: {type: string}
+                via: {type: string}
+                via_session: {type: string}
+      responses:
+        "200": {description: OK}
+        "400": {description: Missing words, unknown item, or an item that is not checked by confirm}
+        "409": {description: Off, or the list changed since it was read}
+  /api/acceptance/accept:
+    post:
+      summary: Accept an item without proof, with a reason and the words said. It never reads met
+      operationId: acceptanceAccept
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, item, reason, words]
+              properties:
+                id: {type: string}
+                item: {type: string}
+                reason: {type: string}
+                words: {type: string}
+                hash: {type: string}
+                actor: {type: string}
+                via: {type: string}
+                via_session: {type: string}
+      responses:
+        "200": {description: OK}
+        "400": {description: Missing reason or words, or an unknown item}
+        "409": {description: Off, or the list changed since it was read}
+  /api/acceptance/report:
+    get:
+      summary: The standing check of the lists (I18 to I20). It reports only and blocks nothing
+      operationId: acceptanceReport
+      tags: [Singletons]
+      responses:
+        "200": {description: OK}
+        "409": {description: Off}
+  /api/acceptance/catalog:
+    get:
+      summary: Check methods, default items and the names of registered project checks (never their commands)
+      operationId: acceptanceCatalog
+      tags: [Singletons]
+      responses:
+        "200": {description: OK}
+        "409": {description: Off}
   /api/pause:
     get:
       summary: The operator pause state (global pause and every project pause, with who paused, why and when); peers=1 also reads each federation peer's own state. Needs pause:read
@@ -12860,6 +12980,7 @@ paths:
   /api/queue/claim:
     post:
       summary: Claim a queue item for processing
+      description: "Who claims comes from the credential: a session is its session id, the daemon token is admin-token. A claimed_by in the body is not used."
       operationId: queueClaim
       tags: [Queue]
       requestBody:
@@ -12868,10 +12989,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [role, claimed_by]
+              required: [role]
               properties:
                 role: {type: string}
-                claimed_by: {type: string}
+                claimed_by: {type: string, deprecated: true, description: "Not used"}
                 lease_seconds: {type: integer}
       responses:
         "200":
@@ -12885,6 +13006,7 @@ paths:
   /api/queue/complete:
     post:
       summary: Mark a queue item as complete
+      description: "With a request id (r-...) this is the holder report of that request: 403 for anyone but the holder, and it does not make the request done."
       operationId: queueComplete
       tags: [Queue]
       requestBody:
@@ -12901,6 +13023,7 @@ paths:
   /api/queue/fail:
     post:
       summary: Mark a queue item as failed
+      description: "With a request id (r-...) this is the holder decline of that request: 403 for anyone but the holder."
       operationId: queueFail
       tags: [Queue]
       requestBody:
@@ -14551,6 +14674,396 @@ paths:
         "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
         "503": {description: "The delivery check is not available, or its records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
 
+  /api/requests:
+    get:
+      summary: "List requests, or read one with id"
+      description: "A request is one saved thing that must happen, addressed to a role. The caller is taken from the credential only. Reading needs queue:read and every other call queue:write. Who may create or manage requests is recorded and not enforced. Listings hold no request content."
+      operationId: requestsList
+      tags: [Requests]
+      parameters:
+        - {name: id, in: query, required: false, schema: {type: string}}
+        - {name: state, in: query, required: false, schema: {type: string}}
+        - {name: kind, in: query, required: false, schema: {type: string}}
+        - {name: role, in: query, required: false, schema: {type: string}}
+        - {name: scope_kind, in: query, required: false, schema: {type: string}}
+        - {name: scope_id, in: query, required: false, schema: {type: string}}
+        - {name: holder, in: query, required: false, schema: {type: string}}
+      responses:
+        "200": {description: "With id: one request view. Without: {requests: [view]}. A view has the index fields and label; only a proven one reads done"}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+    post:
+      summary: "Save a request addressed to a role on this computer"
+      description: "A request is one saved thing that must happen, addressed to a role. The caller is taken from the credential only. Reading needs queue:read and every other call queue:write. Who may create or manage requests is recorded and not enforced. Listings hold no request content."
+      operationId: requestsCreate
+      tags: [Requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, role, scope]
+              properties:
+                kind: {type: string, description: "Request kind, such as ask"}
+                role: {type: string}
+                scope: {type: object, required: [kind, id], properties: {kind: {type: string, enum: [task, automaton, automation, project, host, session]}, id: {type: string}}}
+                host: {type: string, description: "Empty or this computer"}
+                key: {type: string, description: "The creator id of this occurrence, kept as operator:<id>; the same key returns the request already made. Empty: a new one"}
+                source: {type: object, properties: {type: {type: string}, id: {type: string}}}
+                after: {type: string}
+                take_by: {type: integer, description: "Nanoseconds; 0 takes the setting"}
+                due: {type: integer, description: "Nanoseconds; 0 takes the setting"}
+                content: {type: object, additionalProperties: false, properties: {ask: {type: string}, detail: {type: string}, params: {type: object, additionalProperties: {type: string}}, items: {type: array, items: {type: object}, description: "Done-when items: id, statement, from, method (receipt, state:file, confirm, review), path, contains, effect, change, before, target. No commands are run"}, project_dir: {type: string}}}
+      responses:
+        "200": {description: "{request: view, created: boolean}"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/mine:
+    get:
+      summary: "Everything open the calling session holds (a session credential only)"
+      operationId: requestsMine
+      tags: [Requests]
+      responses:
+        "200": {description: "{session_id, items: [view], roles: [binding]}"}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/roles:
+    get:
+      summary: "Who holds which role"
+      operationId: requestsRoles
+      tags: [Requests]
+      responses:
+        "200": {description: "{roles: [binding]}"}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/roles/give:
+    post:
+      summary: "Give a role to a session: one holder per role and scope"
+      description: "A request is one saved thing that must happen, addressed to a role. The caller is taken from the credential only. Reading needs queue:read and every other call queue:write. Who may create or manage requests is recorded and not enforced. Listings hold no request content."
+      operationId: requestsRoleGive
+      tags: [Requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, scope, session_id]
+              properties:
+                role: {type: string}
+                scope: {type: object, required: [kind, id], properties: {kind: {type: string, enum: [task, automaton, automation, project, host, session]}, id: {type: string}}}
+                session_id: {type: string, description: "Full session id"}
+                force: {type: boolean}
+                reason_code: {type: string, description: "Needed with force"}
+      responses:
+        "200": {description: "The role binding"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The role has a live holder and force was not given with a reason", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/roles/release:
+    post:
+      summary: "Release a role"
+      description: "A request is one saved thing that must happen, addressed to a role. The caller is taken from the credential only. Reading needs queue:read and every other call queue:write. Who may create or manage requests is recorded and not enforced. Listings hold no request content."
+      operationId: requestsRoleRelease
+      tags: [Requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, scope]
+              properties:
+                role: {type: string}
+                scope: {type: object, required: [kind, id], properties: {kind: {type: string, enum: [task, automaton, automation, project, host, session]}, id: {type: string}}}
+                session_id: {type: string, description: "Full session id"}
+                force: {type: boolean}
+                reason_code: {type: string, description: "Needed with force"}
+      responses:
+        "200": {description: "{ok: true}"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/from-backlog:
+    post:
+      summary: "Turn one delivery list backlog entry into a request, once"
+      description: "A request is one saved thing that must happen, addressed to a role. The caller is taken from the credential only. Reading needs queue:read and every other call queue:write. Who may create or manage requests is recorded and not enforced. Listings hold no request content."
+      operationId: requestsFromBacklog
+      tags: [Requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entry_key, role, scope]
+              properties:
+                entry_key: {type: string}
+                role: {type: string}
+                scope: {type: object, required: [kind, id], properties: {kind: {type: string, enum: [task, automaton, automation, project, host, session]}, id: {type: string}}}
+                content: {type: object, additionalProperties: false, properties: {ask: {type: string}, detail: {type: string}, params: {type: object, additionalProperties: {type: string}}, items: {type: array, items: {type: object}, description: "Done-when items: id, statement, from, method (receipt, state:file, confirm, review), path, contains, effect, change, before, target. No commands are run"}, project_dir: {type: string}}}
+      responses:
+        "200": {description: "{request: view, created: boolean}"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/{id}/take:
+    post:
+      summary: "Fetch the content of a held request"
+      description: "Only the session that holds the request may do this, with its own session credential; the daemon token holds nothing. The same take again gives the same content and digest."
+      operationId: requestsTake
+      tags: [Requests]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                claimed_by: {type: string, description: "A claim only; it never makes the caller the holder"}
+                session_id: {type: string, description: "A claim only"}
+                via: {type: string, enum: [tool, program]}
+      responses:
+        "200": {description: "{request, content, digest, rules_version, open, repeat, resend_ok}"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The request is not in a state that allows this", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/{id}/seen:
+    post:
+      summary: "A worker program reports that the exact served content was in a completed model call"
+      description: "Only the session that holds the request may do this, with its own session credential; the daemon token holds nothing. For the worker program only; there is no assistant tool for it."
+      operationId: requestsSeen
+      tags: [Requests]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [digest]
+              properties:
+                digest: {type: string, description: "SHA-256 of the served content"}
+                reporter_version: {type: string}
+                claimed_by: {type: string, description: "A claim only; it never makes the caller the holder"}
+                session_id: {type: string, description: "A claim only"}
+                via: {type: string, enum: [tool, program]}
+      responses:
+        "200": {description: "The request view"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The request is not in a state that allows this", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/{id}/accept:
+    post:
+      summary: "The holder says it will do the request"
+      description: "Only the session that holds the request may do this, with its own session credential; the daemon token holds nothing. It does not say the work is done."
+      operationId: requestsAccept
+      tags: [Requests]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code: {type: string, description: "Receipt code from the content"}
+                claimed_by: {type: string, description: "A claim only; it never makes the caller the holder"}
+                session_id: {type: string, description: "A claim only"}
+                via: {type: string, enum: [tool, program]}
+      responses:
+        "200": {description: "The request view"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The request is not in a state that allows this", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/{id}/report:
+    post:
+      summary: "The holder says the work is finished"
+      description: "Only the session that holds the request may do this, with its own session credential; the daemon token holds nothing. It never makes the request done; only datawatch own check does."
+      operationId: requestsReport
+      tags: [Requests]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: {type: string}
+                result_id: {type: string}
+                rules_version: {type: string}
+                claimed_by: {type: string, description: "A claim only; it never makes the caller the holder"}
+                session_id: {type: string, description: "A claim only"}
+                via: {type: string, enum: [tool, program]}
+      responses:
+        "200": {description: "The request view"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The request is not in a state that allows this", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/{id}/decline:
+    post:
+      summary: "The holder will not do the request"
+      description: "Only the session that holds the request may do this, with its own session credential; the daemon token holds nothing. "
+      operationId: requestsDecline
+      tags: [Requests]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code]
+              properties:
+                reason_code: {type: string}
+                text: {type: string}
+                claimed_by: {type: string, description: "A claim only; it never makes the caller the holder"}
+                session_id: {type: string, description: "A claim only"}
+                via: {type: string, enum: [tool, program]}
+      responses:
+        "200": {description: "The request view"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The request is not in a state that allows this", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/{id}/reissue:
+    post:
+      summary: "Make a new request from a failed, expired or cancelled one"
+      description: "A request is one saved thing that must happen, addressed to a role. The caller is taken from the credential only. Reading needs queue:read and every other call queue:write. Who may create or manage requests is recorded and not enforced. Listings hold no request content."
+      operationId: requestsReissue
+      tags: [Requests]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code]
+              properties:
+                reason_code: {type: string}
+                words: {type: string, description: "The words that were said"}
+                repeat_ok: {type: boolean, description: "The work may already have been done"}
+      responses:
+        "200": {description: "The request view"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "Not allowed in this state, or it may run twice and repeat_ok is not set", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/{id}/drop:
+    post:
+      summary: "Cancel or close a request"
+      description: "A request is one saved thing that must happen, addressed to a role. The caller is taken from the credential only. Reading needs queue:read and every other call queue:write. Who may create or manage requests is recorded and not enforced. Listings hold no request content. A drop by a session stays listed."
+      operationId: requestsDrop
+      tags: [Requests]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code]
+              properties:
+                reason_code: {type: string}
+                words: {type: string, description: "The words that were said"}
+      responses:
+        "200": {description: "The request view"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The request is not in a state that allows this", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/{id}/force:
+    post:
+      summary: "Move a request off its holder; it may run twice"
+      description: "A request is one saved thing that must happen, addressed to a role. The caller is taken from the credential only. Reading needs queue:read and every other call queue:write. Who may create or manage requests is recorded and not enforced. Listings hold no request content."
+      operationId: requestsForce
+      tags: [Requests]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code]
+              properties:
+                reason_code: {type: string}
+                words: {type: string, description: "The words that were said"}
+                to_session: {type: string, description: "Empty: back to the role"}
+      responses:
+        "200": {description: "The request view"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The request is not in a state that allows this", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
+  /api/requests/{id}/accept-unproven:
+    post:
+      summary: "Record a request as accepted without proof"
+      description: "A request is one saved thing that must happen, addressed to a role. The caller is taken from the credential only. Reading needs queue:read and every other call queue:write. Who may create or manage requests is recorded and not enforced. Listings hold no request content. It goes through the done-when list: a doer or unnamed session answer is only a claim. The list needs the words."
+      operationId: requestsAcceptUnproven
+      tags: [Requests]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code, words]
+              properties:
+                reason_code: {type: string}
+                words: {type: string, description: "The words that were said"}
+      responses:
+        "200": {description: "The request view"}
+        "400": {description: "Bad body or value; an unknown field is refused", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "The credential lacks the capability, or the caller does not hold the request", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: "No such request; an audit line with identifiers only is written", content: {"text/plain": {schema: {type: string}}}}
+        "409": {description: "The request is not in a state that allows this", content: {"text/plain": {schema: {type: string}}}}
+        "422": {description: "Another datawatch computer: tracked requests there are not supported yet; nothing was saved", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "Requests are not available, or the records cannot be read or saved", content: {"text/plain": {schema: {type: string}}}}
 components:
   securitySchemes:
     BearerToken:

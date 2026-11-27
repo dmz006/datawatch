@@ -18433,7 +18433,7 @@ function renderSettingsView() {
         ${GENERAL_CONFIG_FIELDS.map(sec => {
           // BL247 — route pipeline/autonomous/orchestrator sections to Automata tab;
           // plugins section to Plugins tab; everything else stays in General.
-          const _automataIds = ['pipeline', 'autonomous', 'orchestrator', 'usage_calculator', 'usage_burn_guard', 'delivery_check'];
+          const _automataIds = ['pipeline', 'autonomous', 'orchestrator', 'usage_calculator', 'usage_burn_guard', 'delivery_check', 'request_settings'];
           const grp = _automataIds.includes(sec.id) ? 'automata' : sec.id === 'plugins' ? 'plugins' : 'general';
           return `
         <div class="settings-section" data-group="${grp}" style="${stab!==grp?'display:none':''}">
@@ -18449,6 +18449,14 @@ function renderSettingsView() {
           ${settingsSectionHeader('delivery_list', t('delivery_section_title'), 'howto/delivery-check.md')}
           <div id="settings-sec-delivery_list" style="${secContent('delivery_list')}">
             <div id="deliveryPanel" class="delivery-panel">${loadingEyeBlock()}</div>
+          </div>
+        </div>
+
+        <!-- Requests: saved work addressed to a role, who holds each role, and the operator's actions. -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('requests_list', t('requests_section_title'), 'howto/requests.md')}
+          <div id="settings-sec-requests_list" style="${secContent('requests_list')}">
+            <div id="requestsPanel" class="delivery-panel">${loadingEyeBlock()}</div>
           </div>
         </div>
 
@@ -19541,6 +19549,7 @@ function renderSettingsView() {
   if (typeof loadComputeNodesPanel === 'function') loadComputeNodesPanel(); // v7.0.0 S1
   if (typeof loadRequirementsReportPanel === 'function') loadRequirementsReportPanel(); // requirements report card (setup view)
   if (typeof loadDeliveryPanel === 'function') loadDeliveryPanel({ fresh: true }); // delivery check card
+  if (typeof loadRequestsPanel === 'function') loadRequestsPanel({ fresh: true }); // requests card
   if (typeof loadRequirementsMinOllamaPanel === 'function') loadRequirementsMinOllamaPanel(); // min-Ollama override fields (setup view)
   if (typeof loadModelConsentPanel === 'function') loadModelConsentPanel(); // model pull consent card (setup view)
   if (typeof loadLLMsPanel === 'function') loadLLMsPanel(); // v7.0.0 S2
@@ -27238,6 +27247,16 @@ const GENERAL_CONFIG_FIELDS = [
   // Standard task packs: the enabled switch, the active order list and the
   // pack inputs. The fields live in app-packs-settings-fields.js, loaded first.
   { id: 'packs', sectionKey: 'settings_packs', section: 'Standard task packs', docs: 'howto/automata-standard-tasks.md', fields: (typeof PACKS_SETTINGS_FIELDS !== 'undefined' ? PACKS_SETTINGS_FIELDS : []) },
+  // "Done when" lists. Project checks and the defaults file are set in the
+  // config file only.
+  { id: 'acceptance', sectionKey: 'settings_acceptance', section: 'Done when (acceptance lists)', docs: 'howto/done-when.md', fields: [
+    { key: 'acceptance.mode', label: '', labelKey: 'settings_acceptance_mode', type: 'select', options: ['off','report'] },
+    { key: 'acceptance.rework_rounds', label: '', labelKey: 'settings_acceptance_rework_rounds', type: 'number', placeholder: '2', min: 0, step: 1 },
+    { key: 'acceptance.infra_retries', label: '', labelKey: 'settings_acceptance_infra_retries', type: 'number', placeholder: '2', min: 0, step: 1 },
+    { key: 'acceptance.check_timeout_seconds', label: '', labelKey: 'settings_acceptance_check_timeout_seconds', type: 'number', placeholder: '600', min: 0, step: 1 },
+    { key: 'acceptance.freshness_seconds', label: '', labelKey: 'settings_acceptance_freshness_seconds', type: 'number', placeholder: '300', min: 0, step: 1 },
+    { key: 'acceptance.warn_hours', label: '', labelKey: 'settings_acceptance_warn_hours', type: 'number', placeholder: '24', min: 0, step: 1 },
+  ]},
   { id: 'costreport', sectionKey: 'settings_cost_report', section: 'Cost Report', docs: 'datawatch-definitions.md', fields: [
     { key: 'cost_report.default_group_by', label: 'Default group by', labelKey: 'settings_cost_report_default_group_by', type: 'select', options: ['automaton','automation','backend','week'] },
     { key: 'cost_report.default_window_days', label: 'Default window (days)', labelKey: 'settings_cost_report_default_window_days', type: 'number', placeholder: '7', min: 1, step: 1 },
@@ -27362,6 +27381,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'delivery.enabled', label: 'Keep the delivery list and run the check', labelKey: 'settings_delivery_enabled', type: 'toggle', default: true },
     { key: 'delivery.notify', label: 'Send me messages about listed items', labelKey: 'settings_delivery_notify', type: 'toggle', default: true },
     { key: 'delivery.interval_seconds', label: 'Time between checks (seconds, at least 60)', labelKey: 'settings_delivery_interval_seconds', type: 'number', min: 60, max: 86400, placeholder: '300', onchange: "savePromptNumberSetting('delivery.interval_seconds', this.value, 60)" },
+  ]},
+  // Requests: the times and the two hourly reminder limits. All are read live.
+  { id: 'request_settings', sectionKey: 'request_settings_title', section: 'Request settings', docs: 'howto/requests.md', fields: [
+    { key: 'delivery.request_take_by_seconds', label: 'Time for a request to be taken (seconds; 0 = default)', labelKey: 'settings_delivery_request_take_by_seconds', type: 'number', min: 0, placeholder: '3600', onchange: "savePromptNumberSetting('delivery.request_take_by_seconds', this.value, 0)" },
+    { key: 'delivery.request_due_seconds', label: 'Time for a request to be finished (seconds; 0 = default)', labelKey: 'settings_delivery_request_due_seconds', type: 'number', min: 0, placeholder: '86400', onchange: "savePromptNumberSetting('delivery.request_due_seconds', this.value, 0)" },
+    { key: 'delivery.request_due_seconds_by_kind', label: 'Finish time by request kind (JSON object of kind to seconds)', labelKey: 'settings_delivery_request_due_seconds_by_kind', type: 'json_map', placeholder: '{"ask": 86400}' },
+    { key: 'delivery.reminder_interval_seconds', label: 'Shortest time between reminders to a session (seconds; 0 = default)', labelKey: 'settings_delivery_reminder_interval_seconds', type: 'number', min: 0, placeholder: '900', onchange: "savePromptNumberSetting('delivery.reminder_interval_seconds', this.value, 0)" },
+    { key: 'delivery.reminders_per_session_hour', label: 'Reminders to one session each hour (0 = none)', labelKey: 'settings_delivery_reminders_per_session_hour', type: 'number', min: 0, placeholder: '2', onchange: "savePromptNumberSetting('delivery.reminders_per_session_hour', this.value, 0)" },
+    { key: 'delivery.reminders_per_host_hour', label: 'Reminders on this computer each hour (0 = none)', labelKey: 'settings_delivery_reminders_per_host_hour', type: 'number', min: 0, placeholder: '20', onchange: "savePromptNumberSetting('delivery.reminders_per_host_hour', this.value, 0)" },
   ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval
@@ -38611,6 +38639,7 @@ function _renderDetailContent(prd) {
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
+  if (tab === 'overview' && window.doneWhen) window.doneWhen.mount(body, id);
   _automataDetailTabsReveal();
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(_automataDetailTabsReveal);
   window.loadDecisionLineCard(prd.id);
@@ -50312,6 +50341,213 @@ function deliveryAction(verb) {
   const count = built.body.backlog ? ((d.report && d.report.backlog) || []).length : built.body.keys.length;
   showConfirmModal(t(built.body.backlog ? 'delivery_confirm_drop_backlog' : 'delivery_confirm_drop', [count]), send);
   return Promise.resolve();
+}
+
+// ── Requests card (Settings → Automata) ─────────────────────────────────────
+// Draws GET /api/requests and /api/requests/roles and sends the operator's
+// actions. A listing holds identifiers, states, reason codes and a plain
+// reading, never a request's words. The daemon decides what an action may do;
+// this page shows its refusal text. Everything is escaped.
+const REQUEST_MAX_ROWS = 100;
+const REQUEST_STATES = ['waiting', 'delivered', 'accepted', 'reported', 'done', 'failed', 'expired', 'cancelled'];
+// The daemon's readings that need no proof to be shown.
+const REQUEST_LABEL_KEYS = {
+  'waiting': 'request_label_waiting',
+  'typed, unconfirmed': 'request_label_typed_unconfirmed',
+  'fetched, unconfirmed': 'request_label_fetched_unconfirmed',
+  'delivered to the holder': 'request_label_delivered',
+  'in a completed model call': 'request_label_in_model_call',
+  'accepted by the holder': 'request_label_accepted',
+  'reported: finished, not accepted': 'request_label_not_accepted',
+  'failed': 'request_label_failed',
+  'expired': 'request_label_expired',
+  'cancelled': 'request_label_cancelled',
+};
+// How a closed request reads, by how datawatch's check proved it.
+const REQUEST_PROOF_KEYS = {
+  done: 'request_label_done',
+  delivered: 'request_label_delivered_only',
+  accepted_unproven: 'request_label_accepted_unproven',
+};
+const REQUEST_FRESH = {
+  loadError: '', message: '', isError: false, busy: false, selected: '', state: '', reason: '', words: '',
+  toSession: '', repeatOK: false, roleScope: '', roleSession: '', roleForce: false, roleReason: '',
+};
+window._requests = Object.assign({ requests: null, roles: [] }, REQUEST_FRESH);
+
+// requestLabelText is the reading shown. Only a request closed with plain proof
+// reads "done", whatever reading arrives.
+function requestLabelText(v) {
+  const has = (map, k) => Object.prototype.hasOwnProperty.call(map, k);
+  const state = String((v && v.state) || '');
+  if (state === 'done') {
+    const proof = String(v.proof_as || '');
+    return t(has(REQUEST_PROOF_KEYS, proof) ? REQUEST_PROOF_KEYS[proof] : 'request_label_closed_unproven');
+  }
+  const label = String((v && v.label) || '');
+  return has(REQUEST_LABEL_KEYS, label) ? t(REQUEST_LABEL_KEYS[label]) : state;
+}
+
+function _reqText(key, vars) { return escHtml(t(key, vars)); }
+
+function _reqAddress(x) {
+  const scope = (x && x.scope) || {};
+  return `${(x && x.role) || ''}@${scope.kind || ''}:${scope.id || ''}`;
+}
+
+function _reqRowHtml(v) {
+  const id = String(v.id || '');
+  const bits = [];
+  if (v.holder && v.holder.session_id) bits.push(t('requests_row_holder', [v.holder.session_id]));
+  if (v.reason_code) bits.push(t('requests_row_reason', [v.reason_code]));
+  if (v.overdue) bits.push(t('requests_row_overdue'));
+  if (v.may_run_twice) bits.push(t('requests_row_may_run_twice'));
+  return `<div class="delivery-row"><label>
+    <input type="radio" name="requestsPick" data-id="${escHtml(id)}" aria-label="${_reqText('requests_select', [id])}"${window._requests.selected === id ? ' checked' : ''} onchange="requestsSelect(this.dataset.id)">
+    <span><strong>${escHtml(id)}</strong> · ${escHtml(requestLabelText(v))} · ${escHtml(v.kind)} · ${escHtml(_reqAddress(v))}
+    <span class="delivery-meta">${bits.map(escHtml).join(' · ')}</span></span>
+  </label></div>`;
+}
+
+function _reqRoleHtml(b, index, off) {
+  const bits = [t('requests_row_holder', [b.session_id || ''])];
+  if (b.self_given) bits.push(t('requests_role_self'));
+  if (!b.can_take_at) bits.push(t('requests_role_unproven'));
+  return `<div class="delivery-row"><strong>${escHtml(_reqAddress(b))}</strong>
+    <span class="delivery-meta">${bits.map(escHtml).join(' · ')}</span>
+    <button type="button" class="btn-secondary delivery-btn" onclick="requestsRoleRelease(${index})"${off}>${_reqText('requests_role_release')}</button></div>`;
+}
+
+function requestsPanelHtml() {
+  const d = window._requests;
+  const intro = `<div class="delivery-meta">${_reqText('requests_intro')}</div>`;
+  if (!d.requests) {
+    return intro + (d.loadError
+      ? `<div class="delivery-message delivery-error" role="alert">${_reqText('requests_load_failed', [d.loadError])}</div>`
+      : `<div class="delivery-meta">${_reqText('requests_loading')}</div>`);
+  }
+  const off = d.busy ? ' disabled' : '';
+  const button = (fn, key) => `<button type="button" class="btn-secondary delivery-btn" onclick="${fn}"${off}>${_reqText(key)}</button>`;
+  const field = (name, key, value) => `<label class="delivery-meta">${_reqText(key)}
+    <input type="text" class="form-input delivery-input" value="${escHtml(value)}" oninput="requestsField('${name}', this.value)"></label>`;
+  const check = (name, key, on) => `<label class="delivery-meta"><input type="checkbox"${on ? ' checked' : ''} onchange="requestsField('${name}', this.checked)"> ${_reqText(key)}</label>`;
+  const options = [''].concat(REQUEST_STATES).map(s =>
+    `<option value="${s}"${d.state === s ? ' selected' : ''}>${s ? escHtml(s) : _reqText('requests_state_all')}</option>`).join('');
+  let rows = d.requests.slice(0, REQUEST_MAX_ROWS).map(_reqRowHtml).join('');
+  if (!d.requests.length) rows = `<div class="delivery-meta">${_reqText('requests_empty')}</div>`;
+  if (d.requests.length > REQUEST_MAX_ROWS) rows += `<div class="delivery-meta">${_reqText('requests_more_rows', [d.requests.length - REQUEST_MAX_ROWS])}</div>`;
+  const roles = d.roles.length
+    ? d.roles.map((b, i) => _reqRoleHtml(b, i, off)).join('')
+    : `<div class="delivery-meta">${_reqText('requests_roles_empty')}</div>`;
+  const status = d.busy ? t('requests_working') : d.message;
+  return `${intro}
+    <div class="delivery-actions"><label class="delivery-meta">${_reqText('requests_state_filter')}
+      <select class="form-input delivery-input" onchange="requestsFilter(this.value)">${options}</select></label>${button('loadRequestsPanel()', 'requests_refresh')}</div>
+    <div class="delivery-group"><div class="delivery-group-title">${_reqText('requests_count', [d.requests.length])}</div>${rows}</div>
+    <div class="delivery-meta">${_reqText('requests_actions_help')}</div>
+    <div class="delivery-actions">${field('reason', 'requests_reason_label', d.reason)}${field('words', 'requests_words_label', d.words)}${field('toSession', 'requests_to_session_label', d.toSession)}</div>
+    ${check('repeatOK', 'requests_repeat_ok', d.repeatOK)}
+    <div class="delivery-actions">${button("requestsAction('reissue')", 'requests_reissue')}${button("requestsAction('drop')", 'requests_drop')}${button("requestsAction('force')", 'requests_force')}${button("requestsAction('accept-unproven')", 'requests_accept_unproven')}</div>
+    <div class="delivery-group"><div class="delivery-group-title">${_reqText('requests_roles_title')}</div>${roles}</div>
+    <div class="delivery-actions">${field('roleScope', 'requests_role_scope_label', d.roleScope)}${field('roleSession', 'requests_role_session_label', d.roleSession)}${field('roleReason', 'requests_reason_label', d.roleReason)}</div>
+    ${check('roleForce', 'requests_role_force', d.roleForce)}
+    <div class="delivery-actions">${button('requestsRoleGive()', 'requests_role_give')}</div>
+    ${status ? `<div class="delivery-message${d.isError && !d.busy ? ' delivery-error' : ''}" role="status">${escHtml(status)}</div>` : ''}`;
+}
+
+function requestsPaint() {
+  const el = document.getElementById('requestsPanel');
+  if (el) el.innerHTML = requestsPanelHtml();
+}
+
+// loadRequestsPanel reads the list and the roles. fresh forgets the choices and
+// messages of an earlier visit, or of another server.
+function loadRequestsPanel(opts) {
+  const d = window._requests;
+  if (opts && opts.fresh) {
+    Object.assign(d, { requests: null, roles: [] }, REQUEST_FRESH);
+    requestsPaint();
+  }
+  const list = '/api/requests' + (d.state ? '?state=' + encodeURIComponent(d.state) : '');
+  return Promise.all([apiFetch(list), apiFetch('/api/requests/roles')])
+    .then(([l, r]) => {
+      d.requests = (l && l.requests) || [];
+      d.roles = (r && r.roles) || [];
+      d.loadError = '';
+      if (!d.requests.some(v => v.id === d.selected)) d.selected = '';
+      requestsPaint();
+    })
+    .catch(err => { d.requests = null; d.loadError = _dlvErrorText(err); requestsPaint(); });
+}
+
+function requestsFilter(state) {
+  window._requests.state = REQUEST_STATES.includes(state) ? state : '';
+  return loadRequestsPanel();
+}
+
+// The two handlers below do not redraw, so a field keeps the focus.
+function requestsSelect(id) { window._requests.selected = String(id || ''); }
+function requestsField(name, value) {
+  if (!Object.prototype.hasOwnProperty.call(REQUEST_FRESH, name)) return;
+  window._requests[name] = typeof REQUEST_FRESH[name] === 'boolean' ? !!value : String(value || '');
+}
+
+function _reqSay(message, isError) {
+  Object.assign(window._requests, { message, isError: !!isError });
+  requestsPaint();
+  return Promise.resolve();
+}
+
+// _reqPost sends one change, one at a time, and shows a refusal as the daemon
+// worded it.
+function _reqPost(path, body, done) {
+  const d = window._requests;
+  if (d.busy) return Promise.resolve();
+  Object.assign(d, { busy: true, message: '', isError: false });
+  requestsPaint();
+  return apiFetch(path, { method: 'POST', body: JSON.stringify(body) })
+    .then(res => { d.busy = false; d.message = done(res || {}); return loadRequestsPanel(); })
+    .catch(err => { d.busy = false; return _reqSay(_dlvErrorText(err), true); });
+}
+
+function requestsAction(verb) {
+  const d = window._requests;
+  if (!['reissue', 'drop', 'force', 'accept-unproven'].includes(verb)) return Promise.resolve();
+  const id = d.selected;
+  if (!id) return _reqSay(t('requests_need_selection'), true);
+  const reason = d.reason.trim();
+  if (!DELIVERY_REASON_RE.test(reason)) return _reqSay(t('requests_need_reason'), true);
+  const body = { reason_code: reason };
+  const words = d.words.trim();
+  if (verb === 'accept-unproven' && !words) return _reqSay(t('requests_need_words'), true);
+  if (words) body.words = words;
+  if (verb === 'reissue' && d.repeatOK) body.repeat_ok = true;
+  if (verb === 'force' && d.toSession.trim()) body.to_session = d.toSession.trim();
+  const send = () => _reqPost('/api/requests/' + encodeURIComponent(id) + '/' + verb, body, res => {
+    // Words and a target belong to one action and are never sent with the next.
+    Object.assign(d, { selected: '', repeatOK: false, words: '', toSession: '' });
+    return t('requests_changed', [res.id || id, requestLabelText(res)]);
+  });
+  if (verb === 'drop') { showConfirmModal(t('requests_confirm_drop', [id]), send); return Promise.resolve(); }
+  if (verb === 'force') { showConfirmModal(t('requests_confirm_force', [id]), send); return Promise.resolve(); }
+  return send();
+}
+
+function requestsRoleGive() {
+  const d = window._requests;
+  const scope = d.roleScope.trim();
+  const session = d.roleSession.trim();
+  if (!scope || !session) return _reqSay(t('requests_role_need_fields'), true);
+  const body = { role: 'supervisor', scope: { kind: 'project', id: scope }, session_id: session };
+  if (d.roleForce) body.force = true;
+  if (d.roleReason.trim()) body.reason_code = d.roleReason.trim();
+  return _reqPost('/api/requests/roles/give', body, () => { d.roleForce = false; return t('requests_role_given'); });
+}
+
+function requestsRoleRelease(index) {
+  const b = window._requests.roles[index];
+  if (!b) return Promise.resolve();
+  return _reqPost('/api/requests/roles/release', { role: b.role, scope: b.scope, session_id: b.session_id }, () => t('requests_role_released'));
 }
 
 // ── Requirements report card (web setup view) ─────────────────────────────────

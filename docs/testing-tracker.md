@@ -6359,3 +6359,29 @@ An Automation's limit on members running at once, its stage gate and its decisio
 | A session end does not reach another session in a shared linked worktree, by full or short session id; its own processes are still ended | **Yes** (`TestSessionEndReap_SharedLinkedWorktreeOtherSessionScriptSurvives`, `TestSessionEndReap_LiveSessionProcessInEndedWorktreeSurvives`) | **No** | Real sleeping scripts in temp folders, real `/proc`, real signals, through the daemon's reap wiring |
 | Host load reap: shared project folders and worktrees a running session uses are not evidence; an ended session's own worktree is still reaped, a running session's process in it is not | **Yes** (`TestHostLoadReap_*` in `cmd/datawatch/session_end_reap_shared_test.go`) | **No** | Same fixtures; load and clock faked |
 
+## "Done when" lists (report only)
+
+| Interface | Tested | Validated | Test conditions and notes |
+|---|---|---|---|
+| Core rules against a false done (`internal/acceptance`) | **Yes** (`rules_test.go`, `git_test.go`, `receipt_test.go`, `close_test.go`, `kind_test.go`, `asks_marker_test.go`, `start_guard_test.go`: fakes, an injected clock and temporary git repositories) | **No** | Rule 10 (reviewer quotes) belongs to the reviewer build |
+| REST `/api/acceptance*`, config keys, audit event | **Yes** (`internal/server/acceptance_test.go`, `internal/audit/cef_acceptance_test.go`) | **No** | Handlers called directly; no daemon started |
+| MCP tools, registered only in report mode | **Yes** (`internal/mcp/acceptance_test.go`) | **No** | No live tool call |
+| CLI `datawatch acceptance` | **Yes** (`cmd/datawatch/cli_acceptance_test.go`: body and verbs) | **No** | Not run against a daemon |
+| Comm `acceptance` | **Yes** (`internal/router/acceptance_comm_test.go`: parse, request bodies, secure replies; `acceptance_off_test.go`: an off setting leaves plain messages alone; `cmd/datawatch/acceptance_testmessage_wiring_test.go`: a real daemon's test-message route, off, report and off again) | **No** | No channel backend |
+| PWA table, list view, settings, locales en de es fr ja | **Yes** (`internal/server/web/app-done-when.test.js`) | **No** | Not opened in a browser; no Playwright story yet; no smoke script yet |
+
+
+## Requests: roles, reminders, proof, typed input, pi
+
+| Interface | Tested | Validated | Test conditions and notes |
+|---|---|---|---|
+| Roles, reminder limits, reminders, typed once | **Yes** (`internal/delivery/request_roles_test.go`, `request_notice_test.go`, `request_typed_test.go`) | **No** | Fakes and an injected clock; no live daemon |
+| "Done when" check, receipt probe, version resolver | **Yes** (`internal/delivery/request_proof_test.go`) | **No** | Real list engine and temporary git repositories |
+| Over the real request store | **Yes** (`request_proof_join_test.go`) | **No** | Skips until the store is in the tree; run in a combined copy before the merge |
+| Typed input records only `request <id> typed` | **Yes** (`internal/session/request_typed_test.go`, `cmd/datawatch/delivery_wiring_typer_test.go`) | **No** | Fake tmux; no real terminal. The pane output log is not covered: it shows what was typed |
+| pi extension | **Yes** (`internal/llm/backends/pi/delivery_test.go`) | **Sandbox** | Under node against a fake pi; and a sandbox proof with a sandbox daemon, real pi 1.3.0, one local model and a separate proxy (follow-up delivery with the note). Not run on a live daemon |
+| pi launch wiring | **Yes** (`cmd/datawatch/launch_pi_delivery_test.go`, `internal/session/delivery_extension_launch_test.go`) | **Sandbox** | Sandbox pi sessions started by the product's own launch command. Restart is checked by test only |
+| Reminder stop at take-by, typed requests in the limits, approved times | **Yes** (`internal/delivery/request_decisions_notice_test.go`) | **No** | Fakes, real store, injected clock |
+| No typing after take-by; a later role holder is told once | **Yes** (`internal/delivery/request_decisions_later_test.go`) | **No** | Real store reopened as a restart, fake typer and clock; not run with a real Claude Code or on a live daemon |
+| Only datawatch creates kinds that close on receipt | **Yes** (`internal/delivery/request_decisions_kinds_test.go`) | **No** | Every caller kind and surface at the store |
+| Repair of damaged request storage; damage never stops a start | **Yes** (`internal/delivery/request_repair_test.go`, `cmd/datawatch/delivery_wiring_damage_test.go`) | **No** | Damage planted in temporary stores; not run on a live daemon |

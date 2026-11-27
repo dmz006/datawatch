@@ -32,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
+	"github.com/dmz006/datawatch/internal/delivery"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/fingerprint"
@@ -305,6 +306,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/usage/extra-credit", api.handleUsageExtraCredit)
 	apiMux.HandleFunc("/api/usage/advice", api.handleUsageAdvice)
 	apiMux.HandleFunc("/api/usage/autolanes", api.handleUsageAutoLanes)
+	apiMux.HandleFunc("/api/acceptance", api.handleAcceptance)
+	apiMux.HandleFunc("/api/acceptance/edit", api.handleAcceptanceEdit)
+	apiMux.HandleFunc("/api/acceptance/confirm", api.handleAcceptanceConfirm)
+	apiMux.HandleFunc("/api/acceptance/accept", api.handleAcceptanceAccept)
+	apiMux.HandleFunc("/api/acceptance/report", api.handleAcceptanceReport)
+	apiMux.HandleFunc("/api/acceptance/catalog", api.handleAcceptanceCatalog)
 	apiMux.HandleFunc("/api/pause", api.handlePause)
 	apiMux.HandleFunc("/api/pause/resume", api.handlePauseResume)
 	apiMux.HandleFunc("/api/delivery", api.handleDelivery)
@@ -839,6 +846,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL357 — durable role-based work queue.
 	apiMux.HandleFunc("/api/queue", api.handleQueue)
 	apiMux.HandleFunc("/api/queue/", api.handleQueue)
+	apiMux.HandleFunc(delivery.RouteRequests, api.handleRequests) // delivery job 4
+	apiMux.HandleFunc(delivery.RouteRequests+"/", api.handleRequests)
 
 	// BL358 — discussion push/subscribe.
 	apiMux.HandleFunc("/api/discussion-subs", api.handleDiscussionSubs)

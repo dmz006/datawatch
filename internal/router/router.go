@@ -1430,7 +1430,7 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		return
 	}
 
-	cmd := Parse(msg.Text)
+	cmd := r.parseMessage(msg.Text)
 
 	switch cmd.Type {
 	case CmdNew:
@@ -1541,7 +1541,7 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		r.handleSessionCmd(cmd)
 	// Sprint Sx2 — comm parity for v3.5–v3.7 endpoints.
 	case CmdRest:
-		if !r.handleDeliveryRest(cmd, at.Caller) {
+		if !r.handleRequestRest(cmd, at.Caller) && !r.handleDeliveryRest(cmd, at.Caller) {
 			r.handleRest(cmd)
 		}
 	case CmdCost:
@@ -1556,6 +1556,10 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		r.handleCooldown(cmd)
 	case CmdDelivery:
 		r.handleDelivery(cmd, at.Caller)
+	case CmdRequest:
+		r.handleRequest(cmd, at.Caller)
+	case CmdAcceptance:
+		r.handleAcceptance(cmd)
 	case CmdPause:
 		r.handlePause(cmd)
 	case CmdResume:

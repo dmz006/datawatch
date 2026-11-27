@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/acceptance"
 	"github.com/dmz006/datawatch/internal/trace"
 	"github.com/dmz006/datawatch/internal/trace/observe"
 	"io"
@@ -426,8 +427,10 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30
 		newPauseCmd(),          // operator pause
+		newAcceptanceCmd(),     // "done when" lists
 		newResumeCmd(),         // operator pause
 		newDeliveryCmd(),       // delivery check
+		newRequestCmd(),        // delivery requests
 		newUsageBackoffCmd(),   // BL428 Phase 4
 		newStaleCmd(),          // BL40
 		newCostCmd(),           // BL6
@@ -990,13 +993,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		cfg = config.DefaultConfig()
 	} else {
 		var err error
-		cfg, encKey, err = loadConfigDeriveKeys(deliveryWire.openKey)
+		cfg, encKey, err = loadConfigDeriveKeys(deliveryWire.openKeyAtStart)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
 		if encKey == nil {
 			// A sealed delivery store refuses a non-secure start.
-			if err := deliveryWire.openKey(cfg, nil); err != nil {
+			if err := deliveryWire.openKeyAtStart(cfg, nil); err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}
 		}
@@ -1642,6 +1645,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// <dataDir>/.mcp.json (see instance_mcp_wiring.go): nil when the channel
 	// is off (also for the shutdown path below).
 	var instanceMCP *channel.InstanceMCPConfig
+	// A pi session gets its own credential for requests with or without
+	// Claude's channel.
+	piLaunch := piPreLaunch{cfg: cfg, wire: wirePiDelivery,
+		setEnv: func(tmuxSession, key, value string) error {
+			return mgr.SetPaneEnv(tmuxSession, map[string]string{key: value})
+		}}
+	if sessionTokenStore != nil {
+		piLaunch.revoke = sessionTokenStore.Revoke
+		piLaunch.mint = func(sessionID string) (string, error) {
+			return sessionTokenStore.Mint(sessionID, instanceSessionGrantCaps(cfg.Session.Capabilities, cfg.MCP.SelfConfigEnabled()))
+		}
+	}
 	if claudeChannelEnabled {
 		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")
 		// The shared instance env carries NO token: the instance .mcp.json
@@ -1811,6 +1826,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				},
 			})
 
+			piLaunch.run(sess, sessionChannelEnv["DATAWATCH_TOKEN"])
+
 			if sess.BackendFamily != "claude-code" {
 				return
 			}
@@ -1879,6 +1896,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		})
 		wireSessionEndReap(mgr)
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			deliveryWire.sessionEnded(sess.FullID)
 			// Shell sessions: report the command's exit code from the
 			// daemon's own session record to the trace recorder.
 			if traceObserver != nil && sess.BackendFamily == "shell" && sess.TmuxSession != "" {
@@ -2011,6 +2029,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				autonomousFilesHook(sess)
 			}
 		})
+	} else {
+		deliveryWire.hooksWithoutChannel(mgr, piLaunch)
 	}
 
 	// Fallback chain: when a session hits rate limit, start a fallback session with
@@ -2292,7 +2312,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 
 	// BL357 — durable role-based work queue.
-	queueStore, err := session.NewQueueStore(queueStorePath(cfg))
+	queueStore, err := openStartupQueue(queueStorePath(cfg))
 	if err != nil {
 		return fmt.Errorf("open queue store: %w", err)
 	}
@@ -7954,7 +7974,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}, amgr)
 			var requestWatchReader requestwatch.Reader = requestWatcher
 			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
-			wirePause(cfg, amgr, httpServer)
+			if ps := wirePause(cfg, amgr, httpServer); ps != nil {
+				deliveryWire.pause = ps
+			}
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, headroom.Gate, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)
@@ -9151,6 +9173,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
 		testRouter := router.NewRouter(cfg.Hostname, "__test__", nil, mgr, cfg.Session.TailLines, wm)
+		// The live settings, as the messaging routers have them: a chat command
+		// that depends on a setting behaves the same on this route.
+		testRouter.SetConfig(cfg)
 		// The comm verbs that proxy REST (autonomous tags, attention, ...) need
 		// the local loopback port, the same as the messaging routers above.
 		if cfg.Server.Enabled && cfg.Server.Port > 0 {
@@ -10100,7 +10125,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 	// failed earlier has written none of its records. It reports only.
 	if workerBootstrap == nil {
 		if _, err := deliveryWire.start(ctx, deliveryDeps{cfg: cfg, sessions: mgr, schedules: schedStore,
-			autonomy: autonomousMgrRef, pipelines: pipeExec, http: httpServer}); err != nil {
+			autonomy: autonomousMgrRef, pipelines: pipeExec, http: httpServer,
+			alert: func(title, body string) {
+				alertStore.AddSystem(alertspkg.LevelError, title, body)
+			}, queue: queueStore}); err != nil {
 			return fmt.Errorf("start the delivery check: %w", err)
 		}
 	}
@@ -10146,6 +10174,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
+		AcceptanceTools:        cfg.Acceptance.Mode == acceptance.ModeReport,
 		AlertStore:             alertStore,
 		SchedStore:             schedStore,
 		ExitHookStore:          exitHookStore,
@@ -10183,6 +10212,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			os.Exit(0)
 		}, liveRestartManager, liveRestartSettings),
 	})
+	if reqs := deliveryWire.requestStore(); reqs != nil {
+		mcpSrv.SetRequests(reqs)
+	}
 	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
 	mcpSrv.SetWebPort(cfg.Server.Port)
 	mcpSrv.SetToken(cfg.Server.Token)
@@ -15856,12 +15888,13 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpSchedStore, _ := session.NewScheduleStore(schedStorePath(cfg))
 	mcpCmdLib, _ := session.NewCmdLibrary(cmdLibPath(cfg))
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
-	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                            // BL357
+	mcpQueueStore := daemonQueue()                                                            // BL357: the daemon's queue; no file is opened
 	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))              // BL358
 	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360 (standalone stdio MCP: its own opener, safe through the locked re-read and merge in Put and Delete)
 	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
+		AcceptanceTools:        cfg.Acceptance.Mode == acceptance.ModeReport,
 		AlertStore:             mcpAlertStore,
 		SchedStore:             mcpSchedStore,
 		QueueStore:             mcpQueueStore,  // BL357
@@ -20047,19 +20080,12 @@ func newQueueCmd() *cobra.Command {
 		Use:   "push",
 		Short: "Push a new work item onto the queue",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
 			role, _ := cmd.Flags().GetString("role")
 			payloadStr, _ := cmd.Flags().GetString("payload")
 			if role == "" {
 				return fmt.Errorf("--role is required")
 			}
-			qs, err := session.NewQueueStore(queueStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open queue store: %w", err)
-			}
+			qs := daemonQueue()
 			var payload map[string]any
 			if payloadStr != "" {
 				if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
@@ -20082,20 +20108,13 @@ func newQueueCmd() *cobra.Command {
 		Use:   "claim",
 		Short: "Claim the oldest pending item for a role",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
 			role, _ := cmd.Flags().GetString("role")
 			claimedBy, _ := cmd.Flags().GetString("claimed-by")
 			lease, _ := cmd.Flags().GetInt("lease")
 			if role == "" {
 				return fmt.Errorf("--role is required")
 			}
-			qs, err := session.NewQueueStore(queueStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open queue store: %w", err)
-			}
+			qs := daemonQueue()
 			it, err := qs.Claim(role, claimedBy, lease)
 			if err != nil {
 				return err
@@ -20117,19 +20136,12 @@ func newQueueCmd() *cobra.Command {
 		Use:   "complete",
 		Short: "Mark a claimed item as complete",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
 			id, _ := cmd.Flags().GetString("id")
 			resultStr, _ := cmd.Flags().GetString("result")
 			if id == "" {
 				return fmt.Errorf("--id is required")
 			}
-			qs, err := session.NewQueueStore(queueStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open queue store: %w", err)
-			}
+			qs := daemonQueue()
 			var result map[string]any
 			if resultStr != "" {
 				if err := json.Unmarshal([]byte(resultStr), &result); err != nil {
@@ -20151,19 +20163,12 @@ func newQueueCmd() *cobra.Command {
 		Use:   "fail",
 		Short: "Mark a claimed item as failed",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
 			id, _ := cmd.Flags().GetString("id")
 			errMsg, _ := cmd.Flags().GetString("error")
 			if id == "" {
 				return fmt.Errorf("--id is required")
 			}
-			qs, err := session.NewQueueStore(queueStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open queue store: %w", err)
-			}
+			qs := daemonQueue()
 			if err := qs.Fail(id, errMsg); err != nil {
 				return err
 			}
@@ -20179,17 +20184,13 @@ func newQueueCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List work queue items",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := loadConfig()
+			role, _ := cmd.Flags().GetString("role")
+			state, _ := cmd.Flags().GetString("state")
+			qs := daemonQueue()
+			items, err := qs.ListErr(role, state)
 			if err != nil {
 				return err
 			}
-			role, _ := cmd.Flags().GetString("role")
-			state, _ := cmd.Flags().GetString("state")
-			qs, err := session.NewQueueStore(queueStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open queue store: %w", err)
-			}
-			items := qs.List(role, state)
 			if len(items) == 0 {
 				fmt.Println("No queue items found.")
 				return nil
@@ -20207,7 +20208,7 @@ func newQueueCmd() *cobra.Command {
 	listCmd.Flags().String("role", "", "Filter by role")
 	listCmd.Flags().String("state", "", "Filter by state (pending|claimed|complete|failed)")
 
-	cmd.AddCommand(pushCmd, claimCmd, completeCmd, failCmd, listCmd)
+	cmd.AddCommand(pushCmd, claimCmd, completeCmd, failCmd, listCmd, newQueueExportCmd())
 	return cmd
 }
 

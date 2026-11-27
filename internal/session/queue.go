@@ -3,6 +3,8 @@ package session
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"sync"
@@ -42,6 +44,14 @@ type QueueStore struct {
 	mu    sync.Mutex
 	path  string
 	items map[string]*QueueItem
+
+	// Over records instead of the file (queue_records.go): saved is what each
+	// record holds. deferred: the records are not open yet. remote: the
+	// daemon holds the queue.
+	records  QueueRecords
+	saved    map[string][]byte
+	deferred bool
+	remote   QueueCall
 }
 
 // NewQueueStore creates or loads a queue store from path.
@@ -75,6 +85,13 @@ func (s *QueueStore) load() error {
 }
 
 func (s *QueueStore) save() error {
+	if s.records != nil {
+		return s.saveRecords()
+	}
+	if s.deferred {
+		s.items = map[string]*QueueItem{}
+		return ErrQueueNotReady
+	}
 	items := make([]*QueueItem, 0, len(s.items))
 	for _, it := range s.items {
 		items = append(items, it)
@@ -94,6 +111,9 @@ func (s *QueueStore) save() error {
 
 // Push adds a new item to the queue and returns it.
 func (s *QueueStore) Push(role string, payload map[string]any) (*QueueItem, error) {
+	if s.remote != nil {
+		return s.remoteItem("/api/queue/push", map[string]any{"role": role, "payload": payload})
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -114,15 +134,25 @@ func (s *QueueStore) Push(role string, payload map[string]any) (*QueueItem, erro
 		UpdatedAt: now,
 	}
 	s.items[id] = it
-	return it, s.save()
+	if err := s.save(); err != nil {
+		return nil, err
+	}
+	return it, nil
 }
 
 // Claim atomically claims the oldest pending item for the given role.
 // Returns (nil, nil) if no items are available.
 // claimedBy is the session FullID. leaseSeconds is how long the claim is held.
 func (s *QueueStore) Claim(role, claimedBy string, leaseSeconds int) (*QueueItem, error) {
+	if s.remote != nil {
+		return s.remoteItem("/api/queue/claim",
+			map[string]any{"role": role, "claimed_by": claimedBy, "lease_seconds": leaseSeconds})
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.deferred {
+		return nil, ErrQueueNotReady
+	}
 
 	if leaseSeconds <= 0 {
 		leaseSeconds = 300
@@ -154,11 +184,17 @@ func (s *QueueStore) Claim(role, claimedBy string, leaseSeconds int) (*QueueItem
 	it.ClaimedBy = claimedBy
 	it.LeaseExpiry = now.Add(time.Duration(leaseSeconds) * time.Second)
 	it.UpdatedAt = now
-	return it, s.save()
+	if err := s.save(); err != nil {
+		return nil, err
+	}
+	return it, nil
 }
 
 // Complete marks a claimed item as done.
 func (s *QueueStore) Complete(id string, result map[string]any) error {
+	if s.remote != nil {
+		return s.send(http.MethodPost, "/api/queue/complete", map[string]any{"id": id, "result": result}, nil)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -182,6 +218,9 @@ func (s *QueueStore) Complete(id string, result map[string]any) error {
 
 // Fail marks a claimed item as failed.
 func (s *QueueStore) Fail(id, errMsg string) error {
+	if s.remote != nil {
+		return s.send(http.MethodPost, "/api/queue/fail", map[string]any{"id": id, "error": errMsg}, nil)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -203,6 +242,10 @@ func (s *QueueStore) Fail(id, errMsg string) error {
 // List returns all items, optionally filtered by role and/or state.
 // Empty role or state means "any".
 func (s *QueueStore) List(role, state string) []*QueueItem {
+	if s.remote != nil {
+		out, _ := s.ListErr(role, state) // ListErr says why there is nothing
+		return out
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -224,6 +267,14 @@ func (s *QueueStore) List(role, state string) []*QueueItem {
 
 // Get returns an item by ID.
 func (s *QueueStore) Get(id string) (*QueueItem, bool) {
+	if s.remote != nil {
+		for _, it := range s.List("", "") {
+			if it.ID == id {
+				return it, true
+			}
+		}
+		return nil, false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	it, ok := s.items[id]
@@ -233,6 +284,9 @@ func (s *QueueStore) Get(id string) (*QueueItem, bool) {
 // ExpireLeases checks for claimed items past their lease expiry and resets
 // them to pending. Returns the number of items reset.
 func (s *QueueStore) ExpireLeases() int {
+	if s.remote != nil {
+		return 0 // the daemon expires its own
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -248,13 +302,18 @@ func (s *QueueStore) ExpireLeases() int {
 		}
 	}
 	if n > 0 {
-		_ = s.save()
+		if err := s.save(); err != nil && s.records != nil {
+			return 0 // undone; tried again
+		}
 	}
 	return n
 }
 
 // Delete removes an item (any state).
 func (s *QueueStore) Delete(id string) error {
+	if s.remote != nil {
+		return s.send(http.MethodDelete, "/api/queue/"+url.PathEscape(id), nil, nil)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

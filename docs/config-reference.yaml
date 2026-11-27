@@ -5673,6 +5673,49 @@ delivery:
   notify: true
   # Seconds between checks. Default 300, 60 to 86400. Read at daemon start.
   interval_seconds: 300
+  # Requests (docs/howto/requests.md). All six are read live; 0 or absent is
+  # the default except for the two reminder limits. A hello has its own due time
+  # of 1 hour; request_due_seconds_by_kind {hello: ...} replaces it. A request
+  # nobody fetched gets no more reminders once its take-by time passes.
+  # How long a request waits to be taken before it is listed, in seconds.
+  request_take_by_seconds: 3600
+  # How long a request has before it is overdue, in seconds.
+  request_due_seconds: 86400
+  # Replaces request_due_seconds for single request kinds, e.g. {ask: 172800}.
+  request_due_seconds_by_kind: {}
+  # Shortest time between two reminders to one session, in seconds.
+  reminder_interval_seconds: 900
+  # Reminder lines and typed requests to one session each hour. Default 2;
+  # 0 types neither.
+  reminders_per_session_hour: 2
+  # The same on this computer each hour. Default 20; 0 types neither.
+  reminders_per_host_hour: 20
+
+# "Done when" lists (docs/howto/done-when.md). Report only: nothing is held,
+# blocked or merged because of a list.
+acceptance:
+  # off (default) or report. Any other value is off.
+  mode: "off"
+  # Rework rounds per list before it is the operator's (0 = 2).
+  rework_rounds: 0
+  # Retries of a run that failed for an infrastructure reason (0 = 2).
+  infra_retries: 0
+  # Time limit of one command check, in seconds (0 = 600).
+  check_timeout_seconds: 0
+  # Oldest accepted answer from a source, in seconds (0 = 300).
+  freshness_seconds: 0
+  # Early warning before a needed-by time, in hours (0 = 24).
+  warn_hours: 0
+  # File only (no API writes it): a YAML file that replaces default item lists.
+  defaults_file: ""
+  # File only (no API writes it): saved, named commands that lists refer to.
+  project_checks: {}
+  #  export-test:
+  #    command: go test -count=1 -v -run TestExport ./export/
+  #    inputs: [Makefile]
+  #    expect:
+  #      - {pass: "--- PASS: TestExport", fail: "--- FAIL: TestExport"}
+  #    timeout_seconds: 300
 
 # Operator pause (global and per project). The pause itself is runtime state the
 # operator sets (datawatch pause / resume, REST /api/pause, MCP pause_set,
