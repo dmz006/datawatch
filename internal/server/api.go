@@ -281,6 +281,7 @@ type Server struct {
 	schedStore         *session.ScheduleStore
 	exitHookStore      *session.ExitHookStore      // BL356
 	queueStore         *session.QueueStore         // BL357
+	requests           delivery.RequestService     // delivery job 4; nil until wired
 	discussionSubStore *session.DiscussionSubStore // BL358
 	resultStore        *session.ResultStore        // BL360
 	// scheduleResultStore — per-schedule structured result history backing

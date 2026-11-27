@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -43,6 +44,22 @@ type QueueStore struct {
 	path  string
 	items map[string]*QueueItem
 }
+
+// QueueRecords keeps queue items one record each. The daemon passes the
+// delivery request store, which seals them on a secure install; this package
+// does not import it.
+type QueueRecords interface {
+	LoadQueue() ([]json.RawMessage, error)
+	SaveQueueItem(id string, data []byte) error
+	DeleteQueueItem(id string) error
+}
+
+// ErrQueueRecordsNotBuilt: delivery job 4 part A has not built this yet.
+var ErrQueueRecordsNotBuilt = errors.New("queue records: not built yet")
+
+// NewQueueStoreOn loads a queue store over records instead of one file. STUB
+// (delivery job 4, part A): nothing calls it yet.
+func NewQueueStoreOn(QueueRecords) (*QueueStore, error) { return nil, ErrQueueRecordsNotBuilt }
 
 // NewQueueStore creates or loads a queue store from path.
 func NewQueueStore(path string) (*QueueStore, error) {

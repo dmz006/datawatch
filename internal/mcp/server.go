@@ -55,6 +55,7 @@ import (
 	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/delivery"
 	"github.com/dmz006/datawatch/internal/federation"
 	dwserver "github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
@@ -84,6 +85,7 @@ type Server struct {
 	schedStore          *session.ScheduleStore
 	exitHookStore       *session.ExitHookStore       // BL356
 	queueStore          *session.QueueStore          // BL357
+	requests            delivery.RequestService      // delivery job 4; nil until wired
 	subStore            *session.DiscussionSubStore  // BL358
 	resultStore         *session.ResultStore         // BL360
 	scheduleResultStore *session.ScheduleResultStore // scheduled-job result panel (GH#204)
