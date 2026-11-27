@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- A typed Claude task taller than the terminal (40 rows by default) was reported as never delivered: it was typed again, then the session was ended. Its first line scrolls off at once and Claude keeps no terminal history. datawatch now also accepts the end of the task on screen as proof it arrived. The check still looks at only one end of the task, so it cannot tell that the rest arrived; that end can now be the last one.
+
 ## v9.187.46 — Requests between sessions, with reminders
 
 ### Added
