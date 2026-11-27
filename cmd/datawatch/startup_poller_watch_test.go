@@ -38,12 +38,18 @@ type pollRun struct {
 // screen is given the number of sends so far and the time since the last one,
 // and returns the pane to show, or "" to leave it.
 func runStartPoller(m *session.Manager, fake *session.FakeTmux, first string, limit time.Duration,
+	screen func(sends int, since time.Duration) string) pollRun {
+	return runStartPollerOn(startupTestFullID, m, fake, first, limit, screen)
+}
+
+// runStartPollerOn is runStartPoller for the session sessID.
+func runStartPollerOn(sessID string, m *session.Manager, fake *session.FakeTmux, first string, limit time.Duration,
 	screen func(sends int, since time.Duration) string) (r pollRun) {
 	fake.NoEcho = true
 	fake.Pane[startupTestTmux] = first
 	respond := startPollResponder(m)
 	start := time.Now()
-	pollStartupDialog(startupTestFullID, func(id string) bool {
+	pollStartupDialog(sessID, func(id string) bool {
 		r.looks++
 		if screen != nil {
 			var since time.Duration
@@ -146,6 +152,7 @@ func TestPollerAnswersTheNextDialog(t *testing.T) {
 // input box, output that quotes the dialog, the shell left behind, an approval
 // prompt or a question nobody recognises. None of them is the same dialog.
 func TestPollerSendsNothingElseAfterItsAnswer(t *testing.T) {
+	t.Parallel()
 	box := "\n" + liveRule + "\n❯ \n" + liveRule + "\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n"
 	quoted := strings.ReplaceAll(channelsPane, "\n", "\n  ")
 	screens := map[string]struct {
@@ -166,9 +173,11 @@ func TestPollerSendsNothingElseAfterItsAnswer(t *testing.T) {
 	}
 	for label, tc := range screens {
 		t.Run(label, func(t *testing.T) {
-			m, fake := liveManager(t, channelsPane)
+			t.Parallel()
+			s := limitManager(t, channelsPane)
+			fake := s.fake
 			limit := 10 * time.Second // past the 5 s hold and the 2 s settle
-			r := runStartPoller(m, fake, channelsPane, limit, func(sends int, _ time.Duration) string {
+			r := runStartPollerOn(s.id, s.m, fake, channelsPane, limit, func(sends int, _ time.Duration) string {
 				if sends >= 1 {
 					return tc.pane
 				}
