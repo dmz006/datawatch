@@ -2747,9 +2747,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// to start in loaded environments). Answers any dialog the
 		// classifier recognises — not only the trust dialog:
 		// trust arrow keys, Enter-type accepts, or a single Esc for unsafe
-		// dialogs.
+		// dialogs. It keeps watching after an answer (see startPollResponder).
 		if claudeAutoAccept && sess.BackendFamily == "claude-code" {
-			go pollStartupDialog(sess.FullID, func(id string) bool { return answerLiveStartupDialog(mgr, id) },
+			go pollStartupDialog(sess.FullID, startPollResponder(mgr),
 				500*time.Millisecond, 45*time.Second, mgr.StartupOver)
 		}
 		// Memory context is not put into the session here. Typing it into the

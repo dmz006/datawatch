@@ -22,10 +22,11 @@ func hookDaemonURL(cfg *config.Config) string {
 	return fmt.Sprintf("%s://localhost:%d", scheme, port)
 }
 
-// pollStartupDialog answers a startup dialog of a new session that the log
-// based responders miss: it tries every interval, for at most limit, until one
-// answer is sent or over says the session is past start-up. It takes the gate
-// those responders take, so a dialog is never answered by two of them at once.
+// pollStartupDialog answers the startup dialogs of a new session that the log
+// based responders miss: it calls respond every interval, for at most limit,
+// until respond reports that it is done or over says the session is past
+// start-up. It takes the gate those responders take, so a dialog is never
+// answered by two of them at once.
 func pollStartupDialog(sessID string, respond func(string) bool, interval, limit time.Duration, over ...func(string) bool) {
 	deadline := time.Now().Add(limit)
 	for time.Now().Before(deadline) {
@@ -38,11 +39,36 @@ func pollStartupDialog(sessID string, respond func(string) bool, interval, limit
 		if _, busy := claudeStartupAccepted.LoadOrStore(sessID, struct{}{}); busy {
 			continue
 		}
-		answered := respond(sessID)
+		done := respond(sessID)
 		claudeStartupAccepted.Delete(sessID)
-		if answered {
+		if done {
 			return
 		}
+	}
+}
+
+// startPollResponder is the start poller's look at a new session's screen. It
+// never reports the poller done: an accept dialog still up or back after its
+// answer, or the next one, is answered under the usual rules (not again within
+// 5 s, and only once it has settled), until over or the time limit.
+//
+// After its first answer it only accepts. A decline is left to the other
+// responders, and the screen is first looked at without the settle step, which
+// forgets declines that a reading does not show: watching on must not let an
+// Esc be sent twice.
+func startPollResponder(m *session.Manager) func(string) bool {
+	answered := false
+	return func(sessID string) bool {
+		if answered {
+			if a, up := m.LiveStartupDialog(sessID); !up || a.Retry {
+				return false
+			}
+		}
+		a, ok := m.SettledStartupDialog(sessID)
+		if ok && (!answered || !a.Retry) && answerStartupDialog(m, sessID, a) {
+			answered = true
+		}
+		return false
 	}
 }
 
