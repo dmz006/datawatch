@@ -128,7 +128,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.41"
+var Version = "9.187.42"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4943,9 +4943,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// resolve in the manager's Effective* accessors, so the bridge
 				// copies raw values and lets unset stay unset.
 				CleanupMode:               acfgIn.Automation.CleanupMode,
+				CleanupArchived:           acfgIn.Automation.CleanupArchived,
 				CleanupRetentionHours:     acfgIn.Automation.CleanupRetentionHours,
 				CleanupMaxRemovalsPerPass: acfgIn.Automation.CleanupMaxRemovalsPerPass,
 				DiskAlertPercent:          acfgIn.Automation.DiskAlertPercent,
+				// Off by default: the shared-cache sweep removes caches any
+				// process made.
+				CleanupSharedCacheSweep: acfgIn.Automation.CleanupSharedCacheSweep,
 				// Uncommitted-work keys: raw values; the manager's Effective*
 				// accessors resolve the defaults (hold, task_files).
 				UncommittedWorkPolicy: acfgIn.Automation.UncommittedWorkPolicy,

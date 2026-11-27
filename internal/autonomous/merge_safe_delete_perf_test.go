@@ -240,7 +240,7 @@ func sdPerfBuildFixture(t *testing.T, n int) (*sdPerfFake, sdPerfExpected) {
 			exp.safe++
 			exp.ahead++
 			exp.candidates++
-			listing.WriteString(b + " 0 2\n")
+			listing.WriteString(b + " 2 0\n")
 			// Two ahead, both patches present on base, base subjects.
 			f.out["cherry "+sdPerfBase+" "+b] = "- m1\n- m2\n"
 			f.out["log "+sdPerfBase+".."+b+" --format=%s"] = "base subject one\nbase subject two\n"
@@ -251,7 +251,7 @@ func sdPerfBuildFixture(t *testing.T, n int) (*sdPerfFake, sdPerfExpected) {
 		default: // pending
 			exp.held++
 			exp.ahead++
-			listing.WriteString(b + " 0 1\n")
+			listing.WriteString(b + " 1 0\n")
 			// One ahead, the patch missing from base, a new subject.
 			f.out["cherry "+sdPerfBase+" "+b] = "+ p" + strconv.Itoa(i) + "\n"
 			f.out["log "+sdPerfBase+".."+b+" --format=%s"] = "unmerged work " + strconv.Itoa(i) + "\n"

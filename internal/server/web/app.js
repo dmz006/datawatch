@@ -27804,6 +27804,8 @@ const GENERAL_CONFIG_FIELDS = [
     // Cleanup — off does nothing, report (default) records what it would remove, on removes. The
     // status card in the Automata overview reads GET /api/autonomous/cleanup.
     { key: 'autonomous.automation.cleanup_mode', label: 'Automaton cleanup (off, report or on; default report)', labelKey: 'settings_automation_cleanup_mode', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.automation.cleanup_archived', label: 'Clean up archived Automata like other finished ones (default on)', labelKey: 'settings_automation_cleanup_archived', helpKey: 'settings_automation_cleanup_archived_help', type: 'toggle' },
+    { key: 'autonomous.automation.cleanup_shared_cache_sweep', label: 'Sweep shared temp caches (go-build and Trivy scan caches made by any program, also removed when cleanup is on; default off)', labelKey: 'settings_automation_cleanup_shared_cache_sweep', type: 'toggle' },
     { key: 'autonomous.automation.cleanup_retention_hours', label: 'Automaton cleanup retention (hours a finished Automaton worktree is kept before cleanup, whole number, default 24)', labelKey: 'settings_automation_cleanup_retention_hours', type: 'number', placeholder: '24', min: 1, step: 1, default: '24' },
     { key: 'autonomous.automation.cleanup_max_removals_per_pass', label: 'Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)', labelKey: 'settings_automation_cleanup_max_removals_per_pass', type: 'number', placeholder: '10', min: 1, step: 1, default: '10' },
     // Checks and ship steps — each mode is off, shadow (record only) or on (default). The cards in
@@ -35863,6 +35865,8 @@ function _automataKeptNotice(res) {
     no_default_branch: 'task_keep_reason_no_default_branch',
     backup_failed: 'task_keep_reason_backup_failed',
     branch_delete_failed: 'task_keep_reason_branch_delete_failed',
+    needed_by_record: 'task_keep_reason_needed_by_record',
+    over_limit: 'task_keep_reason_over_limit',
   };
   const why = Object.keys(c.reasons || {}).sort().map(k => (keys[k] ? tOr(keys[k], k) : k) + ' (' + c.reasons[k] + ')').join(', ');
   showToast(t('automata_task_worktrees_kept', [c.worktrees_kept || 0, c.branches_kept || 0, why]), 'warning', 8000);

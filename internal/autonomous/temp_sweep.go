@@ -8,8 +8,10 @@
 //
 // This sweep catches whatever that primary path could not: a removal that
 // refused at the end (a read-only file, a busy directory) or a path whose
-// release never got to run. It scans the process temp root (os.TempDir)
-// for names carrying the daemon scratch prefix, keeps only the ones the
+// release never got to run. It lists the process temp root (os.TempDir) —
+// that one level only, where the daemon creates every scratch path, never
+// inside the folders there — for names carrying the daemon scratch prefix,
+// keeps only the ones the
 // created-path record attributes to a session that is no longer live and
 // whose end mark is older than the retention window, and removes them in
 // mode on — or records them in mode report — never touching any other
@@ -96,9 +98,10 @@ type TempSessionProbe interface {
 // Behavior is bounded exactly like the worktree cleanup pass: mode off
 // does nothing even as far as walking; report lists would-removes and
 // removes nothing; on removes at most maxRemovals paths per pass (0 =
-// unlimited); the walk is rooted at tempRoot and nothing outside it is
+// unlimited); only the entries directly in tempRoot are looked at, other
+// folders are never listed, and nothing outside it is
 // ever touched; symlinks are recorded as skipped and never followed; a
-// folder the daemon cannot read is skipped with an unreadable reason, not
+// folder the daemon cannot open is skipped with an unreadable reason, not
 // counted as a failure; and every other refusal lands in Errors with the
 // path left in place.
 func SweepDaemonTemp(tempRoot string, retention time.Duration, mode string, maxRemovals int, now func() time.Time, probe TempSessionProbe) TempSweepResult {
@@ -129,9 +132,6 @@ func SweepDaemonTemp(tempRoot string, retention time.Duration, mode string, maxR
 
 	removed := 0
 	judge := func(full string, d fs.DirEntry) {
-		if full == root {
-			return // the root itself is never removed, whatever it is named
-		}
 		name := filepath.Base(full)
 		if !strings.HasPrefix(name, daemonTempPrefix) {
 			return // simply not one of the daemon's names
@@ -187,29 +187,38 @@ func SweepDaemonTemp(tempRoot string, retention time.Duration, mode string, maxR
 		}
 	}
 
-	walkErr := filepath.WalkDir(root, func(full string, d fs.DirEntry, err error) error {
-		if err != nil {
-			// A path the walk cannot inspect is not removable — record it
-			// and keep walking. A permission refusal means a private
-			// folder the daemon has no business in (owned by someone else
-			// under the temp root): it is skipped with its own reason, not
-			// counted as a failure, so an unreadable folder does not
-			// produce repeated failures on every pass. Any other refusal
-			// (the path vanished mid-walk) stays a genuine error.
-			if os.IsPermission(err) {
-				res.Skipped[full] = tempSkipUnreadable
-			} else if full != root {
-				res.Errors[full] = err
-			}
-			return nil
+	// One level only: every path the daemon records is created directly in
+	// the temp root, so there is no reason to list any folder in it. An
+	// entry the daemon cannot list or open is skipped with its own reason
+	// when that is a permission refusal (a private folder the daemon has no
+	// business in), so it does not count as a failure on every pass.
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsPermission(err) {
+			res.Skipped[root] = tempSkipUnreadable
+		} else {
+			res.Errors[root] = err
 		}
-		judge(full, d)
-		return nil
-	})
-	if walkErr != nil {
-		res.Errors[root] = walkErr
+	}
+	for _, e := range entries {
+		full := filepath.Join(root, e.Name())
+		judge(full, e)
+		if e.IsDir() && privateFolder(full) {
+			res.Skipped[full] = tempSkipUnreadable
+		}
 	}
 	return res
+}
+
+// privateFolder says the daemon may not open the folder. It opens it and
+// never lists it: nothing in another program's folder is read.
+func privateFolder(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return os.IsPermission(err)
+	}
+	_ = f.Close()
+	return false
 }
 
 var errTempSweepNoProbe = errors.New("temp-sweep: no session probe configured")

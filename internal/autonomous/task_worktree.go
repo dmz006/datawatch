@@ -200,7 +200,7 @@ func taskBranchMerged(ctx context.Context, repo, taskBranch, prdBranch string) b
 
 // CleanupTaskWorktrees releases the task worktrees of prd: those of a finished
 // task whose branch is merged into the PRD branch, or all of them when the PRD
-// has ended (completed or cancelled). Releasing is bounded by the rules in
+// has ended (completed, cancelled or archived, cleanupFinishedStatus). Releasing is bounded by the rules in
 // task_worktree_keep.go: a worktree with uncommitted or untracked files, or
 // with a live session, is never removed, and a branch is deleted only when its
 // commits are on the default branch, after a backup ref. cleanup_mode off does
@@ -245,7 +245,7 @@ func (m *Manager) cleanupTaskWorktrees(ctx context.Context, prd *PRD, run taskCl
 		filepath.Join(wtDir, prd.ID, ".datawatch", "verify"),
 		savedVerifyScriptsDir(wtDir, prd.ID),
 	}}
-	ended := run.assessOnly || prd.Status == PRDCompleted || prd.Status == PRDCancelled
+	ended := run.assessOnly || m.cleanupFinishedStatus(prd.Status)
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]

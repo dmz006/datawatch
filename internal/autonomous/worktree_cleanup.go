@@ -4,9 +4,9 @@
 // under the operator's base repository) and keeps it while it runs: the
 // branch is not force-pushed, the work tree is never deleted out from
 // under a live session. When the Automaton has finished and its work is
-// on the base project — completed or cancelled, with nothing left to
-// salvage — the work branch and work tree should be releasable, but
-// never by force:
+// on the base project — completed, cancelled or archived
+// (worktree_cleanup_archived.go), with nothing left to salvage — the work
+// branch and work tree should be releasable, but never by force:
 //
 //   - the branch must belong to an Automaton that is finished or
 //     cancelled, and finished means NOT restarted: the current state of
@@ -14,6 +14,8 @@
 //   - no live session and no live lease may be using the work tree, so
 //     that no running or resumable work is deleted out from under
 //     itself;
+//   - no Automaton that has not finished may still point at the work tree
+//     or the branch (a later run needs it);
 //   - the work tree must be clean (re-verifying with `git status
 //     --porcelain` at removal time, not trusting the earlier report), so
 //     uncommitted work is never destroyed. The daemon's own unedited
@@ -93,6 +95,9 @@ const worktreeSkipHoldReleaseAction = "commit the work or discard the held files
 // parkedWorkReleaseAction releases a hold on files in an ignored folder.
 const parkedWorkReleaseAction = "copy what you need from the listed files elsewhere, then delete them; the next worktree cleanup pass then resolves the entry and the hold lifts"
 
+// neededReleaseAction releases a hold on a folder or branch a later run needs.
+const neededReleaseAction = "finish or close the Automaton that points at it; the next worktree cleanup pass then resolves the entry"
+
 // Skip reasons reported by CleanupWorktrees. Each one is a single fact
 // about why an entry was not removed.
 const (
@@ -126,6 +131,9 @@ const (
 	cleanupSkipHeld = "held"
 	// cleanupSkipOverLimit: the per-pass removal limit was reached.
 	cleanupSkipOverLimit = "over_limit"
+	// cleanupSkipNeeded: an Automaton that has not finished still points at
+	// the work tree or the branch.
+	cleanupSkipNeeded = "needed_by_record"
 )
 
 // Stage names recorded on a failed entry: the step at which removal
@@ -149,8 +157,8 @@ const (
 // tests supply fakes.
 type WorktreeCleanupProbe interface {
 	// AutomatonFinished reports whether the branch belongs to an
-	// Automaton whose current state is completed or cancelled, and not
-	// restarted.
+	// Automaton whose current state is completed or cancelled (or archived,
+	// when archived Automata count as finished), and not restarted.
 	AutomatonFinished(branch string) bool
 	// BaseBranch returns the base branch the branch's commits must be
 	// on for removal to be safe; empty when it cannot be resolved.
@@ -272,6 +280,10 @@ type WorktreeCleanupOptions struct {
 	// returns that ref and the tip. When it fails, the branch is not deleted.
 	// The daemon always sets it (worktreeCleanupRun).
 	Backup func(ctx context.Context, branch string, ts int64) (ref, tip string, err error)
+	// Needed names an Automaton that has not finished and still points at the
+	// work tree or the branch; the entry is then kept. The daemon always sets
+	// it (worktreeCleanupRun).
+	Needed func(branch, worktree string) string
 }
 
 // CleanupWorktrees acts on one safe-to-delete report under the
@@ -328,6 +340,13 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 				skip(cleanupSkipLiveSession, "a live session is in or bound to the work tree")
 			}
 			continue
+		}
+		if opts.Needed != nil {
+			if by := opts.Needed(e.Branch, e.Worktree); by != "" {
+				res.Skipped = append(res.Skipped, WorktreeCleanupSkipped{Branch: e.Branch, Worktree: e.Worktree, Reason: cleanupSkipNeeded,
+					Detail: "the Automaton " + by + " has not finished and still points at the work tree or the branch", ReleaseAction: neededReleaseAction})
+				continue
+			}
 		}
 		age, ok := opts.Probe.EntryAge(e.Branch)
 		if !ok {
@@ -747,11 +766,11 @@ func (p *managerWorktreeProbe) prdFor(branch string) *PRD {
 	return nil
 }
 
-// AutomatonFinished applies the finished/cancelled rule against the
-// store's current state.
+// AutomatonFinished applies the finished rule (cleanupFinishedStatus) against
+// the store's current state.
 func (p *managerWorktreeProbe) AutomatonFinished(branch string) bool {
 	prd := p.prdFor(branch)
-	return prd != nil && (prd.Status == PRDCompleted || prd.Status == PRDCancelled)
+	return prd != nil && p.m.cleanupFinishedStatus(prd.Status)
 }
 
 // BaseBranch honors the per-Automaton base branch, falling back to the
@@ -947,6 +966,13 @@ func (m *Manager) worktreeCleanupRun(opts WorktreeCleanupOptions) WorktreeCleanu
 	opts.Record = m.recordWorktreeRemoval
 	opts.ParkedWork = m.releaseParkedWork(opts.Mode)
 	opts.Backup = branchBackupIn(opts.Repo)
+	opts.Needed = func(branch, worktree string) string {
+		owner := ""
+		if prd := (&managerWorktreeProbe{m: m}).prdFor(branch); prd != nil {
+			owner = prd.ID
+		}
+		return m.worktreeNeededBy(owner, worktree, branch)
+	}
 	opts.Now = func() time.Time { return time.Now().UTC() }
 	return CleanupWorktrees(opts)
 }
@@ -985,8 +1011,8 @@ func branchBackupIn(repo string) func(context.Context, string, int64) (string, s
 	}
 }
 
-// ReleaseAutomatonWorktree attempts to release one finished (completed
-// or cancelled) Automaton's work branch and work tree from an end path,
+// ReleaseAutomatonWorktree attempts to release one finished (completed or
+// cancelled) Automaton's work branch and work tree from an end path,
 // under the cleanup's safety criteria (all but the retention window). If anything fails — a
 // safety check holds the entry, a command refuses — the entry is left
 // alone and the reason is recorded (log + audit); the periodic
@@ -995,13 +1021,23 @@ func branchBackupIn(repo string) func(context.Context, string, int64) (string, s
 //
 // The retention window does not apply here: the entry's age is measured
 // from the moment it finished, so at the end path it is always young and
-// a window of at least an hour would make this path release nothing. Only
-// work whose every commit is already on the base branch, with a clean work
-// tree and no live user, is released, so nothing an operator could still
-// want is lost; the periodic pass keeps the retention window for whatever
-// this path held back.
+// a window of at least an hour would make this path release nothing. The work
+// branch goes only when every commit is already on the base branch, with a
+// clean work tree and no live user; the periodic pass keeps the retention
+// window for whatever this path held back. Removing a worktree still deletes
+// ignored files outside the protected folders, and edits git does not report
+// (assume-unchanged, skip-worktree).
+//
+// With cleanup_archived on, an archived Automaton is left to the periodic pass:
+// archived work is never released without the retention window and the
+// per-pass limit.
 func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 	if prd == nil || prd.ID == "" || prd.Git.Branch == "" {
+		return
+	}
+	var archived bool
+	m.readLocked(func() { archived = prd.Status == PRDArchived })
+	if archived && m.cleanupArchivedOn() {
 		return
 	}
 	m.mu.Lock()
@@ -1036,6 +1072,9 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 	// work or anything that cannot be checked stays, and so does a branch with
 	// commits that are not on the default branch (task_worktree_keep.go).
 	m.cleanupTaskWorktrees(ctx, prd, taskCleanupRun{mode: mode})
+	if _, exists, err := branchTip(ctx, repo, prd.Git.Branch); err == nil && !exists {
+		return // the branch ref is gone: spare the report over every branch
+	}
 	git := NewMergeGitRunner()
 	probe := &managerWorktreeProbe{m: m, repo: repo, git: git, ctx: ctx}
 
@@ -1071,7 +1110,7 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 	if len(single.Safe) == 0 && len(single.Held) == 0 {
 		return // the branch ref is gone: already released, nothing to do
 	}
-	if prd.Status != PRDCompleted && prd.Status != PRDCancelled {
+	if !m.cleanupFinishedStatus(prd.Status) {
 		// The store moved on (restarted); the probe's rule then holds
 		// the entry too — surface the reason without a git round-trip.
 		res := WorktreeCleanupResult{Mode: mode, Skipped: []WorktreeCleanupSkipped{
@@ -1103,7 +1142,8 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 
 // CleanupWorktreesPass is the periodic safety net: one cleanup pass
 // across every Automaton branch of the base repository, removing up to
-// the per-pass limit. It is called from the coordinator's idle cycle.
+// the per-pass limit. The task worktrees and task branches of archived
+// Automata come first and share that limit. It is called from the coordinator's idle cycle.
 // off mode does nothing (not even a git read); report mode records what
 // would be removed; on mode removes. The result is recorded into the
 // cleanup status under the net bucket (cleanup_status.go); an
@@ -1129,6 +1169,14 @@ func (m *Manager) cleanupWorktreesPassRun() WorktreeCleanupResult {
 	if repo == "" {
 		return WorktreeCleanupResult{Mode: mode}
 	}
+
+	// Task work goes first, as at an Automaton's end: a task branch may be
+	// provably landed only through its Automaton's work branch.
+	budget := maxRemovals
+	taskCtx, taskCancel := context.WithTimeout(context.Background(), archivedTaskPassTimeout)
+	m.releaseArchivedTaskWork(taskCtx, repo, mode, retention, &budget)
+	taskCancel()
+	maxRemovals = budget
 
 	ctx, cancel := context.WithTimeout(context.Background(), worktreeCleanupPassTimeout)
 	defer cancel()

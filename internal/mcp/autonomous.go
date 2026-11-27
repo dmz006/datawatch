@@ -226,6 +226,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("automation_create_search_mode", mcpsdk.Description("Search-before-create mode: off never searches before creating an Automation, shadow (the default) searches and surfaces over-duplicate warnings, on searches and holds an over-duplicate creation back to the operator.")),
 		mcpsdk.WithNumber("automation_create_search_threshold", mcpsdk.Description("Over-duplication threshold in the open-closed interval (0, 1]; unset keeps the 0.5 default.")),
 		mcpsdk.WithString("automation_cleanup_mode", mcpsdk.Description("Safe-to-delete cleanup mode: off (no cleanup pass), report (the default; records and reports only) or on. An empty or unrecognized value reads as report, unlike the other enum modes.")),
+		mcpsdk.WithBoolean("automation_cleanup_archived", mcpsdk.Description("Whether the cleanup treats archived Automata as finished, under the same keep-work rules as completed and cancelled ones (autonomous.automation.cleanup_archived, default true). automation_cleanup_mode still decides whether anything is removed. Only the periodic pass releases archived work, with the retention window and the per-pass limit; archiving itself releases nothing more. False: the periodic pass leaves archived Automata alone.")),
+		mcpsdk.WithBoolean("automation_cleanup_shared_cache_sweep", mcpsdk.Description("Whether the cleanup also sweeps Go build cache and Trivy scan-cache folders in the shared temp folder, whichever process made them (default false: datawatch cannot tell whose they are). With it true, the cleanup mode still decides: off does nothing, report lists, on removes.")),
 		mcpsdk.WithString("automation_uncommitted_work_policy", mcpsdk.Description("What happens when a task finishes with uncommitted work in its worktree: hold (the task is held and a question is raised), warn or off (autonomous.automation.uncommitted_work_policy). Any other value is rejected.")),
 		mcpsdk.WithString("automation_uncommitted_work_scope", mcpsdk.Description("Which uncommitted files the check counts: task_files (the task's declared files) or worktree (the whole worktree) (autonomous.automation.uncommitted_work_scope). Any other value is rejected.")),
 		mcpsdk.WithNumber("automation_cleanup_retention_hours", mcpsdk.Description("How long a removal candidate may sit unused in whole hours before it counts as retained for cleanup. Zero or negative keeps the 24-hour default.")),
@@ -562,6 +564,12 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		// Presence-aware so an explicit 0 is sent: the server-side Effective*
 		// accessors resolve 0/unset to the defaults (24 hours, 10 removals,
 		// 85 percent) and an unknown mode word to report.
+		if _, ok := args["automation_cleanup_archived"]; ok {
+			auto["cleanup_archived"] = req.GetBool("automation_cleanup_archived", true)
+		}
+		if _, ok := args["automation_cleanup_shared_cache_sweep"]; ok {
+			auto["cleanup_shared_cache_sweep"] = req.GetBool("automation_cleanup_shared_cache_sweep", false)
+		}
 		if _, ok := args["automation_cleanup_retention_hours"]; ok {
 			auto["cleanup_retention_hours"] = req.GetFloat("automation_cleanup_retention_hours", 0)
 		}

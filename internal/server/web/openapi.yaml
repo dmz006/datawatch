@@ -7702,6 +7702,14 @@ paths:
                         enum: [off, report, "on"]
                         default: report
                         description: "The cleanup mode in effect (autonomous.automation.cleanup_mode): off never removes anything, report removes nothing and records what it would remove, on performs the removals."
+                      cleanup_archived:
+                        type: boolean
+                        default: true
+                        description: "Whether the cleanup treats archived Automata as finished, under the same keep-work rules as completed and cancelled ones (autonomous.automation.cleanup_archived). cleanup_mode still decides whether anything is removed. Only the periodic pass releases archived work, with the retention window and the per-pass limit."
+                      cleanup_shared_cache_sweep:
+                        type: boolean
+                        default: false
+                        description: "Default false (autonomous.automation.cleanup_shared_cache_sweep). Lets the cleanup remove go-build and Trivy scan-cache folders in the temp directory, whichever program made them. With true, cleanup_mode still decides: off does nothing, report lists, on removes. A value that is not a boolean rejects the PUT with 400."
                       cleanup_retention_hours:
                         type: integer
                         default: 24
@@ -7896,6 +7904,14 @@ paths:
                       type: string
                       enum: [off, report, "on"]
                       description: "The cleanup mode: off never removes anything, report removes nothing and records what it would remove, on performs the removals (autonomous.automation.cleanup_mode). Any other value rejects the PUT with 400."
+                    cleanup_archived:
+                      type: boolean
+                      default: true
+                      description: "Whether the cleanup treats archived Automata as finished (autonomous.automation.cleanup_archived). PUT /api/config refuses any value that is not true or false with 400."
+                    cleanup_shared_cache_sweep:
+                      type: boolean
+                      default: false
+                      description: "Default false (autonomous.automation.cleanup_shared_cache_sweep). Lets the cleanup remove go-build and Trivy scan-cache folders in the temp directory, whichever program made them. With true, cleanup_mode still decides: off does nothing, report lists, on removes. A value that is not a boolean rejects the PUT with 400."
                     cleanup_retention_hours:
                       type: integer
                       description: "Whole hours >= 1; only finished entries older than this are candidates (autonomous.automation.cleanup_retention_hours). Zero, a negative, a fractional or a non-numeric value rejects the PUT with 400."
