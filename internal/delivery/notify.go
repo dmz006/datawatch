@@ -8,6 +8,26 @@ import (
 	"time"
 )
 
+const (
+	// notifyMaxLines is the most entry lines in one message.
+	notifyMaxLines = 20
+	// notifyMaxBytes keeps a message under the smallest channel limit
+	// (Twilio refuses more than 1600 characters).
+	notifyMaxBytes = 1500
+	// notifySendHistory is how many send results one entry keeps.
+	notifySendHistory = 20
+)
+
+// Why a send failed. The channel's own error text is never kept.
+const (
+	sendCodeFailed    = "send_failed"
+	sendCodeTimeout   = "timeout"
+	sendCodeCancelled = "cancelled"
+)
+
+// notifySendTimeout is how long one send may take before it counts as failed.
+var notifySendTimeout = 45 * time.Second
+
 // Notice is the one message due in a pass. Its text holds IDs, kinds, states
 // and reason codes only.
 type Notice struct {
