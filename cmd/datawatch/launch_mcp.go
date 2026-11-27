@@ -95,6 +95,7 @@ func endSessionMCPFiles(sess *session.Session, dataDir string) {
 	if err := channel.RemoveSessionMCPConfig(dataDir, sess.TmuxSession); err != nil {
 		debugf("session MCP file cleanup for %s: %v", sess.FullID, err)
 	}
+	endPiDelivery(sess, dataDir)
 	if _, err := channel.RemoveProjectDaemonEntry(sess.ProjectDir, func(env map[string]string) bool {
 		return sess.FullID != "" && env["CLAUDE_SESSION_ID"] == sess.FullID
 	}); err != nil {
