@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.43 — The start-up prompt check keeps watching, answers a screen twice at most, then warns you
+
+### Fixed
+- With auto-accept on, the start-up dialog poller of a new Claude session no longer stops after its own first answer. For about 45 seconds, unless the main prompt, task arrival or session end comes first, it retries an accept dialog that is still up or comes back, and answers a following one, with at most two attempts on the same screen (an attempt that held Enter back counts). It waits 5 seconds before answering the same type of dialog again, then needs it unchanged for 2 seconds. After its first successful answer it sends no Esc.
+- When the poller leaves a start-up dialog for a person, datawatch raises one warning, at most one per session start, naming the session and quoting nothing from its screen: 'start-up dialog still up after 2 answers; answer it yourself' when the screen is found still up after two attempts; or, if a recognised start-up dialog is up when the 45 seconds end and one is up 7 seconds later, 'start-up dialog still up when the start-up check ended; answer it yourself' (the first text if that screen had two attempts).
+
+### Not covered
+- Tested with stand-in terminals only, not a real Claude Code. The limit is the poller's alone: other start-up responders can send the same screen more keys, so it can get more than two answers in all, and if Claude Code acts on keys more than about 7 seconds late, repeated keys can reach the next screen and accept its default or exit. A screen whose words change counts as new. An answer sent after about 38 seconds gets no retry from the poller. A screen to be declined that follows its answer is left to the other checks or a person; it is warned about only as above. No warning for a dialog not on screen when the 45 seconds end and not caught earlier, an unrecognised question, a permission prompt, with auto-accept off, after a daemon restart for a session already starting, or for a second stuck dialog in one session start. A dialog-shaped question that the wording rules read as safe to continue can be answered by the poller after its first answer.
+
 ## v9.187.42 — Archived Automata join cleanup, and a fault in the safe-to-delete report is fixed
 
 ### Changed
