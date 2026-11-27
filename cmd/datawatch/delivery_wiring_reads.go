@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	errAutonomyNotRunning  = errors.New("Automata are enabled but their store is not open")
+	errAutonomyNotRunning  = errors.New("no Automata store is open although Automata are enabled")
 	errNoQuestionStore     = errors.New("the question store is not open")
 	errNoSubscriptionStore = errors.New("the subscription store is not open")
 )
