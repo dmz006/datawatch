@@ -5637,6 +5637,21 @@ delivery:
   notify: true
   # Seconds between checks. Default 300, 60 to 86400. Read at daemon start.
   interval_seconds: 300
+  # Requests (docs/howto/requests.md). All six are read live; 0 or absent is
+  # the default except for the two reminder limits. The three times below are
+  # PROVISIONAL defaults that the operator has not approved yet.
+  # How long a request waits to be taken before it is listed, in seconds.
+  request_take_by_seconds: 3600
+  # How long a request has before it is overdue, in seconds.
+  request_due_seconds: 86400
+  # Replaces request_due_seconds for single request kinds, e.g. {ask: 172800}.
+  request_due_seconds_by_kind: {}
+  # Shortest time between two reminders to one session, in seconds.
+  reminder_interval_seconds: 900
+  # Typed reminders to one session each hour. Default 2; 0 types none.
+  reminders_per_session_hour: 2
+  # Typed reminders on this computer each hour. Default 20; 0 types none.
+  reminders_per_host_hour: 20
 
 # "Done when" lists (docs/howto/done-when.md). Report only: nothing is held,
 # blocked or merged because of a list.
