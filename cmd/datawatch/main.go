@@ -417,6 +417,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newCooldownCmd(),       // BL30
 		newPauseCmd(),          // operator pause
 		newResumeCmd(),         // operator pause
+		newDeliveryCmd(),       // delivery check
 		newUsageBackoffCmd(),   // BL428 Phase 4
 		newStaleCmd(),          // BL40
 		newCostCmd(),           // BL6
