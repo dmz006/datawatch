@@ -44,6 +44,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -83,9 +84,11 @@ type Server struct {
 	srv                 *server.MCPServer
 	alertStore          *alerts.Store
 	schedStore          *session.ScheduleStore
-	exitHookStore       *session.ExitHookStore       // BL356
-	queueStore          *session.QueueStore          // BL357
-	requests            delivery.RequestService      // delivery job 4; nil until wired
+	exitHookStore       *session.ExitHookStore  // BL356
+	queueStore          *session.QueueStore     // BL357
+	requests            delivery.RequestService // delivery job 4; nil until wired
+	requestAudit        func(delivery.Caller, string, string)
+	requestsMu          sync.RWMutex                 // guards requests and requestAudit
 	subStore            *session.DiscussionSubStore  // BL358
 	resultStore         *session.ResultStore         // BL360
 	scheduleResultStore *session.ScheduleResultStore // scheduled-job result panel (GH#204)
@@ -645,6 +648,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDeliveryAccept(), tracked(s.handleDeliveryAccept))                 // delivery check
 	mcpSrv.AddTool(s.toolDeliveryDrop(), tracked(s.handleDeliveryDrop))                     // delivery check
 	mcpSrv.AddTool(s.toolDeliveryTestMessage(), tracked(s.handleDeliveryTestMessage))       // delivery check
+	s.addRequestTools(mcpSrv, tracked)                                                      // delivery job 4
 	mcpSrv.AddTool(s.toolUsageBackoffStatus(), tracked(s.handleUsageBackoffStatus))         // BL428 Phase 4
 	mcpSrv.AddTool(s.toolUsageBackoffSet(), tracked(s.handleUsageBackoffSet))               // BL428 Phase 4
 	mcpSrv.AddTool(s.toolUsageBackoffClear(), tracked(s.handleUsageBackoffClear))           // BL428 Phase 4
@@ -1770,6 +1774,9 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolGetMyScope, "get_my_scope"},
 		// BL350 — orphan lineage listing
 		{s.toolListOrphanedSessions, "list_orphaned_sessions"},
+	}
+	for _, def := range requestToolDefs() {
+		defs = append(defs, toolDef{def, def().Name})
 	}
 
 	if s.acceptanceTools { // listed only while they are registered

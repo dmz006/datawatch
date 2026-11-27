@@ -32,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
+	"github.com/dmz006/datawatch/internal/delivery"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/fingerprint"
@@ -845,6 +846,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL357 — durable role-based work queue.
 	apiMux.HandleFunc("/api/queue", api.handleQueue)
 	apiMux.HandleFunc("/api/queue/", api.handleQueue)
+	apiMux.HandleFunc(delivery.RouteRequests, api.handleRequests) // delivery job 4
+	apiMux.HandleFunc(delivery.RouteRequests+"/", api.handleRequests)
 
 	// BL358 — discussion push/subscribe.
 	apiMux.HandleFunc("/api/discussion-subs", api.handleDiscussionSubs)

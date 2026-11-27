@@ -299,6 +299,9 @@ func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
 	if !s.checkProxyAuth(w, r, serverName) {
 		return
 	}
+	if refuseCrossHostRequest(w, r, subPath) {
+		return
+	}
 
 	remote := s.findServer(serverName)
 	if remote == nil {

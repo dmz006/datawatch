@@ -415,7 +415,8 @@ type Server struct {
 	// pauseStore is the operator pause service (see pause.go); nil = not wired.
 	pauseStore *pause.Store
 	// delivery is the delivery check (see delivery.go); nil = not wired. The
-	// daemon wires it after the web server is serving, so deliveryMu guards it.
+	// daemon wires it after the web server is serving, so deliveryMu guards it,
+	// and requests too.
 	deliveryMu sync.RWMutex
 	delivery   delivery.Service
 	// backoffReserve is the review-reserve gate (nil = not wired); the usage
@@ -1440,7 +1441,16 @@ func (s *Server) handleOpenWebUIModels(w http.ResponseWriter, r *http.Request) {
 func (s *Server) SetMCPDocsFunc(fn func() interface{}) { s.mcpDocsFunc = fn }
 
 // SetMCPBridge wires the daemon MCP server for /api/mcp/tools and /api/mcp/call.
-func (s *Server) SetMCPBridge(b mcpBridgeAPI) { s.mcpBridge = b }
+func (s *Server) SetMCPBridge(b mcpBridgeAPI) {
+	s.mcpBridge = b
+	// The request tools run in this process and write the same audit line as
+	// the request routes for an ID datawatch does not have.
+	if a, ok := b.(interface {
+		SetRequestAudit(func(delivery.Caller, string, string))
+	}); ok {
+		a.SetRequestAudit(s.auditRequestUnknown)
+	}
+}
 
 // SetSessionTokenStore wires the Design A3 per-session scoped-credential
 // store so fedAuthMiddleware can recognize a session's token as a
@@ -7306,6 +7316,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		// delivery check: effective values (unset keys read their defaults).
 		"delivery": deliveryConfigSurface(s.cfg.Delivery),
+		// request settings (delivery job 4): every one at its value in force.
+		"delivery_requests": requestSettingsSurface(s.cfg.Delivery),
 		// scheduled-jobs results: per-schedule result history store.
 		"results": map[string]interface{}{
 			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),
@@ -14197,6 +14209,16 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	if !s.checkProxyAuth(w, r, serverName) {
 		return
 	}
+	// Tracked requests to or from another computer (an agent worker too) are
+	// not supported: nothing is sent.
+	forwarded := remotePath
+	if serverName == "agent" {
+		_, rest, _ := strings.Cut(strings.TrimPrefix(remotePath, "/"), "/")
+		forwarded = "/" + rest
+	}
+	if refuseCrossHostRequest(w, r, forwarded) {
+		return
+	}
 
 	// Agent-worker namespace: /api/proxy/agent/<id>/...
 	// Strip one more segment to get the worker ID, hand off to the
@@ -16226,7 +16248,11 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		// GET /api/queue — list
 		role := r.URL.Query().Get("role")
 		state := r.URL.Query().Get("state")
-		items := s.queueStore.List(role, state)
+		items, err := listQueue(s.queueStore, role, state)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusServiceUnavailable)
+			return
+		}
 		writeJSONOK(w, items)
 
 	case r.Method == http.MethodPost && sub == "push":
@@ -16252,7 +16278,6 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && sub == "claim":
 		var req struct {
 			Role         string `json:"role"`
-			ClaimedBy    string `json:"claimed_by"`
 			LeaseSeconds int    `json:"lease_seconds"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -16263,7 +16288,8 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"role is required"}`, http.StatusBadRequest)
 			return
 		}
-		it, err := s.queueStore.Claim(req.Role, req.ClaimedBy, req.LeaseSeconds)
+		// Who claims comes from the credential; the body's claimed_by is not used.
+		it, err := s.queueStore.Claim(req.Role, delivery.QueueClaimant(s.requestCaller(r)), req.LeaseSeconds)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return
@@ -16283,6 +16309,13 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
 			return
 		}
+		if delivery.IsRequestID(req.ID) {
+			s.queueRequest(w, r, req.ID, delivery.VerbReport, func(svc delivery.RequestService, c delivery.Caller) error {
+				_, err := svc.Report(context.WithoutCancel(r.Context()), c, req.ID, delivery.ReportInput{Text: delivery.QueueResultText(req.Result)})
+				return err
+			})
+			return
+		}
 		if err := s.queueStore.Complete(req.ID, req.Result); err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return
@@ -16300,6 +16333,13 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.ID == "" {
 			http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+			return
+		}
+		if delivery.IsRequestID(req.ID) {
+			s.queueRequest(w, r, req.ID, delivery.VerbDecline, func(svc delivery.RequestService, c delivery.Caller) error {
+				_, err := svc.Decline(context.WithoutCancel(r.Context()), c, req.ID, delivery.DeclineInput{ReasonCode: delivery.WhyDeclined, Text: req.Error})
+				return err
+			})
 			return
 		}
 		if err := s.queueStore.Fail(req.ID, req.Error); err != nil {

@@ -624,6 +624,17 @@ var MCPToolCap = map[string]string{
 	"queue_fail":                     CapQueueWrite,
 	"queue_list":                     CapQueueRead,
 	"queue_push":                     CapQueueWrite,
+	// Requests (delivery job 4): reading needs queue:read, every other call
+	// queue:write.
+	"request_accept":  CapQueueWrite,
+	"request_create":  CapQueueWrite,
+	"request_decline": CapQueueWrite,
+	"request_list":    CapQueueRead,
+	"request_manage":  CapQueueWrite,
+	"request_mine":    CapQueueRead,
+	"request_report":  CapQueueWrite,
+	"request_role":    CapQueueWrite,
+	"request_take":    CapQueueWrite,
 	// Operator question channel (proxies internal/server's /api/questions). Same
 	// read/write split as the REST gate: raise/answer/withdraw mutate, list/get
 	// only read (internal/server/questions.go).
@@ -969,6 +980,8 @@ var nonConfigWriteTools = map[string]bool{
 	"proxy_config_get": true, "question_answer": true, "question_get": true, "question_list": true,
 	"question_quality": true, "question_raise": true, "question_stats": true, "question_withdraw": true,
 	"queue_claim": true, "queue_complete": true, "queue_fail": true, "queue_list": true,
+	"request_accept": true, "request_create": true, "request_decline": true, "request_list": true, "request_manage": true,
+	"request_mine": true, "request_report": true, "request_role": true, "request_take": true,
 	"queue_push": true, "rename_session": true, "reply_to_parent": true,
 	"restart_session": true,
 	"result_delete":   true, "result_get": true, "result_list": true, "result_put": true,

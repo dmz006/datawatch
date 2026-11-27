@@ -131,6 +131,9 @@ const (
 	// admin token. The daemon reads it only on an admin request, and it can
 	// only name a session or a peer.
 	HeaderDeliveryCaller = "X-Datawatch-Delivery-Caller"
+	// HeaderRequestSurface says that a request call came from the command line
+	// or chat ("cli", "chat"). It is a label only: it never changes who called.
+	HeaderRequestSurface = "X-Datawatch-Request-Surface"
 
 	// council
 	CapCouncilList = "council:list"

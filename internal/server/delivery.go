@@ -254,11 +254,13 @@ const (
 // deliveryConfigSurface is the delivery block of GET /api/config: every key at
 // its effective value.
 func deliveryConfigSurface(c config.DeliveryConfig) map[string]interface{} {
-	return map[string]interface{}{
+	block := map[string]interface{}{
 		"enabled":          c.EnabledOn(),
 		"notify":           c.NotifyOn(),
 		"interval_seconds": int(c.Interval().Seconds()),
 	}
+	addSetRequestSettings(block, c)
+	return block
 }
 
 func deliveryBool(v interface{}) (bool, bool) {
@@ -312,7 +314,7 @@ func firstDeliverySettingError(patch map[string]interface{}) error {
 				deliveryIntervalKey, deliveryMinIntervalSeconds, config.MaxDeliveryIntervalSeconds, config.DefaultDeliveryIntervalSeconds)
 		}
 	}
-	return nil
+	return firstRequestSettingError(patch)
 }
 
 // applyDeliveryConfigKey stores one delivery key; a bad value changes nothing.
@@ -330,5 +332,7 @@ func applyDeliveryConfigKey(cfg *config.Config, key string, v interface{}) {
 		if n, ok := deliveryInterval(v); ok {
 			cfg.Delivery.IntervalSeconds = n
 		}
+	default:
+		applyRequestSetting(cfg, key, v)
 	}
 }
