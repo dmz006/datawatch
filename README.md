@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.45 (2026-11-27).** More of the files that merge steps and merge comparisons read and write are now kept inside a project that holds links; not every place is covered (see the changelog). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.46 (2026-11-27).** datawatch can now save requests addressed to a role, deliver them to supported sessions and remind them; with the done-when check set to report, a request reads done only after datawatch checks it (see the changelog for what is not covered). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
