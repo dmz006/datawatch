@@ -12,12 +12,17 @@ type fakeRunner struct {
 	out   map[string]RunOutcome // by commit
 	calls []string
 	hook  func()
+	// byCommand overrides out for one saved command.
+	byCommand map[string]map[string]RunOutcome
 }
 
-func (f *fakeRunner) Run(_ context.Context, _ CheckSpec, sub Subject, _ time.Duration) RunOutcome {
+func (f *fakeRunner) Run(_ context.Context, spec CheckSpec, sub Subject, _ time.Duration) RunOutcome {
 	f.calls = append(f.calls, sub.Commit)
 	if f.hook != nil {
 		f.hook()
+	}
+	if o, ok := f.byCommand[spec.Command][sub.Commit]; ok {
+		return o
 	}
 	if o, ok := f.out[sub.Commit]; ok {
 		return o

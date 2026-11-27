@@ -30,10 +30,8 @@ func Flags(l *List, checks map[string]ProjectCheck, hasReviewer bool) []Flag {
 	if thinList(l) {
 		add("only_default_items", "", true, "only default or receipt items on a real ask")
 	}
-	if l.Kind != KindDelivery {
-		for _, s := range unmappedAsks(l.Ask, l.Items) {
-			add("unmapped_ask", askItemID(s), true, "no item covers: "+s)
-		}
+	for _, s := range unmappedAsks(l.textToCover(), l.Items) {
+		add("unmapped_ask", askItemID(s), true, "no item covers: "+s)
 	}
 	if !covered(l) && !allReceipt(l.Items) {
 		add("not_reviewed", "", true, "nobody has checked that the list covers the whole ask")

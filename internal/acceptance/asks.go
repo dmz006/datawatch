@@ -70,11 +70,24 @@ func askHash(a Ask) string {
 // askItemID is stable for a sentence, so the same unmapped words keep their id.
 func askItemID(sentence string) string { return "ask-" + hashOf(normalizeAsk(sentence))[:10] }
 
-// unmappedAsks returns the ask sentences no item other than the automatic
-// ones covers.
-func unmappedAsks(a Ask, items []Item) []string {
+// textToCover is the text whose sentences each need an item. A message to
+// deliver is not a list of asks; words added to it later are.
+func (l *List) textToCover() string {
+	if l.Kind != KindDelivery {
+		return askFullText(l.Ask)
+	}
+	var later []string
+	for _, ad := range l.Ask.Additions {
+		later = append(later, ad.Text)
+	}
+	return strings.Join(later, "\n")
+}
+
+// unmappedAsks returns the sentences of text that no item other than the
+// automatic ones covers.
+func unmappedAsks(text string, items []Item) []string {
 	var out []string
-	for _, s := range AskSentences(askFullText(a)) {
+	for _, s := range AskSentences(text) {
 		mapped := false
 		for _, it := range items {
 			if it.Source != SourceAsk && it.Source != SourceDefault && covers(it.From, s) {
@@ -93,12 +106,8 @@ func unmappedAsks(a Ask, items []Item) []string {
 // also drops automatic items whose sentence another item now covers; that is
 // only done before freeze, while edits are free.
 func syncAskItems(l *List, prune bool) {
-	if l.Kind == KindDelivery {
-		// A message to deliver is not a list of asks.
-		return
-	}
 	want := map[string]string{}
-	for _, s := range unmappedAsks(l.Ask, l.Items) {
+	for _, s := range unmappedAsks(l.textToCover(), l.Items) {
 		want[askItemID(s)] = s
 	}
 	kept := l.Items[:0:0]
@@ -116,7 +125,7 @@ func syncAskItems(l *List, prune bool) {
 		kept = append(kept, it)
 	}
 	l.Items = kept
-	for _, s := range AskSentences(askFullText(l.Ask)) {
+	for _, s := range AskSentences(l.textToCover()) {
 		id := askItemID(s)
 		if _, ok := want[id]; ok && !have[id] {
 			key := id

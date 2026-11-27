@@ -411,14 +411,39 @@ func (s *Service) newList(id string, in EditInput, set Settings) (*List, error) 
 		source = "unknown"
 	}
 	scheduled := in.Scheduled || source == "schedule"
+	named := KindForSource(source)
+	kind := named
+	if !in.SourceKnown && kind != KindChange {
+		// The caller's word is not what datawatch knows. KindOther carries
+		// every rule; only "change" adds to it.
+		kind = KindOther
+	}
 	l := &List{
-		RequestID: id, Unit: id, Source: source, Kind: KindForSource(source), Scheduled: scheduled,
+		RequestID: id, Unit: id, Source: source, SourceKnown: in.SourceKnown, Kind: kind, Scheduled: scheduled,
 		Ask: Ask{Text: in.Ask}, State: map[string]*ItemState{}, CreatedAt: s.o.Now(), DefaultsVersion: defs.Version,
 	}
 	l.Ask.Hash = askHash(l.Ask)
 	l.RevisedAskHash = l.Ask.Hash
-	if l.Items, err = defs.itemsFor(l.Kind, scheduled, in.Packs); err != nil {
+	if l.Items, err = defs.itemsFor(named, scheduled, in.Packs); err != nil {
 		return nil, invalid("%v", err)
+	}
+	if named != kind {
+		// The named source's defaults come on top of those of the kind the
+		// list is held to.
+		floor, err := defs.itemsFor(kind, false, nil)
+		if err != nil {
+			return nil, invalid("%v", err)
+		}
+		for _, it := range floor {
+			if _, have := l.item(it.ID); have == nil {
+				l.Items = append(l.Items, it)
+			}
+		}
+	}
+	if l.SourceKnown {
+		if l.DaemonDefaults, err = clone(l.Items); err != nil {
+			return nil, err
+		}
 	}
 	if s.o.Reviewer != nil {
 		l.Reviewer = s.o.Reviewer.Settings()
@@ -431,6 +456,11 @@ func (s *Service) newList(id string, in EditInput, set Settings) (*List, error) 
 		for _, it := range defs.Fallback {
 			it.Source = SourceDefault
 			l.Items = append(l.Items, it)
+		}
+		if l.SourceKnown {
+			if l.DaemonDefaults, err = clone(l.Items); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return l, nil

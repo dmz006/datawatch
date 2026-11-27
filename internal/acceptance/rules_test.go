@@ -462,7 +462,7 @@ func TestRule12ThinOrEmptyLists(t *testing.T) {
 	ctx := context.Background()
 	t.Run("zero items", func(t *testing.T) {
 		w := newWorld(t)
-		must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Source: "message", Ask: "tell them"}, operator))
+		must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Source: "message", SourceKnown: true, Ask: "tell them"}, operator))
 		l := must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Remove: []string{"d-received"}}, operator))
 		l = must[*List](t)(w.svc.Freeze(ctx, "r1", l.Hash(), operator, ""))
 		wantStatus(t, l, StatusNoCriteria)
@@ -556,7 +556,7 @@ func TestRule14KindAndTheListBelongsToTheAsk(t *testing.T) {
 	for source, want := range map[string]Status{"message": StatusDelivered, "intake": StatusFiled} {
 		w := newWorld(t)
 		w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return fetched("x", w.now), nil }}
-		w.frozen("r1", source, "Tell the coordinator Saturday moved and fix the roster")
+		w.sourced("r1", source, "Tell the coordinator Saturday moved and fix the roster")
 		must[error](t)(nil, w.svc.NoteHolder("r1", "x"))
 		l := w.work("r1", "c1")
 		wantStatus(t, l, want)
@@ -996,7 +996,7 @@ func TestAnUnknownSourceIsHeldToTheReportOnlyRule(t *testing.T) {
 func TestAMessageWithMoreItemsNeedsCoverage(t *testing.T) {
 	w := newWorld(t)
 	w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return fetched("x", w.now), nil }}
-	w.frozen("r1", "message", "Tell them and fix the roster", Item{ID: "c", Statement: "told", Method: MethodConfirm})
+	w.sourced("r1", "message", "Tell them and fix the roster", Item{ID: "c", Statement: "told", Method: MethodConfirm})
 	must[error](t)(nil, w.svc.NoteHolder("r1", "x"))
 	w.work("r1", "c1")
 	wantStatus(t, must[*List](t)(w.svc.Confirm("r1", "c", true, "told", "", "", operator)), StatusNotReviewed)

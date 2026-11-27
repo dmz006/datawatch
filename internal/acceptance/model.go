@@ -11,8 +11,10 @@ const (
 	ModeReport = "report"
 )
 
-// Kind says which default list a request starts from. Code at the request's
-// source sets it (see KindForSource); a caller never chooses it.
+// Kind says which rules and default list a request has. datawatch sets it from
+// what it knows (see KindForSource). A source named by a caller only adds that
+// source's default items: such a list is never held to lighter rules than a
+// list of unknown source.
 type Kind string
 
 // The four kinds.
@@ -339,11 +341,17 @@ type List struct {
 	RequestID string `json:"request_id"`
 	// Unit is the unit of work now carrying the ask. The list belongs to the
 	// ask and survives the unit being reset, removed, split or cloned.
-	Unit      string `json:"unit,omitempty"`
-	Source    string `json:"source"`
-	Kind      Kind   `json:"kind"`
-	Scheduled bool   `json:"scheduled,omitempty"`
-	Ask       Ask    `json:"ask"`
+	Unit   string `json:"unit,omitempty"`
+	Source string `json:"source"`
+	// SourceKnown says one of datawatch's own request sources saw the source;
+	// otherwise it is the caller's word.
+	SourceKnown bool `json:"source_known,omitempty"`
+	Kind        Kind `json:"kind"`
+	// DaemonDefaults are the default items datawatch itself gave a list whose
+	// source it knows. Removing or changing one shows, also before the start.
+	DaemonDefaults []Item `json:"daemon_defaults,omitempty"`
+	Scheduled      bool   `json:"scheduled,omitempty"`
+	Ask            Ask    `json:"ask"`
 	// RevisedAskHash is the ask hash the last revision was made against.
 	RevisedAskHash string                `json:"revised_ask_hash,omitempty"`
 	Items          []Item                `json:"items"`

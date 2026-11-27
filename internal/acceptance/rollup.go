@@ -169,6 +169,13 @@ func covered(l *List) bool {
 	return c != nil && c.Counts && c.Yes && c.Subject == h
 }
 
+// showsWork reports whether a met result is datawatch's own sight of a change:
+// a command or state item that had to differ from the start, and did.
+func showsWork(it Item, r Result) bool {
+	base, _ := it.methodBase()
+	return (base == MethodCommand || base == MethodState) && (it.Change || it.Before != BeforeNone) && !r.AlreadyTrue
+}
+
 // versionBound reports whether an item's result belongs to a version.
 func versionBound(it Item) bool {
 	base, name := it.methodBase()
@@ -266,12 +273,18 @@ func rollUp(l *List) Rollup {
 		out.Items = items
 		return out
 	}
-	onlyAlreadyTrue := len(accepted) == 0
-	for _, r := range items {
-		if r.Result.Value == ResultMet && !r.Result.AlreadyTrue {
-			onlyAlreadyTrue = false
+	onlyAlreadyTrue, alreadyTrue, workShown := true, false, false
+	for i, r := range items {
+		if r.Result.Value != ResultMet {
+			continue
 		}
+		alreadyTrue = alreadyTrue || r.Result.AlreadyTrue
+		onlyAlreadyTrue = onlyAlreadyTrue && r.Result.AlreadyTrue
+		workShown = workShown || showsWork(l.Items[i], r.Result)
 	}
+	// Once a check turns out to have been true before the work, only a check
+	// that had to see a change can show there was any. A person's yes cannot.
+	nothingShown := len(accepted) == 0 && (onlyAlreadyTrue || alreadyTrue && !workShown)
 	satisfied := len(notMet)+len(open)+len(waits) == 0
 	switch {
 	case !l.Frozen():
@@ -281,7 +294,7 @@ func rollUp(l *List) Rollup {
 	case l.Ask.Hash != l.RevisedAskHash:
 		return roll(StatusAskChanged)
 	}
-	if allReceipt(l.Items) && satisfied && len(accepted) == 0 {
+	if l.Kind == KindDelivery && allReceipt(l.Items) && satisfied && len(accepted) == 0 {
 		if l.Source == "intake" {
 			return roll(StatusFiled)
 		}
@@ -295,8 +308,8 @@ func rollUp(l *List) Rollup {
 	case (l.Kind == KindChange || l.Kind == KindOther) && len(reportItems) > 0:
 		// An unknown source may well be a bug, so it is held to the same rule.
 		return roll(StatusReportOnly, reportItems...)
-	case l.Kind == KindChange && onlyAlreadyTrue:
-		return roll(StatusOpen, "everything was already true at the start, so nothing shows the work")
+	case l.Kind != KindDelivery && nothingShown:
+		return roll(StatusOpen, "a check was already true at the start and no check shows that work was done; a person's yes does not show it")
 	case allReceipt(l.Items):
 		return roll(StatusThinList, "only receipt items")
 	case thinList(l):

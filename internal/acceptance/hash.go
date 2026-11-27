@@ -81,9 +81,31 @@ func (l *List) ChangesSinceFirst() Changes {
 			c.Removed = append(c.Removed, it)
 		}
 	}
+	l.daemonDefaultChanges(&c)
 	c.AskText = first.AskHash != l.Ask.Hash
 	c.Reviewer = first.Reviewer != l.Reviewer
 	return c
+}
+
+// daemonDefaultChanges adds the default items datawatch gave that were removed
+// or changed before the list was first fixed.
+func (l *List) daemonDefaultChanges(c *Changes) {
+	seen := map[string]bool{}
+	for _, id := range append(append([]string(nil), c.Added...), c.Altered...) {
+		seen[id] = true
+	}
+	for _, it := range c.Removed {
+		seen[it.ID] = true
+	}
+	for _, d := range l.DaemonDefaults {
+		switch _, now := l.item(d.ID); {
+		case seen[d.ID]:
+		case now == nil:
+			c.Removed = append(c.Removed, d)
+		case now.Source != SourceDefault:
+			c.Altered = append(c.Altered, d.ID)
+		}
+	}
 }
 
 // TextDigest names a saved text by its hash, for views that must not hand out
