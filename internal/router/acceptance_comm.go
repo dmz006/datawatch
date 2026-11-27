@@ -12,6 +12,8 @@
 //	acceptance catalog
 //
 // On an install with encrypted stores, replies carry ids and results only.
+// The word is a command only while acceptance.mode is report: otherwise a
+// message that starts with it is an ordinary message.
 
 package router
 
@@ -21,12 +23,27 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/acceptance"
 )
 
 // acceptanceActorChannel names a change sent from a messaging channel.
 const acceptanceActorChannel = "channel"
 
 const acceptanceCommUsage = "usage: acceptance [list] | show <id> | confirm <id> <item> yes|no <words…> | accept <id> <item> <why…> | edit <id> <json> | freeze <id> <hash> | report | catalog"
+
+// parseMessage is Parse plus the "acceptance" command, which exists only while
+// the setting is on.
+func (r *Router) parseMessage(text string) Command {
+	if r.cfg != nil && r.cfg.Acceptance.Mode == acceptance.ModeReport {
+		trimmed := strings.TrimSpace(text)
+		const verb = "acceptance"
+		if lower := strings.ToLower(trimmed); lower == verb || strings.HasPrefix(lower, verb+" ") {
+			return parseAcceptance(trimmed[len(verb):])
+		}
+	}
+	return Parse(text)
+}
 
 // parseAcceptance keeps the rest of the line; the handler splits it, so spoken
 // words keep their case and spacing.

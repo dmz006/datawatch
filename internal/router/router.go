@@ -1426,7 +1426,7 @@ func (r *Router) processMessage(msg messaging.Message, at ConfigureAttribution) 
 		return
 	}
 
-	cmd := Parse(msg.Text)
+	cmd := r.parseMessage(msg.Text)
 
 	switch cmd.Type {
 	case CmdNew:

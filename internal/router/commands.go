@@ -1520,9 +1520,6 @@ func Parse(text string) Command {
 	case lower == "usage" || strings.HasPrefix(lower, "usage "):
 		return parseUsage(strings.TrimSpace(text[len("usage"):]))
 
-	case lower == "acceptance" || strings.HasPrefix(lower, "acceptance "):
-		return parseAcceptance(text[len("acceptance"):])
-
 	case lower == "pause" || strings.HasPrefix(lower, "pause "):
 		return parsePause(strings.TrimSpace(text[len("pause"):]))
 

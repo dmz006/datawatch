@@ -3,14 +3,18 @@ package router
 import (
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 func TestAcceptanceComm_Parse(t *testing.T) {
-	cmd := Parse("acceptance confirm R1 seen yes I Saw  It")
+	r := &Router{cfg: &config.Config{}}
+	r.cfg.Acceptance.Mode = "report"
+	cmd := r.parseMessage("acceptance confirm R1 seen yes I Saw  It")
 	if cmd.Type != CmdAcceptance || cmd.Text != "confirm R1 seen yes I Saw  It" {
 		t.Fatalf("%+v", cmd)
 	}
-	if got := Parse("acceptance"); got.Type != CmdAcceptance {
+	if got := r.parseMessage("acceptance"); got.Type != CmdAcceptance {
 		t.Fatalf("%+v", got)
 	}
 }
