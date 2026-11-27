@@ -67,9 +67,19 @@ text. It is saved before it is typed.
 - A request that was fetched and not accepted gets at most 2 reminders, then it
   is only listed.
 - A request nobody fetched gets no more reminders once its take-by time (1 hour)
-  has passed; it is listed. This is also so for a holder who gets it after that
-  time, for example a role given later: `datawatch request mine` and
-  `request_mine` still show it.
+  has passed; it is listed.
+- **A role given later.** A Claude Code session that is given a role is told
+  once about the open requests that were made before that and are past their
+  take-by time. It is one line with their number, however many there are. Other
+  reminders due at that moment share the line, and it counts toward the same
+  limits. It is not sent again, also after a restart.
+  It comes after the session's hello counts, so it can be one reminder interval
+  after the hello's line. If nothing can be typed (pause, usage hold, rate limit,
+  a prompt, or a limit reached) it waits. pi is not typed into: its extension
+  fetches the older requests itself, one message each, as any other request.
+  `datawatch request mine` and `request_mine` show them too.
+- A session that already held the role when a request was made gets no extra line
+  for it after the take-by time.
 - Nothing is typed while datawatch is paused, held for usage or the session is
   rate limited. When the session is at a permission or confirmation prompt,
   nothing is typed and the try does not count.
@@ -84,6 +94,10 @@ A worker with no proven take gets such a request's text typed one time, as one
 line, within the two hourly limits above. It is never typed again, also after a
 restart. If datawatch cannot tell
 whether the keys arrived, it counts as typed. Only independent proof closes it.
+
+**Typing stops at the take-by time** (1 hour, held time not counted). A request
+that could not be typed by then, because of a pause, a hold, a prompt or the
+limits, is not typed later. It stays listed.
 
 datawatch does **not** type request text into a shell session, a one-shot run,
 a chat-mode or HTTP conversation backend, a pi session, or where it cannot see
@@ -129,6 +143,17 @@ request in the middle of a task sometimes made up further requests and acted on
 them, which is why delivery waits for the task to end. A model can also miscopy
 an ID. datawatch refuses unknown request IDs; it cannot stop what the model does
 with its own tools.
+
+## At install
+
+**Set `acceptance.mode: report` when you install.** Requests can close only with
+it, and a request made while it is off never gets a list. Put it in the config
+before datawatch starts, or run `datawatch config set acceptance.mode report`
+and restart so that the `acceptance_*` tools appear.
+
+**Going back to an older version needs `datawatch queue export` first.** Stop
+datawatch and run it (`--plain` on a secure install; that file is plain
+content), or the older daemon will not start.
 
 ## Times
 

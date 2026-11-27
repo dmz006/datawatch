@@ -355,6 +355,9 @@ type RoleBinding struct {
 	// delivered by its worker policy). Nil: it gets no must-deliver work.
 	CanTakeAt *time.Time `json:"can_take_at,omitempty"`
 	HelloID   string     `json:"hello_id,omitempty"`
+	// ToldOlderAt is when this holder was sent its one line about requests made
+	// before it was given the role whose take-by time had passed.
+	ToldOlderAt *time.Time `json:"told_older_at,omitempty"`
 }
 
 // RequestNotice is one reminder datawatch decided to type. It is saved before

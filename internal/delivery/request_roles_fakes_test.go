@@ -131,6 +131,19 @@ func (b *cxBook) PutBinding(n RoleBinding) error {
 	return nil
 }
 
+func (b *cxBook) SetToldOlder(given RoleBinding, at *time.Time) error {
+	if b.failSave {
+		return ErrCannotRecord
+	}
+	for i := range b.bindings {
+		if x := &b.bindings[i]; x.Role == given.Role && x.Scope == given.Scope && x.SessionID == given.SessionID &&
+			x.GivenAt.Equal(given.GivenAt) {
+			x.ToldOlderAt = at
+		}
+	}
+	return nil
+}
+
 func (b *cxBook) DropBinding(role Role, scope Scope) error {
 	if b.failSave {
 		return ErrCannotRecord

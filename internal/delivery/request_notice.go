@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -47,9 +48,12 @@ func NewNotifier(opts NotifierOptions) Notifier {
 
 // sessionWork is what one session could be sent in this pass.
 type sessionWork struct {
-	id      string
-	remind  []Request // waiting for a take or an accept
-	toType  []Request // typed once, oldest first
+	id     string
+	remind []Request // waiting for a take or an accept
+	toType []Request // typed once, oldest first
+	// older are the roles whose one line about older requests is part of this
+	// reminder.
+	older   []RoleBinding
 	lastAny time.Time // when it was last sent anything, from saved records
 }
 
@@ -179,6 +183,7 @@ func (n *notifier) work(b RequestBook, sent []RequestNotice) []*sessionWork {
 		}
 		return by[id]
 	}
+	bindings := b.Bindings()
 	latest := func(w *sessionWork, at *time.Time) {
 		if at != nil && at.After(w.lastAny) {
 			w.lastAny = *at
@@ -210,8 +215,16 @@ func (n *notifier) work(b RequestBook, sent []RequestNotice) []*sessionWork {
 			}
 		case r.State != StateWaiting && r.State != StateDelivered:
 		case r.Delivery.FetchedAt != nil && r.Delivery.Reminders >= MaxFetchedReminders:
-		// Nobody fetched it in time: it is listed and no longer reminded of.
+		// Nobody fetched it in time: it is listed and no longer reminded of,
+		// except in the one line to a holder given the role after it was made.
 		case r.Delivery.FetchedAt == nil && pickupPassed(&r):
+			if x, ok := untoldHolder(bindings, &r); ok && r.Delivery.NoticeAt == nil {
+				w := get(id)
+				w.remind = append(w.remind, r)
+				if !slices.ContainsFunc(w.older, func(o RoleBinding) bool { return o.Role == x.Role && o.Scope == x.Scope }) {
+					w.older = append(w.older, x)
+				}
+			}
 		default:
 			get(id).remind = append(get(id).remind, r)
 		}
@@ -236,6 +249,17 @@ func (n *notifier) work(b RequestBook, sent []RequestNotice) []*sessionWork {
 	return out
 }
 
+// untoldHolder is the binding by which r's holder was given r's role after r
+// was made, if that holder has not had its one line about older requests.
+func untoldHolder(bindings []RoleBinding, r *Request) (RoleBinding, bool) {
+	for _, x := range bindings {
+		if x.Role == r.Role && x.Scope == r.Scope && x.SessionID == r.Holder.SessionID {
+			return x, x.ToldOlderAt == nil && r.Created.Before(x.GivenAt)
+		}
+	}
+	return RoleBinding{}, false
+}
+
 // remind saves one reminder, then types its line. It returns the saved notice
 // when it counts.
 func (n *notifier) remind(ctx context.Context, b RequestBook, w *sessionWork, now time.Time) (*RequestNotice, error) {
@@ -258,6 +282,12 @@ func (n *notifier) remind(ctx context.Context, b RequestBook, w *sessionWork, no
 			return &note, err
 		}
 	}
+	for _, x := range w.older {
+		at := now
+		if err := b.SetToldOlder(x, &at); err != nil {
+			return &note, err
+		}
+	}
 	err := n.opts.Typer.Notice(ctx, w.id, reminderLine(len(w.remind)))
 	if errors.Is(err, ErrPromptRefused) {
 		// Nothing was typed, so the try does not count.
@@ -273,6 +303,9 @@ func (n *notifier) remind(ctx context.Context, b RequestBook, w *sessionWork, no
 				return nil
 			})
 			undo = append(undo, cerr)
+		}
+		for _, x := range w.older {
+			undo = append(undo, b.SetToldOlder(x, nil))
 		}
 		return nil, errors.Join(undo...)
 	}

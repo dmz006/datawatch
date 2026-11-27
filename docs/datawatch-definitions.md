@@ -1044,13 +1044,13 @@ The **completed migration** moves Automata (and Automations) that ended `cancell
 
 **Fetched, in model call, accepted** — *fetched*: the session's own credential took the content; for Claude Code that counts as delivery. *In a completed model call*: pi only, datawatch's pi extension reported that the exact text was in a model call that completed. It does not show the model heeded or did it. An interactive pi gets a request after its current task. *Accepted*: the holder committed to it. *Reported*: the holder says it finished (Claude Code `request_report`, pi `datawatch_report`); that only starts datawatch's check.
 
-**Typed, unconfirmed** — the text was typed, once ever, into a worker with no proven take. Typing never counts as delivery. The tracker records only `request <id> typed`; the pane's output log still shows what was typed.
+**Typed, unconfirmed** — the text was typed, once ever and only within the take-by time, into a worker with no proven take. Typing never counts as delivery. The tracker records only `request <id> typed`; the pane's output log still shows what was typed.
 
 **Delivered (not the same as done)** — how a hello, an answer or a rule bundle reads when a counted receipt closes it. Only datawatch itself creates these three.
 
 **Repaired** — the reason on a request that a repair of damaged request storage rebuilt while it was open. It reads failed and is not run again until the operator reissues or drops it. See [`howto/requests.md`](howto/requests.md#if-the-request-storage-is-damaged).
 
-**Reminder** — one typed line with the number of waiting requests and no content; limited per session and per computer each hour, together with requests typed in full; none while paused, held for usage or rate limited, and none for a request nobody fetched once its take-by time has passed.
+**Reminder** — one typed line with the number of waiting requests and no content; limited per session and per computer each hour, together with requests typed in full; none while paused, held for usage or rate limited, and none for a request nobody fetched once its take-by time has passed, except one line, once, to a Claude Code session given the role after the request was made.
 
 ### Request settings
 

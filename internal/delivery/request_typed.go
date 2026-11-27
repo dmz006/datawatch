@@ -15,10 +15,10 @@ import (
 )
 
 // mayType reports a request whose text may be typed into its holder: waiting,
-// never handed over, held by a worker with no proven take. A hello is never
-// typed (typing proves no take).
+// never handed over, within its pickup limit, held by a worker with no proven
+// take. A hello is never typed (typing proves no take).
 func mayType(r *Request) bool {
-	return r.State == StateWaiting && r.Holder != nil && r.Kind != ReqHello &&
+	return r.State == StateWaiting && r.Holder != nil && r.Kind != ReqHello && !pickupPassed(r) &&
 		!r.Delivery.MaybeHandedOver() && !PolicyFor(r.Holder.Family).Proven && typableFamily(r.Holder.Family)
 }
 

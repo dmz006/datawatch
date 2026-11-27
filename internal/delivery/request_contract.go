@@ -377,6 +377,9 @@ type RequestBook interface {
 	Bindings() []RoleBinding
 	PutBinding(b RoleBinding) error
 	DropBinding(role Role, scope Scope) error
+	// SetToldOlder saves ToldOlderAt (nil takes it back) on the binding as it
+	// was given. A role given again since then is left alone.
+	SetToldOlder(given RoleBinding, at *time.Time) error
 	// Notices are the reminders decided since then.
 	Notices(since time.Time) []RequestNotice
 	AddNotice(n RequestNotice) error

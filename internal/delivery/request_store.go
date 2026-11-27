@@ -753,6 +753,20 @@ func (s *Requests) PutBinding(b RoleBinding) error {
 	}}})
 }
 
+// SetToldOlder implements RequestBook. It changes that one field, so it
+// never puts back a holder replaced since the caller read the binding.
+func (s *Requests) SetToldOlder(given RoleBinding, at *time.Time) error {
+	return s.commit(&txn{meta: []func(*storeMeta){func(m *storeMeta) {
+		for i := range m.Bindings {
+			x := &m.Bindings[i]
+			if x.Role == given.Role && x.Scope == given.Scope && x.SessionID == given.SessionID &&
+				x.GivenAt.Equal(given.GivenAt) {
+				x.ToldOlderAt = at
+			}
+		}
+	}}})
+}
+
 // DropBinding implements RequestBook.
 func (s *Requests) DropBinding(role Role, scope Scope) error {
 	return s.commit(&txn{meta: []func(*storeMeta){func(m *storeMeta) {
