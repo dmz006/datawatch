@@ -34,7 +34,7 @@ them.
 - **Listed** means the item is on the list.
 - **Told** means a message channel accepted a send that named the item. It does
   not show that you read it.
-- **Acknowledged** is you saying you have seen it, on any surface.
+- **Acknowledged** means it was marked as seen, on any surface.
 
 ## What is listed
 
@@ -171,25 +171,12 @@ choice, and at least one is needed.
 
 ### Who may act
 
-The rule is that only you acknowledge, accept and drop. **It is recorded, not
-enforced**: AI sessions may acknowledge, accept, drop and send test messages,
-and the report counts actions recorded under a session or a peer. Enforcing the
-rule waits for real caller identities.
+The rule is that only you acknowledge, accept and drop. **It is not
+enforced**: AI sessions may acknowledge, accept, drop and send test messages.
 
-On the REST routes and the assistant tools, reading the report and running the
-check need `delivery:read`, and the other actions need `delivery:write`.
-`delivery:write` is in full-control and in the session default grant, and in no
-other built-in peer group.
-
-> **Known problem, also in earlier code: do not rely on these permissions or
-> recorded names yet.** The chat test route (`POST /api/test/message`) needs
-> only `sessions:list` and runs chat commands with operator access. A caller
-> without `delivery:write` can acknowledge, accept, drop and send test messages
-> through it. Some of what it does there is recorded as the operator's, and is
-> then left out of the count of session and peer actions. The same route lets
-> such a caller do far more than the delivery check, including pausing and
-> resuming datawatch. Give no peer or session access you would not give full
-> access while it is open.
+> Known, also in earlier code: a credential with sessions:list can use the chat
+> test route with operator access; permissions and recorded actor names cannot
+> be relied on.
 
 ## Settings
 
