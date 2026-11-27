@@ -409,8 +409,10 @@ type Server struct {
 	usageBackoff *autonomous.Backoff
 	// pauseStore is the operator pause service (see pause.go); nil = not wired.
 	pauseStore *pause.Store
-	// delivery is the delivery check (see delivery.go); nil = not wired.
-	delivery delivery.Service
+	// delivery is the delivery check (see delivery.go); nil = not wired. The
+	// daemon wires it after the web server is serving, so deliveryMu guards it.
+	deliveryMu sync.RWMutex
+	delivery   delivery.Service
 	// backoffReserve is the review-reserve gate (nil = not wired); the usage
 	// back-off status uses it to report the per-hour reserve usage per
 	// backed-off backend.

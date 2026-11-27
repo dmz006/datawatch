@@ -36,8 +36,17 @@ import (
 // SetDelivery wires the delivery check exposed under /api/delivery.
 func (s *HTTPServer) SetDelivery(d delivery.Service) {
 	if s.api != nil {
+		s.api.deliveryMu.Lock()
+		defer s.api.deliveryMu.Unlock()
 		s.api.delivery = d
 	}
+}
+
+// deliveryService is the wired check, or nil.
+func (s *Server) deliveryService() delivery.Service {
+	s.deliveryMu.RLock()
+	defer s.deliveryMu.RUnlock()
+	return s.delivery
 }
 
 const deliveryUnavailable = "the delivery check is not available"
@@ -45,20 +54,21 @@ const deliveryUnavailable = "the delivery check is not available"
 // deliveryMaxBody bounds an action's body; a thousand keys fit many times over.
 const deliveryMaxBody = 1 << 20
 
-// deliveryGate applies the method, the capability and the wiring checks.
-func (s *Server) deliveryGate(w http.ResponseWriter, r *http.Request, method, required string) bool {
+// deliveryGate applies the method, the capability and the wiring checks. It
+// returns the check, or nil after writing the refusal.
+func (s *Server) deliveryGate(w http.ResponseWriter, r *http.Request, method, required string) delivery.Service {
 	if r.Method != method {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return false
+		return nil
 	}
 	if !s.fedCap(w, r, required) {
-		return false
+		return nil
 	}
-	if s.delivery == nil {
+	d := s.deliveryService()
+	if d == nil {
 		http.Error(w, deliveryUnavailable, http.StatusServiceUnavailable)
-		return false
 	}
-	return true
+	return d
 }
 
 // deliveryCallerRe is a session or peer name an assistant tool or chat command
@@ -131,19 +141,21 @@ func deliveryChanged(w http.ResponseWriter, n int, err error) {
 
 // handleDelivery serves GET /api/delivery.
 func (s *Server) handleDelivery(w http.ResponseWriter, r *http.Request) {
-	if !s.deliveryGate(w, r, http.MethodGet, federation.CapDeliveryRead) {
+	d := s.deliveryGate(w, r, http.MethodGet, federation.CapDeliveryRead)
+	if d == nil {
 		return
 	}
-	writeJSONOK(w, s.delivery.Report())
+	writeJSONOK(w, d.Report())
 }
 
 // handleDeliveryCheck serves POST /api/delivery/check.
 func (s *Server) handleDeliveryCheck(w http.ResponseWriter, r *http.Request) {
-	if !s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryRead) {
+	d := s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryRead)
+	if d == nil {
 		return
 	}
 	// A caller that goes away must not stop a pass between its sends.
-	report, err := s.delivery.Pass(context.WithoutCancel(r.Context()))
+	report, err := d.Pass(context.WithoutCancel(r.Context()))
 	if err != nil {
 		deliveryError(w, err)
 		return
@@ -153,7 +165,8 @@ func (s *Server) handleDeliveryCheck(w http.ResponseWriter, r *http.Request) {
 
 // handleDeliveryAck serves POST /api/delivery/ack.
 func (s *Server) handleDeliveryAck(w http.ResponseWriter, r *http.Request) {
-	if !s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryWrite) {
+	d := s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryWrite)
+	if d == nil {
 		return
 	}
 	var req struct {
@@ -163,13 +176,14 @@ func (s *Server) handleDeliveryAck(w http.ResponseWriter, r *http.Request) {
 	if !deliveryDecode(w, r, &req) {
 		return
 	}
-	n, err := s.delivery.Ack(req.Selector, s.deliveryBy(r, req.Actor))
+	n, err := d.Ack(req.Selector, s.deliveryBy(r, req.Actor))
 	deliveryChanged(w, n, err)
 }
 
 // handleDeliveryAccept serves POST /api/delivery/accept.
 func (s *Server) handleDeliveryAccept(w http.ResponseWriter, r *http.Request) {
-	if !s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryWrite) {
+	d := s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryWrite)
+	if d == nil {
 		return
 	}
 	var req struct {
@@ -186,13 +200,14 @@ func (s *Server) handleDeliveryAccept(w http.ResponseWriter, r *http.Request) {
 		deliveryError(w, err)
 		return
 	}
-	n, err := s.delivery.Accept(req.Selector, req.Reason, until, s.deliveryBy(r, req.Actor))
+	n, err := d.Accept(req.Selector, req.Reason, until, s.deliveryBy(r, req.Actor))
 	deliveryChanged(w, n, err)
 }
 
 // handleDeliveryDrop serves POST /api/delivery/drop.
 func (s *Server) handleDeliveryDrop(w http.ResponseWriter, r *http.Request) {
-	if !s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryWrite) {
+	d := s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryWrite)
+	if d == nil {
 		return
 	}
 	var req struct {
@@ -203,16 +218,17 @@ func (s *Server) handleDeliveryDrop(w http.ResponseWriter, r *http.Request) {
 	if !deliveryDecode(w, r, &req) {
 		return
 	}
-	n, err := s.delivery.Drop(req.Selector, req.Reason, s.deliveryBy(r, req.Actor))
+	n, err := d.Drop(req.Selector, req.Reason, s.deliveryBy(r, req.Actor))
 	deliveryChanged(w, n, err)
 }
 
 // handleDeliveryTestMessage serves POST /api/delivery/test-message.
 func (s *Server) handleDeliveryTestMessage(w http.ResponseWriter, r *http.Request) {
-	if !s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryWrite) {
+	d := s.deliveryGate(w, r, http.MethodPost, federation.CapDeliveryWrite)
+	if d == nil {
 		return
 	}
-	results := s.delivery.TestMessage(context.WithoutCancel(r.Context()))
+	results := d.TestMessage(context.WithoutCancel(r.Context()))
 	if results == nil {
 		results = []delivery.SendResult{}
 	}

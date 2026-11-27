@@ -475,3 +475,31 @@ func TestDeliveryConfigRefusesBadValues(t *testing.T) {
 		}
 	}
 }
+
+// The daemon connects the check after the web server has started serving, so
+// wiring it must be safe beside requests (run with -race).
+func TestDeliveryWiredWhileServing(t *testing.T) {
+	s := &Server{}
+	h := &HTTPServer{api: s}
+	mux := deliveryMux(s)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			rr := deliveryCall(mux, http.MethodGet, "/api/delivery", "", "", nil)
+			if rr.Code != http.StatusOK && rr.Code != http.StatusServiceUnavailable {
+				t.Errorf("status %d", rr.Code)
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		h.SetDelivery(&fakeDeliveryService{})
+	}()
+	wg.Wait()
+	if rr := deliveryCall(mux, http.MethodGet, "/api/delivery", "", "", nil); rr.Code != http.StatusOK {
+		t.Fatalf("after wiring: %d %s", rr.Code, rr.Body.String())
+	}
+}
