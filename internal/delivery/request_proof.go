@@ -184,7 +184,7 @@ func (v *listsVerifier) noteHolder(l *acceptance.List, sessionID string) error {
 
 // syncHolders makes the list know every doer the request knows, also those it
 // missed while the lists were off.
-func (v *listsVerifier) syncHolders(l *acceptance.List, r Request) (*acceptance.List, error) {
+func (v *listsVerifier) syncHolders(l *acceptance.List, r Request) error {
 	doers := append([]string(nil), r.FormerHolders...)
 	if r.Holder != nil {
 		doers = append(doers, r.Holder.SessionID)
@@ -195,14 +195,14 @@ func (v *listsVerifier) syncHolders(l *acceptance.List, r Request) (*acceptance.
 			continue
 		}
 		if err := v.noteHolder(l, id); err != nil {
-			return nil, err
+			return err
 		}
 		var err error
 		if l, err = v.lists.Get(r.ID); err != nil {
-			return nil, listErr(err)
+			return listErr(err)
 		}
 	}
-	return l, nil
+	return nil
 }
 
 // Started records the first notice, take or typed input.
@@ -220,7 +220,7 @@ func (v *listsVerifier) read(ctx context.Context, r Request) (*acceptance.List, 
 	if err != nil || l == nil {
 		return nil, err
 	}
-	if l, err = v.syncHolders(l, r); err != nil {
+	if err = v.syncHolders(l, r); err != nil {
 		return nil, err
 	}
 	l, err = v.lists.Evaluate(ctx, r.ID)

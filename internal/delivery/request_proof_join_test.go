@@ -20,13 +20,12 @@ import (
 
 type cxJoinFx struct {
 	*cxProofFx
-	s        cxSessions
-	holds    cxHolds
-	ty       *cxTyper
-	store    *Requests
-	data     string
-	key      []byte
-	listsKey []byte
+	s     cxSessions
+	holds cxHolds
+	ty    *cxTyper
+	store *Requests
+	data  string
+	key   []byte
 }
 
 func cxJoin(t *testing.T, key []byte) *cxJoinFx {
