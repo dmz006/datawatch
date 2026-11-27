@@ -549,7 +549,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}
 		failures++
 		st.failedSteps++
-		if step.EffectiveOnFailure() != OnFailureContinue {
+		// A makefile link out of the project stops the run whatever the step's
+		// on_failure says; other failures follow on_failure.
+		if step.EffectiveOnFailure() != OnFailureContinue || errors.Is(err, errMakefileLinksOut) {
 			return finish(autonomous.MergeRunFailed, fmt.Errorf("step %s failed: %w", step.Name, err))
 		}
 		i++
@@ -741,8 +743,16 @@ const noMakeTargetNote = "the project's Makefile has no "
 // execute performs the step and returns its result and a short account. The
 // caller bounds it with the step's timeout.
 func (s *runState) execute(ctx context.Context, step Step) (string, string, error) {
-	if step.RequiresMakeTarget != "" && !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
-		return autonomous.MergeStepSkipped, noMakeTargetNote + step.RequiresMakeTarget + " target", nil
+	if step.RequiresMakeTarget != "" {
+		// A makefile link out of the project fails the step; it is not
+		// skipped as a missing target would be.
+		if name, out := makefileLinksOut(s.r.Dir); out {
+			note := makefileLinkNote(name, step.RequiresMakeTarget)
+			return autonomous.MergeStepFailed, note, fmt.Errorf("%w: %s", errMakefileLinksOut, note)
+		}
+		if !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
+			return autonomous.MergeStepSkipped, noMakeTargetNote + step.RequiresMakeTarget + " target", nil
+		}
 	}
 	// The release gate applies to every step that leaves the machine, and
 	// only to those: it is decided at most once per run, before the first

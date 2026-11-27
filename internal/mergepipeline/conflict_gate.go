@@ -118,8 +118,13 @@ func (m *Merger) gateSteps(ctx context.Context, dir string, set ConflictSettings
 		if s.Kind != kind {
 			continue
 		}
-		if s.RequiresMakeTarget != "" && !makefileHasTarget(dir, s.RequiresMakeTarget) {
-			continue
+		if s.RequiresMakeTarget != "" {
+			if name, out := makefileLinksOut(dir); out {
+				return 0, fmt.Sprintf("%s step %q: %s", kind, s.Name, makefileLinkNote(name, s.RequiresMakeTarget))
+			}
+			if !makefileHasTarget(dir, s.RequiresMakeTarget) {
+				continue
+			}
 		}
 		if strings.TrimSpace(s.Command) == "" {
 			return 0, fmt.Sprintf("%s step %q is a built-in action and cannot be run on a proposal", kind, s.Name)
