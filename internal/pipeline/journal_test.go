@@ -89,12 +89,12 @@ func TestTheJournalRecordsHowAPipelineEnded(t *testing.T) {
 
 func TestAPipelineWhoseStartCannotBeSavedDoesNotStart(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "gone")
-	if err := os.WriteFile(dir, []byte("a file, so no folder can be made here"), 0o600); err != nil {
+	j, err := NewJournal(filepath.Join(dir, "pipelines.rec"), nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	j, _ := NewJournal(filepath.Join(dir, "pipelines.rec"), nil)
-	if j == nil {
-		t.Fatal("journal")
+	if err := os.WriteFile(dir, []byte("a file, so no folder can be made here"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	starter := &journalStarter{}
 	e := NewExecutor(starter, "shell")

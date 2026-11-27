@@ -18,6 +18,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -178,7 +180,25 @@ func WriteFile(path string, data []byte, perm os.FileMode, key []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// WriteFileDurable is WriteFile that also syncs the folder after the rename.
+// WriteFileDurable is WriteFile that also syncs the folder after the rename,
+// so that the new name survives a power loss. Windows cannot sync a folder.
 func WriteFileDurable(path string, data []byte, perm os.FileMode, key []byte) error {
-	return fmt.Errorf("secfile: not built")
+	if err := WriteFile(path, data, perm, key); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("secfile: open folder to sync: %w", err)
+	}
+	err = dir.Sync()
+	if cerr := dir.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return fmt.Errorf("secfile: sync folder: %w", err)
+	}
+	return nil
 }
