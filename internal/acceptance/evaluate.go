@@ -692,9 +692,62 @@ func (e *evaluator) evalWindow(ctx context.Context, l *List, it Item, st *ItemSt
 	return final(Result{Value: ResultMet, Reason: "fresh readings cover the whole window"})
 }
 
-// evalReceipt needs the holder or the named recipient to have fetched or
-// confirmed the delivery. A channel taking a message is not receipt.
+// receiptSince is the earliest time a receipt can have happened and still be
+// about what the list asks now.
+func receiptSince(l *List) time.Time {
+	since := l.CreatedAt
+	if l.Occurrence != "" {
+		// A run's list may be made after its run was due.
+		since = l.OccurrenceDue
+	}
+	if n := len(l.Ask.Additions); n > 0 && l.Ask.Additions[n-1].At.After(since) {
+		since = l.Ask.Additions[n-1].At
+	}
+	if l.ReplacedAt.After(since) {
+		since = l.ReplacedAt
+	}
+	return since
+}
+
+// tookItFor says why the observed identity does not show receipt, or "". The
+// named recipient counts, and on a delivery-only list so does the current
+// holder. On any other list the holder is the doer, so only a named recipient
+// who has never done the work counts.
+func tookItFor(l *List, it Item, by string) string {
+	target := ""
+	if it.State != nil {
+		target = it.State.Target
+	}
+	if l.Kind != KindDelivery {
+		switch {
+		case target == "":
+			return "the item names no recipient, and on a list that is not delivery only the holder is the doer"
+		case by != target:
+			return fmt.Sprintf("taken by %q, who is not the named recipient", by)
+		case l.everHeld(by):
+			return fmt.Sprintf("taken by %q, who does the work, so it does not show the work reached anyone else", by)
+		}
+		return ""
+	}
+	switch {
+	case target != "" && by == target, l.isHolder(by):
+		return ""
+	case target == "" && len(l.Holders) == 0:
+		return "no holder is recorded and the item names no recipient, so nobody's fetch shows receipt"
+	}
+	return fmt.Sprintf("taken by %q, who is neither the named recipient nor the current holder", by)
+}
+
+// evalReceipt needs the current holder or the named recipient to have fetched
+// or confirmed the delivery, at a time the source states, for the run the list
+// is about. A channel taking a message is not receipt.
 func (e *evaluator) evalReceipt(ctx context.Context, l *List, it Item) Result {
+	switch {
+	case l.Scheduled && l.Occurrence == "":
+		return cannot("a scheduled request is received run by run; this list is not one run")
+	case l.Occurrence != "" && e.now().Before(l.OccurrenceDue):
+		return waiting("the run is not due yet", l.OccurrenceDue)
+	}
 	p := e.probes[MethodReceipt]
 	if p == nil {
 		return cannot("datawatch has no receipt record for this yet")
@@ -709,11 +762,24 @@ func (e *evaluator) evalReceipt(ctx context.Context, l *List, it Item) Result {
 		return cannot("only %q is known; that is not receipt", r.Value)
 	case r.By == "":
 		return cannot("the receipt does not say who was observed taking it")
-	case it.State != nil && it.State.Target != "" && r.By != it.State.Target && !l.isHolder(r.By):
-		return cannot("taken by %q, who is neither the named recipient nor the holder", r.By)
+	}
+	if why := tookItFor(l, it, r.By); why != "" {
+		return cannot("%s", why)
+	}
+	switch {
+	case r.SourceAt.IsZero():
+		return cannot("the receipt has no time on it")
+	case r.SourceAt.After(e.now().Add(e.set.Freshness)):
+		return cannot("the receipt's time is in the future")
+	case r.SourceAt.Before(receiptSince(l)):
+		return cannot("the receipt is older than what is asked now: it was made before the ask, later words, the run's due time or the replaced work")
+	case r.Occurrence != l.Occurrence:
+		return cannot("the receipt is not for this run: it must carry this list's run id")
+	case l.Occurrence != "" && (!r.ResultAt.After(l.OccurrenceDue) || !r.SourceAt.After(l.OccurrenceDue)):
+		return cannot("the receipt is not tied to this run: it must be made after the run was due")
 	}
 	out := Result{Value: ResultMet, Reason: r.Value + " by " + r.By, At: e.now()}
-	out.Evidence = []Evidence{{Origin: OriginDatawatch, What: "receipt " + r.Value + " by " + r.By, At: out.At}}
+	out.Evidence = []Evidence{{Origin: OriginDatawatch, What: "receipt " + r.Value + " by " + r.By + " at " + r.SourceAt.Format(time.RFC3339), At: out.At}}
 	return out
 }
 

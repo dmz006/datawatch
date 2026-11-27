@@ -207,11 +207,14 @@ type EditInput struct {
 	Ask       string
 	Scheduled bool
 	Packs     []string
-	AddAsk    string
-	Upsert    []Item
-	Remove    []string
-	NeededBy  *time.Time
-	Words     string
+	// SourceKnown is set only by datawatch's own request sources, which see
+	// where a request came from. No request body can set it.
+	SourceKnown bool
+	AddAsk      string
+	Upsert      []Item
+	Remove      []string
+	NeededBy    *time.Time
+	Words       string
 	// Hash, when set, must name the list as it stands.
 	Hash string
 }
@@ -721,6 +724,10 @@ func (s *Service) NoteUnitReplaced(id, how, successor string, by Caller) (*List,
 			st.Confirm, st.Runs = nil, nil
 		}
 		l.Unit, l.Yours = successor, ""
+		// The earlier holders no longer hold it and are still doers.
+		l.FormerHolders = union(l.FormerHolders, l.Holders)
+		l.Holders = nil
+		l.ReplacedAt = s.o.Now()
 		l.Generation++
 		if successor == "" {
 			l.Yours = "the unit was replaced (" + how + ") with no successor: its open items are yours"
@@ -765,6 +772,7 @@ func (s *Service) derive(fromID, newID string, edit func(l *List) error) (*List,
 	l.History, l.Serial, l.Generation = nil, 0, 0
 	l.ClosedAt, l.ClaimedDoneAt, l.ReworkRounds, l.LastReworkSubject, l.Yours, l.Holders = time.Time{}, time.Time{}, 0, "", "", nil
 	l.CreatedAt = s.o.Now()
+	l.FormerHolders, l.ReplacedAt = nil, time.Time{}
 	if err := edit(l); err != nil {
 		return nil, err
 	}

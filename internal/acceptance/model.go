@@ -351,16 +351,20 @@ type List struct {
 	Revisions      []Revision            `json:"revisions,omitempty"`
 	History        []Event               `json:"history,omitempty"`
 	// StartSubjects are the versions at freeze, by effect.
-	StartSubjects   map[string]Subject `json:"start_subjects,omitempty"`
-	CreatedAt       time.Time          `json:"created_at"`
-	FrozenAt        time.Time          `json:"frozen_at,omitempty"`
-	NeededBy        time.Time          `json:"needed_by,omitempty"`
-	Parent          string             `json:"parent,omitempty"`
-	Occurrence      string             `json:"occurrence,omitempty"`
-	OccurrenceDue   time.Time          `json:"occurrence_due,omitempty"`
-	Holders         []string           `json:"holders,omitempty"`
-	DefaultsVersion string             `json:"defaults_version,omitempty"`
-	Reviewer        string             `json:"reviewer_settings,omitempty"`
+	StartSubjects map[string]Subject `json:"start_subjects,omitempty"`
+	CreatedAt     time.Time          `json:"created_at"`
+	FrozenAt      time.Time          `json:"frozen_at,omitempty"`
+	NeededBy      time.Time          `json:"needed_by,omitempty"`
+	Parent        string             `json:"parent,omitempty"`
+	Occurrence    string             `json:"occurrence,omitempty"`
+	OccurrenceDue time.Time          `json:"occurrence_due,omitempty"`
+	Holders       []string           `json:"holders,omitempty"`
+	// FormerHolders held the work before it was replaced. They stay doers.
+	FormerHolders []string `json:"former_holders,omitempty"`
+	// ReplacedAt is when the unit carrying the ask was last replaced.
+	ReplacedAt      time.Time `json:"replaced_at,omitempty"`
+	DefaultsVersion string    `json:"defaults_version,omitempty"`
+	Reviewer        string    `json:"reviewer_settings,omitempty"`
 	// Coverage is a person's confirmation that the list covers the whole ask.
 	Coverage *Confirmation `json:"coverage,omitempty"`
 	// ReviewedHash is the list hash an independent reviewer found complete.
@@ -413,12 +417,25 @@ func (l *List) isHolder(sessionID string) bool {
 	return false
 }
 
+// everHeld reports whether a session holds the work or held it before.
+func (l *List) everHeld(sessionID string) bool {
+	if l.isHolder(sessionID) {
+		return true
+	}
+	for _, h := range l.FormerHolders {
+		if h == sessionID {
+			return true
+		}
+	}
+	return false
+}
+
 // independent reports whether datawatch can show that a caller is not the one
 // who did the work. A session counts only when the holders are known and it is
 // not one of them. A model tool with no session identity never counts.
 func (l *List) independent(c Caller) bool {
 	if c.SessionID != "" {
-		return len(l.Holders) > 0 && !l.isHolder(c.SessionID)
+		return len(l.Holders)+len(l.FormerHolders) > 0 && !l.everHeld(c.SessionID)
 	}
 	return !c.ViaTool
 }

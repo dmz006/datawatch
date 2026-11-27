@@ -473,10 +473,10 @@ func TestRule12ThinOrEmptyLists(t *testing.T) {
 	t.Run("only default items on a real ask", func(t *testing.T) {
 		rev := &fakeReviewer{settings: "m", value: ResultMet}
 		w := newWorld(t, func(w *world) { w.reviewer = rev })
-		w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return Reading{Answered: true, Value: "fetched", By: "asker"}, nil }}
 		// The sentence is only dropped by a recorded change after freeze.
 		w.frozen("r1", "report", oneAsk)
 		must[*List](t)(w.svc.Edit(ctx, EditInput{RequestID: "r1", Remove: []string{askItemID(oneAsk)}, Words: "drop it"}, operator))
+		must[*List](t)(w.svc.Accept("r1", "d-delivered", "no named recipient", "ok", "", operator))
 		w.cover("r1")
 		wantStatus(t, w.work("r1", "c1"), StatusThinList)
 	})
@@ -555,8 +555,9 @@ func TestRule14KindAndTheListBelongsToTheAsk(t *testing.T) {
 	}
 	for source, want := range map[string]Status{"message": StatusDelivered, "intake": StatusFiled} {
 		w := newWorld(t)
-		w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return Reading{Answered: true, Value: "fetched", By: "x"}, nil }}
+		w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return fetched("x", w.now), nil }}
 		w.frozen("r1", source, "Tell the coordinator Saturday moved and fix the roster")
+		must[error](t)(nil, w.svc.NoteHolder("r1", "x"))
 		l := w.work("r1", "c1")
 		wantStatus(t, l, want)
 		if Read(l).Done {
@@ -992,8 +993,9 @@ func TestAnUnknownSourceIsHeldToTheReportOnlyRule(t *testing.T) {
 
 func TestAMessageWithMoreItemsNeedsCoverage(t *testing.T) {
 	w := newWorld(t)
-	w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return Reading{Answered: true, Value: "fetched", By: "x"}, nil }}
+	w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return fetched("x", w.now), nil }}
 	w.frozen("r1", "message", "Tell them and fix the roster", Item{ID: "c", Statement: "told", Method: MethodConfirm})
+	must[error](t)(nil, w.svc.NoteHolder("r1", "x"))
 	w.work("r1", "c1")
 	wantStatus(t, must[*List](t)(w.svc.Confirm("r1", "c", true, "told", "", "", operator)), StatusNotReviewed)
 }
