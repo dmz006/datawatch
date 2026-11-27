@@ -5,6 +5,11 @@
 // in a scope of its own. So a command is not given the variables through which
 // tools find such services. This keeps ordinary tools inside the limit. It is
 // not a barrier: a command that looks for a socket itself still finds it.
+//
+// Some tools reach such a service with no variable at all: a container
+// engine's, at the system's own address. For those the scope gives a command an
+// address where nothing listens, and puts a stand-in that refuses ahead of
+// each of them on its search path (refused.go).
 
 package proclimit
 
@@ -22,7 +27,9 @@ var outsideVars = []string{
 	// A display, from which the message bus can be found or started.
 	"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY",
 	// A tmux server already running, an SSH agent and container engines.
-	"TMUX", "TMUX_PANE", "SSH_AUTH_SOCK", "DOCKER_HOST", "CONTAINER_HOST",
+	// DOCKER_CONTEXT comes before the engine's address, so it is not given
+	// either.
+	"TMUX", "TMUX_PANE", "SSH_AUTH_SOCK", "DOCKER_HOST", "CONTAINER_HOST", "DOCKER_CONTEXT",
 }
 
 // Inside returns env without the variables a command under the limit is not

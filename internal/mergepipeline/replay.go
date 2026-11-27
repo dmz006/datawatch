@@ -118,6 +118,10 @@ func ShadowHandMerge(ctx context.Context, in ReplayInput) *mergeshadow.Replay {
 		rec.SideEffects.Found = append(rec.SideEffects.Found,
 			fmt.Sprintf("%d process(es) the run started were still running when their command ended; they were stopped", n))
 	}
+	if names := left.Refused(); len(names) > 0 {
+		rec.SideEffects.Found = append(rec.SideEffects.Found, fmt.Sprintf(
+			"a command of the run asked for %s, which would run work outside the memory limit; it was refused", strings.Join(names, ", ")))
+	}
 	rec.UpdatedAt = time.Now().UTC()
 	return &rec
 }

@@ -49,3 +49,26 @@ func TestGateWithNoLimitToBeHadIsNotRun(t *testing.T) {
 		t.Errorf("the gate's command ran: %v", err)
 	}
 }
+
+// A gate that asks for a tool which would run work outside the limit fails
+// with that reason, even when make itself succeeds. The tool asked for here
+// is a stand-in.
+func TestGateThatAsksForAContainerFailsWithThatReason(t *testing.T) {
+	limit := proclimit.Scope{MemoryBytes: 64 << 20}
+	if err := limit.Available(context.Background()); err != nil {
+		t.Skipf("no systemd scope here: %v", err)
+	}
+	fakes, mark := t.TempDir(), filepath.Join(t.TempDir(), "ran")
+	if err := os.WriteFile(filepath.Join(fakes, "docker"), []byte("#!/bin/sh\ntouch '"+mark+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakes+string(os.PathListSeparator)+os.Getenv("PATH"))
+	dir := gateProject(t, "@docker build . >/dev/null 2>&1 || true")
+	res := runGate(proclimit.With(context.Background(), limit, nil), dir, "test", time.Minute, "")
+	if res.Status != GateFail || !strings.Contains(res.Detail, "asked for docker") {
+		t.Errorf("%+v", res)
+	}
+	if _, err := os.Stat(mark); !os.IsNotExist(err) {
+		t.Errorf("the engine was run: %v", err)
+	}
+}

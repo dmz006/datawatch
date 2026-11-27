@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -143,6 +144,9 @@ type Result struct {
 	// Left is how many processes the command started that were still running
 	// when it ended. They have been stopped.
 	Left int
+	// Refused names the tools the command asked for that would have run work
+	// outside the limit. None of them was run.
+	Refused []string
 }
 
 // LimitError is a command the limit made fail.
@@ -157,10 +161,41 @@ type held struct {
 	left *Tally
 }
 
-// Tally counts the processes that commands left running.
+// Tally counts the processes that commands left running, and keeps the names
+// of the tools they were refused.
 type Tally struct {
-	mu sync.Mutex
-	n  int
+	mu      sync.Mutex
+	n       int
+	refused map[string]bool
+}
+
+func (t *Tally) addRefused(names []string) {
+	if t == nil || len(names) == 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.refused == nil {
+		t.refused = map[string]bool{}
+	}
+	for _, n := range names {
+		t.refused[n] = true
+	}
+}
+
+// Refused returns the names of the tools commands were refused, in order.
+func (t *Tally) Refused() []string {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var out []string
+	for n := range t.refused {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Add counts n more.
@@ -206,15 +241,25 @@ func NoteLeft(ctx context.Context, n int) {
 // carries. Without one it changes nothing. When the limit cannot be applied
 // the command must not be started.
 func Prepare(ctx context.Context, cmd *exec.Cmd) (finish func() Result, err error) {
-	s, ok := From(ctx)
-	if !ok {
+	h, _ := ctx.Value(starterKey{}).(held)
+	if h.s == nil {
 		return func() Result { return Result{} }, nil
 	}
 	var maxRun time.Duration
 	if d, ok := ctx.Deadline(); ok {
 		maxRun = max(time.Until(d), time.Second)
 	}
-	return s.Prepare(cmd, maxRun)
+	end, err := h.s.Prepare(cmd, maxRun)
+	if err != nil {
+		return nil, err
+	}
+	// Kept here, so that it is known however the command's own failure is
+	// read.
+	return func() Result {
+		r := end()
+		h.left.addRefused(r.Refused)
+		return r
+	}, nil
 }
 
 // Run runs cmd under the limit ctx carries. A command the limit made fail

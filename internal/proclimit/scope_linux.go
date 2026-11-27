@@ -42,8 +42,8 @@ const scopeSlack = 30 * time.Second
 // so that a command never runs without it. After the command it reports the
 // processes still running and what the kernel stopped for memory, and stops
 // what is left. Only shell builtins run beside the command.
-var scopeScript = `status=$1 want=$2
-shift 2
+var scopeScript = `status=$1 want=$2 refuse=$3
+shift 3
 cg=
 while IFS= read -r line; do
 	case $line in 0::*) cg=/sys/fs/cgroup${line#0::} ;; esac
@@ -57,6 +57,10 @@ fi
 printf 'cgroup %s\n' "$cg" >"$status"
 # systemd-run needed the manager's address; the command is not given it.
 unset ` + strings.Join(outsideVars, " ") + `
+# With no address, a container engine's tools use the system's own.
+DOCKER_HOST=` + noEngine + ` CONTAINER_HOST=` + noEngine + `
+export DOCKER_HOST CONTAINER_HOST
+[ -n "$refuse" ] && PATH=$refuse${PATH:+:$PATH} && export PATH
 "$@"
 rc=$?
 others() {
@@ -83,7 +87,9 @@ func (s Scope) CeilingBytes() int64 { return s.MemoryBytes }
 
 // Describe says what the limit covers.
 func (s Scope) Describe() string {
-	return fmt.Sprintf("%s of memory and no swap for the processes of each command that stay in its systemd scope", size(s.MemoryBytes))
+	return fmt.Sprintf("%s of memory and no swap for the processes of each command that stay in its systemd scope; "+
+		"%s are refused when found by name on the command's search path, and container engines are not given their usual address; "+
+		"this is not a sandbox", size(s.MemoryBytes), strings.Join(refusedTools, ", "))
 }
 
 func size(b int64) string {
@@ -117,6 +123,16 @@ func (s Scope) Available(ctx context.Context) error {
 func (s Scope) Prepare(cmd *exec.Cmd, maxRun time.Duration) (func() Result, error) {
 	if cmd.Err != nil {
 		return nil, cmd.Err
+	}
+	// Code that makes limits of its own, such as datawatch's own tests run
+	// by a check, may itself be under one. A scope it made would not be part
+	// of that one. The control group says so whatever the environment holds.
+	own, err := os.ReadFile(ownCgroup)
+	if err != nil {
+		return nil, fmt.Errorf("it cannot be told whether this process already runs under a command's limit: %w", err)
+	}
+	if unit := limitScopeOf(string(own)); unit != "" {
+		return nil, fmt.Errorf("this process already runs under the limit of a command (%s): a scope made here would be outside that limit, so none is made", unit)
 	}
 	page := int64(os.Getpagesize())
 	limit := s.MemoryBytes / page * page
@@ -159,6 +175,14 @@ func (s Scope) Prepare(cmd *exec.Cmd, maxRun time.Duration) (func() Result, erro
 		}
 		kept = append(withoutVar(kept, "TMUX_TMPDIR"), "TMUX_TMPDIR="+tmuxDir)
 	}
+	refuseDir, err := makeRefusals(envValue(kept, "PATH"))
+	if err != nil {
+		_ = os.Remove(status)
+		if tmuxDir != "" {
+			_ = os.RemoveAll(tmuxDir)
+		}
+		return nil, fmt.Errorf("make what refuses work outside the limit: %w", err)
+	}
 	// systemd-run needs the user manager's address. The script takes it away
 	// again before it starts the command.
 	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
@@ -180,7 +204,7 @@ func (s Scope) Prepare(cmd *exec.Cmd, maxRun time.Duration) (func() Result, erro
 		"-p", "OOMPolicy=continue",
 		"-p", "RuntimeMaxSec="+strconv.FormatInt(int64((maxRun+scopeSlack)/time.Second), 10),
 		"--", "/bin/sh", "-c", scopeScript, "datawatch-scope",
-		status, strconv.FormatInt(limit, 10), cmd.Path)
+		status, strconv.FormatInt(limit, 10), refuseDir, cmd.Path)
 	if len(cmd.Args) > 1 {
 		args = append(args, cmd.Args[1:]...)
 	}
@@ -202,6 +226,9 @@ func (s Scope) Prepare(cmd *exec.Cmd, maxRun time.Duration) (func() Result, erro
 			if tmuxDir != "" {
 				_ = os.RemoveAll(tmuxDir)
 			}
+			if refuseDir != "" {
+				_ = os.RemoveAll(refuseDir)
+			}
 		}()
 		st := readStatus(status)
 		cg := st["cgroup"]
@@ -210,13 +237,24 @@ func (s Scope) Prepare(cmd *exec.Cmd, maxRun time.Duration) (func() Result, erro
 			return Result{Failed: "the command was not run: the hard memory limit of " + size(limit) + " could not be put in force"}
 		}
 		if _, ok := st["done"]; !ok {
-			return Result{Failed: "the processes of the command's scope were stopped before it ended: its time limit, or its memory limit of " + size(limit)}
+			r := Result{Failed: "the processes of the command's scope were stopped before it ended: its time limit, or its memory limit of " + size(limit), Refused: asked(refuseDir)}
+			if len(r.Refused) > 0 {
+				r.Failed = refusedWhy(r.Refused) + "; " + r.Failed
+			}
+			return r
 		}
-		r := Result{}
+		r := Result{Refused: asked(refuseDir)}
 		r.Left, _ = strconv.Atoi(st["left"])
-		if n, _ := strconv.Atoi(st["oom"]); n > 0 {
-			r.Failed = fmt.Sprintf("stopped by the memory limit: the command's processes passed %s of memory, and the kernel stopped %d of them", size(limit), n)
+		var why []string
+		// A command that was refused is read as failed even when it went on
+		// and reported success: what it meant to check did not run.
+		if len(r.Refused) > 0 {
+			why = append(why, refusedWhy(r.Refused))
 		}
+		if n, _ := strconv.Atoi(st["oom"]); n > 0 {
+			why = append(why, fmt.Sprintf("stopped by the memory limit: the command's processes passed %s of memory, and the kernel stopped %d of them", size(limit), n))
+		}
+		r.Failed = strings.Join(why, "; ")
 		return r
 	}, nil
 }

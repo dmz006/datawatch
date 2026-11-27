@@ -94,19 +94,52 @@ So that ordinary tools stay in the scope, **a command is not given** the
 variables that lead to a service outside it: `XDG_RUNTIME_DIR` and the D-Bus
 addresses (tmux uses them to put each pane in a scope of its own), the
 variables a service gets from systemd, the display variables, `TMUX`,
-`SSH_AUTH_SOCK`, `DOCKER_HOST` and `CONTAINER_HOST`. A command also gets a
+`SSH_AUTH_SOCK`, `DOCKER_HOST`, `DOCKER_CONTEXT` and `CONTAINER_HOST`. A command also gets a
 `TMUX_TMPDIR` of its own unless a private one was already set for it, so tmux
 without a socket name starts a server inside the scope. A tmux session a check
 starts therefore stays under the limit.
 
-**This does not hold everything.** The commands run as the daemon's user. Work
-runs with no such limit, while the result can still read matched, when a command:
+**Code that makes limits like this one**, as datawatch's own `go test` does,
+gets none inside a check: datawatch's limit refuses to make a scope from a
+process that is already in a command's scope. It goes by the control group, so
+setting the variables again does not change it. What those tests start stays in
+the check's scope; a test that needs a scope of its own skips, or runs its
+sandbox shadow with a test stand-in. A passing test step therefore does not
+show that those limit tests ran. (Code from before this rule asks `systemd-run`
+for its scope, which is refused as below.)
 
-- finds the user manager's socket itself (it sets `XDG_RUNTIME_DIR` again, or
-  names the socket) and asks for another unit, for example with `systemd-run`;
-- reaches a service that is already running: a tmux server by its socket path,
-  a container engine, a scheduler, a login to this machine over ssh, and, when
-  datawatch runs as root, the system manager;
+**Refused tools.** `systemd-run`, `docker`, `docker-compose`, `podman` and
+`nerdctl` ask a service outside the scope to run work. For each one on a
+command's search path, the command finds a stand-in first. The stand-in runs
+nothing. A command that called one **reads as failed with that reason**, even
+if it ignored the answer and exited 0, and result 7 names the tool, so a shadow
+in which one was asked for **never reads matched**. This includes a harmless
+call such as `docker --version`. Merely looking a tool up (`command -v`) is not
+a call. A command is also given a `DOCKER_HOST` and `CONTAINER_HOST` where
+nothing listens: a container tool started by its full path, or a program that
+reads those variables, does not reach an engine that way. Such a try fails but
+is not named; it shows only if the command reports it.
+
+So **a hand merge whose checks need a container cannot match.** In this
+project's intended pipeline that is a merge for which the parity check builds
+an image (a change to a Dockerfile, the container workflow or the accepted-risk
+list).
+
+**This does not hold everything. It is not a sandbox.** The commands run as the
+daemon's user. Work runs with no such limit, while the result can still read
+matched, when a command:
+
+- finds the user manager itself (it sets `XDG_RUNTIME_DIR` again, or names the
+  socket) and asks it for a unit by another way than a refused name:
+  `systemctl`, the message bus, or `systemd-run` by its full path or from a
+  search path the command set anew;
+- names a container engine itself: its socket, `-H`, `--context default` or a
+  new `DOCKER_HOST`, with the tool's full path or a search path set anew, or
+  with a program or library that does not go through a refused name;
+- reaches another service that is already running: a tmux server by its socket
+  path, or the default one if it drops `TMUX_TMPDIR`; a scheduler; a cluster
+  (`kubectl`); a login to this machine over ssh; and, when datawatch runs as
+  root, the system manager;
 - raises the memory limit of its own scope, which its user may write, or moves
   itself into another control group that user may write.
 
