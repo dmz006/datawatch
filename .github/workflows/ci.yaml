@@ -93,11 +93,15 @@ jobs:
       - name: dockerfile soupsieve floor check
         run: bash scripts/check-dockerfile-soupsieve.sh && bash scripts/check-dockerfile-soupsieve.sh --self-test
 
+      # Time limit: passing runs on these runners have taken up to 295s of
+      # lint time (measured 2026-11-26), and four runs that day were cut
+      # off at the old 5m limit. 10m is about twice the slowest passing run.
+      # release.yaml and .golangci.yml carry the same value.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
-          args: --timeout=5m
+          args: --timeout=10m
           # The action's default cache key isn't branch/commit-scoped, so
           # concurrent pushes/PRs race on the same restore+save slot.
           # Observed repeatedly this session: a corrupted restore produces

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.35 (2026-11-26).** The cleanup at the end of an Automaton run now also keeps a scratch file that git, run in the file's own folder, reports as tracked or cannot judge, with `core.fsmonitor` off for that new check; this was tested on throwaway repositories, not in a live run, and some tracked files can still be deleted (see the changelog). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.37 (2026-11-26).** The time limit for the lint step on GitHub is now 10 minutes instead of 5, with no check removed. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

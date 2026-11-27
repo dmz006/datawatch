@@ -39,6 +39,18 @@ func samePlace(a, b string) bool {
 	return resolved(a) == resolved(b)
 }
 
+// AccountHome returns the home folder the user database names for this account,
+// which HOME need not be; "" when it cannot say. It is a variable only so tests
+// can name a folder of their own: the lookup ignores HOME, so without it a test
+// would look at the real account's folders. The daemon never reassigns it.
+var AccountHome = func() string {
+	u, err := user.Current()
+	if err != nil {
+		return ""
+	}
+	return u.HomeDir
+}
+
 // RefuseUserClaude refuses a project folder where writing .claude/<name> would
 // reach beyond the project: no folder at all, a home folder, a .claude folder
 // that holds a user's own settings, or a .claude folder or settings file that
@@ -51,8 +63,8 @@ func RefuseUserClaude(projectDir, name string) error {
 	if h, err := os.UserHomeDir(); err == nil && h != "" {
 		homes = append(homes, h)
 	}
-	if u, err := user.Current(); err == nil && u.HomeDir != "" {
-		homes = append(homes, u.HomeDir)
+	if h := AccountHome(); h != "" {
+		homes = append(homes, h)
 	}
 	userDirs := []string{}
 	for _, h := range homes {

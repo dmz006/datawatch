@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.37 — The GitHub lint step has more time
+
+### Fixed
+- The time limit for the lint step in the GitHub CI and release workflows, and in `.golangci.yml`, is now 10 minutes (was 5). Four CI runs on 2026-11-26 (UTC) failed on this step with "Timeout exceeded". No linter, path or check was removed.
+
+## v9.187.36 — Two flagged test packages now pass the test isolation check
+
+### Changed
+- The two test packages the check flagged for looking up files in the home folder now use their own folders. Fixed a timing fault that made an older stop-command test fail at times. This is developer tooling and one internal refactor: how datawatch behaves does not change.
+### Not covered
+- `make check-test-isolation` can pass, but it is not a reliable release check and is not part of the release steps: another older test, for session-end process cleanup, sometimes fails, with or without the check.
+- The check misses some outside access, such as a started program writing below an existing home subfolder, or writes to `/var/tmp`. Tests can still leave their own files in the shared temporary folder.
+
 ## v9.187.35 — End-of-run cleanup keeps more tracked scratch files
 
 ### Fixed

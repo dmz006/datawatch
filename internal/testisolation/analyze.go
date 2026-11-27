@@ -16,7 +16,8 @@
 //     fixed paths in the machine temp folder or the home that are outside the
 //     allowed folders.
 //
-// Not seen: what a process started by a test reads outside the decoys.
+// A passing run is not proof that no test reaches outside: what the guard does
+// not see is listed in docs/testing.md.
 package testisolation
 
 import (
