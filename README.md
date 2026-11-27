@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.43 (2026-11-27).** With auto-accept on, the start-up dialog poller of a new Claude session no longer stops after its own first answer; it makes at most two attempts on one screen (other start-up checks do not share this limit and can send more) and raises at most one warning, for only some dialogs left for you; tested with stand-in terminals only. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.44 (2026-11-27).** Recording a hand merge as merge_step now queues a comparison with datawatch's own rebuild of it unless merge shadow is off, and this release does not turn merging on; the comparison has been tested on made-up repositories only, and its memory limit is not a sandbox: a command that goes round it can still run work outside it. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
