@@ -125,7 +125,7 @@ func TestLaunch_ScriptFormShortTaskInline(t *testing.T) {
 		t.Fatal("timed out waiting for the command record")
 	}
 
-	want := "'/nonexistent/script-xyz.sh' 'short task' '" + dir + "'; echo 'DATAWATCH_COMPLETE: shell done'"
+	want := "'/nonexistent/script-xyz.sh' 'short task' '" + dir + "' && echo 'DATAWATCH_COMPLETE'': shell done' || echo 'DATAWATCH_FAILED'': shell script failed'"
 	if rec.Command != want {
 		t.Errorf("command mismatch\n got: %q\nwant: %q", rec.Command, want)
 	}

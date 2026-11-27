@@ -113,6 +113,20 @@ func (m *Manager) endSessionAs(fullID string, why EndReason, final State) error 
 	// proceeds with the kill exactly as before).
 	m.pushUnpushedBeforeTeardown(sess)
 
+	// The end record is saved before the pane is closed, so a daemon that
+	// stops between the two does not find a live-looking record with no pane.
+	var oldState, newState State
+	m.store.Mutate(func() {
+		oldState = sess.State
+		if !oldState.IsTerminal() {
+			sess.State = final
+			sess.UpdatedAt = time.Now()
+		}
+		newState = sess.State
+		stampEnd(sess, time.Now(), endNoteFor(oldState, newState, why))
+	})
+	saveErr := m.store.Save(sess)
+
 	// Kill the tmux session — but ONLY if there is one. Virtual
 	// sessions (council-virtual, etc.) have no tmux pane; calling
 	// `tmux kill-session -t ""` without a target munches arbitrary
@@ -130,18 +144,8 @@ func (m *Manager) endSessionAs(fullID string, why EndReason, final State) error 
 		m.onSessionReap(sess)
 	}
 
-	var oldState, newState State
-	m.store.Mutate(func() {
-		oldState = sess.State
-		if !oldState.IsTerminal() {
-			sess.State = final
-			sess.UpdatedAt = time.Now()
-		}
-		newState = sess.State
-		stampEnd(sess, time.Now(), endNoteFor(oldState, newState, why))
-	})
-	if err := m.store.Save(sess); err != nil {
-		return fmt.Errorf("save session: %w", err)
+	if saveErr != nil {
+		return fmt.Errorf("save session: %w", saveErr)
 	}
 	// The session holds no slot a moment after it is ended. The periodic reap
 	// stays as the safety net for a lease this call could not name.
@@ -273,13 +277,34 @@ func (m *Manager) diskTracker(sess *Session) *Tracker {
 
 // killPane closes a session's tmux pane. It is the only place manager.go closes
 // a pane: the session, the pane and the reason are journaled first, so no pane
-// is killed anonymously. A session with no pane is skipped.
+// is killed anonymously. Before that, whatever the session store still holds in
+// memory is written: a caller saves its end record first, and a daemon that
+// stops here finds that record, not a live one with no pane. A write that fails
+// is retried by the store and does not keep the pane open. A session with no
+// pane is skipped.
 func (m *Manager) killPane(fullID, tmuxName, why string) {
 	if strings.TrimSpace(tmuxName) == "" {
 		return
 	}
+	if err := m.store.FlushIfDirty(); err != nil {
+		m.journalf("[warn] session records not on disk before closing the pane of %s: %v\n", m.shortID(fullID), err)
+	}
 	m.journalf("[session] closing pane %s for %s: %s\n", tmuxName, m.shortID(fullID), why)
 	_ = m.tmux.KillSession(tmuxName)
+}
+
+// abortLaunch closes the pane of a launch or relaunch that did not finish. One
+// whose record is already stored as live (a task session is recorded before its
+// launch) is first recorded as failed: left live with no pane, it would later
+// be taken for finished work.
+func (m *Manager) abortLaunch(sess *Session, tmuxName, why string) {
+	if stored, ok := m.store.Get(sess.FullID); ok && !m.store.Snapshot(stored).State.IsTerminal() {
+		m.markEnded(stored, StateFailed, EndReason{Caller: callerAt(1), Reason: why})
+		if err := m.store.Save(stored); err != nil {
+			m.journalf("[warn] record the aborted launch of %s: %v\n", stored.ID, err)
+		}
+	}
+	m.killPane(sess.FullID, tmuxName, why)
 }
 
 // shortID returns a session's short ID, or fullID when the store does not know it.
