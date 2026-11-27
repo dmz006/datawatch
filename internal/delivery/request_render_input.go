@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // SurfaceContent is what a creator may write. A request's key, receipt code,
@@ -107,4 +109,98 @@ func RequestChatVerb(text string) (verb, rest string, ok bool) {
 	}
 	after := strings.TrimSpace(strings.TrimSpace(text)[len(fields[0]):])
 	return verb, strings.TrimSpace(after[len(fields[1]):]), true
+}
+
+// SurfaceCreate builds a create from the words the command line, chat and the
+// assistant tools take. With nothing else said it asks the supervisor of a
+// project.
+func SurfaceCreate(f map[string]string) (CreateInput, error) {
+	role, scope, err := SurfaceScope(f)
+	if err != nil {
+		return CreateInput{}, err
+	}
+	content, err := surfaceContent(f)
+	if err != nil {
+		return CreateInput{}, err
+	}
+	in := CreateInput{
+		Kind: RequestKind(orDefault(f["kind"], string(ReqAsk))), Role: role, Scope: scope, Host: f["host"],
+		Source: SourceRef{Type: f["source_type"], ID: f["source_id"]}, After: f["after"], Content: content.Content(),
+	}
+	for name, into := range map[string]*time.Duration{"take_by": &in.TakeBy, "due": &in.Due} {
+		if v := f[name]; v != "" {
+			d, err := time.ParseDuration(v)
+			if err != nil || d < 0 {
+				return CreateInput{}, surfaceInput(name + " is a duration such as 30m or 24h")
+			}
+			*into = d
+		}
+	}
+	if in.Key, err = SurfaceKey(f["key"]); err != nil {
+		return CreateInput{}, err
+	}
+	return in, nil
+}
+
+// SurfaceScope reads role, scope_kind and scope_id.
+func SurfaceScope(f map[string]string) (Role, Scope, error) {
+	scope := Scope{Kind: ScopeKind(orDefault(f["scope_kind"], string(ScopeProject))), ID: f["scope_id"]}
+	if scope.ID == "" {
+		return "", Scope{}, surfaceInput("scope_id is required")
+	}
+	return Role(orDefault(f["role"], string(RoleSupervisor))), scope, nil
+}
+
+// SurfaceBacklog builds a request from a backlog entry.
+func SurfaceBacklog(f map[string]string) (BacklogInput, error) {
+	if f["entry_key"] == "" {
+		return BacklogInput{}, surfaceInput("entry_key is required")
+	}
+	role, scope, err := SurfaceScope(f)
+	if err != nil {
+		return BacklogInput{}, err
+	}
+	content, err := surfaceContent(f)
+	if err != nil {
+		return BacklogInput{}, err
+	}
+	return BacklogInput{EntryKey: f["entry_key"], Role: role, Scope: scope, Content: content.Content()}, nil
+}
+
+func surfaceContent(f map[string]string) (SurfaceContent, error) {
+	c := SurfaceContent{Ask: f["ask"], Detail: f["detail"], ProjectDir: f["project_dir"]}
+	if v := f["params"]; v != "" {
+		if err := surfaceJSON(v, &c.Params); err != nil {
+			return c, surfaceInput("params is a JSON object of text values")
+		}
+	}
+	if v := f["items"]; v != "" {
+		if err := surfaceJSON(v, &c.Items); err != nil {
+			return c, surfaceInput("items is a JSON array of done-when items with id, statement, from, method, path, contains, effect, change, before and target")
+		}
+	}
+	return c, nil
+}
+
+// surfaceJSON refuses an unknown field: a command given to an item is refused
+// and not dropped.
+func surfaceJSON(text string, into any) error {
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(into); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("one value only")
+	}
+	return nil
+}
+
+func surfaceInput(msg string) error { return errors.Join(ErrRequestInput, errors.New(msg)) }
+
+func orDefault(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
 }

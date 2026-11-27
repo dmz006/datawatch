@@ -14,6 +14,8 @@ import (
 	"encoding/json"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/dmz006/datawatch/internal/delivery"
 )
 
 // toolQueuePush returns the queue_push tool definition.
@@ -61,8 +63,7 @@ func (s *Server) toolQueueClaim() mcpsdk.Tool {
 			mcpsdk.Description("Role to claim a work item for."),
 		),
 		mcpsdk.WithString("claimed_by",
-			mcpsdk.Required(),
-			mcpsdk.Description("Session FullID or identifier claiming the item."),
+			mcpsdk.Description("Not used: who claims comes from the credential of the call."),
 		),
 		mcpsdk.WithNumber("lease_seconds",
 			mcpsdk.Description("How long (seconds) to hold the claim before it expires. Default: 300."),
@@ -70,7 +71,7 @@ func (s *Server) toolQueueClaim() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleQueueClaim(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleQueueClaim(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.queueStore == nil {
 		return toolErrorf("queue_claim", "Queue store not available. Start the daemon first."), nil
 	}
@@ -78,15 +79,11 @@ func (s *Server) handleQueueClaim(_ context.Context, req mcpsdk.CallToolRequest)
 	if role == "" {
 		return toolErrorf("queue_claim", "role is required"), nil
 	}
-	claimedBy := req.GetString("claimed_by", "")
-	if claimedBy == "" {
-		return toolErrorf("queue_claim", "claimed_by is required"), nil
-	}
 	leaseSeconds := 300
 	if ls := req.GetFloat("lease_seconds", 0); ls > 0 {
 		leaseSeconds = int(ls)
 	}
-	it, err := s.queueStore.Claim(role, claimedBy, leaseSeconds)
+	it, err := s.queueStore.Claim(role, delivery.QueueClaimant(s.requestCaller(ctx)), leaseSeconds)
 	if err != nil {
 		return toolErrorf("queue_claim", "claim failed: %v", err), nil
 	}
@@ -100,7 +97,7 @@ func (s *Server) handleQueueClaim(_ context.Context, req mcpsdk.CallToolRequest)
 // toolQueueComplete returns the queue_complete tool definition.
 func (s *Server) toolQueueComplete() mcpsdk.Tool {
 	return mcpsdk.NewTool("queue_complete",
-		mcpsdk.WithDescription("Mark a claimed work item as complete (BL357)."),
+		mcpsdk.WithDescription("Mark a claimed work item as complete (BL357). With a request id (r-…) it is the holder's report, which does not make the request done."),
 		mcpsdk.WithString("id",
 			mcpsdk.Required(),
 			mcpsdk.Description("ID of the queue item to complete."),
@@ -111,7 +108,7 @@ func (s *Server) toolQueueComplete() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleQueueComplete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleQueueComplete(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.queueStore == nil {
 		return toolErrorf("queue_complete", "Queue store not available. Start the daemon first."), nil
 	}
@@ -125,6 +122,12 @@ func (s *Server) handleQueueComplete(_ context.Context, req mcpsdk.CallToolReque
 			return toolErrorf("queue_complete", "invalid result JSON: %v", err), nil
 		}
 	}
+	if res, ok := s.queueAsRequest(ctx, "queue_complete", id, delivery.VerbReport, func(svc delivery.RequestService, c delivery.Caller) error {
+		_, err := svc.Report(context.WithoutCancel(ctx), c, id, delivery.ReportInput{Text: delivery.QueueResultText(result)})
+		return err
+	}); ok {
+		return res, nil
+	}
 	if err := s.queueStore.Complete(id, result); err != nil {
 		return toolErrorf("queue_complete", "complete failed: %v", err), nil
 	}
@@ -134,7 +137,7 @@ func (s *Server) handleQueueComplete(_ context.Context, req mcpsdk.CallToolReque
 // toolQueueFail returns the queue_fail tool definition.
 func (s *Server) toolQueueFail() mcpsdk.Tool {
 	return mcpsdk.NewTool("queue_fail",
-		mcpsdk.WithDescription("Mark a claimed work item as failed (BL357)."),
+		mcpsdk.WithDescription("Mark a claimed work item as failed (BL357). With a request id (r-…) it is the holder's decline."),
 		mcpsdk.WithString("id",
 			mcpsdk.Required(),
 			mcpsdk.Description("ID of the queue item to fail."),
@@ -146,7 +149,7 @@ func (s *Server) toolQueueFail() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleQueueFail(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+func (s *Server) handleQueueFail(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.queueStore == nil {
 		return toolErrorf("queue_fail", "Queue store not available. Start the daemon first."), nil
 	}
@@ -155,6 +158,12 @@ func (s *Server) handleQueueFail(_ context.Context, req mcpsdk.CallToolRequest) 
 		return toolErrorf("queue_fail", "id is required"), nil
 	}
 	errMsg := req.GetString("error", "")
+	if res, ok := s.queueAsRequest(ctx, "queue_fail", id, delivery.VerbDecline, func(svc delivery.RequestService, c delivery.Caller) error {
+		_, err := svc.Decline(context.WithoutCancel(ctx), c, id, delivery.DeclineInput{ReasonCode: delivery.WhyDeclined, Text: errMsg})
+		return err
+	}); ok {
+		return res, nil
+	}
 	if err := s.queueStore.Fail(id, errMsg); err != nil {
 		return toolErrorf("queue_fail", "fail operation failed: %v", err), nil
 	}
@@ -180,7 +189,10 @@ func (s *Server) handleQueueList(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	role := req.GetString("role", "")
 	state := req.GetString("state", "")
-	items := s.queueStore.List(role, state)
+	items, err := listQueueItems(s.queueStore, role, state)
+	if err != nil {
+		return toolErrorf("queue_list", "%v", err), nil
+	}
 	if len(items) == 0 {
 		return mcpsdk.NewToolResultText("No queue items found."), nil
 	}
