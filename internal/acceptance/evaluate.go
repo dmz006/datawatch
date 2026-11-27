@@ -424,6 +424,13 @@ func (e *evaluator) evalCommand(ctx context.Context, l *List, it Item, st *ItemS
 	}
 	out := e.runner.Run(ctx, *it.Check, sub, e.timeout(it.Check))
 	r := judgeRun(it, st, out)
+	if r.Value == ResultMet && (st.Baseline == nil || !st.Baseline.Finished) {
+		why := "the check was not run on the starting version"
+		if st.Baseline != nil {
+			why = "the start run did not finish (" + st.Baseline.Reason + ")"
+		}
+		r = cannot("the start is unknown: %s, so it may already have passed before the work", why)
+	}
 	code := out.ExitCode
 	origin := OriginDatawatch
 	if it.Check.ProjectCheck != "" {
@@ -466,7 +473,8 @@ func (e *evaluator) startValue(ctx context.Context, l *List, it Item, sub Subjec
 	}
 	if p := e.probes[name]; p != nil {
 		r, err := p.Read(ctx, ProbeRequest{RequestID: l.RequestID, Item: it, Subject: sub, Occurrence: l.Occurrence})
-		if err == nil && r.Answered {
+		// A stale or untimed answer does not say how things stood at the start.
+		if err == nil && r.Answered && e.fresh(r, e.set.Freshness) {
 			sv.Recorded, sv.Value, sv.True = true, r.Value, wantHolds(it, r.Value, sub)
 		}
 	}
@@ -489,8 +497,13 @@ func wantHolds(it Item, value string, sub Subject) bool {
 	return want != "" && value == want
 }
 
+// startKnown reports whether how a state item stood before the work is known.
+func (st *ItemState) startKnown() bool { return st.Start != nil && st.Start.Recorded }
+
+const unknownStartValue = "the start is unknown: no start value was saved, so it may already have been true before the work"
+
 // afterStart applies the saved start value to a reading that holds: "already
-// true" is shown and never proves work.
+// true" is shown and never proves work, and an unknown start closes nothing.
 func afterStart(it Item, st *ItemState, value string, target Subject, r Result) Result {
 	s := st.Start
 	startTrue := s != nil && s.Recorded && s.True
@@ -502,13 +515,18 @@ func afterStart(it Item, st *ItemState, value string, target Subject, r Result) 
 	if startTrue {
 		r.AlreadyTrue = true
 	}
-	if r.Value != ResultMet || !it.Change && it.Before != BeforeDiffer {
+	if r.Value != ResultMet {
+		return r
+	}
+	if !st.startKnown() {
+		r.Value, r.Reason = ResultCannotTell, unknownStartValue
+		return r
+	}
+	if !it.Change && it.Before != BeforeDiffer {
 		return r
 	}
 	var why string
 	switch {
-	case s == nil || !s.Recorded:
-		why = "no start value was saved, so it cannot show that the work did this"
 	case startTrue:
 		why = "already true at the start, so it does not show work"
 	case it.Before == BeforeDiffer && s.Value == value:
@@ -621,7 +639,12 @@ func (e *evaluator) evalProbe(ctx context.Context, l *List, it Item, st *ItemSta
 	case !wantHolds(it, r.Value, sub):
 		out = Result{Value: ResultNotMet, Reason: fmt.Sprintf("read %q", tail(r.Value, 200))}
 	default:
-		out = afterStart(it, st, r.Value, sub, Result{Value: ResultMet, Reason: "the source shows the stated value"})
+		out = Result{Value: ResultMet, Reason: "the source shows the stated value"}
+		// A reading tied to one scheduled run was made after that run was due,
+		// so there is nothing earlier it could have been true from.
+		if l.Occurrence == "" || it.Change || it.Before == BeforeDiffer {
+			out = afterStart(it, st, r.Value, sub, out)
+		}
 	}
 	out.At = e.now()
 	if name == "build_commit" {
@@ -649,6 +672,9 @@ func (e *evaluator) evalWindow(ctx context.Context, l *List, it Item, st *ItemSt
 	s.Holds = s.Answered && wantHolds(it, r.Value, sub)
 	st.Samples = append(st.Samples, s)
 	final := func(out Result) Result {
+		if out.Value == ResultMet && !st.startKnown() {
+			out = cannot(unknownStartValue)
+		}
 		out.At = now
 		if _, name := it.methodBase(); name == "build_commit" {
 			out.Subject = sub.Commit

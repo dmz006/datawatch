@@ -110,7 +110,9 @@ func effective(l *List, it Item) ItemRead {
 	}
 	if a := st.Accept; a != nil {
 		if a.Counts {
-			r.Accepted = res.Value != ResultMet
+			// A met result that was already true before the work shows no
+			// work, so it too can be accepted without proof.
+			r.Accepted = res.Value != ResultMet || res.AlreadyTrue
 		} else {
 			r.Claim = fmt.Sprintf("acceptance claimed by %s; datawatch cannot show this is not the doer", callerText(a.By))
 		}
@@ -169,11 +171,11 @@ func covered(l *List) bool {
 	return c != nil && c.Counts && c.Yes && c.Subject == h
 }
 
-// showsWork reports whether a met result is datawatch's own sight of a change:
-// a command or state item that had to differ from the start, and did.
-func showsWork(it Item, r Result) bool {
+// mustShowChange reports whether an item is datawatch's own sight of a change:
+// a command or state item that has to differ from the start.
+func mustShowChange(it Item) bool {
 	base, _ := it.methodBase()
-	return (base == MethodCommand || base == MethodState) && (it.Change || it.Before != BeforeNone) && !r.AlreadyTrue
+	return (base == MethodCommand || base == MethodState) && (it.Change || it.Before != BeforeNone)
 }
 
 // versionBound reports whether an item's result belongs to a version.
@@ -273,18 +275,22 @@ func rollUp(l *List) Rollup {
 		out.Items = items
 		return out
 	}
-	onlyAlreadyTrue, alreadyTrue, workShown := true, false, false
+	alreadyTrue, workShown, workAccepted := false, false, false
 	for i, r := range items {
-		if r.Result.Value != ResultMet {
-			continue
+		switch {
+		case r.Accepted:
+			workAccepted = workAccepted || mustShowChange(l.Items[i])
+		case r.Result.Value == ResultMet:
+			alreadyTrue = alreadyTrue || r.Result.AlreadyTrue
+			workShown = workShown || mustShowChange(l.Items[i]) && !r.Result.AlreadyTrue
 		}
-		alreadyTrue = alreadyTrue || r.Result.AlreadyTrue
-		onlyAlreadyTrue = onlyAlreadyTrue && r.Result.AlreadyTrue
-		workShown = workShown || showsWork(l.Items[i], r.Result)
 	}
 	// Once a check turns out to have been true before the work, only a check
-	// that had to see a change can show there was any. A person's yes cannot.
-	nothingShown := len(accepted) == 0 && (onlyAlreadyTrue || alreadyTrue && !workShown)
+	// that had to see a change can show there was any, and a person's yes
+	// cannot. Only accepting that missing proof without proof ends this: the
+	// already true check, or a check that had to see the change. Accepting any
+	// other item does not.
+	nothingShown := alreadyTrue && !workShown && !workAccepted
 	satisfied := len(notMet)+len(open)+len(waits) == 0
 	switch {
 	case !l.Frozen():

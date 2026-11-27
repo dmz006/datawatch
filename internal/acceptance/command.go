@@ -260,7 +260,8 @@ func (Git) Run(ctx context.Context, spec CheckSpec, sub Subject, timeout time.Du
 	return out
 }
 
-var notRunWords = regexp.MustCompile(`(?i)(^|[^a-z0-9_])(skip|skips|skipped|skipping|todo|xfail|xfailed|deselected|ignored|not run)($|[^a-z0-9_])`)
+var notRunWords = regexp.MustCompile(`(?i)(^|[^a-z0-9_])(skip|skips|skipped|skipping|todo|xfail|xfailed|deselected|ignored|not run|` +
+	`no tests? (to run|ran|run|found|collected)|no test files|collected 0 (items|tests)|(ran|running) 0 tests|0 tests ran)($|[^a-z0-9_])`)
 
 // lineShows is the proof form of lineSeen: a line has to start with the marker,
 // after spaces, and say nothing after it about being skipped. "not ok 1" and
