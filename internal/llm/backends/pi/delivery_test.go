@@ -1,0 +1,546 @@
+// The datawatch pi extension, run under node against a fake pi and a fake
+// datawatch. It shows the extension's own rules. It is not the proof that real
+// pi raises these events: that is the sandbox proof run, which the built
+// extension still has to pass.
+
+package pi
+
+import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+type fkItem struct {
+	ID       string
+	State    string
+	Content  string
+	ReadOnly bool
+	fetched  bool
+	seen     bool
+}
+
+type fkCall struct {
+	Method, Path, Token string
+	Body                map[string]string
+}
+
+// fkDaemon answers the request routes as the contract says.
+type fkDaemon struct {
+	mu        sync.Mutex
+	items     []*fkItem
+	calls     []fkCall
+	seenFails int  // answer this many "seen" calls 503
+	dropTake  int  // record this many takes and lose the reply
+	badDigest bool // take answers with a digest of something else
+	srv       *httptest.Server
+}
+
+func fkSum(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
+
+func newFkDaemon(t *testing.T) *fkDaemon {
+	d := &fkDaemon{}
+	d.srv = httptest.NewServer(http.HandlerFunc(d.serve))
+	t.Cleanup(d.srv.Close)
+	return d
+}
+
+func (d *fkDaemon) add(id, content string, readOnly bool) *fkItem {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	it := &fkItem{ID: id, State: "waiting", Content: content, ReadOnly: readOnly}
+	d.items = append(d.items, it)
+	return it
+}
+
+func (d *fkDaemon) serve(w http.ResponseWriter, r *http.Request) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	c := fkCall{Method: r.Method, Path: r.URL.Path, Token: strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")}
+	_ = json.NewDecoder(r.Body).Decode(&c.Body)
+	d.calls = append(d.calls, c)
+	reply := func(v any) { _ = json.NewEncoder(w).Encode(v) }
+	if r.URL.Path == "/api/requests/mine" && r.Method == http.MethodGet {
+		items := []map[string]any{}
+		for _, it := range d.items {
+			items = append(items, map[string]any{"id": it.ID, "state": it.State})
+		}
+		reply(map[string]any{"session_id": "s1", "items": items})
+		return
+	}
+	id, verb, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/api/requests/"), "/")
+	for _, it := range d.items {
+		if it.ID != id || r.Method != http.MethodPost {
+			continue
+		}
+		switch verb {
+		case "take":
+			repeat := it.fetched
+			it.fetched = true
+			if d.dropTake > 0 {
+				d.dropTake--
+				http.Error(w, "lost", http.StatusInternalServerError)
+				return
+			}
+			digest := fkSum(it.Content)
+			if d.badDigest {
+				digest = fkSum("other")
+			}
+			reply(map[string]any{"request": map[string]any{"id": it.ID}, "content": it.Content, "digest": digest,
+				"repeat": repeat, "resend_ok": it.ReadOnly})
+		case "seen":
+			if d.seenFails > 0 {
+				d.seenFails--
+				http.Error(w, "cannot record", http.StatusServiceUnavailable)
+				return
+			}
+			if !it.fetched || c.Body["digest"] != fkSum(it.Content) {
+				http.Error(w, "state", http.StatusConflict)
+				return
+			}
+			it.seen, it.State = true, "delivered"
+			reply(map[string]any{"id": it.ID})
+		case "accept":
+			if c.Body["code"] != "c0de" {
+				http.Error(w, "wrong code", http.StatusBadRequest)
+				return
+			}
+			reply(map[string]any{"id": it.ID})
+		default:
+			http.Error(w, "no", http.StatusNotFound)
+		}
+		return
+	}
+	http.Error(w, "no such request", http.StatusNotFound)
+}
+
+func (d *fkDaemon) count(suffix string) (n int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, c := range d.calls {
+		if strings.HasSuffix(c.Path, suffix) {
+			n++
+		}
+	}
+	return n
+}
+
+func (d *fkDaemon) last(suffix string) (out fkCall) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, c := range d.calls {
+		if strings.HasSuffix(c.Path, suffix) {
+			out = c
+		}
+	}
+	return out
+}
+
+// fkEnv is one session's files: the extension, its credential and reports.
+type fkEnv struct {
+	t                *testing.T
+	dir, ext, credAt string
+	cred             DeliveryCredential
+}
+
+func newFkEnv(t *testing.T, d *fkDaemon, deliverAs string) *fkEnv {
+	t.Helper()
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is not installed: the extension was NOT tested")
+	}
+	dir := t.TempDir()
+	must := func(err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// pi supplies typebox to its extensions; here a small one stands in.
+	tb := filepath.Join(dir, "node_modules", "typebox")
+	must(os.MkdirAll(tb, 0o700))
+	must(os.WriteFile(filepath.Join(tb, "package.json"), []byte(`{"name":"typebox","type":"module","exports":"./index.js"}`), 0o600))
+	must(os.WriteFile(filepath.Join(tb, "index.js"), []byte(
+		`export const Type = { Object: (p) => ({ type: "object", properties: p }), String: (o) => ({ type: "string", ...o }) };`), 0o600))
+	must(os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"type":"module"}`), 0o600))
+	ext, err := WriteDeliveryExtension(dir)
+	must(err)
+	e := &fkEnv{t: t, dir: dir, ext: ext, credAt: filepath.Join(dir, "s1", "credential.json"),
+		cred: DeliveryCredential{APIURL: d.srv.URL, Token: "token-one",
+			StateFile: filepath.Join(dir, "s1", "reports.json"), DeliverAs: deliverAs, PollMillis: 30}}
+	e.save()
+	return e
+}
+
+func (e *fkEnv) save() {
+	e.t.Helper()
+	if err := WriteDeliveryCredential(e.credAt, e.cred); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+type fkPi struct {
+	t    *testing.T
+	in   io.WriteCloser
+	out  *bufio.Scanner
+	stop func()
+}
+
+type fkReply struct {
+	Error     string            `json:"error"`
+	ToolError string            `json:"toolError"`
+	OK        bool              `json:"ok"`
+	Sections  map[string]string `json:"sections"`
+	Tools     []string          `json:"tools"`
+	Sent      []struct {
+		Text      string `json:"text"`
+		DeliverAs string `json:"deliverAs"`
+	} `json:"sent"`
+}
+
+// start runs a pi process over e's files: a second one is a restarted pi.
+func (e *fkEnv) start() *fkPi {
+	e.t.Helper()
+	cmd := exec.Command("node", "testdata/fake-pi.mjs", e.ext)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), DeliveryEnv + "=" + e.credAt}
+	cmd.Stderr = os.Stderr
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		e.t.Fatal(err)
+	}
+	var once sync.Once
+	p := &fkPi{t: e.t, in: in, out: bufio.NewScanner(out)}
+	p.out.Buffer(make([]byte, 1<<20), 1<<20)
+	p.stop = func() { once.Do(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }) }
+	e.t.Cleanup(p.stop)
+	p.do(map[string]any{"cmd": "start"})
+	return p
+}
+
+func (p *fkPi) do(cmd map[string]any) fkReply {
+	p.t.Helper()
+	b, _ := json.Marshal(cmd)
+	if _, err := p.in.Write(append(b, '\n')); err != nil {
+		p.t.Fatal(err)
+	}
+	if !p.out.Scan() {
+		p.t.Fatalf("the fake pi stopped: %v", p.out.Err())
+	}
+	var r fkReply
+	if err := json.Unmarshal(p.out.Bytes(), &r); err != nil {
+		p.t.Fatal(err)
+	}
+	if r.Error != "" {
+		p.t.Fatal(r.Error)
+	}
+	return r
+}
+
+// polls lets several polls pass.
+func (p *fkPi) polls() fkReply { return p.do(map[string]any{"cmd": "sleep", "ms": 250}) }
+
+func (p *fkPi) model(extra map[string]any) fkReply {
+	cmd := map[string]any{"cmd": "model"}
+	for k, v := range extra {
+		cmd[k] = v
+	}
+	return p.do(cmd)
+}
+
+func fkWait(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		if ok() {
+			return
+		}
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+const fkContent = "datawatch request r-1 (ask)\n\nSECRET-PIX-9 write it\n\nReceipt code: c0de\n"
+
+func TestReqPiBothTimingsDeliverAndReportSeen(t *testing.T) {
+	for _, timing := range []string{DeliverSteer, DeliverFollowUp} {
+		d := newFkDaemon(t)
+		d.add("r-1", fkContent, false)
+		e := newFkEnv(t, d, timing)
+		p := e.start()
+		r := p.polls()
+		if len(r.Sent) != 1 || r.Sent[0].DeliverAs != timing ||
+			r.Sent[0].Text != "[datawatch request r-1 begin]\n"+fkContent+"\n[datawatch request r-1 end]" {
+			t.Fatalf("%s: %+v", timing, r.Sent)
+		}
+		if d.count("/seen") != 0 {
+			t.Fatal("seen before any model call")
+		}
+		p.model(map[string]any{"parts": timing == DeliverFollowUp})
+		got := d.last("/seen")
+		if d.count("/seen") != 1 || got.Body["digest"] != fkSum(fkContent) || got.Body["via"] != "program" ||
+			got.Body["reporter_version"] != DeliveryExtensionVersion || got.Token != "token-one" {
+			t.Fatalf("%s: %+v", timing, got)
+		}
+		if take := d.last("/take"); take.Body["via"] != "program" || d.count("/take") != 1 {
+			t.Fatalf("%+v", take)
+		}
+		p.model(nil)
+		p.polls()
+		if d.count("/seen") != 1 || d.count("/take") != 1 {
+			t.Fatalf("again: %d takes, %d seen", d.count("/take"), d.count("/seen"))
+		}
+	}
+}
+
+// Choosing when a busy pi gets a request is open (design question Q1): with
+// nothing chosen the extension takes nothing, so nothing is marked fetched.
+func TestReqPiWithNoTimingChosenTakesNothing(t *testing.T) {
+	for _, timing := range []string{"", "sometime", "followup", "nextTurn"} {
+		d := newFkDaemon(t)
+		d.add("r-1", fkContent, true)
+		p := newFkEnv(t, d, timing).start()
+		r := p.polls()
+		if len(r.Sent) != 0 || d.count("/take") != 0 || d.count("/mine") != 0 {
+			t.Fatalf("%q: %+v, %d takes", timing, r.Sent, d.count("/take"))
+		}
+	}
+}
+
+func TestReqPiNoSeenWithoutACompletedModelCall(t *testing.T) {
+	d := newFkDaemon(t)
+	d.add("r-1", fkContent, false)
+	p := newFkEnv(t, d, DeliverFollowUp).start()
+	p.polls()
+	for name, call := range map[string]map[string]any{
+		"the text was removed":      {"strip": true},
+		"the model server said 500": {"status": 500},
+		"refused 429":               {"status": 429},
+		"aborted":                   {"stopReason": "aborted"},
+		"an error":                  {"stopReason": "error"},
+		"no response seen":          {"noResponse": true},
+		"not in a user message":     {"otherRole": "tool"},
+	} {
+		p.model(call)
+		if d.count("/seen") != 0 {
+			t.Fatalf("%s: reported seen", name)
+		}
+	}
+	p.model(nil) // the next call that works holds it
+	if d.count("/seen") != 1 {
+		t.Fatalf("%d", d.count("/seen"))
+	}
+}
+
+func TestReqPiAFailedReportIsKeptOnDiskAndRetried(t *testing.T) {
+	d := newFkDaemon(t)
+	d.add("r-1", fkContent, false)
+	d.seenFails = 1 << 20
+	e := newFkEnv(t, d, DeliverSteer)
+	p := e.start()
+	p.polls()
+	p.model(nil)
+	kept, err := os.ReadFile(e.cred.StateFile)
+	if err != nil || !strings.Contains(string(kept), "r-1") || !strings.Contains(string(kept), fkSum(fkContent)) {
+		t.Fatalf("not kept: %v %s", err, kept)
+	}
+	if strings.Contains(string(kept), "SECRET") || strings.Contains(string(kept), "token") {
+		t.Fatalf("the report file holds content or a credential: %s", kept)
+	}
+	if st, _ := os.Stat(e.cred.StateFile); st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", st.Mode())
+	}
+	p.stop() // pi ends before datawatch took the report
+	tries := d.count("/seen")
+
+	// A restart mints a new token. The restarted pi retries the report.
+	e.cred.Token = "token-two"
+	e.save()
+	d.mu.Lock()
+	d.seenFails = 2
+	d.mu.Unlock()
+	p2 := e.start()
+	fkWait(t, "the retried report", func() bool { d.mu.Lock(); defer d.mu.Unlock(); return d.items[0].seen })
+	if got := d.last("/seen"); got.Token != "token-two" || d.count("/seen") < tries+3 {
+		t.Fatalf("%+v after %d tries", got, d.count("/seen"))
+	}
+	r := p2.polls()
+	if len(r.Sent) != 0 {
+		t.Fatalf("it was injected again: %+v", r.Sent)
+	}
+	fkWait(t, "the report file to empty", func() bool {
+		b, err := os.ReadFile(e.cred.StateFile)
+		return os.IsNotExist(err) || err == nil && !strings.Contains(string(b), "r-1")
+	})
+}
+
+func TestReqPiARepeatIsNotInjectedUnlessItMayBeSentAgain(t *testing.T) {
+	d := newFkDaemon(t)
+	d.add("r-work", fkContent, false)
+	e := newFkEnv(t, d, DeliverFollowUp)
+	first := e.start()
+	if r := first.polls(); len(r.Sent) != 1 {
+		t.Fatalf("%+v", r.Sent)
+	}
+	first.stop() // pi dies before any model call
+	second := e.start()
+	if r := second.polls(); len(r.Sent) != 0 {
+		t.Fatalf("work was injected again after a restart: %+v", r.Sent)
+	}
+	if d.count("/take") != 2 {
+		t.Fatalf("it must ask once and then leave it listed: %d takes", d.count("/take"))
+	}
+	second.stop()
+
+	// Read-only work (a hello) is sent again.
+	d.add("r-hello", "hello text", true)
+	third := e.start()
+	third.polls()
+	third.stop()
+	fourth := e.start()
+	r := fourth.polls()
+	if len(r.Sent) != 1 || !strings.Contains(r.Sent[0].Text, "r-hello") {
+		t.Fatalf("%+v", r.Sent)
+	}
+}
+
+// A take whose reply was lost leaves the request fetched. It is not injected:
+// datawatch cannot know pi never had it (design question Q8).
+func TestReqPiALostTakeReplyStaysListed(t *testing.T) {
+	d := newFkDaemon(t)
+	d.add("r-1", fkContent, false)
+	d.dropTake = 1
+	p := newFkEnv(t, d, DeliverSteer).start()
+	r := p.polls()
+	p.model(nil)
+	if len(r.Sent) != 0 || d.count("/seen") != 0 || d.count("/take") != 2 {
+		t.Fatalf("%+v, %d takes", r.Sent, d.count("/take"))
+	}
+}
+
+func TestReqPiAWrongDigestIsNeverInjected(t *testing.T) {
+	d := newFkDaemon(t)
+	d.add("r-1", fkContent, true)
+	d.badDigest = true
+	p := newFkEnv(t, d, DeliverSteer).start()
+	if r := p.polls(); len(r.Sent) != 0 || d.count("/take") != 1 {
+		t.Fatalf("%+v, %d takes", r.Sent, d.count("/take"))
+	}
+}
+
+func TestReqPiOnlyWaitingItemsAreTaken(t *testing.T) {
+	d := newFkDaemon(t)
+	for _, state := range []string{"delivered", "accepted", "reported"} {
+		d.add("r-"+state, "x", true).State = state
+	}
+	p := newFkEnv(t, d, DeliverSteer).start()
+	if r := p.polls(); len(r.Sent) != 0 || d.count("/take") != 0 {
+		t.Fatalf("%+v", r.Sent)
+	}
+}
+
+func TestReqPiTheCredentialIsReadForEveryCall(t *testing.T) {
+	d := newFkDaemon(t)
+	e := newFkEnv(t, d, DeliverSteer)
+	p := e.start()
+	p.polls()
+	if d.last("/mine").Token != "token-one" {
+		t.Fatalf("%+v", d.last("/mine"))
+	}
+	e.cred.Token = "token-two"
+	e.save()
+	fkWait(t, "the new token", func() bool { return d.last("/mine").Token == "token-two" })
+}
+
+func TestReqPiTheReceiptToolAcceptsAndThereIsNoReportTool(t *testing.T) {
+	d := newFkDaemon(t)
+	d.add("r-1", fkContent, false)
+	p := newFkEnv(t, d, DeliverSteer).start()
+	r := p.do(map[string]any{"cmd": "tool", "name": "datawatch_ack", "params": map[string]string{"request_id": "r-1", "code": "c0de"}})
+	if !r.OK || len(r.Tools) != 1 || r.Tools[0] != "datawatch_ack" {
+		t.Fatalf("%+v", r)
+	}
+	if got := d.last("/accept"); got.Path != "/api/requests/r-1/accept" || got.Body["code"] != "c0de" || got.Token != "token-one" {
+		t.Fatalf("%+v", got)
+	}
+	for name, params := range map[string]map[string]string{
+		"a wrong code":    {"request_id": "r-1", "code": "nope"},
+		"a made-up id":    {"request_id": "r-9", "code": "c0de"},
+		"a path as an id": {"request_id": "r-1/../mine", "code": "c0de"},
+	} {
+		if r := p.do(map[string]any{"cmd": "tool", "name": "datawatch_ack", "params": params}); r.OK || r.ToolError == "" {
+			t.Errorf("%s: %+v", name, r)
+		}
+	}
+}
+
+func TestReqPiGuidanceOnlyWhenChosen(t *testing.T) {
+	d := newFkDaemon(t)
+	e := newFkEnv(t, d, DeliverSteer)
+	p := e.start()
+	if r := p.do(map[string]any{"cmd": "agent_start"}); len(r.Sections) != 0 {
+		t.Fatalf("guidance nobody chose: %+v", r.Sections)
+	}
+	e.cred.Guidance = true
+	e.save()
+	if r := p.do(map[string]any{"cmd": "agent_start"}); !strings.Contains(r.Sections["datawatch_requests"], "[datawatch request <id> begin]") {
+		t.Fatalf("%+v", r.Sections)
+	}
+}
+
+func TestReqPiNoCredentialDoesNothing(t *testing.T) {
+	d := newFkDaemon(t)
+	d.add("r-1", fkContent, true)
+	e := newFkEnv(t, d, DeliverSteer)
+	e.credAt = filepath.Join(e.dir, "missing.json")
+	p := e.start()
+	if r := p.polls(); len(r.Sent) != 0 || d.count("/mine") != 0 {
+		t.Fatalf("%+v", r.Sent)
+	}
+}
+
+func TestReqPiTheEmbeddedExtensionSaysItsVersion(t *testing.T) {
+	if !strings.Contains(string(deliveryExtension), `const VERSION = "`+DeliveryExtensionVersion+`";`) {
+		t.Fatal("the extension and the daemon disagree on the version")
+	}
+	if strings.Contains(string(deliveryExtension), "report_text") || strings.Contains(string(deliveryExtension), "datawatch_report") {
+		t.Fatal("there is no report tool (design question Q2)")
+	}
+	dir := t.TempDir()
+	path, err := WriteDeliveryExtension(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, err := WriteDeliveryExtension(dir); err != nil || again != path {
+		t.Fatalf("writing it again: %v", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != string(deliveryExtension) {
+		t.Fatal("the written file differs")
+	}
+	// Not in a launch command until the delivery timing is chosen.
+	for _, cmd := range []func() (string, error){
+		func() (string, error) { return buildInteractiveCmd("pi", "m", "s", "task", dir, "cs-x") },
+		func() (string, error) { return buildLaunchCmd("pi", "m", "task", dir, "cs-x") },
+	} {
+		line, err := cmd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(line, " -e ") || strings.Contains(line, "datawatch-delivery") {
+			t.Fatalf("the launch command loads the extension: %s", line)
+		}
+	}
+}
