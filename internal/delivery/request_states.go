@@ -1,4 +1,4 @@
-// The state machine. Owner: part A. STUB.
+// The state machine. Owner: part A.
 //
 // A take moves waiting -> delivered only when the delivery then counts under
 // the holder's worker policy (claude-code: the take; pi: the later seen).
@@ -30,6 +30,35 @@
 
 package delivery
 
+// Force is the one move outside this table: the operator takes a request off
+// its holder, even an accepted one, back to waiting, and it is marked "may run
+// twice". A reported one is never sent again.
+
 // CanMove reports whether a request of kind rule may move between two states.
 // handedOver is DeliveryRecord.MaybeHandedOver.
-func CanMove(_ KindRule, _, _ RequestState, _ bool) bool { return false }
+func CanMove(rule KindRule, from, to RequestState, handedOver bool) bool {
+	if from.Closed() {
+		return false
+	}
+	switch to {
+	case StateWaiting:
+		// Back from delivered only when the work may go again.
+		return from == StateDelivered && (rule.ReadOnly || !handedOver)
+	case StateDelivered:
+		return from == StateWaiting
+	case StateAccepted:
+		return from == StateDelivered || from == StateReported
+	case StateReported:
+		return from == StateAccepted && !rule.DeliveryOnly
+	case StateDone:
+		if rule.DeliveryOnly {
+			return from == StateDelivered || from == StateAccepted
+		}
+		return from == StateReported
+	case StateFailed, StateCancelled:
+		return true
+	case StateExpired:
+		return from == StateWaiting || from == StateDelivered
+	}
+	return false
+}

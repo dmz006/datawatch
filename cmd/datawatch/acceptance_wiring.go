@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/acceptance"
@@ -35,29 +34,21 @@ func acceptanceSettings(cfg *config.Config) acceptance.Settings {
 	}
 }
 
-// wireAcceptance wires the lists. Nothing here creates, fixes or runs a list
-// from a real request: the request sources do that when they land, so no
-// version resolver, source probe or reviewer is set and the items that need
-// them read "cannot tell". A damaged store leaves the surfaces unavailable and
-// is never overwritten.
-func wireAcceptance(cfg *config.Config, encKey []byte, httpServer *server.HTTPServer) {
-	if httpServer == nil {
-		return
+// wireAcceptance opens the lists and wires them to the web server. Only the
+// request sources create lists from real requests, and datawatch runs no
+// command check: command items read "cannot tell". A damaged store leaves the
+// surfaces unavailable and is never overwritten.
+func wireAcceptance(opts acceptance.Options, httpServer *server.HTTPServer) *acceptance.Service {
+	if httpServer != nil {
+		opts.Audit = httpServer.AuditAcceptance
 	}
-	var key []byte
-	if encKey != nil {
-		key = append(key, encKey...)
-	}
-	svc, err := acceptance.Open(acceptance.Options{
-		Path:     filepath.Join(expandHome(cfg.DataDir), "acceptance.json"),
-		Key:      key,
-		Mode:     func() string { return cfg.Acceptance.Mode },
-		Settings: func() acceptance.Settings { return acceptanceSettings(cfg) },
-		Audit:    httpServer.AuditAcceptance,
-	})
+	svc, err := acceptance.Open(opts)
 	if err != nil {
 		fmt.Printf("[warn] %v\n", err)
-		return
+		return nil
 	}
-	httpServer.SetAcceptance(svc, key != nil)
+	if httpServer != nil {
+		httpServer.SetAcceptance(svc, opts.Key != nil)
+	}
+	return svc
 }

@@ -509,6 +509,13 @@ type RequestOptions struct {
 	Record func(Candidate) error
 	// RulesVersion names the rules version of a scope now (job 6). May be nil.
 	RulesVersion func(Scope) string
+	// Backlog says whether the delivery list holds this backlog entry, and its
+	// episode, so that an entry becomes a request once. May be nil: any entry
+	// key is taken, as episode 1.
+	Backlog func(entryKey string) (episode int, ok bool)
+
+	// writeFile replaces the durable write in tests (a full disk).
+	writeFile func(path string, data []byte) error
 }
 
 // ---- names every surface uses --------------------------------------------------
