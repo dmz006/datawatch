@@ -220,3 +220,24 @@ func TestReqWireDaemonStartsOverADamagedStore(t *testing.T) {
 		}
 	}
 }
+
+// A plain install looks through the records for sealed ones before it opens
+// them: a record that cannot be read must not stop the start there.
+func TestReqWireAnUnreadableRecordDoesNotStopAPlainStart(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every file")
+	}
+	cfg, _ := movedStore(t, nil)
+	files, err := filepath.Glob(filepath.Join(cfg.DataDir, requestsDir, "q-*.rec"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no queue item file: %v", err)
+	}
+	if err := os.Chmod(files[0], 0); err != nil {
+		t.Fatal(err)
+	}
+	w, alerts, _, queued := startAgain(t, cfg, nil)
+	if w.requestStore() == nil || queued() < 0 {
+		t.Fatal("the others must work")
+	}
+	alerts.want(t, "set aside and kept", filepath.Base(files[0]))
+}
