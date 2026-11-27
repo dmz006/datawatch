@@ -116,6 +116,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Shipped](#shipped)
   - [Completed](#completed)
   - [Completed migration](#completed-migration)
+- [Delivery check](#delivery-check)
 - [Dashboard](#dashboard)
   - [Network card (work map)](#network-card-work-map)
   - [Lane pulse](#lane-pulse)
@@ -1012,6 +1013,24 @@ Automation needs a backend for each workload: an **execution** backend (at least
 ### Completed migration
 
 The **completed migration** moves Automata (and Automations) that ended `cancelled` but whose work is already merged on the default branch to **Completed**, so finished work stops showing as cancelled. Evidence is a shipped record or the read-only merge proof of the `automaton/<id>` branch; records with neither stay cancelled. The completion time is the merge time (shipped record) or the merge commit's commit time, never the run time, and each change is logged as a `completed_migration` decision. It never touches a session, refuses to run while a final gate is running, and is safe to repeat. Run it with a dry run first: CLI `datawatch autonomous completed-migrate`, REST `POST /api/autonomous/completed/migrate`, MCP `autonomous_completed_migrate`, comm `autonomous completed-migrate`. Unlike [Shipped](#shipped), which never changes a stored status (it only changes how a merged record is displayed: Completed), this does. See [howto/automata-completed-migration.md](howto/automata-completed-migration.md).
+
+## Delivery check
+
+**Delivery check** — one list of the work that was not delivered or is not finished (Automata, tasks, bugs, unfinished branches, schedules, waiting sessions, questions, answers, pipelines, deploys), checked every few minutes. It **only reports**: a red result blocks nothing and nothing is typed into a session. The list and its messages hold identifiers, kinds, states, reason codes and times only. See [`howto/delivery-check.md`](howto/delivery-check.md).
+
+**Listed and told** — an item is *listed* when it is on the list. It is *told* when a message channel accepted a send that named it; that does not show you read it. At most one message goes out per check, with at most 20 item lines and 1500 characters; only items with a line are marked as told. A failed send is tried again after 1 minute, doubling to at most 1 hour, and told items you have not acknowledged are named again in one reminder a day, those longest unnamed first; only the items a reminder names count as sent. The generic webhook, GitHub webhook and DNS channels cannot tell: their send succeeds without sending anything.
+
+**Backlog** (delivery check) — what was already wrong when the check first read each kind of record. It is listed to be reviewed once, is never sent as a message and never becomes an action.
+
+**Acknowledge, accept, drop** (delivery check) — *acknowledge* stops the messages about an item, which stays listed; *accept* lets it wait until a review date at most 30 days ahead (a plain date means the end of that day, UTC, so at most 29 days after today), for a reason code, after which it is new again; *drop* closes a failed or backlog item. Alarms and clock-jump notices can only be acknowledged. The rule that only the operator does these is not enforced. Known, also in earlier code: a credential with `sessions:list` can use the chat test route with operator access; permissions and recorded actor names cannot be relied on.
+
+**Delivery heartbeat and outside timer** — after each completed and saved check datawatch writes `<data dir>/delivery/heartbeat.json` with the time, the check interval and a state: `ok`, `red` or `cannot_tell` (no channel can reach you, every channel refused the last message, or the records cannot be used). `scripts/delivery-outside-timer.sh`, run by units that are shipped and not installed, reports a missing, unreadable, stale (older than two intervals plus 60 seconds), future-dated or `cannot_tell` heartbeat. **It has no message route yet**: as shipped it prints what it would report and fails.
+
+### Delivery check settings
+
+- **`delivery.enabled`** (default `true`) — keep the list and run the check. Read at daemon start. Web app: Settings → Automata → **Delivery check settings**.
+- **`delivery.notify`** (default `true`) — send listed items to the message channels. Off: nothing is sent and the check is red with `cannot_tell`.
+- **`delivery.interval_seconds`** (default `300`, `60` to `86400`) — seconds between checks. Read at daemon start.
 
 ## Dashboard
 

@@ -119,6 +119,19 @@ const (
 	CapPauseRead  = "pause:read"
 	CapPauseWrite = "pause:write"
 
+	// delivery check: reading the list and running the report-only check go
+	// wherever pause:read goes. delivery:write (acknowledge, accept, drop,
+	// test message) is in full-control and the session default: the rule that
+	// only the operator does these is recorded (who did it comes from the
+	// credential) and not enforced. No peer group carries it.
+	CapDeliveryRead  = "delivery:read"
+	CapDeliveryWrite = "delivery:write"
+	// HeaderDeliveryCaller names the session or peer an assistant tool or chat
+	// command is acting for when it calls the delivery routes back with the
+	// admin token. The daemon reads it only on an admin request, and it can
+	// only name a session or a peer.
+	HeaderDeliveryCaller = "X-Datawatch-Delivery-Caller"
+
 	// council
 	CapCouncilList = "council:list"
 	CapCouncilRead = "council:read"
@@ -221,6 +234,7 @@ var allCaps = []string{
 	CapDashboardRead, CapDashboardWrite,
 	CapQueueRead, CapQueueWrite,
 	CapPauseRead, CapPauseWrite,
+	CapDeliveryRead, CapDeliveryWrite,
 	CapResultsList, CapResultsRead, CapResultsWrite,
 	CapMemoryRead, CapMemoryWrite,
 }
@@ -411,6 +425,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapDashboardRead,
 			CapQueueRead,
 			CapPauseRead,
+			CapDeliveryRead,
 			CapResultsList, CapResultsRead,
 			CapMemoryRead,
 		},
@@ -465,6 +480,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapCommRead, CapCommWrite,
 			CapQueueRead, CapQueueWrite,
 			CapPauseRead,
+			CapDeliveryRead, CapDeliveryWrite,
 			CapResultsList, CapResultsRead, CapResultsWrite,
 			CapMemoryRead, CapMemoryWrite,
 		},

@@ -34,6 +34,9 @@ type Executor struct {
 	// lie under (server.allowed_project_roots and the always-allowed roots).
 	// Nil means none: the quality gate then refuses every directory.
 	projectRoots func() []string
+
+	// journal keeps each run's start and end; nil keeps none.
+	journal *Journal
 }
 
 // SetProjectRoots sets the source of the allowed project roots the quality
@@ -86,6 +89,13 @@ func (e *Executor) Start(p *Pipeline) error {
 			p.ID, result.PassCount, result.FailCount)
 	}
 
+	// The start is saved before anything runs, so a restart can list it.
+	if j := e.runJournal(); j != nil {
+		if err := j.begin(p.ID, time.Now()); err != nil {
+			return fmt.Errorf("pipeline not started: its start could not be saved: %w", err)
+		}
+	}
+
 	e.mu.Lock()
 	e.pipelines[p.ID] = p
 	p.State = StateRunning
@@ -98,6 +108,12 @@ func (e *Executor) Start(p *Pipeline) error {
 
 // run is the main execution loop for a pipeline.
 func (e *Executor) run(p *Pipeline) {
+	// Registered first so it runs last, after a recovered panic set the state.
+	defer func() {
+		if j := e.runJournal(); j != nil {
+			j.end(p.ID, p.State, time.Now())
+		}
+	}()
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[pipeline] executor panic (recovered): %v", r)
@@ -225,6 +241,9 @@ func (e *Executor) Cancel(id string) error {
 		return fmt.Errorf("pipeline %s not found", id)
 	}
 	p.Cancel()
+	if j := e.runJournal(); j != nil {
+		j.end(id, StateCancelled, time.Now())
+	}
 	log.Printf("[pipeline] %s cancelled", id)
 	return nil
 }
