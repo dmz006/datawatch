@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -138,7 +136,7 @@ func readRepoFile(dir, rel string) ([]byte, error) {
 	if err := checkDir(rel); err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel))) // #nosec G304 -- relative path validated, joined under the repository
+	data, err := readFileInside(dir, rel)
 	if err != nil {
 		return nil, err
 	}

@@ -614,11 +614,10 @@ func (m *Merger) mechanical(ctx context.Context, dir string, files []string) (ma
 	var remaining []string
 	var regen []string
 	for _, f := range files {
-		p, err := filePath(dir, f)
-		if err != nil {
+		if _, err := filePath(dir, f); err != nil {
 			return nil, nil, nil, err
 		}
-		data, err := os.ReadFile(p) // #nosec G304 -- path checked to lie inside dir
+		data, err := readFileInside(dir, f)
 		if err != nil {
 			remaining = append(remaining, f+" (unreadable)")
 			continue
@@ -722,11 +721,10 @@ func (m *Merger) regenerateDocsIndex(ctx context.Context, dir string, texts map[
 		return failed, nil
 	}
 	for _, f := range regen {
-		p, err := filePath(dir, f)
-		if err != nil {
+		if _, err := filePath(dir, f); err != nil {
 			return nil, err
 		}
-		data, err := os.ReadFile(p) // #nosec G304 -- path checked to lie inside dir
+		data, err := readFileInside(dir, f)
 		if err != nil {
 			return nil, err
 		}
@@ -816,7 +814,10 @@ func (m *Merger) askOperator(req MergeRequest, o Outcome, headSHA, branchSHA str
 // makefileHasTarget reports whether dir's Makefile defines target.
 func makefileHasTarget(dir, target string) bool {
 	for _, name := range []string{"GNUmakefile", "makefile", "Makefile"} {
-		data, err := os.ReadFile(filepath.Join(dir, name)) // #nosec G304 -- fixed names under dir
+		data, err := readFileInside(dir, name)
+		if errors.Is(err, errLeavesProject) {
+			return false // make's first makefile, and it is not the project's
+		}
 		if err != nil {
 			continue
 		}
@@ -833,7 +834,11 @@ func makefileHasTarget(dir, target string) bool {
 // projectMakefile returns the text of the first makefile dir holds, or "".
 func projectMakefile(dir string) string {
 	for _, name := range []string{"GNUmakefile", "makefile", "Makefile"} {
-		if data, err := os.ReadFile(filepath.Join(dir, name)); err == nil { // #nosec G304 -- fixed names under dir
+		data, err := readFileInside(dir, name)
+		if errors.Is(err, errLeavesProject) {
+			return ""
+		}
+		if err == nil {
 			return string(data)
 		}
 	}

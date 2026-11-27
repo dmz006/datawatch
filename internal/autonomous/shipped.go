@@ -160,9 +160,14 @@ func (m *Manager) confirmShippedCommit(p *PRD, commit, source string) (string, b
 	if source != ShippedSourceMergeStep {
 		return commit, false, nil
 	}
-	var branch, recorded string
-	m.readLocked(func() { branch, recorded = strings.TrimSpace(p.Git.Branch), p.MergeCommit })
-	if sameShippedCommit(recorded, commit) {
+	var branch, recorded, recordedSource string
+	m.readLocked(func() {
+		branch, recorded, recordedSource = strings.TrimSpace(p.Git.Branch), p.MergeCommit, p.ShippedSource
+	})
+	// A merge step record sent again is the same record. Text only another
+	// source recorded skips the checks below only when it is a commit id.
+	if sameShippedCommit(recorded, commit) &&
+		(recordedSource == ShippedSourceMergeStep || commitIDText.MatchString(strings.ToLower(commit))) {
 		return recorded, false, nil
 	}
 	repo := strings.TrimSpace(m.MergeBaseRepo())
