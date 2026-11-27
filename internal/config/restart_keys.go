@@ -22,6 +22,7 @@ var restartRequiredKeys = []string{
 	"dns_channel.enabled", "dns_channel.listen", "dns_channel.domain",
 	"signal.account_number", "signal.group_id",
 	"database.*", "agents.*",
+	"delivery.enabled", "delivery.interval_seconds", // the delivery check reads them once at start
 }
 
 // RestartRequiredKeys returns a copy of the key list that needs a restart.

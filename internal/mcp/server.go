@@ -621,6 +621,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPauseStatus(), tracked(s.handlePauseStatus))                       // operator pause
 	mcpSrv.AddTool(s.toolPauseSet(), tracked(s.handlePauseSet))                             // operator pause
 	mcpSrv.AddTool(s.toolPauseResume(), tracked(s.handlePauseResume))                       // operator pause
+	mcpSrv.AddTool(s.toolDeliveryStatus(), tracked(s.handleDeliveryStatus))                 // delivery check
+	mcpSrv.AddTool(s.toolDeliveryCheck(), tracked(s.handleDeliveryCheck))                   // delivery check
+	mcpSrv.AddTool(s.toolDeliveryAck(), tracked(s.handleDeliveryAck))                       // delivery check
+	mcpSrv.AddTool(s.toolDeliveryAccept(), tracked(s.handleDeliveryAccept))                 // delivery check
+	mcpSrv.AddTool(s.toolDeliveryDrop(), tracked(s.handleDeliveryDrop))                     // delivery check
+	mcpSrv.AddTool(s.toolDeliveryTestMessage(), tracked(s.handleDeliveryTestMessage))       // delivery check
 	mcpSrv.AddTool(s.toolUsageBackoffStatus(), tracked(s.handleUsageBackoffStatus))         // BL428 Phase 4
 	mcpSrv.AddTool(s.toolUsageBackoffSet(), tracked(s.handleUsageBackoffSet))               // BL428 Phase 4
 	mcpSrv.AddTool(s.toolUsageBackoffClear(), tracked(s.handleUsageBackoffClear))           // BL428 Phase 4
@@ -1719,6 +1725,12 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAutomationActivate, "automation_activate"},
 		{s.toolAutomationReturnToDraft, "automation_return_to_draft"},
 		{s.toolAutomationImportGraph, "automation_import_graph"},
+		{s.toolDeliveryStatus, "delivery_status"},
+		{s.toolDeliveryCheck, "delivery_check"},
+		{s.toolDeliveryAck, "delivery_ack"},
+		{s.toolDeliveryAccept, "delivery_accept"},
+		{s.toolDeliveryDrop, "delivery_drop"},
+		{s.toolDeliveryTestMessage, "delivery_test_message"},
 		{s.toolAutomationPause, "automation_pause"},
 		{s.toolAutomationResume, "automation_resume"},
 		{s.toolAutomationCancel, "automation_cancel"},

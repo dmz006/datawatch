@@ -24,7 +24,10 @@ func New(serverURL, topic, token string) *Backend {
 	if serverURL == "" {
 		serverURL = "https://ntfy.sh"
 	}
-	return &Backend{serverURL: serverURL, topic: topic, token: token, client: &http.Client{}}
+	// A redirect is not followed: a sign-in page that answers 200 would read
+	// as a message that was sent.
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return &Backend{serverURL: serverURL, topic: topic, token: token, client: client}
 }
 
 func (b *Backend) Name() string { return "ntfy" }
@@ -48,7 +51,7 @@ func (b *Backend) Send(recipient, message string) error {
 		return err
 	}
 	_ = resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("ntfy: HTTP %d", resp.StatusCode)
 	}
 	return nil

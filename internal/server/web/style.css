@@ -7905,6 +7905,24 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .unlanded-counts-oldest { margin-top: 2px; overflow-wrap: anywhere; }
 .unlanded-counts-over { margin-top: 2px; color: var(--error, #e5534b); font-weight: 600; }
 
+/* Delivery check card (Settings → Automata). */
+.delivery-panel { padding: 4px 12px; font-size: 13px; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.delivery-meta { color: var(--text2); font-size: 11px; display: block; margin: 2px 0; }
+.delivery-result { display: inline-block; font-weight: 700; padding: 1px 10px; border-radius: 10px; border: 1px solid var(--border); }
+.delivery-result-green { color: var(--success); border-color: var(--success); }
+.delivery-result-red { color: var(--error); border-color: var(--error); }
+.delivery-why ul { margin: 2px 0 2px 18px; padding: 0; font-size: 12px; }
+.delivery-unreadable, .delivery-error { color: var(--error); }
+.delivery-group { margin: 10px 0; }
+.delivery-group-title { font-weight: 600; font-size: 12px; margin: 6px 0 2px; }
+.delivery-row { border-top: 1px solid var(--border); padding: 4px 0; }
+.delivery-row label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.delivery-row label > span { min-width: 0; }
+.delivery-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 8px 0; }
+.delivery-btn { font-size: 12px; padding: 4px 12px; }
+.delivery-input { display: block; min-width: 0; max-width: 100%; font-size: 12px; }
+.delivery-message, .delivery-send { font-size: 12px; margin: 4px 0; }
+
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
 /* ── Projects cards: shared Cards / Tiles / Compact renderer (app.js) ─────
    The three-mode switch reuses the Sessions .sessions-mode-toggle /

@@ -1,0 +1,14 @@
+# Runs datawatch-delivery-timer.service every five minutes.
+# See docs/howto/delivery-check.md before installing.
+
+[Unit]
+Description=Run the datawatch delivery outside timer every five minutes
+
+[Timer]
+OnUnitActiveSec=5min
+# OnUnitActiveSec counts from a run: start the first one when the timer starts.
+OnActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

@@ -9,6 +9,19 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Delivery check: telling, outside timer and web card — next minor above main
+
+All tests use hand-built entries, fake channels, temp folders and a stubbed browser; no daemon, no real channel and no real session.
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Messages, retries, digest, bounds | `TestNotify*` | `go test ./internal/delivery/ -run Notify` | Three failures then success gives one told record; backoff to 1 hour; bounded history and message; daily reminder; backlog, seen, accepted and closed are never sent | Go unit | **Yes** (`internal/delivery/notify_test.go`) | Pass | **No** | Failed on the stubs first. No real channel was sent to. |
+| Channels | `TestChannel*` | `go test -race ./internal/delivery/ -run Channel` | Receive-only backends never count; a hung or panicking send is a failure with a code; no error text is kept | Go unit | **Yes** (`internal/delivery/channels_test.go`) | Pass | **No** | Backend send behaviour was read from code. |
+| Outside timer | `TestTimer*` | `go test ./internal/delivery/ -run Timer` | Missing, unreadable, stale, future and cannot-tell heartbeats are reported; a replaced route "sends"; as shipped it fails | Script on temp folders | **Yes** (`internal/delivery/timer_script_test.go`) | Pass | **No** | Units not installed; no message route exists. |
+| Web card and settings | `app-delivery.test.js` | `node --test internal/server/web/app-delivery.test.js` | Report drawing and escaping, request bodies, refusals, confirm before drop, settings fields, five locales | Node (stubbed browser) | **Yes** | Pass | **No** | Not seen in a real browser. |
+
+---
+
 ## Session launch files and tokens — next patch above main
 
 A session's `datawatch` MCP entry (token and identity) moved from the shared project folder to a private per-session launch file. Every test runs on temp folders, temp git repositories and a stub `tmux`; no daemon and no real session was started.

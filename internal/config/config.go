@@ -900,6 +900,11 @@ type Config struct {
 	// (default false) and the active pack names (default ["builtin"]). See
 	// PacksConfig in packs_config.go.
 	Packs PacksConfig `yaml:"packs" json:"packs"`
+
+	// Delivery is the delivery check: one list of undelivered and unfinished
+	// work, a report-only check and messages to the operator. Unset keys read
+	// their defaults. See DeliveryConfig.
+	Delivery DeliveryConfig `yaml:"delivery,omitempty" json:"delivery,omitempty"`
 }
 
 // CostReport defaults. Every one of them is read from the config struct:

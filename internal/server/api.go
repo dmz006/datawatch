@@ -41,6 +41,7 @@ import (
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
+	"github.com/dmz006/datawatch/internal/delivery"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/fingerprint"
@@ -208,7 +209,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.187.39"
+var Version = "9.187.40"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -408,6 +409,10 @@ type Server struct {
 	usageBackoff *autonomous.Backoff
 	// pauseStore is the operator pause service (see pause.go); nil = not wired.
 	pauseStore *pause.Store
+	// delivery is the delivery check (see delivery.go); nil = not wired. The
+	// daemon wires it after the web server is serving, so deliveryMu guards it.
+	deliveryMu sync.RWMutex
+	delivery   delivery.Service
 	// backoffReserve is the review-reserve gate (nil = not wired); the usage
 	// back-off status uses it to report the per-hour reserve usage per
 	// backed-off backend.
@@ -7285,6 +7290,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"max_parallel":         s.cfg.Council.MaxParallel,
 			"comm_firehose":        s.cfg.Council.CommFirehose,
 		},
+		// delivery check: effective values (unset keys read their defaults).
+		"delivery": deliveryConfigSurface(s.cfg.Delivery),
 		// scheduled-jobs results: per-schedule result history store.
 		"results": map[string]interface{}{
 			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),
@@ -7336,6 +7343,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// shared validator before anything is applied, so a bad value rejects the
 	// whole PUT and the comm, MCP and CLI surfaces show the same message.
 	if verr := firstTagSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Delivery check settings (delivery.*): refused before anything is applied.
+	if verr := firstDeliverySettingError(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8979,6 +8991,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// unchanged.
 		if strings.HasPrefix(k, config.ProjectsDefaultsSettingPrefix) {
 			_ = cfg.ProjectsDefaults.ApplyProjectsDefaultsSetting(k, v)
+			continue
+		}
+		if strings.HasPrefix(k, "delivery.") {
+			applyDeliveryConfigKey(cfg, k, v)
 			continue
 		}
 		if _, ok := supervisorLoopPatchKey(k); ok {

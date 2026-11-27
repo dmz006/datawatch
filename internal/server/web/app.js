@@ -18433,7 +18433,7 @@ function renderSettingsView() {
         ${GENERAL_CONFIG_FIELDS.map(sec => {
           // BL247 — route pipeline/autonomous/orchestrator sections to Automata tab;
           // plugins section to Plugins tab; everything else stays in General.
-          const _automataIds = ['pipeline', 'autonomous', 'orchestrator', 'usage_calculator', 'usage_burn_guard'];
+          const _automataIds = ['pipeline', 'autonomous', 'orchestrator', 'usage_calculator', 'usage_burn_guard', 'delivery_check'];
           const grp = _automataIds.includes(sec.id) ? 'automata' : sec.id === 'plugins' ? 'plugins' : 'general';
           return `
         <div class="settings-section" data-group="${grp}" style="${stab!==grp?'display:none':''}">
@@ -18443,6 +18443,14 @@ function renderSettingsView() {
           </div>
         </div>`;
         }).join('')}
+
+        <!-- Delivery check: the list of undelivered and unfinished work, and the operator's actions on it. -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('delivery_list', t('delivery_section_title'), 'howto/delivery-check.md')}
+          <div id="settings-sec-delivery_list" style="${secContent('delivery_list')}">
+            <div id="deliveryPanel" class="delivery-panel">${loadingEyeBlock()}</div>
+          </div>
+        </div>
 
         <!-- Usage reading and extra credit entry: the same forms and endpoints as the usage page. -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
@@ -19532,6 +19540,7 @@ function renderSettingsView() {
   if (typeof loadCouncilPanel === 'function') loadCouncilPanel(); // BL260 v6.11.0
   if (typeof loadComputeNodesPanel === 'function') loadComputeNodesPanel(); // v7.0.0 S1
   if (typeof loadRequirementsReportPanel === 'function') loadRequirementsReportPanel(); // requirements report card (setup view)
+  if (typeof loadDeliveryPanel === 'function') loadDeliveryPanel({ fresh: true }); // delivery check card
   if (typeof loadRequirementsMinOllamaPanel === 'function') loadRequirementsMinOllamaPanel(); // min-Ollama override fields (setup view)
   if (typeof loadModelConsentPanel === 'function') loadModelConsentPanel(); // model pull consent card (setup view)
   if (typeof loadLLMsPanel === 'function') loadLLMsPanel(); // v7.0.0 S2
@@ -27345,6 +27354,14 @@ const GENERAL_CONFIG_FIELDS = [
   // before an alert is raised (0 disables the alert).
   { id: 'secrets_vault', sectionKey: 'settings_secrets_vault', section: 'Secrets Vault', docs: 'howto/secrets-manager.md', fields: [
     { key: 'secrets.vault.unreachable_alert_after_seconds', label: 'Vault unreachable alert after (seconds)', labelKey: 'settings_secrets_vault_unreachable_alert_after_seconds', helpKey: 'settings_secrets_vault_unreachable_alert_after_seconds_help', type: 'number', min: 0, step: 1, placeholder: '120', onchange: "savePromptNumberSetting('secrets.vault.unreachable_alert_after_seconds', this.value, 0)" },
+  ]},
+  // Delivery check: one list of undelivered and unfinished work. It reports and
+  // blocks nothing. The list itself and its actions are in the card above the
+  // usage entry (loadDeliveryPanel).
+  { id: 'delivery_check', sectionKey: 'delivery_settings_title', section: 'Delivery check settings', docs: 'howto/delivery-check.md', fields: [
+    { key: 'delivery.enabled', label: 'Keep the delivery list and run the check', labelKey: 'settings_delivery_enabled', type: 'toggle', default: true },
+    { key: 'delivery.notify', label: 'Send me messages about listed items', labelKey: 'settings_delivery_notify', type: 'toggle', default: true },
+    { key: 'delivery.interval_seconds', label: 'Time between checks (seconds, at least 60)', labelKey: 'settings_delivery_interval_seconds', type: 'number', min: 60, max: 86400, placeholder: '300', onchange: "savePromptNumberSetting('delivery.interval_seconds', this.value, 60)" },
   ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval
@@ -50059,6 +50076,238 @@ function _automationOnboardingReportLoader() {
     active: () => !!document.getElementById('automationOnboardingReportCard'),
     render: report => window.onboardingReportCardHtml(report),
   });
+}
+
+// ── Delivery check card (Settings → Automata) ───────────────────────────────
+// Draws GET /api/delivery and sends the operator's actions. The daemon decides
+// what an action may do; this page shows its refusal text. Records hold IDs,
+// kinds, states, reason codes and times only, and everything is escaped.
+const DELIVERY_MAX_ROWS = 100;
+const DELIVERY_REASON_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+window._delivery = {
+  report: null, loadError: '', message: '', isError: false, busy: false,
+  selected: new Set(), wholeBacklog: false, reason: '', until: '', sends: null,
+};
+const DELIVERY_RED_KEYS = {
+  listed_items: 'delivery_red_listed_items',
+  source_unreadable: 'delivery_red_source_unreadable',
+  start_mark_missing: 'delivery_red_start_mark_missing',
+  record_unreadable: 'delivery_red_record_unreadable',
+  cannot_record: 'delivery_red_cannot_record',
+  no_channel: 'delivery_red_no_channel',
+  all_sends_failed: 'delivery_red_all_sends_failed',
+  not_told: 'delivery_red_not_told',
+  check_stale: 'delivery_red_check_stale',
+  check_never_ran: 'delivery_red_check_never_ran',
+  mass_expiry_held: 'delivery_red_mass_expiry_held',
+  flood_not_recorded: 'delivery_red_flood_not_recorded',
+};
+
+function _dlvText(key, vars) { return escHtml(t(key, vars)); }
+
+// _dlvTime shows a daemon time to the minute; the zero time means never.
+function _dlvTime(v) {
+  const s = String(v || '');
+  if (!s || s.startsWith('0001-01-01')) return t('delivery_never');
+  return s.replace(/^(\d{4}-\d\d-\d\d)T(\d\d:\d\d)(?::\d\d(?:\.\d+)?)?Z$/, '$1 $2 UTC');
+}
+
+function _dlvRowHtml(e) {
+  const d = window._delivery;
+  const key = String(e.key || '');
+  const bits = [];
+  if (e.invariant) bits.push(t('delivery_row_rule', [e.invariant]));
+  if (e.reason) bits.push(t('delivery_row_reason', [e.reason]));
+  if (e.waits_on) bits.push(t('delivery_row_waits_on', [e.waits_on]));
+  if (e.since) bits.push(t('delivery_row_since', [_dlvTime(e.since)]));
+  if (e.review_by) bits.push(t('delivery_row_review_by', [_dlvTime(e.review_by)]));
+  if (e.count > 1) bits.push(t('delivery_row_count', [e.count]));
+  if (e.accepted) bits.push(t('delivery_row_accepted', [_dlvTime(e.accepted.until), e.accepted.reason, e.accepted.by]));
+  if (e.seen_at) bits.push(t('delivery_row_seen', [e.seen_by || '—']));
+  if (e.told_at) bits.push(t('delivery_row_told', [_dlvTime(e.last_sent_at || e.told_at)]));
+  else if (!e.backlog) bits.push(t('delivery_row_not_told'));
+  if (e.send_fails > 0) bits.push(t('delivery_row_send_fails', [e.send_fails]));
+  return `<div class="delivery-row"><label>
+    <input type="checkbox" data-key="${escHtml(key)}" aria-label="${_dlvText('delivery_select', [key])}"${d.selected.has(key) ? ' checked' : ''} onchange="deliveryToggle(this.dataset.key, this.checked)">
+    <span><strong>${escHtml(e.kind)} ${escHtml(e.id)}</strong> · ${escHtml(e.state)}
+    <span class="delivery-meta">${bits.map(escHtml).join(' · ')}</span></span>
+  </label></div>`;
+}
+
+function _dlvGroupHtml(titleKey, entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  let rows = list.slice(0, DELIVERY_MAX_ROWS).map(_dlvRowHtml).join('');
+  if (!list.length) rows = `<div class="delivery-meta">${_dlvText('delivery_group_empty')}</div>`;
+  if (list.length > DELIVERY_MAX_ROWS) rows += `<div class="delivery-meta">${_dlvText('delivery_more_rows', [list.length - DELIVERY_MAX_ROWS])}</div>`;
+  return `<div class="delivery-group"><div class="delivery-group-title">${_dlvText(titleKey, [list.length])}</div>${rows}</div>`;
+}
+
+function _dlvSummaryHtml(r) {
+  const result = r.result === 'green' ? 'green' : r.result === 'red' ? 'red' : 'unknown';
+  const label = result === 'green' ? t('delivery_result_green') : result === 'red' ? t('delivery_result_red') : t('delivery_result_unknown');
+  const channels = Array.isArray(r.channels) ? r.channels : [];
+  const lines = [
+    t('delivery_last_check', [_dlvTime(r.at), r.pass || 0]),
+    channels.length ? t('delivery_channels', [channels.join(', ')]) : t('delivery_no_channel'),
+  ];
+  if (r.heartbeat) lines.push(t('delivery_heartbeat', [r.heartbeat]));
+  if (r.start_mark) lines.push(t('delivery_start_mark', [_dlvTime(r.start_mark)]));
+  if (r.non_operator_actions > 0) lines.push(t('delivery_non_operator', [r.non_operator_actions]));
+  if (r.unrecorded > 0) lines.push(t('delivery_unrecorded', [r.unrecorded]));
+  if (Array.isArray(r.guarded) && r.guarded.length) lines.push(t('delivery_guarded', [r.guarded.length]));
+  if (Array.isArray(r.uncovered) && r.uncovered.length) lines.push(t('delivery_uncovered', [r.uncovered.join(', ')]));
+  let why = '';
+  const red = Array.isArray(r.red) ? r.red : [];
+  if (red.length) {
+    why = `<div class="delivery-why"><div class="delivery-group-title">${_dlvText('delivery_why_red')}</div><ul>${
+      red.map(code => `<li>${Object.prototype.hasOwnProperty.call(DELIVERY_RED_KEYS, code) ? _dlvText(DELIVERY_RED_KEYS[code]) : escHtml(code)}</li>`).join('')
+    }</ul></div>`;
+  }
+  const unreadable = (Array.isArray(r.sources) ? r.sources : []).filter(s => !s.ok).map(s => s.name);
+  if (unreadable.length) why += `<div class="delivery-unreadable">${_dlvText('delivery_unreadable', [unreadable.join(', ')])}</div>`;
+  return `<div><span class="delivery-result delivery-result-${result}">${escHtml(label)}</span> <span class="delivery-meta">${_dlvText('delivery_report_only')}</span></div>
+    ${lines.map(l => `<div class="delivery-meta">${escHtml(l)}</div>`).join('')}${why}`;
+}
+
+function deliveryPanelHtml() {
+  const d = window._delivery;
+  const r = d.report;
+  const intro = `<div class="delivery-meta">${_dlvText('delivery_intro')}</div>`;
+  if (!r) {
+    return intro + (d.loadError
+      ? `<div class="delivery-message delivery-error" role="alert">${_dlvText('delivery_load_failed', [d.loadError])}</div>`
+      : `<div class="delivery-meta">${_dlvText('delivery_loading')}</div>`);
+  }
+  const off = d.busy ? ' disabled' : '';
+  const button = (fn, key) => `<button type="button" class="btn-secondary delivery-btn" onclick="${fn}"${off}>${_dlvText(key)}</button>`;
+  let sends = '';
+  if (d.sends) {
+    sends = d.sends.length
+      ? d.sends.map(s => `<div class="delivery-send">${escHtml(s.channel)}: ${s.ok ? _dlvText('delivery_send_ok') : _dlvText('delivery_send_failed', [s.code || '—'])}</div>`).join('')
+      : `<div class="delivery-message delivery-error">${_dlvText('delivery_test_none')}</div>`;
+  }
+  const status = d.busy ? t('delivery_working') : d.message;
+  const backlog = Array.isArray(r.backlog) ? r.backlog.length : 0;
+  return `${intro}${_dlvSummaryHtml(r)}
+    <div class="delivery-actions">${button('deliveryCheckNow()', 'delivery_check_now')}${button('deliveryTestMessage()', 'delivery_test_message')}</div>
+    ${sends}
+    ${_dlvGroupHtml('delivery_group_new', r.items)}
+    ${_dlvGroupHtml('delivery_group_backlog', r.backlog)}
+    ${_dlvGroupHtml('delivery_group_accepted', r.accepted)}
+    <div class="delivery-meta">${_dlvText('delivery_actions_help')}</div>
+    <label class="delivery-meta"><input type="checkbox"${d.wholeBacklog ? ' checked' : ''} onchange="deliveryWholeBacklog(this.checked)"> ${_dlvText('delivery_whole_backlog', [backlog])}</label>
+    <div class="delivery-actions">
+      <label class="delivery-meta">${_dlvText('delivery_reason_label')}
+        <input type="text" class="form-input delivery-input" maxlength="64" placeholder="${_dlvText('delivery_reason_hint')}" value="${escHtml(d.reason)}" oninput="deliveryField('reason', this.value)"></label>
+      <label class="delivery-meta">${_dlvText('delivery_until_label')}
+        <input type="date" class="form-input delivery-input" value="${escHtml(d.until)}" oninput="deliveryField('until', this.value)"></label>
+    </div>
+    <div class="delivery-actions">${button("deliveryAction('ack')", 'delivery_ack')}${button("deliveryAction('accept')", 'delivery_accept')}${button("deliveryAction('drop')", 'delivery_drop')}</div>
+    ${status ? `<div class="delivery-message${d.isError && !d.busy ? ' delivery-error' : ''}" role="status">${escHtml(status)}</div>` : ''}`;
+}
+
+function deliveryPaint() {
+  const el = document.getElementById('deliveryPanel');
+  if (el) el.innerHTML = deliveryPanelHtml();
+}
+
+function _dlvSetReport(r) {
+  const d = window._delivery;
+  d.report = r || null;
+  d.loadError = '';
+  if (!r) return;
+  const listed = new Set([].concat(r.items || [], r.backlog || [], r.accepted || []).map(e => e.key));
+  for (const k of Array.from(d.selected)) if (!listed.has(k)) d.selected.delete(k);
+}
+
+function _dlvErrorText(err) { return String((err && err.message) || err || '').trim(); }
+
+// loadDeliveryPanel reads the current report without running a pass. fresh
+// forgets the ticks and messages of an earlier visit, or of another server.
+function loadDeliveryPanel(opts) {
+  const d = window._delivery;
+  if (opts && opts.fresh) {
+    Object.assign(d, { report: null, loadError: '', message: '', isError: false, busy: false, wholeBacklog: false, reason: '', until: '', sends: null });
+    d.selected.clear();
+    deliveryPaint();
+  }
+  return apiFetch('/api/delivery')
+    .then(r => { _dlvSetReport(r); deliveryPaint(); })
+    .catch(err => { d.report = null; d.loadError = _dlvErrorText(err); deliveryPaint(); });
+}
+
+// _dlvRun sends one request, one at a time, and shows a refusal as the daemon
+// worded it.
+function _dlvRun(path, body, done) {
+  const d = window._delivery;
+  if (d.busy) return Promise.resolve();
+  d.busy = true;
+  d.message = '';
+  d.isError = false;
+  deliveryPaint();
+  const opts = { method: 'POST' };
+  if (body) opts.body = JSON.stringify(body);
+  return apiFetch(path, opts)
+    .then(res => { d.busy = false; return done(res || {}); })
+    .catch(err => { d.busy = false; d.message = _dlvErrorText(err); d.isError = true; deliveryPaint(); });
+}
+
+function deliveryCheckNow() {
+  return _dlvRun('/api/delivery/check', null, r => { _dlvSetReport(r); deliveryPaint(); });
+}
+
+function deliveryTestMessage() {
+  window._delivery.sends = null;
+  return _dlvRun('/api/delivery/test-message', null, res => { window._delivery.sends = res.results || []; deliveryPaint(); });
+}
+
+// The three field handlers do not redraw, so the field keeps the focus.
+function deliveryToggle(key, on) {
+  if (on) window._delivery.selected.add(key);
+  else window._delivery.selected.delete(key);
+}
+function deliveryWholeBacklog(on) { window._delivery.wholeBacklog = !!on; }
+function deliveryField(name, value) {
+  if (name === 'reason' || name === 'until') window._delivery[name] = String(value || '');
+}
+
+function deliveryBuildAction(verb) {
+  const d = window._delivery;
+  if (!d.wholeBacklog && !d.selected.size) return { error: t('delivery_need_selection') };
+  const body = d.wholeBacklog ? { backlog: true } : { keys: Array.from(d.selected) };
+  if (verb !== 'ack') {
+    const reason = d.reason.trim();
+    if (!DELIVERY_REASON_RE.test(reason)) return { error: t('delivery_need_reason') };
+    body.reason = reason;
+  }
+  if (verb === 'accept') {
+    if (!/^\d{4}-\d\d-\d\d$/.test(d.until)) return { error: t('delivery_need_date') };
+    body.until = d.until;
+  }
+  body.actor = 'web';
+  return { body };
+}
+
+function deliveryAction(verb) {
+  const d = window._delivery;
+  if (!['ack', 'accept', 'drop'].includes(verb)) return Promise.resolve();
+  const built = deliveryBuildAction(verb);
+  if (built.error) {
+    d.message = built.error;
+    d.isError = true;
+    deliveryPaint();
+    return Promise.resolve();
+  }
+  const send = () => _dlvRun('/api/delivery/' + verb, built.body, res => {
+    d.message = t('delivery_changed', [res.changed || 0]);
+    d.selected.clear();
+    d.wholeBacklog = false;
+    return loadDeliveryPanel();
+  });
+  if (verb !== 'drop') return send();
+  const count = built.body.backlog ? ((d.report && d.report.backlog) || []).length : built.body.keys.length;
+  showConfirmModal(t(built.body.backlog ? 'delivery_confirm_drop_backlog' : 'delivery_confirm_drop', [count]), send);
+  return Promise.resolve();
 }
 
 // ── Requirements report card (web setup view) ─────────────────────────────────

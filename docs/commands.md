@@ -461,6 +461,27 @@ pipeline cancel pipe-42851
 
 ---
 
+## Delivery check
+
+One list of the work that was not delivered or is not finished. It reports and blocks nothing. See [howto/delivery-check.md](howto/delivery-check.md).
+
+```
+delivery                          show the current report
+delivery check                    run the check now and show the report
+delivery ack <key…>|backlog       mark entries as seen; they stay listed
+delivery accept <key…>|backlog|kind=<k> reason=<code> until=<date>
+                                  let entries wait until a review date
+delivery drop <key…>|backlog reason=<code>
+                                  close failed or backlog entries
+delivery test                     send a test message on every message channel
+```
+
+The command line has the same actions: `datawatch delivery status|check|ack|accept|drop|test-message`, with `--key`, `--kind`, `--state`, `--match-reason`, `--backlog`, `--reason`, `--until` and `--json`. `datawatch delivery check` exits 1 unless the result is green.
+
+A review date is at most 30 days ahead. A date without a time means the end of that day (UTC), so the latest such date is 29 days after today. A reason is a code (a-z, 0-9, dot, dash, underscore). Alarms and clock-jump notices can only be acknowledged. The test message is limited to one a minute and 6 an hour.
+
+---
+
 ## Implicit Reply
 
 If exactly one session on a machine is in `waiting_input` state, you can reply without specifying the session ID. Just type your response directly.
