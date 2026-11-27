@@ -52,6 +52,11 @@ type SummaryEntry struct {
 	MergedAt        *time.Time `json:"merged_at,omitempty"`
 	// MergeCommit is the shipped record's merge commit; non-empty means shipped.
 	MergeCommit string `json:"merge_commit,omitempty"`
+	// ClosedOutcome is the recorded outcome class, "" when none.
+	ClosedOutcome string `json:"closed_outcome,omitempty"`
+	// ShippedReopened is set when the operator forced the record to run again
+	// past its shipped record.
+	ShippedReopened bool `json:"shipped_reopened,omitempty"`
 	// GitBranch is the work branch the merge proof is asked about.
 	GitBranch string `json:"git_branch,omitempty"`
 	// ApprovedAt is when the Automaton was approved, when known.
@@ -128,6 +133,10 @@ func (e SummaryEntry) ProgressRecord() *PRD {
 		AutomationID: e.AutomationID, ParentPRDID: e.ParentPRDID,
 		IsTemplate: e.IsTemplate, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 		ApprovedAt: e.ApprovedAt, TagIDs: e.TagIDs,
+		ClosedOutcome: e.ClosedOutcome, MergeCommit: e.MergeCommit,
+	}
+	if e.ShippedReopened {
+		p.ClosedWorkOverride = &ClosedWorkOverride{Commit: strings.TrimSpace(e.MergeCommit)}
 	}
 	if e.DerivedKind == PRDKindBug && DeriveKind(e.Title, "") != PRDKindBug {
 		p.Spec = "fix" // the bug keyword came from the spec
@@ -203,6 +212,8 @@ func buildSummaryEntry(p *PRD) SummaryEntry {
 		Project:          p.Project,
 		ProjectDir:       p.ProjectDir,
 		MergeCommit:      p.MergeCommit,
+		ClosedOutcome:    p.ClosedOutcome,
+		ShippedReopened:  overrideCovers(p),
 		GitBranch:        p.Git.Branch,
 		ProjectProfile:   p.ProjectProfile,
 		AutomationID:     p.AutomationID,

@@ -31,6 +31,9 @@ type TimelineFilter struct {
 	Projects map[string]string `json:"-"`
 	// Automations are the Automation records the resolver reads.
 	Automations []*Automation `json:"-"`
+	// IgnoreShipped is set when autonomous.shipped.enabled is off: a shipped
+	// record then does not make a record read done.
+	IgnoreShipped bool `json:"-"`
 
 	index *AutomatonProjectIndex
 }
@@ -117,6 +120,10 @@ func BuildTimeline(now time.Time, prds []*PRD, filter TimelineFilter) TimelineRe
 			continue
 		}
 		a := buildTimelineAutomaton(now, p, filter.Stage)
+		if prdReadsDone(p, !filter.IgnoreShipped) {
+			a.Status = CompletedDisplayStatus
+			a.ProjectedFinish, a.ProjectionReason = nil, "finished"
+		}
 		if filter.Stage != "" && len(a.Stages) == 0 {
 			continue
 		}

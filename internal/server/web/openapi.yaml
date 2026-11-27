@@ -5593,7 +5593,7 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: automation_id, in: query, required: false, description: Count only the Automata of this Automation, schema: {type: string}}
-        - {name: tag_id, in: query, required: false, description: Count only the Automata carrying this tag, schema: {type: string}}
+        - {name: tag_id, in: query, required: false, description: "Count only the Automata carrying this tag (name or id; an unknown tag is a 404, a name several tags share a 400)", schema: {type: string}}
         - {name: since, in: query, required: false, description: "First day counted, YYYY-MM-DD", schema: {type: string, format: date}}
         - {name: until, in: query, required: false, description: "Last day counted, YYYY-MM-DD, inclusive", schema: {type: string, format: date}}
       responses:
@@ -5697,7 +5697,7 @@ paths:
         - {name: automaton, in: query, required: false, description: Only this Automaton, by id or title, schema: {type: string}}
         - {name: stage, in: query, required: false, description: Only this stage (story), by id or title, schema: {type: string}}
         - {name: kind, in: query, required: false, description: Only Automata of this kind, schema: {type: string, enum: [feature, bug, other]}}
-        - {name: tag, in: query, required: false, description: Only the Automata carrying this tag, schema: {type: string}}
+        - {name: tag, in: query, required: false, description: "Only the Automata carrying this tag (name or id; an unknown tag is a 404, a name several tags share a 400)", schema: {type: string}}
       responses:
         "200":
           description: The timeline chart. Empty `projects` (an array) when nothing matches.
@@ -8085,7 +8085,7 @@ paths:
         the field and the value are read-only and no record, alert or write
         happens for it.
       parameters:
-        - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
+        - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag (name or id; a tag nothing knows is a 404, a name several tags share a 400)"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
         - {name: status, in: query, required: false, description: "A single status, or a comma-separated list of statuses (case-insensitive); an unknown status answers 400 naming the valid statuses", schema: {type: string}}
         - name: shipped

@@ -45,6 +45,11 @@ rules.
 Archived is only a storage state that comes after delivered, superseded or
 dropped.
 
+A cancelled, rejected or archived record with outcome **delivered** reads
+**Completed** in the progress numbers, the timeline, the list's Completed filter
+and the web app's status chip, also with no shipped record (work without code).
+Its stored status does not change.
+
 ## What the daemon fills in
 
 Cancel, reject and archive record the outcome in the same step:

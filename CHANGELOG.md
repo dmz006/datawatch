@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Work finished by hand now reads done. A record with a shipped record, or one cancelled, rejected or archived with outcome delivered, counts as done in progress, shows completed on the timeline, is found by the list's Completed filter and gets the Completed chip in the web app. Its unfinished tasks are no longer counted as work left. Held records never read done: before, a held record with a shipped record was listed as completed. A record you forced to run again past its shipped record does not read done until it ends. The web app's Completed filter now also keeps cancelled records that shipped; before, it dropped them. A cancelled or archived record with outcome held is no longer counted as done in progress. With autonomous.shipped.enabled off, a shipped record changes none of these views; a delivered outcome still does. Stored statuses do not change.
+- A tag filter now takes a tag's name the same as its id on progress, the progress trend, the timeline and the Automata and template lists. Before, a name drew nothing or was reported as not found. Those, and the Automation, task, decision record and held question lists, now refuse an unknown tag with "tag not found", and a name several tags share is refused with their ids. On the lists, a filter that mixes a known tag with an unknown one under any-match still answers for the known one. Automations, tasks, decision records and held questions still match only axis tags. The session list is unchanged. The chat help still shows tag=<id>.
+
 ## v9.187.45 — Merge steps keep more of their file reads and writes inside the project
 
 ### Fixed

@@ -128,6 +128,9 @@ func (s *Server) handleHeldQuestions(w http.ResponseWriter, r *http.Request) {
 	// shortcuts — narrows both views against the tags each entry carries;
 	// an entry with no axes (no project, no Automation) is absent from any
 	// such result.
+	if !s.resolveTagFilter(w, r, tagFilterObject) {
+		return
+	}
 	tagSel, terr := objectTagSelectionFromRequest(r)
 	if terr != nil {
 		http.Error(w, terr.Error(), http.StatusBadRequest)

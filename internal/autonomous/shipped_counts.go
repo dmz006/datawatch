@@ -29,17 +29,51 @@ package autonomous
 // release, merge time and merge commit stay available as detail fields.
 const CompletedDisplayStatus = "completed"
 
-// PRDEffectiveDisplayStatus reports the status a PRD displays as: shipped
-// when it carries shipped state and the shipped surface is enabled,
-// otherwise its stored status. A nil PRD reports the empty status.
+// workReadsDone is the one rule for "this record's work is finished", shared
+// by the list, the counts, progress and the timeline. shipped says the record
+// carries a shipped record and the shipped surface is enabled; reopened says
+// the operator forced it to run again past that record.
+//
+//   - held work (status or outcome) never reads done;
+//   - a shipped record reads done, unless the record was reopened and has not
+//     ended again;
+//   - a record that ended (completed, rejected, cancelled or archived) with
+//     outcome delivered reads done. An open record does not.
+func workReadsDone(status PRDStatus, outcome string, shipped, reopened bool) bool {
+	if NormalizePRDStatus(status) == PRDHeld || outcome == OutcomeHeld {
+		return false
+	}
+	ended := closedWorkStatus(status)
+	if shipped && (ended || !reopened) {
+		return true
+	}
+	return ended && outcome == OutcomeDelivered
+}
+
+// prdReadsDone applies workReadsDone to a record.
+func prdReadsDone(p *PRD, shippedEnabled bool) bool {
+	return p != nil && workReadsDone(p.Status, p.ClosedOutcome, shippedEnabled && p.IsShipped(), overrideCovers(p))
+}
+
+// PRDEffectiveDisplayStatus reports the status a PRD displays as: completed
+// when its work reads done (see workReadsDone), otherwise its stored status.
+// A nil PRD reports the empty status.
 func PRDEffectiveDisplayStatus(p *PRD, shippedEnabled bool) string {
 	if p == nil {
 		return ""
 	}
-	if shippedEnabled && p.IsShipped() {
+	if prdReadsDone(p, shippedEnabled) {
 		return CompletedDisplayStatus
 	}
 	return string(p.Status)
+}
+
+// DisplayStatus is PRDEffectiveDisplayStatus for a summary index entry.
+func (e SummaryEntry) DisplayStatus(shippedEnabled bool) string {
+	if workReadsDone(e.Status, e.ClosedOutcome, shippedEnabled && e.IsShipped(), e.ShippedReopened) {
+		return CompletedDisplayStatus
+	}
+	return string(e.Status)
 }
 
 // AutomationEffectiveDisplayStatus reports the status an Automation displays
@@ -56,18 +90,10 @@ func AutomationEffectiveDisplayStatus(a *Automation, shippedEnabled bool) string
 	return string(a.Status)
 }
 
-// prdCountStatus is the status bucket a PRD counts under: the completed
-// bucket when the shipped surface is enabled and the PRD carries a shipped
-// record (the count_separately setting no longer splits a second bucket),
-// otherwise the stored status.
+// prdCountStatus is the status bucket a PRD counts under: the status it
+// displays as (the count_separately setting no longer splits a second bucket).
 func prdCountStatus(p *PRD, shippedEnabled, _ bool) string {
-	if p == nil {
-		return ""
-	}
-	if shippedEnabled && p.IsShipped() {
-		return CompletedDisplayStatus
-	}
-	return string(p.Status)
+	return PRDEffectiveDisplayStatus(p, shippedEnabled)
 }
 
 // automationCountStatus is the status bucket an Automation counts under

@@ -498,6 +498,16 @@ Every axis can be used as a filter on every surface:
   `?tag_id=` for a registry tag id. The legacy bare `?tag=<id>` id form keeps
   working on the Automata list. For example
   `GET /api/autonomous/prds?tag=stage:task&tag=project:web&tag_match=all`.
+  A tag's **name** works the same as its id here and on progress, the progress
+  trend and the timeline (progress and the timeline filter registry tags only,
+  not axis tags). A name that several tags share is refused with their ids
+  (HTTP 400). A tag nothing knows is refused with `tag not found` (HTTP 404):
+  on progress and the timeline any unknown tag; on the object lists when the
+  unknown values leave the filter nothing to match (with `any`, all of them are
+  unknown; with `all`, any of them). An `<axis>:<value>` tag on a built-in axis
+  is never unknown; it can rightly match nothing. Automations, task lists,
+  decision records and held questions match axis tags only. The session list is
+  not covered by these two rules.
 - **The tags in use.** `GET /api/sessions/tags` (MCP `session_tag_list`,
   comm `autonomous session-tags list`) lists every tag in use across live and
   archived sessions with its axis, its value and the number of sessions that

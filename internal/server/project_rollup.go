@@ -321,14 +321,10 @@ func rollupAutomatonFor(p *autonomous.SummaryEntry, auto string, in rollupInput,
 	return ra
 }
 
-// displayStatusOf is the status an Automaton summary displays as: completed
-// when it carries a shipped record and the shipped surface is enabled, else its
-// stored status (the summary-entry form of PRDEffectiveDisplayStatus).
+// displayStatusOf is the status an Automaton summary displays as (the
+// summary-entry form of PRDEffectiveDisplayStatus).
 func displayStatusOf(p *autonomous.SummaryEntry, shippedEnabled bool) string {
-	if shippedEnabled && p.IsShipped() {
-		return autonomous.CompletedDisplayStatus
-	}
-	return string(p.Status)
+	return p.DisplayStatus(shippedEnabled)
 }
 
 // rollupFinished decides whether an Automaton counts as finished and when it

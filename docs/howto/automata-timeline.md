@@ -28,7 +28,10 @@ stores no snapshot.
   in order. With no filter the chart spans all of them: that is the
   all-projects view.
 - **Automata** — under each project, each with its kind (feature, bug, other)
-  and status. An Automaton's `end` is set only when it is finished; while it
+  and status. Work finished by hand (a shipped record, or closed with outcome
+  delivered) shows status `completed` and `finished`; see
+  [what counts as done](automata-progress.md#what-counts-as-done). Its members
+  keep their own recorded status. An Automaton's `end` is set only when it is finished; while it
   runs, its finish is the **projection** (below).
 - **Stages** — the stories of the Automaton, each with its own start, end
   (set only when the stage is done) and status.
@@ -150,9 +153,10 @@ actually took, readable without a browser.
 
 ## Narrowing the chart
 
-Every filter is optional; an unknown value comes back as an **empty chart,
-not an error**, so a typo in a filter shows up as "no projects", not a
-failure.
+Every filter is optional. For `project`, `automaton`, `stage` and `kind`, an
+unknown value comes back as an **empty chart, not an error**, so a typo in one
+of those shows up as "no projects", not a failure. An unknown **tag** is
+refused with `tag not found` (HTTP 404).
 
 | Filter | Narrows to |
 |---|---|
@@ -160,7 +164,7 @@ failure.
 | `automaton` | one Automaton, by id or title (with it, only that Automaton's chart comes back) |
 | `stage` | one stage (story), by id or title |
 | `kind` | the Automata of one kind: `feature`, `bug` or `other` |
-| `tag` | the Automata carrying that tag |
+| `tag` | the Automata carrying that tag, given by its name or its id. If several tags share the name, use the id (the refusal lists them) |
 
 ```bash
 datawatch autonomous timeline
@@ -265,15 +269,17 @@ no plan.
 Every surface decodes the exact same body, so the CLI bars, the comm summary,
 the JSON and the MCP result can never disagree.
 
-**Base requirements:** datawatch running with autonomous enabled (the route
-answers 503 when it is off). A federated peer reading it needs the autonomous
+**Base requirements:** a running datawatch daemon. The chart is read from the
+stored records, so it also answers with `autonomous.enabled` off (the route
+answers 503 only when the daemon could not load the Automata store). A federated peer reading it needs the autonomous
 read capability.
 
 ## Common pitfalls
 
 - **An empty chart after a filter.** The filter value was not recognised —
-  unknown values return an empty chart on purpose, not an error. Check the
-  project directory spelling, the Automaton id or title, and the tag.
+  an unknown project, Automaton, stage or kind returns an empty chart on
+  purpose, not an error. Check the project directory spelling and the
+  Automaton id or title. An unknown tag is refused with `tag not found`.
 - **The card's kind dropdown does not match the chart's kind.** Picking a
   value in the card's *kind* dropdown (`automaton` or `automation`) leaves
   the card empty: those are not kinds the chart knows. The chart's kind is

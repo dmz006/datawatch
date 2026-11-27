@@ -23499,9 +23499,6 @@ function shippedChipTip(rec, completedKey) {
 }
 window.shippedChipTip = shippedChipTip;
 
-// shippedChipHtml — the chip itself. Honors show_chip and enabled; carries
-// the release + merge metadata in the tooltip and the shipped_chip docs
-// link. Returns '' for non-shipped records.
 // Release size of an Automaton (Phase 4). The list row and the detail header
 // show the resolved size with the layer that decided it, and a breaking-change
 // badge when the flag is set. A none or unresolved size with the flag off
@@ -23660,9 +23657,39 @@ function automationToggleMilestone(id) {
 }
 window.automationToggleMilestone = automationToggleMilestone;
 
+// recordReadsDone — the daemon's "this work is finished" rule. A list row
+// carries the daemon's own answer (effective_status). A full record does not,
+// so the same rule is applied here: held work never reads done; a shipped
+// record does, unless it was forced to run again and has not ended; an ended
+// record with outcome delivered does. An open record does not.
+function recordReadsDone(rec) {
+  if (!rec || typeof rec !== 'object') return false;
+  if (typeof rec.effective_status === 'string' && rec.effective_status) return rec.effective_status === 'completed';
+  const status = String(rec.status || '');
+  if (status === 'held' || rec.closed_outcome === 'held') return false;
+  const ended = ['completed', 'rejected', 'cancelled', 'archived'].includes(status);
+  const forced = rec.closed_work_override;
+  const reopened = !ended && !!forced && forced.commit === String(rec.merge_commit || '').trim();
+  if (_shippedState.enabled && shippedCarriesState(rec) && !reopened) return true;
+  return ended && rec.closed_outcome === 'delivered';
+}
+window.recordReadsDone = recordReadsDone;
+
+// _automataDisplayStatus is the status an Automaton counts and filters under
+// in the Automata list.
+function _automataDisplayStatus(rec) {
+  return recordReadsDone(rec) ? 'completed' : (rec.status || 'draft');
+}
+
+// shippedChipHtml — the Completed chip that replaces the status pill on
+// finished work. For a shipped record it honors show_chip and enabled and
+// carries the release + merge metadata in the tooltip and the shipped_chip
+// docs link; work closed as delivered always has it. Returns '' otherwise.
 function shippedChipHtml(rec, completedKey) {
-  if (!_shippedState.enabled || !_shippedState.show_chip) return '';
-  if (!shippedCarriesState(rec)) return '';
+  if (!recordReadsDone(rec)) return '';
+  const delivered = rec.closed_outcome === 'delivered' && rec.status !== 'completed';
+  const shippedChip = _shippedState.enabled && _shippedState.show_chip && shippedCarriesState(rec);
+  if (!shippedChip && !delivered) return '';
   const label = shippedChipLabel(rec, completedKey);
   const docs = (typeof defsLink === 'function') ? defsLink('shipped_chip', label) : '';
   return `<span class="shipped-chip state state-badge-shipped" title="${escHtml(shippedChipTip(rec, completedKey))}">${escHtml(label)}${docs}</span>`;
@@ -66810,10 +66837,11 @@ function _tagBrowseFilter(items, f, tree) {
   const backends = o.backends || [];
   const projects = o.projects || [];
   const statuses = o.statuses || [];
+  const statusOf = o.statusOf || (it => it.status || 'draft');
   return (items || []).filter(it => {
     if (backends.length && !backends.includes(it.backend || '')) return false;
     if (projects.length && !projects.includes(it.project || '')) return false;
-    if (statuses.length && !statuses.includes(it.status || 'draft')) return false;
+    if (statuses.length && !statuses.includes(statusOf(it))) return false;
     return _tagBrowseMatches(_tagBrowseItemSet(it, tree), tagIds, o.mode);
   });
 }
@@ -67097,7 +67125,8 @@ function _tagFacetBase(scope) {
 function _tagBrowseItems(scope, base) {
   const sc = _tagBrowse[scope];
   const statuses = scope === 'automata' ? [..._automataState.statusFilter] : [];
-  return _tagBrowseFilter(base, { tagIds: sc.sel, mode: _tagBrowseMode(scope), backends: [...sc.backends], projects: [...sc.projects], statuses }, _tagBrowseTree(_tagsState.list));
+  const statusOf = scope === 'automata' ? _automataDisplayStatus : undefined;
+  return _tagBrowseFilter(base, { tagIds: sc.sel, mode: _tagBrowseMode(scope), backends: [...sc.backends], projects: [...sc.projects], statuses, statusOf }, _tagBrowseTree(_tagsState.list));
 }
 
 function _tagBrowseActiveCount(scope) {
@@ -67578,14 +67607,15 @@ function _tagFacetsHTML(scope, tagsOpen) {
   const shipSel = _shippedState.enabled ? shippedFilterSelection(statusSel) : 'all';
   const stOnly = statusSel.filter(s => s !== 'shipped' && s !== 'unshipped');
   const gated = all.filter(it => shippedRecordMatches(it, shipSel, true));
-  const tagCounts = _tagBrowseCounts(_tagBrowseFilter(gated, { backends: [...sc.backends], projects: [...sc.projects], statuses: stOnly }, tree), tree);
+  const statusOf = scope === 'automata' ? _automataDisplayStatus : undefined;
+  const tagCounts = _tagBrowseCounts(_tagBrowseFilter(gated, { backends: [...sc.backends], projects: [...sc.projects], statuses: stOnly, statusOf }, tree), tree);
   const rows = _tagMultiRowsHTML(scope, tagCounts);
   const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
   const tagGroup = `<div class="tag-facet-group"><details class="tag-multi"${tagsOpen ? ' open' : ''}><summary class="tag-multi-summary">${escHtml(t('tag_browse_filter_tags'))}${sc.sel.length ? ` (${sc.sel.length})` : ''}</summary><div class="tag-multi-list">${rows || `<div class="tag-multi-empty">${escHtml(t('tag_picker_empty'))}</div>`}</div></details><button type="button" class="tag-mode-btn" aria-pressed="${mode === 'all'}" title="${escHtml(t('tag_browse_mode_title'))}" onclick="tagBrowseToggleMode('${escJsAttr(scope)}')">${escHtml(modeLabel)}</button></div>`;
   let backendGroup = '';
   if (scope === 'automata') {
     const names = [...new Set(all.map(p => p.backend || '').filter(Boolean))].sort();
-    const counts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, projects: [...sc.projects], statuses: stOnly }, tree), 'backend');
+    const counts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, projects: [...sc.projects], statuses: stOnly, statusOf }, tree), 'backend');
     if (names.length) {
       backendGroup = `<div class="automata-badge-group tag-facet-backends">${names.map(n => {
         const on = sc.backends.has(n);
@@ -67599,7 +67629,7 @@ function _tagFacetsHTML(scope, tagsOpen) {
   let projectGroup = '';
   {
     const names = [...new Set(all.map(p => p.project || '').filter(Boolean))].sort();
-    const counts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends], statuses: stOnly }, tree), 'project');
+    const counts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends], statuses: stOnly, statusOf }, tree), 'project');
     if (names.length) {
       projectGroup = `<div class="automata-badge-group tag-facet-projects" role="group" aria-label="${escHtml(t('plan_records_project_filter'))}">${names.map(n => {
         const on = sc.projects.has(n);
@@ -67607,11 +67637,13 @@ function _tagFacetsHTML(scope, tagsOpen) {
       }).join('')}</div>`;
     }
   }
-  let statusCounts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends], projects: [...sc.projects] }, tree), 'status');
-  // count_separately: records that carry a shipped record pull out of their
-  // stored-status counts and group under the Completed badge, so finished
+  const faceted = _tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends], projects: [...sc.projects] }, tree);
+  // Automata count under the status they display and filter as, so finished
   // work is never counted as Cancelled.
-  if (_shippedState.enabled && _shippedState.count_separately) {
+  let statusCounts = _tagBrowseValueCounts(statusOf ? faceted.map(it => ({ status: statusOf(it) })) : faceted, 'status');
+  // count_separately: Automations that carry a shipped record pull out of their
+  // stored-status counts and group under the Completed badge.
+  if (!statusOf && _shippedState.enabled && _shippedState.count_separately) {
     let shippedN = 0;
     const shippedByStatus = {};
     for (const it of gated) {

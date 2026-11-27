@@ -54,8 +54,21 @@ Automaton's *kind* (see [Setting an Automaton kind](#setting-an-automaton-kind))
 
 ## What counts as done
 
-An Automaton counts as **done** when its status is completed. Finished work
-that was filed away still counts: a cancelled or archived Automaton whose
+An Automaton counts as **done** when its status is completed. Work finished by
+hand counts too, whatever its stored status says:
+
+- it carries a **shipped record** (while `autonomous.shipped.enabled` is on), or
+- it ended (cancelled, rejected or archived) with the
+  [outcome](closed-work-outcome.md) **delivered**.
+
+Its unfinished tasks are not counted as tasks left, and are not counted as
+tasks done either. The progress numbers, the timeline, the list's **Completed**
+filter and the status chip in the web app use this one rule. **Held** work (held
+status, or outcome held) never reads done. An open Automaton with no shipped
+record never does, and neither does one you forced to run again past its
+shipped record until it ends.
+
+Finished work that was filed away also still counts: a cancelled or archived Automaton whose
 tasks all completed is merged work whose record was closed, so it is counted
 as done, in the totals, the rates and the estimate sample. A cancelled,
 archived or rejected Automaton with unfinished tasks, or with no tasks, was
@@ -214,7 +227,9 @@ UNFILED ROWS (first 6 of 6):
 
 ## Base requirements
 
-- datawatch running with autonomous enabled.
+- A running datawatch daemon. The numbers are read from the stored records, so
+  they also answer with `autonomous.enabled` off; no daily trend snapshot is
+  taken while it is off.
 - Some finished Automata. With none, every rate reads *not measured*.
 - Optional: a backlog file for the estimated part (default
   `docs/plans/README.md`, a table whose rows start with a number, see
@@ -354,8 +369,10 @@ object** as the REST route, so every surface shows the same figures.
 `automation` narrows the count to the Automata of one Automation. `tag` is
 repeatable and narrows the count to the Automata carrying the given tag(s):
 `--tag-match all` (or `tag_match=all`) requires every listed tag to be
-present; `any`, the default, takes at least one. Every surface takes tag
-IDs. A bad date or a bad `tag_match` is refused (HTTP 400).
+present; `any`, the default, takes at least one. Every surface takes a tag's
+**name or id**; if several tags share a name, use the id (HTTP 400 lists them).
+An unknown tag is refused with `tag not found` (HTTP 404). A bad date or a bad
+`tag_match` is refused (HTTP 400).
 
 The progress object and every trend point report the **scope** the counts
 were taken over — `all`, `automation:<id>`, `tag:<id>`, `tags:<id1,id2>`

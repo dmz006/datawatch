@@ -774,7 +774,7 @@ progress trend 14
 progress trend 14 tag=1a2b3c4d
 ```
 
-(`1a2b3c4d` and `4f5e6d7c` stand for tag **ids** — the ids the tag named `stage:build` and the tag named `automation:release` carry in `autonomous_tag_list`; the filter compares ids, not names.)
+(`1a2b3c4d` and `4f5e6d7c` stand for tag **ids** from `autonomous_tag_list`. `tag=<id>` also takes the tag's **name** (one word on the comm channel). A name several tags share is refused with their ids, and an unknown tag is refused with `tag not found`.)
 
 - `automation=<id>` counts only the Automata of one Automation; `tag=<id>`
   counts only the Automata carrying the tag — repeat it to select several, and
@@ -863,7 +863,8 @@ timeline kind=bug
   one Automaton by id or title (titles with spaces work on the CLI and the MCP
   tool; on the comm channel the value must be a single word); `stage` to one
   stage by id or title; `kind` to the Automata of one kind; `tag` to the
-  Automata carrying that tag. A mistake in the arguments is answered with the
+  Automata carrying that tag, by its id or its name (an unknown tag is refused
+  with `tag not found`). A mistake in the arguments is answered with the
   usage line and nothing is sent to the daemon.
 
 **What the reply shows:**

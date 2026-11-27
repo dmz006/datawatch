@@ -17,7 +17,7 @@ func (s *Server) toolAutonomousTimeline() mcpsdk.Tool {
 		mcpsdk.WithString("automaton", mcpsdk.Description("Optional — only this Automaton, by id or title")),
 		mcpsdk.WithString("stage", mcpsdk.Description("Optional — only this stage (story), by id or title")),
 		mcpsdk.WithString("kind", mcpsdk.Description("Optional — only Automata of this kind: feature, bug or other")),
-		mcpsdk.WithString("tag", mcpsdk.Description("Optional — only the Automata carrying this tag")),
+		mcpsdk.WithString("tag", mcpsdk.Description("Optional — only the Automata carrying this tag (name or id)")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }

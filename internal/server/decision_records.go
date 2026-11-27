@@ -377,6 +377,9 @@ func (s *Server) handleDecisionRecordList(w http.ResponseWriter, r *http.Request
 		}
 		filter.Limit = n // the store caps it at 1000
 	}
+	if !s.resolveTagFilter(w, r, tagFilterObject) {
+		return
+	}
 	tagSel, terr := objectTagSelectionFromRequest(r)
 	if terr != nil {
 		writeJSONError(w, http.StatusBadRequest, map[string]string{"error": terr.Error()})

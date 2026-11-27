@@ -1010,7 +1010,7 @@ Automation needs a backend for each workload: an **execution** backend (at least
 
 ### Completed
 
-**Completed** is the status an Automaton or Automation shows when its work finished. It covers work that completed normally and work that was cancelled *after* its branch merged: once a record carries a merge commit it reads Completed in every count, list and chip, never Cancelled. **Cancelled** means abandoned work only. The daemon's own `mark_completed` post-ship step and the merge helper's `completed_mark` step mark a merged Automaton Completed right after the ship, and the [Completed migration](#completed-migration) fixes older records. See [howto/automata-shipped-status.md](howto/automata-shipped-status.md).
+**Completed** is the status an Automaton or Automation shows when its work finished. It covers work that completed normally and work that was cancelled *after* its branch merged: once a record carries a merge commit it reads Completed in every count, list and chip, never Cancelled. An Automaton that ended (cancelled, rejected or archived) with the [closed work outcome](howto/closed-work-outcome.md) **delivered** reads Completed too, with or without a merge commit; progress and the timeline use the same rule. A **held** Automaton never reads Completed, an open one does not without a shipped record, and one forced to run again past its shipped record does not until it ends. **Cancelled** means abandoned work only. The daemon's own `mark_completed` post-ship step and the merge helper's `completed_mark` step mark a merged Automaton Completed right after the ship, and the [Completed migration](#completed-migration) fixes older records. See [howto/automata-shipped-status.md](howto/automata-shipped-status.md).
 
 ### Completed migration
 
