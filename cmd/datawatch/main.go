@@ -993,13 +993,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		cfg = config.DefaultConfig()
 	} else {
 		var err error
-		cfg, encKey, err = loadConfigDeriveKeys(deliveryWire.openKey)
+		cfg, encKey, err = loadConfigDeriveKeys(deliveryWire.openKeyAtStart)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
 		if encKey == nil {
 			// A sealed delivery store refuses a non-secure start.
-			if err := deliveryWire.openKey(cfg, nil); err != nil {
+			if err := deliveryWire.openKeyAtStart(cfg, nil); err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}
 		}
@@ -10125,7 +10125,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 	// failed earlier has written none of its records. It reports only.
 	if workerBootstrap == nil {
 		if _, err := deliveryWire.start(ctx, deliveryDeps{cfg: cfg, sessions: mgr, schedules: schedStore,
-			autonomy: autonomousMgrRef, pipelines: pipeExec, http: httpServer, queue: queueStore}); err != nil {
+			autonomy: autonomousMgrRef, pipelines: pipeExec, http: httpServer,
+			alert: func(title, body string) {
+				alertStore.AddSystem(alertspkg.LevelError, title, body)
+			}, queue: queueStore}); err != nil {
 			return fmt.Errorf("start the delivery check: %w", err)
 		}
 	}

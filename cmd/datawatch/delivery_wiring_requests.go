@@ -204,9 +204,9 @@ func acceptanceOptions(cfg *config.Config, key []byte, book func() delivery.Requ
 	}
 }
 
-// openRequests opens the store. It writes nothing. An error means the daemon
-// must not start.
-func (w *deliveryWiring) openRequests(d deliveryDeps, engine *delivery.Engine, lists *acceptance.Service, adopt bool) (*delivery.Requests, error) {
+// openRequests opens the store, repairing a damaged one. A sound store is only
+// read. An error means requests stay off; it never stops the daemon.
+func (w *deliveryWiring) openRequests(d deliveryDeps, engine *delivery.Engine, lists *acceptance.Service, adopt bool) (*delivery.Requests, *delivery.RepairReport, error) {
 	sessions := requestSessions{d.sessions}
 	holds := w.holdsFor(d)
 	keeper := delivery.NewRoleKeeper(sessions)
@@ -232,7 +232,41 @@ func (w *deliveryWiring) openRequests(d deliveryDeps, engine *delivery.Engine, l
 			return 0, false
 		}
 	}
-	return delivery.OpenRequests(opts)
+	return delivery.OpenRequestsRepaired(opts)
+}
+
+// tell logs, raises a system alert, and, with a delivery list, lists it there.
+func (w *deliveryWiring) tell(d deliveryDeps, e *delivery.Engine, entry, state, title, body string) {
+	log.Printf("[delivery] %s: %s", title, body)
+	if d.alert != nil {
+		d.alert(title, body)
+	}
+	if e == nil {
+		return
+	}
+	if err := e.Record(delivery.Candidate{Kind: delivery.KindAlarm, ID: entry, State: state, Problem: state,
+		Invariant: delivery.InvUnopenable, Since: time.Now(), Sticky: true, WaitsOn: delivery.WaitsOnOperator}); err != nil {
+		log.Printf("[delivery] %s held in memory until it can be saved: %v", entry, err)
+	}
+}
+
+func (w *deliveryWiring) tellRepaired(d deliveryDeps, e *delivery.Engine, r *delivery.RepairReport) {
+	w.tell(d, e, "requests_repaired:"+filepath.Base(r.Folder), delivery.WhyRepaired,
+		"Delivery request store repaired", r.Text())
+}
+
+func (w *deliveryWiring) tellRequestsOff(d deliveryDeps, e *delivery.Engine, err error) {
+	w.tell(d, e, "requests_off", "requests_off", "Delivery requests are off",
+		"The delivery request store in "+filepath.Join(expandHome(d.cfg.DataDir), requestsDir)+
+			" cannot be used or repaired safely. Nothing in it was changed. Delivery requests are off, and so is "+
+			"the work queue if it had moved there. Everything else runs. Reason: "+err.Error())
+}
+
+func (w *deliveryWiring) tellKeyUnusable(d deliveryDeps, err error) {
+	w.tell(d, nil, "requests_off", "requests_off", "Delivery requests are off",
+		"datawatch cannot use the delivery store key. Delivery requests are off, and so is the delivery check, "+
+			"whose records that key seals. Done-when lists are unavailable, and so is the work queue if it had moved "+
+			"into queue.d. Nothing under queue.d or delivery was changed. Everything else runs. Reason: "+err.Error())
 }
 
 // requestSource is the delivery check's "requests" source.
@@ -374,11 +408,15 @@ func (w *deliveryWiring) startOff(d deliveryDeps) error {
 	if d.queue == nil || !queueMoved(queueStorePath(d.cfg)) {
 		return nil
 	}
-	reqs, err := delivery.OpenRequests(delivery.RequestOptions{
+	reqs, repair, err := delivery.OpenRequestsRepaired(delivery.RequestOptions{
 		Dir: filepath.Join(expandHome(d.cfg.DataDir), requestsDir), Key: w.key.Key(), AdoptPlain: w.key.AdoptPlain(),
 	})
 	if err != nil {
-		return err
+		w.tellRequestsOff(d, nil, err)
+		return nil
+	}
+	if repair != nil {
+		w.tellRepaired(d, nil, repair)
 	}
 	if err := d.queue.MoveTo(func() (session.QueueRecords, error) { return reqs, nil }); err != nil {
 		log.Printf("[delivery] the work queue cannot be read: %v", err)

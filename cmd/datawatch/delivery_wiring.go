@@ -38,6 +38,8 @@ const (
 type deliveryWiring struct {
 	keyParams delivery.KeyParams
 	key       *delivery.StoreKey
+	// keyErr: at this start the delivery key cannot be used.
+	keyErr error
 
 	mu       sync.Mutex
 	engine   *delivery.Engine
@@ -69,6 +71,20 @@ func (w *deliveryWiring) openKey(cfg *config.Config, password []byte) error {
 		return err
 	}
 	w.key = k
+	return nil
+}
+
+// openKeyAtStart opens the key for the daemon's start. With a password, a key
+// that cannot be used (wrong, damaged or missing) never stops datawatch: the
+// delivery check and requests stay off, start tells the operator, and nothing
+// under them is written. A start without secure mode over sealed records is
+// refused as before: it is the wrong mode.
+func (w *deliveryWiring) openKeyAtStart(cfg *config.Config, password []byte) error {
+	err := w.openKey(cfg, password)
+	if err == nil || password == nil {
+		return err
+	}
+	w.keyErr = err
 	return nil
 }
 
@@ -175,6 +191,8 @@ type deliveryDeps struct {
 	http      *server.HTTPServer
 	// queue is the older work queue, which moves into the request store.
 	queue *session.QueueStore
+	// alert raises a system alert to the operator.
+	alert func(title, body string)
 	pause pause.Gate
 	// firstPassDelay replaces deliveryFirstPassDelay in tests.
 	firstPassDelay time.Duration
@@ -183,6 +201,12 @@ type deliveryDeps struct {
 // start runs the check. Call it only once every other store has opened: it is
 // the first thing here that writes. It returns nil when the check is off.
 func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.Engine, error) {
+	if w.keyErr != nil {
+		// Nothing below may run: a store opened without the key would be
+		// read, or written, as plain.
+		w.tellKeyUnusable(d, w.keyErr)
+		return nil, nil
+	}
 	if !d.cfg.Delivery.EnabledOn() {
 		fmt.Println("[delivery] the check is off (delivery.enabled: false)")
 		return nil, w.startOff(d)
@@ -229,17 +253,18 @@ func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.E
 	if err != nil {
 		return nil, err
 	}
-	// The request store opens before anything below writes: if it cannot, the
-	// daemon does not start and queue.json and queue.d are as they were.
+	// The request store opens before anything below writes. A damaged one is
+	// repaired; one that cannot be repaired safely is left as it is, and only
+	// requests (and a queue that moved into it) are off.
 	var reqs *delivery.Requests
+	var repair *delivery.RepairReport
+	var openErr error
 	if d.sessions != nil {
-		if reqs, err = w.openRequests(d, e, lists, adopt); err != nil {
-			return nil, err
-		}
+		reqs, repair, openErr = w.openRequests(d, e, lists, adopt)
 	}
 	// Secure mode was just turned on: seal what was plain before anything
 	// else. Until that and the journal worked, the next start adopts again.
-	var requestsErr error
+	requestsErr := openErr
 	if reqs != nil {
 		if requestsErr = reqs.SealAdopted(); requestsErr != nil {
 			log.Printf("[delivery] sealing the plain request records failed: %v", requestsErr)
@@ -265,6 +290,12 @@ func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.E
 	}
 	if d.http != nil {
 		d.http.SetDelivery(e)
+	}
+	switch {
+	case openErr != nil:
+		w.tellRequestsOff(d, e, openErr)
+	case repair != nil:
+		w.tellRepaired(d, e, repair)
 	}
 	if reqs != nil {
 		w.startRequests(ctx, d, reqs)

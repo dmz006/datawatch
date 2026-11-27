@@ -1,7 +1,9 @@
 // The delivery store key. It is derived from the secure-mode password and a
 // salt of its own, so a settings change that gives the config a new salt
 // leaves the delivery records readable. It fails closed: when it cannot be
-// used, datawatch does not start, and nothing is ever written plain.
+// used, the delivery check and requests do not run, and nothing is ever written
+// plain. datawatch itself still starts, except without secure mode over sealed
+// records.
 
 package delivery
 
@@ -41,7 +43,7 @@ const KeyFile = "queue.d/store.key"
 // that were plain have been sealed with it. It holds nothing.
 const adoptMarker = HeartbeatDir + "/.adopt-plain"
 
-// ErrStoreKey wraps every reason the daemon must not start.
+// ErrStoreKey wraps every reason the delivery key cannot be used.
 var ErrStoreKey = errors.New("delivery store key")
 
 const (

@@ -247,9 +247,13 @@ func TestReqWireAFailedOpenChangesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := filesUnder(t, filepath.Join(cfg.DataDir, "queue.d"))
-	_, err = w.start(context.Background(), deliveryDeps{cfg: cfg, sessions: wireTestManager(t, cfg), queue: q, firstPassDelay: time.Hour})
-	if !errors.Is(err, delivery.ErrRecords) {
-		t.Fatalf("start: %v", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, err = w.start(ctx, deliveryDeps{cfg: cfg, sessions: wireTestManager(t, cfg), queue: q, firstPassDelay: time.Hour})
+	// Damaged request storage never stops datawatch from starting (operator,
+	// 2026-11-27): requests are off, and nothing is changed.
+	if err != nil || w.requestStore() != nil {
+		t.Fatalf("start: %v, requests %v", err, w.requestStore())
 	}
 	after := filesUnder(t, filepath.Join(cfg.DataDir, "queue.d"))
 	if len(after) != len(before) || after["/meta.rec"] != before["/meta.rec"] {
