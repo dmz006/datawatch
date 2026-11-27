@@ -421,3 +421,17 @@ func TestNotifyACancelledPassIsAFailureWithACode(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 }
+
+// The commands a message names must be ones that run: the command line takes
+// keys as --key, chat takes them as words.
+func TestNotifyMessageNamesCommandsThatRun(t *testing.T) {
+	n, ok := DueNotice("host1", notifyEntries(1), notifyNow)
+	if !ok || !strings.Contains(n.Text, "datawatch delivery ack --key <key>") || !strings.Contains(n.Text, `"delivery ack <key>"`) {
+		t.Fatalf("%q", n.Text)
+	}
+	for _, line := range strings.Split(n.Text, "\n") {
+		if strings.HasPrefix(line, "delivery") {
+			t.Fatalf("a line reads as a command if the channel sends it back: %q", line)
+		}
+	}
+}

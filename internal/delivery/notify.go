@@ -137,7 +137,8 @@ func notifyText(host string, es []*Entry, reminder bool) (string, int) {
 		}
 		head = fmt.Sprintf("%s Delivery check reminder: %d %s still not acknowledged.", notifyPrefix(host), len(es), noun)
 	}
-	const foot = "Full list: datawatch delivery status. Stop messages about an item: datawatch delivery ack <key>."
+	const foot = `In chat, "delivery" shows the list and "delivery ack <key>" stops messages about an item. ` +
+		"Command line: datawatch delivery status; datawatch delivery ack --key <key>."
 	// Room for the footer and for the line that counts what is left out.
 	room := notifyMaxBytes - len(head) - len(foot) - 80
 	var lines []string
