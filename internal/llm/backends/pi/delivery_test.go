@@ -498,6 +498,13 @@ func TestReqPiTheReportToolReportsAndNeverSaysDone(t *testing.T) {
 	if early.OK || !strings.Contains(early.ToolError, "datawatch_ack") {
 		t.Fatalf("a report before the accept must say what to do first: %+v", early)
 	}
+	// In the real-pi run a refusal that only said "accept it first" made the
+	// model retry on a hello and then look for another way to report.
+	for _, want := range []string{"do not try again", "another way", "hello"} {
+		if !strings.Contains(early.ToolError, want) {
+			t.Fatalf("the refusal lacks %q: %q", want, early.ToolError)
+		}
+	}
 	if r := tool("datawatch_ack", map[string]string{"request_id": "r-1", "code": "c0de"}); !r.OK {
 		t.Fatalf("%+v", r)
 	}
@@ -556,7 +563,8 @@ func TestReqPiGuidanceOnlyWhenChosen(t *testing.T) {
 	e.cred.Guidance = true
 	e.save()
 	note := p.do(map[string]any{"cmd": "agent_start"}).Sections["datawatch_requests"]
-	for _, want := range []string{"[datawatch request <id> begin]", "real instruction", "datawatch_ack", "datawatch_report"} {
+	for _, want := range []string{"[datawatch request <id> begin]", "real instruction", "datawatch_ack", "datawatch_report",
+		"hello needs only datawatch_ack", "do not retry"} {
 		if !strings.Contains(note, want) {
 			t.Fatalf("the note lacks %q: %q", want, note)
 		}
