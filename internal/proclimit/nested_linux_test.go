@@ -4,6 +4,7 @@ package proclimit
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
@@ -27,7 +28,7 @@ func TestHelperAsksForALimit(t *testing.T) {
 	defer cancel()
 	s := Scope{MemoryBytes: 64 << 20}
 	if err := s.Available(ctx); err != nil {
-		os.Stdout.WriteString("refused: " + err.Error() + "\n")
+		fmt.Println("refused: " + err.Error())
 		return
 	}
 	cmd := exec.CommandContext(ctx, "/bin/cat", "/proc/self/cgroup")
@@ -35,7 +36,7 @@ func TestHelperAsksForALimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	os.Stdout.WriteString("made: " + string(out))
+	fmt.Print("made: " + string(out))
 }
 
 // A command under the limit may run code that makes limits of its own, as
