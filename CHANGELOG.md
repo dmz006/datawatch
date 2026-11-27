@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.173.5 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 28 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ## v9.187.45 — Merge steps keep more of their file reads and writes inside the project
 
 ### Fixed
