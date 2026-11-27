@@ -147,8 +147,8 @@ func TestADroppedDaemonDefaultShowsAsAChange(t *testing.T) {
 	}
 }
 
-// noChange is a check that passes before and after: nothing shows any work.
-func noChange(t *testing.T, source string, known bool, more ...Item) *List {
+// unchangedList holds a check that passes before and after: nothing shows any work.
+func unchangedList(t *testing.T, source string, known bool, more ...Item) *List {
 	t.Helper()
 	w := newWorld(t)
 	w.runner.out["c0"] = afterPass
@@ -177,7 +177,7 @@ func TestNoChangeChecksNeverReachDone(t *testing.T) {
 		"a daemon's report source, and yes": {source: "report", known: true, more: []Item{looked()}},
 		"a caller's message, and yes":       {source: "message", more: []Item{looked()}},
 	} {
-		l := noChange(t, c.source, c.known, c.more...)
+		l := unchangedList(t, c.source, c.known, c.more...)
 		if got := Read(l); got.Done {
 			t.Errorf("%s: reads %s with nothing changed", name, got.Status)
 		}
