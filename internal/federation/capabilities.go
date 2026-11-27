@@ -126,6 +126,11 @@ const (
 	// credential) and not enforced. No peer group carries it.
 	CapDeliveryRead  = "delivery:read"
 	CapDeliveryWrite = "delivery:write"
+	// HeaderDeliveryCaller names the session or peer an assistant tool or chat
+	// command is acting for when it calls the delivery routes back with the
+	// admin token. The daemon reads it only on an admin request, and it can
+	// only name a session or a peer.
+	HeaderDeliveryCaller = "X-Datawatch-Delivery-Caller"
 
 	// council
 	CapCouncilList = "council:list"
