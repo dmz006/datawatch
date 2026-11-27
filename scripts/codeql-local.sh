@@ -12,7 +12,7 @@ set -euo pipefail
 
 # Pinned CodeQL bundle version: the one default setup last used (re-pin after
 # `--check-version` reports drift).
-CODEQL_VERSION="2.27.3"
+CODEQL_VERSION="2.27.6"
 
 DEFAULT_LANGUAGES="actions go javascript-typescript python"
 
