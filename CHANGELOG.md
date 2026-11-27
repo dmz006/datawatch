@@ -5,17 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.45 — Merge steps keep the files they read and write inside the project
+## v9.187.45 — Merge steps keep more of their file reads and writes inside the project
 
 ### Fixed
-- Merge steps and merge comparisons now keep the files they read and write inside the project, also where the project holds symbolic links. Links that stay inside the project keep working.
+- More of the files that merge steps and merge comparisons read and write, among them version, changelog, README and conflict files, are now kept inside a project that holds symbolic links. Links that stay inside the project keep working.
 - Three smaller input checks around recording a merged commit are stricter.
-
 ### Changed
-- A Makefile that links outside the project is not followed: a step that requires a make target now fails and the merge run stops, also for a step set to continue after a failure, and build detection looks at go.mod instead. A Makefile that only lacks the target still skips the step.
+- When the project's top-level Makefile is a link to a file outside the project, it is not followed: a pipeline step that requires a make target fails and the merge run stops, also for a step set to continue after a failure; the check of a conflict proposal does not pass; and build detection looks at go.mod instead. A normal Makefile that only lacks the target still skips the step.
 
 ### Not covered
-- Two other places that look at files in a project (the check for a Makefile gate target in merge comparisons, and the registry-row step after a merge) are unchanged. Tested on made-up repositories only.
+- This does not cover every file operation: some other places in merge steps and merge comparisons that touch a project's files are unchanged, and this does not limit what a project's own commands, make included, read or write. Tested on made-up repositories only.
 
 ## v9.187.44 — Hand merges are compared with datawatch's own rebuild; merging stays off
 

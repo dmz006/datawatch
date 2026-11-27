@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.45 (2026-11-27).** Merge steps and merge comparisons now keep the files they read and write inside the project, also where the project holds links. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.45 (2026-11-27).** More of the files that merge steps and merge comparisons read and write are now kept inside a project that holds links; not every place is covered (see the changelog). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
