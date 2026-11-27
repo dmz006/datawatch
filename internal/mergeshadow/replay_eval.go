@@ -435,7 +435,10 @@ func matchedRun(replays []*Replay, project, settingsHash string, checksHash func
 	return out, newest
 }
 
-// SortReplays orders replays newest hand merge first.
+// SortReplays orders replays newest hand merge first. Git keeps a commit's time
+// to the second; hand merges that tie on it go by when their shadow was first
+// stored, which a rerun keeps. The key, which starts with a random Automaton
+// id, only settles records that tie on both.
 func SortReplays(rs []*Replay) {
 	when := func(r *Replay) (t int64) {
 		if !r.Hand.At.IsZero() {
@@ -447,6 +450,9 @@ func SortReplays(rs []*Replay) {
 		a, b := when(rs[i]), when(rs[j])
 		if a != b {
 			return a > b
+		}
+		if !rs[i].CreatedAt.Equal(rs[j].CreatedAt) {
+			return rs[i].CreatedAt.After(rs[j].CreatedAt)
 		}
 		return rs[i].Key > rs[j].Key
 	})
