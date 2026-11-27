@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.39 — Schedules that datawatch ends say so; session hooks and the start-up dialog poller now run
+
+### Fixed
+- When datawatch ends a command schedule untyped (its session was killed, ended or is gone; a one-time send fails; the schedule it follows did not run), it is marked failed or cancelled with the reason and raises a warning. A recurring one survives a send error that leaves its target usable (alert on the first in a row, then every 24th), but not Claude having left the terminal. New schedules for a missing or ended session id, or following one that is not pending, are refused. `schedule add`, `list` and `cancel` go through the running daemon; they use the file only when it is proven down, never on a secure install.
+- Daemon and CLI kills save the end record before closing the pane; an aborted launch already on record is marked failed. A one-shot shell script that exits non-zero ends failed. A message an opencode-acp server refuses counts as failed and is not typed. The work queue file is replaced whole.
+- One warning names sessions found dead at daemon start, and one names running sessions gone silent. The daemon log lines for a sent schedule, sent input and a new tmux session no longer print that text (`-v` still prints screen lines).
+- In 9.187.38 one session-start step replaced another, so it never ran. It runs now: Claude Code status hooks are installed (`session.auto_install_hooks: false` turns this off), and with auto-accept on, new sessions are checked for start-up dialogs for up to 45 s, stopping after the poller's first answer, or at the main prompt, task arrival or session end. A screen gets one answer; an accept is sent again only if still up 5 s later. The installer leaves alone home and user settings, links, unreadable settings, files it did not write and git-tracked files; a merge keeps your settings.
+- If a worker asks a second question while its first answer waits for a slot, the task now parks on the second after the first is typed and frees the slot. This replaces the first sentence of v9.187.38's "Not covered".
+### Before you upgrade
+- On first start, pending commands for missing or ended session ids, and chains nothing will start, fail within minutes with alerts. A rate-limited session with no pending resume can get one, which types later: check these before unpausing (not tested against the global pause).
+- Claude project folders get hook files and, in a git repository, `info/exclude` lines. A git-ignored or non-repository `settings.json` is rewritten with hooks added and keys sorted; hooks stay after the session. From the code, not tested live: their events can change idle handling, such as ending a one-shot supervisor pass soon after a stop.
+- **With the Go channel bridge, messages datawatch posts to it (session subscriptions, the web Channel tab) now reach Claude as new input, without the checks on typed input, including the permission-prompt check.**
+- The silent-session warning is on at the default `session.stale_timeout_seconds` of 1800. A negative value turns it and the default stale list off, and also the worker log stall check if `autonomous.stale_task_seconds` is 0 or less. A one-shot shell script whose last command exits non-zero now ends failed.
+### Not covered
+- **Nothing here was run with a real Claude Code:** dialogs, hooks and channel delivery used stand-ins or tests. From the code: a daemon with an API token rejects hook events (401). Hooks fail in a project path containing a space. The start-time memory lookup still puts nothing into a new session. A one-shot development-channels answer can type the word "Enter" before pressing Enter.
+- An interactive session has no timed re-check of a start-up dialog: an accept dialog still up, or back within 5 s, is answered again only by a 20 s prompt check that is still running or that a later event starts, not by the start poller after its own answer; otherwise it waits for a person (from the code; not reproduced with stand-ins). New start-time alerts were not checked on push or chat. Hook entries in an existing `settings.json` outside a repository, or a new one beside your own `.claude/.gitignore`, can enter a later commit.
+
 ## v9.187.38 — Capacity slots for resumed and parked Automaton workers
 
 ### Fixed

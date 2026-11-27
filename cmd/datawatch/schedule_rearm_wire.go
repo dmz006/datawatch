@@ -31,6 +31,21 @@ func scheduleAlertText(a session.ScheduleAlert) (level alertspkg.Level, title, b
 		name = a.Schedule.ID
 	}
 	switch {
+	case a.Count > 0:
+		return alertspkg.LevelWarn, fmt.Sprintf("%d scheduled commands did not run", a.Count),
+			"datawatch ended these schedules without delivering them. Check the sessions, and create again any still wanted.\n" + a.Settled
+	case a.Settled != "":
+		target := a.Schedule.SessionID
+		if a.Schedule.SessionName != "" {
+			target = "named " + a.Schedule.SessionName
+		}
+		return alertspkg.LevelWarn, "Scheduled command did not run: " + name,
+			fmt.Sprintf("Schedule %s (session %s) is now %s: %s. Check the session, and create it again if it is still wanted.",
+				a.Schedule.ID, target, a.Schedule.State, a.Settled)
+	case a.SendFailed:
+		return alertspkg.LevelWarn, "Scheduled command send failed: " + name,
+			fmt.Sprintf("Sending schedule %s failed (%d in a row): %v. It stays scheduled; next fire %s.",
+				a.Schedule.ID, a.Schedule.ConsecutiveFailures, a.Err, a.Schedule.RunAt.Local().Format("2006-01-02 15:04"))
 	case a.Interrupted:
 		next := "It is now failed. Check the session, and create it again if the command did not arrive."
 		switch a.Schedule.State {
@@ -70,6 +85,8 @@ func scheduleAlertText(a session.ScheduleAlert) (level alertspkg.Level, title, b
 // wireScheduleRearm hands the manager the live re-arm policy and the alert
 // hook. The policy is read from cfg at every failed start.
 func wireScheduleRearm(mgr *session.Manager, cfg *config.Config) {
+	// A schedule that could never run is refused when it is made.
+	mgr.EnableScheduleTargetCheck()
 	mgr.SetScheduleRearmPolicy(func() session.RearmPolicy { return scheduleRearmPolicy(cfg.Schedule) })
 	mgr.SetScheduleAlertHook(func(a session.ScheduleAlert) {
 		level, title, body := scheduleAlertText(a)

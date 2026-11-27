@@ -413,9 +413,9 @@ func mustSession(t *testing.T, mgr *Manager, id string) *Session {
 	return s
 }
 
-// A send that fails while the session is still there is not a lost target: it
-// fails the schedule as before.
-func TestNameScheduleSendErrorOnLiveSessionStillFails(t *testing.T) {
+// A send that fails while the session is still there is not a lost target: a
+// recurring schedule records the failure and stays scheduled.
+func TestNameCronSendErrorOnLiveSessionStaysScheduled(t *testing.T) {
 	mgr, f, sched := newNameSchedEnv(t)
 	holder := addNamedHolder(t, mgr, f, "aa01", "supervisor", StateRunning, idlePane)
 	sc := addCron(t, sched, holder.FullID, "supervisor")
@@ -426,7 +426,7 @@ func TestNameScheduleSendErrorOnLiveSessionStillFails(t *testing.T) {
 	if sent, err := mgr.FireScheduled(sched, holder.FullID, sc); sent || errors.Is(err, ErrScheduleTargetGone) {
 		t.Fatalf("sent=%v err=%v", sent, err)
 	}
-	wantState(t, sched, sc.ID, SchedFailed)
+	wantState(t, sched, sc.ID, SchedPending)
 }
 
 func TestReleaseChainedOnlyAfterItsParentIsFinished(t *testing.T) {

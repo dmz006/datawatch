@@ -181,6 +181,8 @@ func (fs *FilterStore) MayType(id string) error {
 // recognised by their shape (on-input, unnamed, same text as the filter).
 // It returns the cancelled ids.
 func (s *ScheduleStore) CancelQueuedFilterInput(f FilterPattern) ([]string, error) {
+	var settled []ScheduledCommand
+	defer func() { s.reportSettled(settled) }() // runs after the unlock
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var ids []string
@@ -191,8 +193,7 @@ func (s *ScheduleStore) CancelQueuedFilterInput(f FilterPattern) ([]string, erro
 		legacy := sc.FilterID == "" && sc.RunAt.IsZero() && sc.RunAfterID == "" &&
 			sc.ScheduleName == "" && sc.SessionName == "" && sc.CronExpr == "" && sc.Command == f.Value
 		if sc.FilterID == f.ID || legacy {
-			sc.State = SchedCancelled
-			sc.DoneAt = time.Now()
+			settled = append(settled, s.settleLocked(sc, SchedCancelled, settledFilterRefused, time.Now())...)
 			ids = append(ids, sc.ID)
 		}
 	}
@@ -247,12 +248,12 @@ func (m *Manager) typeClaimed(store *ScheduleStore, fullID string, sc *Scheduled
 	case errors.Is(err, ErrPromptOnScreen):
 		return false, err
 	case errors.Is(err, ErrFilterInputNotAllowed):
-		_ = store.Cancel(sc.ID)
+		store.CancelBySystem(sc.ID, settledFilterRefused)
 		return false, err
 	case sc.NameTargeted() && m.targetGone(fullID):
 		return false, fmt.Errorf("%w: %w", ErrScheduleTargetGone, err)
 	default:
-		_ = store.MarkDone(sc.ID, true)
+		m.sendFailed(store, fullID, sc.ID, err)
 		return false, err
 	}
 }

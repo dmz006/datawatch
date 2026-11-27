@@ -211,8 +211,12 @@ session:
   # (claude_effort, or effort: quick=low, normal=medium, thorough=high) or by
   # its worker profile is used instead.
   default_effort: "normal"
-  # BL40: running sessions older than this are reported as stale via
-  # GET /api/sessions/stale. 0 disables. Default 1800 (30 min).
+  # Running sessions older than this are reported as stale via
+  # GET /api/sessions/stale. Default 1800 (30 min); 0 in this file means the
+  # default. The daemon also raises one warn alert for a running session with no
+  # output, channel event or record change for this long. A negative value turns
+  # that alert and the default stale list off; if autonomous.stale_task_seconds
+  # is also 0 or negative, it turns the worker log stall check off too.
   stale_timeout_seconds: 1800
   # How often, in minutes, the daemon finalises session records whose
   # process is gone. Default 10. 0 turns the scheduled runs off (the

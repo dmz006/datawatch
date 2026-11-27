@@ -17,6 +17,16 @@ import (
 	"github.com/dmz006/datawatch/internal/llm"
 )
 
+// FailedLine is the line the typed command prints when the script exits with an
+// error.
+const FailedLine = "DATAWATCH_FAILED: shell script failed"
+
+// verdictCommand follows the script and prints one line saying how it ended.
+// Each marker is split before its colon so the typed text holds neither: a
+// terminal wraps a long command, and a wrapped piece of it must not read as a
+// verdict.
+const verdictCommand = "&& echo 'DATAWATCH_COMPLETE'': shell done' || echo 'DATAWATCH_FAILED'': shell script failed'"
+
 // Backend runs a configurable shell script (or interactive shell) in a tmux session.
 type Backend struct{ scriptPath string }
 
@@ -70,8 +80,8 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	if isScript && task != "" {
 		escapedTask := strings.ReplaceAll(task, "'", `'\''`)
 		escapedScript := strings.ReplaceAll(b.scriptPath, "'", `'\''`)
-		cmd = fmt.Sprintf("'%s' '%s' '%s'; echo 'DATAWATCH_COMPLETE: shell done'",
-			escapedScript, escapedTask, escapedDir)
+		cmd = fmt.Sprintf("'%s' '%s' '%s' %s",
+			escapedScript, escapedTask, escapedDir, verdictCommand)
 		if len(cmd) > llm.MaxSendKeysCommand {
 			// Oversize task: hand the script a file path instead of inline text.
 			path, err := writeTaskFile(projectDir, tmuxSession, task)
@@ -80,8 +90,9 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 			}
 			taskFile = path
 			escapedFile := strings.ReplaceAll(taskFile, "'", `'\''`)
-			cmd = fmt.Sprintf("'%s' '%s' '%s'; rm -f '%s'; echo 'DATAWATCH_COMPLETE: shell done'",
-				escapedScript, escapedFile, escapedDir, escapedFile)
+			// The file goes after the verdict, so rm cannot change it.
+			cmd = fmt.Sprintf("'%s' '%s' '%s' %s; rm -f '%s'",
+				escapedScript, escapedFile, escapedDir, verdictCommand, escapedFile)
 		}
 	} else {
 		// Interactive shell: cd to project dir and start bash with a known prompt.

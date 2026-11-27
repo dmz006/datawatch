@@ -34,7 +34,7 @@ func (m *Manager) startupScreenHeldLocked(key string, kind StartupKind) bool {
 		return true
 	}
 	at, answered := m.startupAnswers[key]
-	return answered && (startupScreenDeclined(kind) || time.Since(at) < startupAnswerLostAfter)
+	return answered && (startupScreenDeclined(kind) || m.now().Sub(at) < startupAnswerLostAfter)
 }
 
 func (m *Manager) startupScreenHeld(fullID string, kind StartupKind) bool {
@@ -86,6 +86,6 @@ func (m *Manager) AnswerStartupScreen(fullID string, kind StartupKind, send func
 		delete(m.startupAnswers, key)
 		return err
 	}
-	m.startupAnswers[key] = time.Now()
+	m.startupAnswers[key] = m.now()
 	return err
 }

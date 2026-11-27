@@ -63,6 +63,28 @@ import (
 	"github.com/dmz006/datawatch/internal/platformcontext"
 )
 
+// newBridgeServer is the MCP server Claude Code talks to.
+func newBridgeServer(mcpHooks *server.Hooks) *server.MCPServer {
+	return server.NewMCPServer(
+		bridgeName, bridgeVersion,
+		server.WithToolCapabilities(true),
+		// BL302 S1 — resource capability (subscribe=false).
+		server.WithResourceCapabilities(false, false),
+		server.WithHooks(mcpHooks),
+		// Without this capability Claude Code skips every channel
+		// notification the bridge sends.
+		server.WithExperimental(map[string]any{"claude/channel": map[string]any{}}),
+		// Keep sampling/createMessage usable for 2026-07-28+ clients (mcp-go v1.x
+		// refuses server-initiated requests by default).
+		server.WithLegacyServerInitiatedRequests(), //nolint:staticcheck // deprecated migration option, kept on purpose until sampling moves to the new request builder
+		server.WithInstructions(`You are connected to the datawatch monitoring system.
+Events arrive as <channel source="datawatch" ...>. Read and act on them.
+When you have a response, use the reply tool to send it back.
+When you need permission for a tool and permission relay is active,
+the request will be forwarded to the user automatically.`+"\n\n"+platformcontext.PlatformContext),
+	)
+}
+
 const (
 	defaultAPIURL = "http://localhost:8080"
 	bridgeName    = "datawatch"
@@ -128,21 +150,7 @@ func main() {
 		}()
 	})
 
-	mcpSrv := server.NewMCPServer(
-		bridgeName, bridgeVersion,
-		server.WithToolCapabilities(true),
-		// BL302 S1 — resource capability (subscribe=false).
-		server.WithResourceCapabilities(false, false),
-		server.WithHooks(mcpHooks),
-		// Keep sampling/createMessage usable for 2026-07-28+ clients (mcp-go v1.x
-		// refuses server-initiated requests by default).
-		server.WithLegacyServerInitiatedRequests(), //nolint:staticcheck // deprecated migration option, kept on purpose until sampling moves to the new request builder
-		server.WithInstructions(`You are connected to the datawatch monitoring system.
-Events arrive as <channel source="datawatch" ...>. Read and act on them.
-When you have a response, use the reply tool to send it back.
-When you need permission for a tool and permission relay is active,
-the request will be forwarded to the user automatically.`+"\n\n"+platformcontext.PlatformContext),
-	)
+	mcpSrv := newBridgeServer(mcpHooks)
 
 	// BL302 S3 — advertise sampling capability so the daemon can request
 	// LLM completions from this client via sampling/createMessage.

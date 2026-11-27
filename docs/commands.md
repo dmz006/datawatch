@@ -1255,6 +1255,8 @@ datawatch session schedule add a3f2 "run the tests" --at 14:30
 datawatch schedule add --session-name worker "status update" --cron "*/5 * * * *" --schedule-name heartbeat
 ```
 
+`schedule add`, `list` and `cancel` go through the running daemon. They read or write `schedule.json` directly only when the daemon is proven to be down, never on a secure install. See [the schedule how-to](howto/schedule-rearm.md#the-cli-and-the-running-daemon).
+
 ### `datawatch schedule spawn [flags]`
 
 Schedule a fresh ephemeral session to spawn at a time or on a cron, independent of any running session. The spawned session is automatically terminated when it outputs `DATAWATCH_COMPLETE:`.

@@ -7,6 +7,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/secfile"
 )
 
 // QueueItemState represents the state of a queue item.
@@ -85,7 +87,9 @@ func (s *QueueStore) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0600)
+	// Written beside the file and renamed over it: an interrupted save keeps
+	// the old queue instead of leaving half of the new one.
+	return secfile.WriteFile(s.path, data, 0600, nil)
 }
 
 // Push adds a new item to the queue and returns it.

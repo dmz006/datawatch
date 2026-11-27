@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [schedules, scheduled spawn, cron, re-arm, retry, backoff, session cap, capacity, alert, restart, supervisor, detector, session name, waiting_session]
+  topics: [schedules, scheduled command, schedule cli, rate limit resume, scheduled spawn, cron, re-arm, retry, backoff, session cap, capacity, alert, restart, supervisor, detector, session name, waiting_session]
 exec_steps:
   - tool: schedule_list
     description: Read every pending and failed schedule with its next fire, last result and re-arm state
@@ -104,7 +104,7 @@ decides what happens when that session goes away.
 
 | Created with | When the session is killed, deleted or ends |
 |--------------|----------------------------------------------|
-| a session id only | Kill and delete **cancel** the schedule. A session that ends by itself makes the next send **fail** it. |
+| a session id only | Kill and delete **cancel** the schedule. A session that ends by itself, or no longer exists, makes datawatch **fail** it after two minutes, a schedule waiting for the next input prompt included. Each one raises an alert. |
 | a session name (with or without an id) | The schedule **stays pending** and goes to the next live session with that name. |
 
 A schedule with a name goes to the session it first resolved to while that session
@@ -130,6 +130,52 @@ confirmation prompt**. It stays pending until the prompt is gone. This also hold
 for a session the schedule has moved to.
 
 Schedules that had already failed or been cancelled stay that way. Create them again.
+
+## When a command schedule does not run
+
+datawatch tells you with a **warn** alert whenever it ends a schedule that was not
+typed: its session was killed, deleted or ended, its send failed, its output filter
+may no longer type, or the schedule it follows did not run. When more than ten end
+in one pass you get one alert that lists them. A schedule you cancel yourself raises
+no alert; the schedules chained behind it are failed, and those do.
+
+- **One send error does not end a recurring schedule.** It stays `pending`, moves to
+  its next fire and keeps the error in `last_error`. One addressed by session **id**
+  does this only while that session can still take input; one addressed by session
+  **name** does it either way. A one-time schedule becomes `failed`, and so does a
+  recurring one whose next fire is past its end time.
+- **Not every failed send alerts.** A schedule that stays scheduled raises an alert
+  on the first failure in a row and then on the 24th, 48th and so on. A send that
+  works starts the count again. `consecutive_failures` and `last_error` show the
+  failures in between.
+- **A chain follows its parent.** If the parent fails, the chained commands fail at
+  once; if it is cancelled or deleted, they fail within 30 seconds. A chained command
+  whose parent was typed but which never was itself is failed after two minutes. It
+  is never typed late.
+- **A schedule that could never run is refused** when you create it: a session id
+  with no session, or one that has ended, or `run_after_id` naming a schedule that is
+  not pending. A schedule with a session name is accepted and waits for the name.
+
+## The rate-limit resume
+
+When a session hits a rate limit, datawatch queues the command that resumes it, with
+`kind: rate_limit_resume`. Other schedules for the same session do not count as that
+command. At daemon start, a rate-limited session without one gets one. It is not made
+again when the earlier one was cut off while being typed, or was already typed since
+the session last changed, so it is never typed twice.
+
+## The CLI and the running daemon
+
+`datawatch schedule add`, `list` and `cancel` (also under `datawatch session
+schedule`) call the daemon, so the list shows what will fire. They use
+`schedule.json` directly only when the daemon is proven to be down: it does not
+answer **and** its lock (`daemon.lock`, beside `schedule.json`) is free. The command
+then says that datawatch is not running. Otherwise it stops with an error and writes
+nothing: when the daemon holds the lock but does not answer, when the daemon answers
+with an error, on a secure (encrypted) install, with `--url`, and on a system without
+file locks (Windows). If something else changes `schedule.json` while the daemon
+runs, the daemon loads the schedules that were added and writes this to its log. It
+never brings back one that was removed.
 
 ## One fire of a command is typed once
 

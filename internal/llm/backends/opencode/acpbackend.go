@@ -7,14 +7,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/llm"
@@ -376,19 +379,39 @@ func SetACPFullID(tmuxSession, fullID string) {
 }
 
 // SendMessageACP sends a follow-up message to an active opencode-acp session.
-// Returns false if no ACP session is active for this tmux session.
+// Returns false if no ACP session is active or the server did not take it.
 func SendMessageACP(tmuxSession, text string) bool {
+	active, err := SendACP(tmuxSession, text)
+	return active && err == nil
+}
+
+// replyWait is how long SendACP waits for the reply to a message. The server
+// answers when the model's turn is over, which can take much longer.
+var replyWait = 30 * time.Second
+
+// SendACP sends a follow-up message. active is false when there is no ACP
+// session for this tmux session. An error means the server did not take the
+// message: the caller must not report it sent, and must not type it into the
+// terminal the server runs in. A reply that is only late is not an error: the
+// message was written to the server, which answers when the turn ends.
+func SendACP(tmuxSession, text string) (active bool, err error) {
 	val, ok := acpStateMap.Load(tmuxSession)
 	if !ok {
-		return false
+		return false, nil
 	}
 	state := val.(*acpSessionState)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), replyWait)
 	defer cancel()
-	if err := sendMessage(ctx, state.baseURL, state.sessionID, text); err != nil {
-		return false
+	var written atomic.Bool
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		WroteRequest: func(i httptrace.WroteRequestInfo) { written.Store(i.Err == nil) },
+	})
+	err = sendMessage(ctx, state.baseURL, state.sessionID, text)
+	if err != nil && written.Load() && errors.Is(err, context.DeadlineExceeded) {
+		fmt.Printf("[opencode-acp] %s: message delivered; no reply within %s\n", tmuxSession, replyWait)
+		return true, nil
 	}
-	return true
+	return true, err
 }
 
 // ----- HTTP helpers ---------------------------------------------------------
@@ -472,6 +495,9 @@ func sendMessage(ctx context.Context, baseURL, sessionID, text string) error {
 		return err
 	}
 	_ = resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("opencode server refused the message: %s", resp.Status)
+	}
 	return nil
 }
 
