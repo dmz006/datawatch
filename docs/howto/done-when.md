@@ -24,16 +24,19 @@ It does not hold, block or merge anything because of them.
 
 **What this version does not do yet:**
 
-- datawatch does not create, fix or run a list by itself when work starts. You
-  create lists through the surfaces below.
-- Nothing runs any check, and nothing supplies the version of the work, live
-  sources, receipts or a reviewer yet. So command, state, receipt and review
-  items on a list you make here stay **unchecked**. Confirm items and
-  acceptance without proof work now.
+- datawatch creates, fixes and checks a list by itself only for its
+  [requests](requests.md). You create every other list through the surfaces
+  below, and datawatch never checks those.
+- **No command is run on any list**, and no live source or reviewer is wired.
+  For a request's list, datawatch supplies the version of the work and the
+  delivery receipt, so its file and receipt items can be checked. A request
+  takes no command item, and a review item reads cannot tell.
+- On a list you make here, command, state, receipt and review items stay
+  **unchecked**. Confirm items and acceptance without proof work.
 - Only a run closes a list that holds something a run has to read (a command,
   state, receipt or review item, or a confirm item about the work), unless that
-  item is accepted without proof. Since nothing runs yet, such a list never
-  reads done today, even with every answer given. A list can read done today
+  item is accepted without proof. Since nothing runs a list you make, such a
+  list never reads done today, even with every answer given. It can read done
   only when each item is a plain confirm item or is accepted without proof.
 - It does not stop a worker from changing its own list. It records every change
   and shows it against the first fixed version. Rules about who may change a
@@ -114,6 +117,9 @@ datawatch acceptance accept caterer d-answers --reason "no reviewer yet" --words
 | no criteria | there is no list, or it has no items |
 
 ## Checks that run a command
+
+**In this version no command is run, on any list.** The rest of this section
+says how a command item is judged once datawatch runs commands.
 
 A command item names a **project check**: a saved command you register in the
 config file. No API, tool, chat command or web page can write one.
@@ -196,7 +202,9 @@ A receipt item is met only when all of these hold:
 - **Which run:** for a scheduled run, the receipt carries that run's id and was
   made after the run was due. A schedule's own list is not a run.
 
-A channel taking a message is not receipt. No receipt source is wired yet.
+A channel taking a message is not receipt. The only receipt source is the
+delivery record of a [request](requests.md); on a list you make, a receipt item
+stays unchecked.
 
 ## The standing check
 

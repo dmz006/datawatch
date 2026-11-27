@@ -1,6 +1,6 @@
 # Mobile parity draft: requests
 
-Draft, not filed. For `datawatch-app` (Android and iOS). To be completed with the surface list from the web, REST and tool work before filing.
+Draft, not filed. For `datawatch-app` (Android and iOS).
 
 ## What the daemon gains
 
@@ -20,3 +20,15 @@ Draft, not filed. For `datawatch-app` (Android and iOS). To be completed with th
 ## Not in the app
 
 Typing, pi delivery and the "done when" check happen in the daemon.
+
+## Surface list (REST and web, as built)
+
+1. **Request list:** `GET /api/requests` with `state, kind, role, scope_kind, scope_id, holder` → `{"requests":[view]}`; one: `GET /api/requests?id=<id>` → view. A view has `id, kind, role, scope{kind,id}, state, label, reason_code, holder{session_id,family}, overdue, may_run_twice, proof_as, calls, created`. No content.
+2. **Readings:** the 13 labels above. "done" only when `state` is `done` and `proof_as` is `done`; for other closed ones use `proof_as` (`delivered`, `accepted_unproven`; none: "closed, proof not stated"). Web keys: `request_label_*`.
+3. **Roles:** `GET /api/requests/roles` → `{"roles":[binding]}` (show self-given and "taking not yet proven"); `POST …/roles/give` `{role, scope, session_id, force?, reason_code?}`; `POST …/roles/release` `{role, scope, session_id}`.
+4. **Actions:** `POST /api/requests/{id}/reissue|drop|force|accept-unproven` with `reason_code`; `words` (required for accept-unproven); `repeat_ok` (reissue); `to_session` (force). Confirm drop and force; force says it may run twice. Clear typed words after each action.
+5. **Errors:** plain text with 400, 403, 404, 409, 422 (other computer), 503; show as given. Through a server proxy every request route answers 422.
+6. **Create** (`POST /api/requests` `{kind, role, scope, content{ask,…}, key?}` → `{request, created}`) and **from-backlog**: routes exist; the web has no form.
+7. **Settings:** six under `delivery.`; `GET /api/config` gives the values in force under `delivery_requests`, and only set ones under `delivery`. `PUT` with `delivery.<name>`.
+8. **Older queue:** `claimed_by` is no longer used; the list can answer 503.
+9. Five locales. The app never calls take, seen, accept, report or decline.
