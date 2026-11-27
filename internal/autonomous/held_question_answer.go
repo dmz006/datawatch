@@ -683,7 +683,11 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 	if prefix == "" {
 		prefix = AwaitDecisionWaitReasonFor(q.ID)
 	}
-	if err := m.awaitReAdmitAs(ctx, p, t, prefix, t.ComputeNode); err != nil {
+	if err := m.resumeSlotAndTree(ctx, p, t, prefix, t.ComputeNode, true, releasedTree, box); err != nil {
+		if errors.Is(err, errResumeSessionGone) {
+			m.listDroppedResume(p, t.ID, rec)
+			return nil
+		}
 		if !m.taskCancelled(t.ID) {
 			m.store.MutateTask(t.ID, func(c *Task) {
 				if c.DecisionResume == rec {
@@ -697,7 +701,6 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 	if m.taskCancelled(t.ID) {
 		return nil
 	}
-	m.reclaimTreeLock(p, t, releasedTree, box)
 	m.finishResume(p, t.ID, q, ans, rec)
 	return nil
 }

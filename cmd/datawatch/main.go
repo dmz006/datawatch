@@ -51,6 +51,7 @@ import (
 	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/classifier"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
@@ -126,7 +127,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.187.37"
+var Version = "9.187.38"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5698,6 +5699,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								}
 								continue
 							}
+							// A decision that is made but not typed yet (it waits for a
+							// capacity slot or the project tree): the worker is still
+							// parked, so nothing is typed into it and no stall detector
+							// runs. Its session ending is seen above.
+							if autonomousMgrRef.DecisionResumeWaiting(task.ID) {
+								waitingInputTicks = 0
+								idleSince = time.Time{}
+								if exitSilenceTracker != nil {
+									exitSilenceTracker.Reset(time.Now())
+								}
+								if descendantStallTracker != nil {
+									descendantStallTracker.Reset(time.Now())
+									descendantOutputObs.reset()
+								}
+								continue
+							}
 						}
 						// Attempt-limit check: every tick, every backend. The
 						// limits are read from the live config object each tick so
@@ -6743,7 +6760,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// fallback. Generate mode skips this block entirely and runs the
 			// unchanged path below.
 			if resolvedVLLM.Mode == autonomouspkg.VerifierModeClassify {
-				return runClassifyVerification(ctx, vnode, vbackend, verifyModel, prompt,
+				// The verifier holds its slot here, so a classify call on the
+				// same node runs on it instead of waiting for a second one.
+				vctx := classifier.WithHeldSlot(ctx, autonomouspkg.VerifyHolder(task.ID))
+				return runClassifyVerification(vctx, vnode, vbackend, verifyModel, prompt,
 					autonomouspkg.RecordScoresEnabled(liveCfg.VerificationRecordScores)), nil
 			}
 			// B124 — vkind has no /api/ask adapter but is a real
@@ -7930,6 +7950,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// served-models cache it reads through is wired.
 			startVerifierHeadroomMeasurer(ctx, headroom.Store, httpServer, capLedger, servedModelsCache)
 			classifyWiring.ledger.Store(capLedger)
+			nodeWait := amgr.CapacityWaitDuration
+			classifyWiring.capacityWait.Store(&nodeWait)
 			// Preflight a pi launch on a compute node: a node that fails it is
 			// marked unhealthy in the ledger and the launch is deferred.
 			pibackend.SetLaunchGate(capLedger, func(addr string) string {

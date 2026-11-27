@@ -185,6 +185,17 @@ break the line. If the question was **withdrawn**, the line says so: no default
 was applied and no decision was made, the worker continues only with work that
 does not depend on it, and raises a new question if it is still blocked.
 
+**The line and the capacity slot.** Nothing is typed before the resumed task
+holds its slot ([capacity](automata-capacity.md#the-worker-slot-at-verification)).
+While a decided answer waits for the slot or the project tree, the worker still
+counts as parked: it is not nudged or ended as stalled. Each wait ends at
+`autonomous.capacity_wait_timeout_seconds` and the tick then starts a new one, so
+the task waits as long as the pools stay full. After a daemon restart, nothing is
+typed until the restart has counted the workers that outlived it. If, during the
+wait, the session ends or the task's verification starts, the resume leaves the
+queue, takes no slot, and the line becomes `review_needed` (`task_moved_on`, or
+`session_changed` when the task has another session).
+
 The task records which answer it resumed for. If you later *supersede* your
 answer, that becomes the new current answer on the question, and the task is not
 resumed a second time.
@@ -236,7 +247,8 @@ unless the task is parked on it; otherwise its answer is listed.
 - While an earlier line cannot be typed, another decision waits behind it. You
   get one warning (`earlier_line_unfinished`) naming both.
 - A decided question the task is not parked on is typed once the task runs: the
-  coordinator tick parks the task on it and resumes it.
+  coordinator tick parks the task on it and resumes it. A running worker waits
+  for nobody then, so it keeps its capacity slot and the project tree.
 - If the task is parked on another question that is still open, the decision
   waits for that one. You get one warning alert (`other_question_open`) naming
   both. Answer or withdraw the open one. If it expires instead, the waiting

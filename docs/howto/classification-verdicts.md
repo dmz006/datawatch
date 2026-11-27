@@ -108,6 +108,12 @@ Classify mode fails closed.
 - Two reads that disagree (pass, but severity high or critical) block with an
   `inconsistent-verdict` category.
 
+Each classify call needs a slot on its compute node. A verifier that already
+holds a slot on that node runs the call on it. Any other call waits for a free
+slot for at most `autonomous.capacity_wait_timeout_seconds` (4 hours when
+unset), and a wait that runs out is an infra block. The `timeout_seconds` key
+below bounds the call itself, after it has its slot.
+
 ## Tuning
 
 Every tunable is a `classifier.*` key in the config file, read on each call (no

@@ -19,6 +19,7 @@ package autonomous
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -641,6 +642,20 @@ func (m *Manager) dirtyTreeRefused(ctx context.Context, prd *PRD, task *Task) er
 // acquisition. Waiting is visible through setWaiting with a
 // "tree lock: ..." reason; on success the wait state is cleared again.
 func (m *Manager) acquireTreeWritersLock(ctx context.Context, prd *PRD, task *Task) (func(), error) {
+	return m.treeWritersLock(ctx, prd, task, true)
+}
+
+// errTreeBusy reports that another writer holds the tree.
+var errTreeBusy = errors.New("tree lock: held by another writer")
+
+// tryTreeWritersLock is acquireTreeWritersLock without the wait: it returns
+// errTreeBusy instead of waiting for another writer. The same gates apply and
+// a stale lock is reclaimed the same way.
+func (m *Manager) tryTreeWritersLock(ctx context.Context, prd *PRD, task *Task) (func(), error) {
+	return m.treeWritersLock(ctx, prd, task, false)
+}
+
+func (m *Manager) treeWritersLock(ctx context.Context, prd *PRD, task *Task, wait bool) (func(), error) {
 	if gerr := m.dirtyTreeRefused(ctx, prd, task); gerr != nil {
 		return nil, gerr
 	}
@@ -663,7 +678,7 @@ func (m *Manager) acquireTreeWritersLock(ctx context.Context, prd *PRD, task *Ta
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, m.capacityWait())
 	defer cancel()
-	waited := false
+	waited, busy := false, false
 	release, err := AcquireTreeLock(waitCtx, key, treeRoot, task.ID, task.PRDID,
 		func(holderID string) (TaskStatus, bool) {
 			// TaskSnapshot (value copy under the store lock), not GetTask's shared
@@ -677,6 +692,11 @@ func (m *Manager) acquireTreeWritersLock(ctx context.Context, prd *PRD, task *Ta
 			return snap.Status, true
 		},
 		func(reason string) {
+			if !wait {
+				busy = true
+				cancel() // ends the wait before its first pause
+				return
+			}
 			waited = true
 			m.setWaiting(task, "tree lock: "+reason)
 		},
@@ -689,6 +709,9 @@ func (m *Manager) acquireTreeWritersLock(ctx context.Context, prd *PRD, task *Ta
 	if err != nil {
 		if m.taskCancelled(task.ID) {
 			return nil, errCancelledWhileWaiting
+		}
+		if busy {
+			return nil, errTreeBusy
 		}
 		return nil, err
 	}
