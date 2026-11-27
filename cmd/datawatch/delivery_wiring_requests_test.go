@@ -149,6 +149,7 @@ func wireTestManager(t *testing.T, cfg *config.Config) *session.Manager {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = m.Close() })
 	return m
 }
 
