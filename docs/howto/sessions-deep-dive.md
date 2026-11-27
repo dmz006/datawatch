@@ -873,6 +873,38 @@ backend and which message size it affects.
        output.log (append-only, ANSI preserved)
 ```
 
+## A Claude session left at a start-up dialog
+
+**What you see.** A warn alert whose body names the session (`session lane-7
+[a3f2]`), with one of these titles:
+
+- `start-up dialog still up after 2 answers; answer it yourself`
+- `start-up dialog still up when the start-up check ended; answer it yourself`
+
+It appears in the alert list, the web app, `datawatch alerts` and your chat
+channels. It quotes nothing from the screen.
+
+**Why.** With `auto_accept_disclaimer` on for the `claude-code` LLM entry, the
+start poller watches a new session for about 45 seconds. It makes at most 2
+attempts on one screen: more keys to a Claude Code that acts on them late could
+land on the next screen. The second title means the poller stopped watching with
+a dialog still up; it may have answered it once or not at all. Other parts of
+datawatch that watch the session are not limited by this and may still answer
+it, so look at the screen before you type.
+
+**What to do.** Look at the session and answer the dialog yourself:
+
+```bash
+datawatch alerts --limit 5
+datawatch session attach a3f2    # prints the tmux command that attaches
+```
+
+**Not covered.** There is one such alert for each session start, so a second
+stuck dialog raises none. Nor is one raised for an unrecognised question or a
+permission prompt, for a dialog first shown after the 45 seconds, with
+auto-accept off, or after a daemon restart for sessions already starting. The
+exact rules are in [definitions](../datawatch-definitions.md#startup-dialog-warning).
+
 ## A Claude session that quits at a declined start-up dialog
 
 **What you see.** The session ends `failed`. One alert and the session's
