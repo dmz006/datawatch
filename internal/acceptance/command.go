@@ -96,6 +96,16 @@ func cleanEnv(in []string) []string {
 	return out
 }
 
+// Version names the commit a repository's ref is at now, with the same
+// restrictions as every other read here. A request's resolver uses it.
+func (Git) Version(ctx context.Context, repo, ref string) (Subject, error) {
+	commit, err := exactCommit(ctx, Subject{Repo: repo, Commit: ref})
+	if err != nil {
+		return Subject{}, err
+	}
+	return Subject{Repo: repo, Commit: commit}, nil
+}
+
 // repoPath refuses anything that is not a plain path inside the repository.
 func repoPath(file string) (string, error) {
 	c := path.Clean(file)

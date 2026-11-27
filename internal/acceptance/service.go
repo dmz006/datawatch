@@ -343,7 +343,9 @@ func (s *Service) Edit(ctx context.Context, in EditInput, by Caller) (*List, err
 	}
 	wasHash, wasSerial := "", 0
 	if !exists {
-		if strings.TrimSpace(in.Ask) == "" {
+		// datawatch's own delivery-only lists have an empty ask: there is a
+		// message to receive and nothing in it is asked of anyone.
+		if strings.TrimSpace(in.Ask) == "" && !(in.SourceKnown && KindForSource(in.Source) == KindDelivery) {
 			return nil, invalid("a new list needs the ask, word for word")
 		}
 		if l, err = s.newList(id, in, set); err != nil {
