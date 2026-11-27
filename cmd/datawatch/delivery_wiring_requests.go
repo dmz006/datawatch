@@ -489,6 +489,9 @@ type piPreLaunch struct {
 	mint   func(sessionID string) (string, error)
 	setEnv func(tmuxSession, key, value string) error
 	wire   func(*session.Session, piDeliveryLaunch) error
+	// revoke ends one session's token. Without Claude's channel, the session
+	// end hook is the only place that can.
+	revoke func(sessionID string) error
 }
 
 // run wires one session before it starts. token is the session's own token
@@ -525,9 +528,27 @@ type sessionHooks interface {
 	SetOnSessionEnd(func(*session.Session))
 }
 
+// end takes back what run gave an ended session: its token and its
+// credential file.
+func (p piPreLaunch) end(sess *session.Session) {
+	if !piFamily(sess.BackendFamily) {
+		return
+	}
+	if p.revoke != nil {
+		if err := p.revoke(sess.FullID); err != nil {
+			fmt.Printf("[warn] revoke session token for %s: %v\n", sess.FullID, err)
+		}
+	}
+	endPiDelivery(sess, expandHome(p.cfg.DataDir))
+}
+
 // hooksWithoutChannel sets what requests need when Claude's channel is off: pi
-// still gets its credential, and session ends are still reported.
+// still gets its credential and loses it at its end, and session ends are
+// still reported.
 func (w *deliveryWiring) hooksWithoutChannel(m sessionHooks, pi piPreLaunch) {
 	m.SetOnPreLaunch(func(sess *session.Session) { pi.run(sess, "") })
-	m.SetOnSessionEnd(func(sess *session.Session) { w.sessionEnded(sess.FullID) })
+	m.SetOnSessionEnd(func(sess *session.Session) {
+		w.sessionEnded(sess.FullID)
+		pi.end(sess)
+	})
 }

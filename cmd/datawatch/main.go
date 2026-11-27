@@ -1643,6 +1643,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			return mgr.SetPaneEnv(tmuxSession, map[string]string{key: value})
 		}}
 	if sessionTokenStore != nil {
+		piLaunch.revoke = sessionTokenStore.Revoke
 		piLaunch.mint = func(sessionID string) (string, error) {
 			return sessionTokenStore.Mint(sessionID, instanceSessionGrantCaps(cfg.Session.Capabilities, cfg.MCP.SelfConfigEnabled()))
 		}
