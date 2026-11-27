@@ -605,17 +605,62 @@ func TestReqPiTheEmbeddedExtensionSaysItsVersion(t *testing.T) {
 	if got, _ := os.ReadFile(path); string(got) != string(deliveryExtension) {
 		t.Fatal("the written file differs")
 	}
-	// Not in a launch command until the delivery timing is chosen.
-	for _, cmd := range []func() (string, error){
-		func() (string, error) { return buildInteractiveCmd("pi", "m", "s", "task", dir, "cs-x") },
-		func() (string, error) { return buildLaunchCmd("pi", "m", "task", dir, "cs-x") },
-	} {
-		line, err := cmd()
+}
+
+// The interactive launch loads the extension when, and only when, datawatch
+// wired the session for it. The command is run in real shells with a pi that
+// only writes down what it was given.
+func TestReqPiTheInteractiveLaunchLoadsTheExtensionWhenWired(t *testing.T) {
+	dir := t.TempDir()
+	got := filepath.Join(dir, "args")
+	fake := filepath.Join(dir, "pi")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > '"+got+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ext := filepath.Join(dir, "a data folder", "it's", "datawatch-delivery.ts")
+	run := func(shell, line string) []string {
+		t.Helper()
+		cmd := exec.Command(shell, "-c", line)
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s: %v\n%s", shell, err, out)
+		}
+		data, err := os.ReadFile(got)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(line, " -e ") || strings.Contains(line, "datawatch-delivery") {
-			t.Fatalf("the launch command loads the extension: %s", line)
+		return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	}
+	wired, err := interactiveCmd(fake, "m", "", "s", "task", dir, "cs-x", "", ext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shells := 0
+	for _, shell := range []string{"sh", "bash", "zsh"} {
+		if _, err := exec.LookPath(shell); err != nil {
+			continue
 		}
+		shells++
+		args := run(shell, wired)
+		i := slices.Index(args, "-e")
+		if i < 0 || i+1 >= len(args) || args[i+1] != ext {
+			t.Fatalf("%s: wired, but pi got %q", shell, args)
+		}
+	}
+	if shells < 2 {
+		t.Fatalf("only %d shells ran", shells)
+	}
+	// Not wired: the command of a launch is exactly what it was.
+	plain, err := interactiveCmd(fake, "m", "", "s", "task", dir, "cs-x", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(run("sh", plain), "-e") {
+		t.Fatalf("not wired: %s", plain)
+	}
+	var _ interface{ SetDeliveryExtension(string) } = New("pi").(interface{ SetDeliveryExtension(string) })
+	// One-shot pi is not part of delivery.
+	if _, ok := NewPrompt("pi").(interface{ SetDeliveryExtension(string) }); ok {
+		t.Fatal("the one-shot backend takes the extension")
 	}
 }

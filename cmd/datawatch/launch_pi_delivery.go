@@ -4,8 +4,9 @@
 // Part A calls wirePiDelivery from the pre-launch hook for a pi-family
 // session, with a token minted for that session whether or not Claude's channel
 // is on. It writes the built-in extension and the session's private delivery
-// credential, and puts the credential's path (never the token) in the session's
-// environment. No launch command loads the extension yet.
+// credential, puts the credential's path (never the token) in the session's
+// environment, and names the extension for this launch: the interactive pi
+// launch loads it with -e.
 
 // A busy pi is handed a request after its current task (follow-up), and the
 // extension adds a short note that tells pi's model such messages are real: the
@@ -62,6 +63,9 @@ const (
 // wirePiDelivery writes the session's delivery credential file and names it in
 // the session's environment.
 func wirePiDelivery(sess *session.Session, in piDeliveryLaunch) error {
+	if sess != nil {
+		sess.DeliveryExtension = "" // until this launch is wired
+	}
 	dir, err := piSessionDir(in.DataDir, sess)
 	if err != nil {
 		return err
@@ -72,7 +76,8 @@ func wirePiDelivery(sess *session.Session, in piDeliveryLaunch) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if _, err := pi.WriteDeliveryExtension(filepath.Dir(dir)); err != nil {
+	extension, err := pi.WriteDeliveryExtension(filepath.Dir(dir))
+	if err != nil {
 		return err
 	}
 	path := filepath.Join(dir, piCredentialFile)
@@ -83,7 +88,12 @@ func wirePiDelivery(sess *session.Session, in piDeliveryLaunch) error {
 	}); err != nil {
 		return err
 	}
-	return in.SetSessionEnv(sess.TmuxSession, pi.DeliveryEnv, path)
+	if err := in.SetSessionEnv(sess.TmuxSession, pi.DeliveryEnv, path); err != nil {
+		return err
+	}
+	// Last: the extension is loaded only once its credential can be found.
+	sess.DeliveryExtension = extension
+	return nil
 }
 
 // endPiDelivery removes an ended session's credential. A report datawatch has

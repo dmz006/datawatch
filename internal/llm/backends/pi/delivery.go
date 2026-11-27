@@ -1,21 +1,21 @@
 // The datawatch pi extension: how a pi session fetches its datawatch requests
 // and reports that one was in a completed model call (delivery job 4, design
-// from the pi fetch proof). The extension is built into datawatch and written
-// to the data folder for a launch to load with pi's -e.
-//
-// No launch command loads it yet. When a busy pi is handed a request (after its
-// run, or mid-task), and what the model is told about such messages, are not
-// decided; the built extension must also pass the sandbox proof before pi's
-// worker row may be relied on.
+// from the pi fetch proof). The extension is built into datawatch, written to
+// the data folder, and loaded with pi's -e by the interactive launch of a wired
+// session. A busy pi gets a request after its current task, with a short note
+// that the message is real: that pair passed the sandbox proof with the built
+// extension and real pi 1.3.0. One-shot pi does not load it.
 
 package pi
 
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -99,4 +99,20 @@ func WriteDeliveryCredential(path string, c DeliveryCredential) error {
 		return fmt.Errorf("write the pi delivery credential: %w", err)
 	}
 	return nil
+}
+
+// interactiveCmd is the interactive launch command of a session wired for
+// delivery with extension, or, when it is empty, exactly the command of one
+// that is not.
+func interactiveCmd(binary, model, thinkingLevel, sessionID, task, projectDir, tmuxSession, agentDir, extension string) (string, error) {
+	line, err := buildInteractiveCmdWithAgentDir(binary, model, thinkingLevel, sessionID, task, projectDir, tmuxSession, agentDir)
+	if err != nil || extension == "" {
+		return line, err
+	}
+	// The command starts pi with its one trust flag; -e goes right after it.
+	start := piInvocation(binary, agentDir) + " --approve "
+	if !strings.Contains(line, start) {
+		return "", errors.New("pi launch: no place for the delivery extension")
+	}
+	return strings.Replace(line, start, start+"-e '"+shellEscape(extension)+"' ", 1), nil
 }

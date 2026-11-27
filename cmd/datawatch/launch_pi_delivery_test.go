@@ -60,6 +60,9 @@ func TestReqPiLaunchWritesAPrivateCredential(t *testing.T) {
 			t.Errorf("%s: %v %v", p, err, st.Mode())
 		}
 	}
+	if got := sess.DeliveryExtension; got != filepath.Join(f.dataDir, "pi-delivery", "datawatch-delivery.ts") {
+		t.Errorf("the launch is not told to load the extension: %q", got)
+	}
 	for k, v := range f.env {
 		if strings.Contains(k+v, token) {
 			t.Errorf("the token is in the environment: %s=%s", k, v)
@@ -149,5 +152,18 @@ func TestReqPiLaunchRefusesWhatItCannotKeepPrivate(t *testing.T) {
 	}
 	if _, err := os.Stat(f.dataDir); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A launch that cannot be wired loads no extension, also when an earlier launch
+// of the same session did.
+func TestReqPiLaunchThatFailsToWireLoadsNothing(t *testing.T) {
+	f := &piLaunchFx{dataDir: t.TempDir(), env: map[string]string{}}
+	sess := launchMCPSession("aa01", "pi", t.TempDir(), false)
+	if err := f.wire(t, sess, "tok", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.wire(t, sess, "", ""); err == nil || sess.DeliveryExtension != "" {
+		t.Fatalf("%v %q", err, sess.DeliveryExtension)
 	}
 }

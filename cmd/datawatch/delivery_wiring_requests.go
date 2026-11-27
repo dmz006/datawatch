@@ -535,6 +535,7 @@ type piPreLaunch struct {
 // run wires one session before it starts. token is the session's own token
 // when one was already minted: a second mint would revoke it.
 func (p piPreLaunch) run(sess *session.Session, token string) {
+	sess.DeliveryExtension = ""
 	if !piFamily(sess.BackendFamily) {
 		return
 	}

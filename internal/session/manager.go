@@ -3234,6 +3234,8 @@ func (m *Manager) startSession(ctx context.Context, task, groupID, projectDir st
 	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
 		nh.SetNodeHost(sess.NodeAddress)
 	}
+	// pi: the delivery extension of this launch, if the hook wired one.
+	setLaunchDeliveryExtension(backendObj, sess)
 
 	// Pi family: pass the configured thinking level (pi.thinking_level) to
 	// any backend that supports pi's own --thinking flag. "" = leave unset
@@ -5243,6 +5245,8 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
 		nh.SetNodeHost(sess.NodeAddress)
 	}
+	// pi: the delivery extension of this launch, if the hook wired one.
+	setLaunchDeliveryExtension(backendObj, sess)
 
 	// BL363 T2+T3 — re-inject goose config on restart (same as initial launch path).
 	switch backendName {
