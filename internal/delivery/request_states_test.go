@@ -614,3 +614,28 @@ func indexOf(s, part string) int {
 	}
 	return -1
 }
+
+// Job 6's rules version may read the store: no lock of the store is held while
+// it is asked.
+func TestReqStateRulesVersionMayReadTheStore(t *testing.T) {
+	f := newReqFx(t, nil)
+	f.supervise("a", "claude-code")
+	v := f.create(ReqAsk)
+	f.s.opts.RulesVersion = func(Scope) string {
+		f.s.Requests(RequestFilter{})
+		return "rules-7"
+	}
+	done := make(chan TakeReply, 1)
+	go func() {
+		rep, _ := f.s.Take(bg, sessCaller("a"), v.ID, TakeInput{})
+		done <- rep
+	}()
+	select {
+	case rep := <-done:
+		if rep.RulesVersion != "rules-7" || rep.Request.RulesVersionGiven != "rules-7" {
+			t.Fatalf("%+v", rep)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the take never returned")
+	}
+}

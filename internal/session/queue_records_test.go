@@ -128,7 +128,7 @@ func TestReqWireRemoteQueueAsksTheDaemon(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var buf strings.Builder
 		var raw json.RawMessage
 		if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {

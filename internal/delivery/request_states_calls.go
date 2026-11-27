@@ -562,7 +562,7 @@ func (s *Requests) recorded(c Caller, id, verb string, operator bool, fn func(w 
 		st := cur.clone()
 		w.t.reqs[id] = st
 		var no *refusal
-		if !operator && !(st.index.Holder != nil && c.Holds(st.index.Holder.SessionID)) {
+		if !operator && (st.index.Holder == nil || !c.Holds(st.index.Holder.SessionID)) {
 			no = &refusal{refusedNotHolder, ErrNotHolder}
 		} else {
 			no = fn(w, st)
@@ -586,9 +586,9 @@ func (s *Requests) recorded(c Caller, id, verb string, operator bool, fn func(w 
 	if err != nil {
 		return Request{}, err
 	}
-	out2, ok := s.Request(id)
-	if ok {
-		out = out2
+	// The commit set the record's write number on the saved copy.
+	if saved, ok := s.Request(id); ok {
+		out = saved
 	}
 	return out, refused
 }
@@ -672,6 +672,11 @@ func (s *Requests) Take(ctx context.Context, c Caller, id string, in TakeInput) 
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
 	var reply TakeReply
+	// Asked before the store is locked: it may read the store.
+	rules := ""
+	if cur, ok := s.Request(id); ok && cur.RulesVersionGiven == "" && s.opts.RulesVersion != nil {
+		rules = versionOr(s.opts.RulesVersion(cur.Scope))
+	}
 	var before RequestState
 	first := false
 	r, err := s.recorded(c, id, VerbTake, false, func(w *work, st *storedRequest) *refusal {
@@ -690,10 +695,8 @@ func (s *Requests) Take(ctx context.Context, c Caller, id string, in TakeInput) 
 			at := w.now
 			r.Delivery.FetchedAt, r.Delivery.FetchedVia, r.Delivery.Digest = &at, in.Via, digest
 			first = true
-			if r.RulesVersionGiven == "" && s.opts.RulesVersion != nil {
-				// Read before s.mu is taken again would be nicer; it only
-				// reads the caller's own records.
-				r.RulesVersionGiven = versionOr(s.opts.RulesVersion(r.Scope))
+			if r.RulesVersionGiven == "" {
+				r.RulesVersionGiven = rules
 			}
 		}
 		reply.Content, reply.Digest, reply.RulesVersion = text, digest, r.RulesVersionGiven
