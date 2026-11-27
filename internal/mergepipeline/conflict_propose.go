@@ -213,11 +213,10 @@ func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req
 	texts := map[string]string{}
 	var want []Hunk
 	for _, f := range conflicted {
-		p, perr := filePath(scratch, f)
-		if perr != nil {
+		if _, perr := filePath(scratch, f); perr != nil {
 			return fail(AttemptNotApplicable, perr.Error(), 0)
 		}
-		data, rerr := os.ReadFile(p) // #nosec G304 -- path checked to lie inside the scratch tree
+		data, rerr := readFileInside(scratch, f)
 		if rerr != nil || strings.IndexByte(string(data), 0) >= 0 {
 			return fail(AttemptNotApplicable, f+" cannot be proposed for as text", 0)
 		}
@@ -300,15 +299,10 @@ func (m *Merger) fastForwardTo(ctx context.Context, prop *modelProposal) ModelAt
 // stageTexts writes the files and stages them, without committing.
 func (m *Merger) stageTexts(ctx context.Context, dir string, texts map[string]string) error {
 	for f, text := range texts {
-		p, err := filePath(dir, f)
-		if err != nil {
+		if _, err := filePath(dir, f); err != nil {
 			return err
 		}
-		mode := os.FileMode(0o644)
-		if st, serr := os.Stat(p); serr == nil {
-			mode = st.Mode().Perm()
-		}
-		if err := os.WriteFile(p, []byte(text), mode); err != nil { // #nosec G306 -- keeps the file's own mode
+		if err := writeFileInside(dir, f, []byte(text), 0o644); err != nil {
 			return err
 		}
 		if _, err := m.gitOK(ctx, dir, "add", "--", f); err != nil {

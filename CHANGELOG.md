@@ -14,7 +14,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Interactive pi sessions get requests: the pi launch now loads datawatch's pi extension. A busy pi gets a request after its current task, with a short note that such messages are real. pi accepts with `datawatch_ack` and says it finished with `datawatch_report`; a report only starts datawatch's check and never marks a request done. Proven with pi 1.3.0 and one local Ollama model only. One-shot pi is not covered.
 - A pi confirmation shows datawatch's pi extension saw the text in a completed model call. Until 11.0 datawatch cannot prove that the extension, not other use of that session's credential, sent the report.
 - A role held by a worker with no proven way to fetch is given no work; it stays listed. A request addressed straight to one such session has its text typed once, and not at all into shell, one-shot, chat-mode, HTTP conversation or pi sessions, which stay listed. datawatch's tracker records `request <id> typed` only; what the terminal and the worker keep still holds the text.
-- Six settings under `delivery.` for request times and reminder limits. By default a request has 1 hour to be picked up and 24 hours to be finished, a hello 1 hour, and reminders are at least 15 minutes apart. At most 2 reminders per session and 20 per computer each hour; a request typed in full counts toward both, and a limit of 0 stops it too. A request nobody fetched gets no more reminders once its 1-hour pickup time has passed, also from a holder who gets it later; it stays listed.
+- Six settings under `delivery.` for request times and reminder limits. By default a request has 1 hour to be picked up and 24 hours to be finished, a hello 1 hour, and reminders are at least 15 minutes apart. At most 2 reminders per session and 20 per computer each hour; a request typed in full counts toward both, and a limit of 0 stops it too. After the 1-hour pickup time a request nobody fetched gets no more reminders and stays listed, and a text not yet typed is not typed any more. A Claude Code session given a role later is told once, in one line with a number, about the open requests made before that and past that time; it is not repeated after a restart and counts toward the same limits. pi is not typed into; its extension fetches them itself.
 - Damaged request storage never stops datawatch from starting. At start it rebuilds a damaged or missing manifest from the intact records; on a secure install restores a readable index that differs from the sealed copy; and sets a record it cannot believe aside so the others work. With a key that opens nothing, or files from a newer datawatch, it changes nothing and runs with delivery requests off. A repair never marks anything done. A request rebuilt while open, or waiting for one that was lost, reads failed (repaired) and is not run again until you reissue or drop it. A system alert and the delivery list say what was and was not repaired. Every file as it was is kept in `queue.d/repair-<time>/`.
 
 ### Changed
@@ -27,7 +27,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Chat messages that start with `request` and a request command word, or are only `request`, are now commands.
 
 ### Before you upgrade
-- Rolling back needs `datawatch queue export`. Before going back to an older version, stop datawatch and run it (`--plain` on a secure install; the file is plain content), or the older daemon will not start.
+- At install, set `acceptance.mode: report`. Requests can close only with it, and a request made while it is off never gets a list. Put it in the config before datawatch starts, or run `datawatch config set acceptance.mode report` and restart so the `acceptance_*` tools appear.
+- Rollback needs `datawatch queue export` first. Before going back to an older version, stop datawatch and run it (`--plain` on a secure install; the file is plain content), or the older daemon will not start.
 
 ### Known
 - Who may create or manage requests, or answer, accept or change a "done when" list, is recorded, not enforced. Do not treat a counted answer as proof of who gave it.
@@ -43,6 +44,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Not covered
 - Do not use pipelines or graphs for work that must not be lost. Other computers, containers, opencode and other workers are not covered.
 - Delivery is not work: a confirmed delivery does not show that a model understood or did the work.
+
+## v9.187.45 — Merge steps keep more of their file reads and writes inside the project
+
+### Fixed
+- More of the files that merge steps and merge comparisons read and write, among them version, changelog, README and conflict files, are now kept inside a project that holds symbolic links. Links that stay inside the project keep working.
+- Three smaller input checks around recording a merged commit are stricter.
+### Changed
+- When the project's top-level Makefile is a link to a file outside the project, it is not followed: a pipeline step that requires a make target fails and the merge run stops, also for a step set to continue after a failure; the check of a conflict proposal does not pass; and build detection looks at go.mod instead. A normal Makefile that only lacks the target still skips the step.
+
+### Not covered
+- This does not cover every file operation: some other places in merge steps and merge comparisons that touch a project's files are unchanged, and this does not limit what a project's own commands, make included, read or write. Tested on made-up repositories only.
 
 ## v9.187.44 — Hand merges are compared with datawatch's own rebuild; merging stays off
 

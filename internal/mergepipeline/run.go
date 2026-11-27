@@ -549,7 +549,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}
 		failures++
 		st.failedSteps++
-		if step.EffectiveOnFailure() != OnFailureContinue {
+		// A makefile link out of the project stops the run whatever the step's
+		// on_failure says; other failures follow on_failure.
+		if step.EffectiveOnFailure() != OnFailureContinue || errors.Is(err, errMakefileLinksOut) {
 			return finish(autonomous.MergeRunFailed, fmt.Errorf("step %s failed: %w", step.Name, err))
 		}
 		i++
@@ -741,8 +743,16 @@ const noMakeTargetNote = "the project's Makefile has no "
 // execute performs the step and returns its result and a short account. The
 // caller bounds it with the step's timeout.
 func (s *runState) execute(ctx context.Context, step Step) (string, string, error) {
-	if step.RequiresMakeTarget != "" && !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
-		return autonomous.MergeStepSkipped, noMakeTargetNote + step.RequiresMakeTarget + " target", nil
+	if step.RequiresMakeTarget != "" {
+		// A makefile link out of the project fails the step; it is not
+		// skipped as a missing target would be.
+		if name, out := makefileLinksOut(s.r.Dir); out {
+			note := makefileLinkNote(name, step.RequiresMakeTarget)
+			return autonomous.MergeStepFailed, note, fmt.Errorf("%w: %s", errMakefileLinksOut, note)
+		}
+		if !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
+			return autonomous.MergeStepSkipped, noMakeTargetNote + step.RequiresMakeTarget + " target", nil
+		}
 	}
 	// The release gate applies to every step that leaves the machine, and
 	// only to those: it is decided at most once per run, before the first
@@ -1615,13 +1625,16 @@ func shortSHA(sha string) string {
 var versionLine = regexp.MustCompile(`(?m)^var Version = "([^"]*)"`)
 var semver3 = regexp.MustCompile(`^([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-func (r *Runner) readInside(rel string) (string, []byte, error) {
+func (r *Runner) readInside(rel string) ([]byte, error) {
 	if err := checkDir(rel); err != nil {
-		return "", nil, fmt.Errorf("%s: %w", rel, err)
+		return nil, fmt.Errorf("%s: %w", rel, err)
 	}
-	p := filepath.Join(r.Dir, filepath.FromSlash(rel))
-	data, err := os.ReadFile(p) // #nosec G304 -- relative path validated, joined under the project
-	return p, data, err
+	return readFileInside(r.Dir, rel)
+}
+
+// writeInside writes the new text of a file readInside read.
+func (r *Runner) writeInside(rel string, data []byte) error {
+	return writeFileInside(r.Dir, rel, data, 0o644)
 }
 
 // currentVersion reads the version from the first version file.
@@ -1629,7 +1642,7 @@ func (r *Runner) currentVersion() (string, error) {
 	if len(r.versionFiles()) == 0 {
 		return "", errNoVersionFiles
 	}
-	_, data, err := r.readInside(r.versionFiles()[0])
+	data, err := r.readInside(r.versionFiles()[0])
 	if err != nil {
 		return "", err
 	}
@@ -1690,7 +1703,7 @@ func (r *Runner) versionFilesCarry(v string) (bool, error) {
 		return false, errNoVersionFiles
 	}
 	for _, f := range r.versionFiles() {
-		_, data, err := r.readInside(f)
+		data, err := r.readInside(f)
 		if err != nil {
 			return false, err
 		}
@@ -1717,17 +1730,17 @@ func (r *Runner) writeVersion(v string) error {
 		return errNoVersionFiles
 	}
 	for _, f := range r.versionFiles() {
-		p, data, err := r.readInside(f)
+		data, err := r.readInside(f)
 		if err != nil {
 			return err
 		}
 		if !versionLine.Match(data) {
 			return fmt.Errorf("no `var Version = \"...\"` line in %s; nothing changed", f)
 		}
-		out = append(out, pending{p, versionLine.ReplaceAll(data, []byte(`var Version = "`+v+`"`))})
+		out = append(out, pending{f, versionLine.ReplaceAll(data, []byte(`var Version = "`+v+`"`))})
 	}
 	for _, o := range out {
-		if err := os.WriteFile(o.path, o.data, 0o644); err != nil { // #nosec G306 -- source file, normal mode
+		if err := r.writeInside(o.path, o.data); err != nil {
 			return err
 		}
 	}
@@ -1737,7 +1750,7 @@ func (r *Runner) writeVersion(v string) error {
 // insertChangelog adds `## vX.Y.Z — title` under the first unreleased heading
 // unless a heading for that version is already there.
 func (r *Runner) insertChangelog(version, title string) (string, error) {
-	p, data, err := r.readInside(r.changelog())
+	data, err := r.readInside(r.changelog())
 	if err != nil {
 		return "", err
 	}
@@ -1760,7 +1773,7 @@ func (r *Runner) insertChangelog(version, title string) (string, error) {
 	}
 	ins := []string{"", "## v" + version + " — " + title, ""}
 	lines = append(lines[:at+1], append(ins, lines[at+1:]...)...)
-	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644); err != nil { // #nosec G306 -- changelog, normal mode
+	if err := r.writeInside(r.changelog(), []byte(strings.Join(lines, "\n"))); err != nil {
 		return "", err
 	}
 	return "inserted the heading for v" + version, nil
@@ -1775,7 +1788,7 @@ func (s *runState) changelogDraft() string {
 		return ""
 	}
 	rel := strings.ReplaceAll(genartifacts.DefaultPaths()[genartifacts.ChangelogDraft], genartifacts.IDPlaceholder, id)
-	_, data, err := s.r.readInside(rel)
+	data, err := s.r.readInside(rel)
 	if err != nil || len(data) > maxChangelogDraftBytes {
 		return ""
 	}
@@ -1808,7 +1821,7 @@ func (s *runState) insertReleaseEntry(version string) (string, error) {
 	if body == "" {
 		return note + "; no changelog draft was found, so it has no text", nil
 	}
-	p, data, err := s.r.readInside(s.r.changelog())
+	data, err := s.r.readInside(s.r.changelog())
 	if err != nil {
 		return "", err
 	}
@@ -1823,7 +1836,7 @@ func (s *runState) insertReleaseEntry(version string) (string, error) {
 		gap = "\n\n\n"
 	}
 	text := strings.Replace(string(data), head+gap, head+"\n"+body+"\n\n", 1)
-	if err := os.WriteFile(p, []byte(text), 0o644); err != nil { // #nosec G306 -- changelog, normal mode
+	if err := s.r.writeInside(s.r.changelog(), []byte(text)); err != nil {
 		return "", err
 	}
 	return note + " with the Automaton's drafted entry", nil
@@ -1844,7 +1857,7 @@ func (s *runState) setReadmeReleaseLine() (string, error) {
 		return "", err
 	}
 	name := s.r.readme()
-	p, data, err := s.r.readInside(name)
+	data, err := s.r.readInside(name)
 	if err != nil {
 		return "", err
 	}
@@ -1869,7 +1882,7 @@ func (s *runState) setReadmeReleaseLine() (string, error) {
 	}
 	date := s.r.now().Format("2006-01-02")
 	lines[at] = line[:loc[2]] + v + line[loc[3]:loc[4]] + date + line[loc[5]:]
-	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644); err != nil { // #nosec G306 -- README, normal mode
+	if err := s.r.writeInside(name, []byte(strings.Join(lines, "\n"))); err != nil {
 		return "", err
 	}
 	return "set the " + currentReleasePrefix + " line in " + name + " to v" + v + " (" + date + ")", nil

@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.44 (2026-11-27).** Recording a hand merge as merge_step of an Automaton now queues a comparison with datawatch's own rebuild of it when merge shadow is on and autonomous.worktree_base_repo names its repository, and this release does not turn merging on; the comparison has been tested on made-up repositories only, and its memory limit is not a sandbox: a command that goes round it can still run work outside it. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.45 (2026-11-27).** More of the files that merge steps and merge comparisons read and write are now kept inside a project that holds links; not every place is covered (see the changelog). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

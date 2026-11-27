@@ -35,6 +35,10 @@ func ReplayKey(automatonID, handCommit string) string {
 	return automatonID + "-" + shortCommit(handCommit)
 }
 
+// ValidReplayKey reports whether key may name a stored replay, and so a
+// folder or file of its own.
+func ValidReplayKey(key string) bool { return validStoreID.MatchString(key) }
+
 // ValidateHandChecks checks recorded hand results: each names a pipeline check
 // step and says pass, fail or skip.
 func ValidateHandChecks(checks map[string]string) error {
