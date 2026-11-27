@@ -4803,7 +4803,15 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 
 // sendInput is SendInput and SendToolInput. guarded holds the input to the
 // prompt rules; tool words a refusal for the AI session that called the tool.
-func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) (err error) {
+func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) error {
+	return m.sendInputRecorded(fullID, input, source, "", guarded, tool)
+}
+
+// sendInputRecorded is sendInput for input whose words datawatch must not
+// keep: a non-empty record is all the tracker and the session record say of it.
+// Only the keystroke path below honors record, so its one caller refuses every
+// session that is reached another way (see request_typed.go).
+func (m *Manager) sendInputRecorded(fullID, input, source, record string, guarded, tool bool) (err error) {
 	id := fullID
 	defer func() {
 		if err == nil {
@@ -4982,7 +4990,13 @@ func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) (e
 	tracker := m.trackers[fullID]
 	m.mu.Unlock()
 	if tracker != nil {
-		if err := tracker.RecordInputSent(input, source); err != nil {
+		var err error
+		if record != "" {
+			err = tracker.RecordRequestTyped(record)
+		} else {
+			err = tracker.RecordInputSent(input, source)
+		}
+		if err != nil {
 			fmt.Printf("[warn] tracker.RecordInputSent: %v\n", err)
 		}
 	}
@@ -4997,6 +5011,9 @@ func (m *Manager) sendInput(fullID, input, source string, guarded, tool bool) (e
 			sess.RateLimitResetAt = nil
 		}
 		sess.LastInput = truncateStr(input, 100) // for alert logging
+		if record != "" {
+			sess.LastInput = record
+		}
 		sess.UpdatedAt = time.Now()
 		// BL266 / v6.11.24 — operator input counts as activity for the
 		// channel-state watcher; without this the gap watcher would

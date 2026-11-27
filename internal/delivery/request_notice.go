@@ -57,6 +57,20 @@ func noticeKey(n RequestNotice) string {
 	return n.SessionID + "/" + strconv.FormatInt(n.At.UnixNano(), 10)
 }
 
+// typingReadiness is a Typer that can say beforehand that it would type
+// nothing now, so that nothing is saved for a try that cannot happen. content
+// is true for a request's text. The guard at the send itself still decides.
+type typingReadiness interface {
+	Ready(ctx context.Context, sessionID string, content bool) error
+}
+
+func notReady(ctx context.Context, ty Typer, sessionID string, content bool) error {
+	if r, ok := ty.(typingReadiness); ok {
+		return r.Ready(ctx, sessionID, content)
+	}
+	return nil
+}
+
 // reminderLine is the whole of a reminder. It holds a number only.
 func reminderLine(n int) string {
 	return fmt.Sprintf("datawatch: %d request(s) wait for you. Call request_mine, then request_take for each, "+
@@ -90,7 +104,7 @@ func (n *notifier) Notify(ctx context.Context, b RequestBook, now time.Time) err
 		var err error
 		switch {
 		case len(w.remind) > 0:
-			if ok, _ := ReminderAllowed(set, sent, w.id, now); !ok {
+			if ok, _ := ReminderAllowed(set, sent, w.id, now); !ok || notReady(ctx, n.opts.Typer, w.id, false) != nil {
 				continue
 			}
 			var saved *RequestNotice

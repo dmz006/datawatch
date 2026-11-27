@@ -287,3 +287,26 @@ func TestReqCapReminderAllowed(t *testing.T) {
 		}
 	}
 }
+
+type cxReadyTyper struct {
+	*cxTyper
+	notReady error
+}
+
+func (t cxReadyTyper) Ready(context.Context, string, bool) error { return t.notReady }
+
+// A session that sits at a prompt must not make datawatch save and undo a
+// record at every check.
+func TestReqNoticeNothingIsSavedWhenTheSessionIsNotReady(t *testing.T) {
+	f := cxNotes()
+	f.held("r-1", "s1", "claude-code")
+	f.held("r-2", "s2", "fake-worker")
+	ty := cxReadyTyper{cxTyper: f.ty, notReady: ErrPromptRefused}
+	n := NewNotifier(NotifierOptions{Typer: ty, Sessions: f.s, Settings: func() RequestSettings { return f.set }})
+	for i := 0; i < 5; i++ {
+		f.run(t, n)
+	}
+	if len(*f.b.trace) != 0 || len(f.b.notices) != 0 {
+		t.Fatalf("saved: %v", *f.b.trace)
+	}
+}

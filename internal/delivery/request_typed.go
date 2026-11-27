@@ -49,6 +49,9 @@ func typeOnce(ctx context.Context, b RequestBook, ty Typer, id string, now time.
 	if !mayType(&r) {
 		return ErrRequestState
 	}
+	if err := notReady(ctx, ty, r.Holder.SessionID, true); err != nil {
+		return err
+	}
 	content, err := b.Content(id)
 	if err != nil {
 		return err
