@@ -142,6 +142,9 @@ const (
 	WhyForced         = "forced"
 	WhyReissued       = "reissued"
 	WhyParentClosed   = "parent_closed"
+	// WhyRepaired: rebuilt by a repair of the store. It is not run again until
+	// the operator reissues it.
+	WhyRepaired = "repaired"
 )
 
 // How a done request was proven (Request.ProofAs). Surfaces show it: only

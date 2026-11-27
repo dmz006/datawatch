@@ -165,6 +165,15 @@ func OpenRequests(opts RequestOptions) (*Requests, error) {
 	if opts.Dir == "" {
 		return nil, errors.New("requests: no folder")
 	}
+	s := newRequests(opts)
+	if err := s.load(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// newRequests is an empty store with the options' defaults filled in.
+func newRequests(opts RequestOptions) *Requests {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -174,12 +183,8 @@ func OpenRequests(opts RequestOptions) (*Requests, error) {
 	if opts.writeFile == nil {
 		opts.writeFile = func(path string, data []byte) error { return writeRecordFile(path, data, nil) }
 	}
-	s := &Requests{opts: opts, meta: newStoreMeta(), reqs: map[string]*storedRequest{}, keys: map[string]string{},
+	return &Requests{opts: opts, meta: newStoreMeta(), reqs: map[string]*storedRequest{}, keys: map[string]string{},
 		queue: map[string]json.RawMessage{}}
-	if err := s.load(); err != nil {
-		return nil, err
-	}
-	return s, nil
 }
 
 func hashOf(data []byte) string {
