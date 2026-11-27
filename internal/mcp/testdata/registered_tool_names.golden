@@ -575,6 +575,15 @@ release_push_status
 reload
 rename_session
 reply_to_parent
+request_accept
+request_create
+request_decline
+request_list
+request_manage
+request_mine
+request_report
+request_role
+request_take
 reset_identity
 restart_daemon
 restart_interruptions
