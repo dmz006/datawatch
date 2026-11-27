@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -259,14 +260,42 @@ func (Git) Run(ctx context.Context, spec CheckSpec, sub Subject, timeout time.Du
 	return out
 }
 
+var notRunWords = regexp.MustCompile(`(?i)(^|[^a-z0-9_])(skip|skips|skipped|skipping|todo|xfail|xfailed|deselected|ignored|not run)($|[^a-z0-9_])`)
+
+// lineShows is the proof form of lineSeen: a line has to start with the marker,
+// after spaces, and say nothing after it about being skipped. "not ok 1" and
+// "would run: ok 1" do not show "ok 1". A failure or an already passing start
+// run that only needs to be noticed uses lineSeen.
+func lineShows(out, marker string) bool {
+	marker = strings.TrimLeft(marker, " \t")
+	if marker == "" {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimLeft(strings.TrimRight(line, "\r"), " \t")
+		rest, found := strings.CutPrefix(line, marker)
+		if found && endsAWord(marker, rest) && !notRunWords.MatchString(rest) {
+			return true
+		}
+	}
+	return false
+}
+
+func wordByte(b byte) bool {
+	return b == '_' || b == '-' || b == '/' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
+}
+
+// endsAWord reports whether marker, followed by rest, does not stop in the
+// middle of a longer name.
+func endsAWord(marker, rest string) bool {
+	return rest == "" || !wordByte(marker[len(marker)-1]) || !wordByte(rest[0])
+}
+
 // lineSeen reports whether a line of out holds marker as a whole word group:
 // "PASS: TestA" is not found in "PASS: TestAll" or "PASS: TestA/sub".
 func lineSeen(out, marker string) bool {
 	if marker == "" {
 		return false
-	}
-	wordByte := func(b byte) bool {
-		return b == '_' || b == '-' || b == '/' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 	}
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimRight(line, "\r")
@@ -276,7 +305,7 @@ func lineSeen(out, marker string) bool {
 				break
 			}
 			end := from + i + len(marker)
-			if end == len(line) || !wordByte(marker[len(marker)-1]) || !wordByte(line[end]) {
+			if endsAWord(marker, line[end:]) {
 				return true
 			}
 			from += i + 1

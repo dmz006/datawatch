@@ -9,6 +9,7 @@ import (
 var (
 	askBullet      = regexp.MustCompile(`^\s*(?:[-*•]|\(?\d{1,3}[.)]|\(?[a-zA-Z][)])\s+`)
 	askSentenceEnd = regexp.MustCompile(`[.!?;]+(\s+|$)`)
+	askHeading     = regexp.MustCompile(`^#{1,6}\s+`)
 )
 
 // AskSentences splits an ask into the statements a list has to cover. It errs
@@ -19,13 +20,12 @@ func AskSentences(text string) []string {
 	seen := map[string]bool{}
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(askBullet.ReplaceAllString(line, ""))
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
+		// A heading's mark is dropped and its words are kept. Headings and
+		// lines ending in ':' often carry the ask itself.
+		line = askHeading.ReplaceAllString(line, "")
 		for _, s := range askSentenceEnd.Split(line, -1) {
 			s = strings.TrimSpace(s)
-			// A fragment ending in ':' only introduces what follows.
-			if strings.HasSuffix(s, ":") || normalizeAsk(s) == "" {
+			if !strings.ContainsFunc(s, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
 				continue
 			}
 			if n := normalizeAsk(s); !seen[n] {
@@ -37,10 +37,46 @@ func AskSentences(text string) []string {
 	return out
 }
 
-// normalizeAsk keeps letters and digits, lower case, single spaced.
+// normalizeAsk keeps letters, digits and the signs that change what a sentence
+// asks, lower case, single spaced. "> 5" and "< 5" stay different.
 func normalizeAsk(s string) string {
-	f := func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }
-	return strings.Join(strings.FieldsFunc(strings.ToLower(s), f), " ")
+	runes := []rune(strings.ToLower(s))
+	var out []string
+	var word []rune
+	flush := func() {
+		if len(word) > 0 {
+			out = append(out, string(word))
+			word = word[:0]
+		}
+	}
+	for i, r := range runes {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r):
+			word = append(word, r)
+		case meaningfulSign(runes, i):
+			flush()
+			out = append(out, string(r))
+		default:
+			flush()
+		}
+	}
+	flush()
+	return strings.Join(out, " ")
+}
+
+// meaningfulSign reports whether the sign at i is part of what is asked:
+// mathematical and money signs, "%", the "!" of "!=" and a minus before a
+// number. Other punctuation only separates words.
+func meaningfulSign(r []rune, i int) bool {
+	switch c := r[i]; {
+	case unicode.In(c, unicode.Sm, unicode.Sc), c == '%':
+		return true
+	case c == '!':
+		return i+1 < len(r) && r[i+1] == '='
+	case c == '-':
+		return i+1 < len(r) && unicode.IsDigit(r[i+1]) && (i == 0 || unicode.IsSpace(r[i-1]) || r[i-1] == '(')
+	}
+	return false
 }
 
 // covers reports whether an item's quoted words contain the whole sentence.

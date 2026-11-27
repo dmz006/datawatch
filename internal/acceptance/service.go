@@ -767,7 +767,9 @@ func (s *Service) NoteUnitReplaced(id, how, successor string, by Caller) (*List,
 	return s.mutate(id, func(l *List) error {
 		for _, st := range l.State {
 			st.Result = Result{Value: ResultUnchecked, Reason: "the work was replaced (" + how + ")"}
-			st.Confirm, st.Runs = nil, nil
+			// Answers, acceptances and readings were about the replaced work.
+			st.Confirm, st.Accept, st.Runs = nil, nil, nil
+			st.Samples, st.WaitAnchor = nil, time.Time{}
 		}
 		l.Unit, l.Yours = successor, ""
 		// The earlier holders no longer hold it and are still doers.

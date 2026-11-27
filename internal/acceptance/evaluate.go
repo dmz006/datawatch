@@ -271,7 +271,10 @@ func (e *evaluator) baseline(ctx context.Context, it Item, sub Subject) *Baselin
 	}
 	passed := out.ExitCode == 0 && len(it.Check.Expect) > 0
 	for _, x := range it.Check.Expect {
-		if lineSeen(out.Output, x.Fail) {
+		// The failing line is evidence that work was needed, so it has to be
+		// shown. A pass line only has to be noticed: that makes the check
+		// already passing, which proves nothing.
+		if lineShows(out.Output, x.Fail) {
 			b.FailSeen = append(b.FailSeen, x.Fail)
 			passed = false
 		}
@@ -338,8 +341,8 @@ func judgeRun(it Item, st *ItemState, out RunOutcome) Result {
 		return cannot("the item names nothing that must have run; exit 0 alone proves nothing")
 	}
 	for _, x := range it.Check.Expect {
-		if x.Pass == "" || !lineSeen(out.Output, x.Pass) {
-			return cannot("expected line %q not seen: nothing ran, or it was skipped", x.Pass)
+		if !lineShows(out.Output, x.Pass) {
+			return cannot("expected line %q not seen at the start of a line: nothing ran, or it was skipped", x.Pass)
 		}
 	}
 	if it.Change || it.Before == BeforeFailFirst {

@@ -495,7 +495,7 @@ func TestRule12ThinOrEmptyLists(t *testing.T) {
 				}
 			}
 		}
-		want := "Make the export work|Also move the old files|keep the logs"
+		want := "Make the export work|Also move the old files|tell nobody:|keep the logs"
 		if strings.Join(got, "|") != want {
 			t.Fatalf("ask items = %q", got)
 		}
