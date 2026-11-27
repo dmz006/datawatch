@@ -108,8 +108,10 @@ const (
 	// "pause status", "resume [all] [project=<p>] [peers=all|a,b]". Same
 	// behaviour as REST / MCP / CLI.
 	CmdDelivery CommandType = "delivery"
-	CmdPause    CommandType = "pause"
-	CmdResume   CommandType = "resume"
+	// Requests (see requests_comm.go).
+	CmdRequest CommandType = "request"
+	CmdPause   CommandType = "pause"
+	CmdResume  CommandType = "resume"
 	// "Done when" lists (see acceptance_comm.go).
 	CmdAcceptance CommandType = "acceptance"
 	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
@@ -401,7 +403,8 @@ const (
 
 	// BL357 — durable role-based work queue over chat.
 	//   "queue push role=<r> [payload=<json>]"
-	//   "queue claim role=<r> [claimed_by=<s>] [lease=<sec>]"
+//   "queue claim role=<r> [lease=<sec>]" (claimed_by= is read and not used: the
+//    daemon takes who claims from the credential)
 	//   "queue complete id=<id> [result=<json>]"
 	//   "queue fail id=<id> error=<msg>"
 	//   "queue list [role=<r>] [state=<s>]"
@@ -618,6 +621,9 @@ type Command struct {
 	ExitHookNotifySession string // for add/notify: target session name
 	ExitHookMessage       string // for add/notify: message text
 	ExitHookCooldown      int    // for add: cooldown seconds
+
+	// RequestVerb is the word after "request".
+	RequestVerb string
 
 	// BL357 — CmdQueue fields.
 	QueueVerb         string // "push" | "claim" | "complete" | "fail" | "list"
@@ -1530,6 +1536,11 @@ func Parse(text string) Command {
 	case lower == "delivery" || strings.HasPrefix(lower, "delivery "):
 		return parseDelivery(strings.TrimSpace(text[len("delivery"):]))
 
+	// Requests: only "request <known verb> …" (or a bare "request") is a
+	// command; any other message that starts with the word is not captured.
+	case isRequestCommand(text):
+		return parseRequest(text)
+
 	case lower == "pause" || strings.HasPrefix(lower, "pause "):
 		return parsePause(strings.TrimSpace(text[len("pause"):]))
 
@@ -2097,6 +2108,15 @@ delivery ack <key…>|backlog      mark listed entries as seen; they stay listed
 delivery accept <key…>|backlog|kind=<k> reason=<code> until=<date>  let entries wait until a review date at most 30 days ahead (a plain date means the end of that day, UTC: at most 29 days after today)
 delivery drop <key…>|backlog reason=<code>  close failed or backlog entries
 delivery test                    send a test message on every message channel
+request [list] [state=<s>] [kind=<k>] [role=<r>] [scope=<id>] [holder=<s>]  list requests (no content; only a proven one reads done)
+request show <id> | request mine | request roles   one request, a session's own (a session only), or who holds which role
+request create scope=<project> [kind=ask] [role=supervisor] [scope_kind=project] [key=<k>] [take_by=30m] [due=24h] ask=<words to the end>
+request role give session=<id> scope=<id> [force=true reason=<code>] | request role release scope=<id>
+request take|accept|report|decline <id>   the holder's calls: chat uses the daemon token, so these are refused
+request reissue|drop <id> reason=<code> [repeat_ok=true] [words=<words to the end>]
+request force <id> reason=<code> [to=<session>]   move a request off its holder; it may run twice
+request accept-unproven <id> reason=<code> words=<words to the end>
+request from-backlog <entry key> scope=<project> [ask=<words to the end>]
 usage_backoff                    show per-backend usage back-off flags, the effective config (incl. the backoff_reserve_for_review and backoff_reserve_tokens_per_hour reserve settings) and the live reserve usage (reserve array), plus the patterns_version/patterns_stale/claude_cli_version drift guard
 usage_backoff set <backend> <minutes> [reason …] [models=a,b]  hold autonomous dispatch to a backend (or only the named models of it)
 usage_backoff clear [backend|all] [models=a,b]  clear one back-off, or all (default); models=a,b narrows the clear to those models of the named backend
