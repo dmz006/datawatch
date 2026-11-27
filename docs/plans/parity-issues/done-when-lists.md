@@ -20,8 +20,8 @@ blocked because of a list.
 
 - A "Done when" table on an Automaton's overview, hidden when the mode is off.
 - Show every status and result as itself. Only `done` and `done_accepted` are
-  done; never show an unknown value, "delivered", "filed" or
-  `met_on_changed_list` as done. Show accepted items as "accepted without
+  done; never show an unknown value, "delivered", "filed",
+  `met_on_changed_list` or `answered_not_checked` as done. Show accepted items as "accepted without
   proof", never met, and a `claim` as a claim.
 - Actions: view, edit, confirm, accept. Each sends the words that were said and
   the list hash.

@@ -22,8 +22,8 @@ import (
 )
 
 // acceptanceCLIBody starts a write body. Run inside a session, the command
-// line says which one, so a doer's own answer never counts. The fields can
-// only lower how much an answer counts.
+// line says which one, so a recorded holder's own answer reads as a claim. The
+// fields are not verified.
 func acceptanceCLIBody(id, words string) map[string]any {
 	body := map[string]any{"id": id, "actor": "cli", "via": "cli"}
 	if sid := strings.TrimSpace(os.Getenv("DATAWATCH_SESSION_ID")); sid != "" {
@@ -88,7 +88,7 @@ acceptance.mode must be "report"; nothing is blocked because of a list.`,
 			}
 			return daemonJSON(http.MethodPost, "/api/acceptance/edit", body)
 		}}
-	edit.Flags().StringVar(&source, "source", "", "New list: where the request came from (message, report, bug, automaton, operation, schedule, ...)")
+	edit.Flags().StringVar(&source, "source", "", "New list: where the request came from (message, report, bug, automaton, operation, schedule, ...); adds that source's default items")
 	edit.Flags().StringVar(&ask, "ask", "", "New list: the ask, word for word")
 	edit.Flags().StringVar(&addAsk, "add-ask", "", "Later words added to the ask")
 	edit.Flags().StringVar(&itemsFile, "items", "", "JSON file with an array of items to add or replace")

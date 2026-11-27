@@ -12345,7 +12345,7 @@ paths:
               additionalProperties: false
               properties:
                 id: {type: string}
-                source: {type: string, description: New list only; sets the kind. An unknown source is kind other}
+                source: {type: string, description: "New list only; adds that source's default items. It never gives the list lighter rules than an unknown source has"}
                 ask: {type: string, description: New list only; kept word for word}
                 add_ask: {type: string, description: Later words; they open new items}
                 scheduled: {type: boolean}
@@ -12357,8 +12357,8 @@ paths:
                 hash: {type: string, description: The list hash that was read; required with freeze}
                 freeze: {type: boolean, description: Fix the list named by hash; sent without other changes}
                 actor: {type: string, description: Name recorded beside the observed caller}
-                via: {type: string, description: Set by model tools and the command line; can only lower how much an answer counts}
-                via_session: {type: string, description: As via; ignored for a session or federation credential}
+                via: {type: string, description: Set by model tools and the command line to say how they called. Not verified; who counts is recorded and not enforced}
+                via_session: {type: string, description: The calling session as the request states it, not verified. Ignored for a session or federation credential}
       responses:
         "200": {description: OK}
         "400": {description: Invalid request or unknown field}

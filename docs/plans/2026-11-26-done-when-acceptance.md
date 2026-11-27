@@ -51,6 +51,18 @@ Each rule has a test with fakes and an injected clock. "Build" says which job ca
 | 15 | Changes are also computed against revision 1. Changed or accepted items show the claimed name beside the observed caller. Approval and freeze name the same list hash. This shows; it blocks no call | draft changed after approval; weakened item is not plain done | A |
 | 16 | Empty is unchecked. Only an explicit result counts. Error, empty reply, removed method, mode off and no reviewer are never met. No list is "no criteria" | table over every method and consumer | A |
 
+### Amendments after the code review (2026-11-26)
+
+These replace the matching words above. Each is the stricter reading.
+
+- **Receipt:** the named recipient, or on a delivery-only list the current holder. On other lists the holder is the doer. The receipt states its time, is newer than the ask, its later words and any replacement, and for a scheduled run carries that run's id and follows its due time.
+- **Closing (rules 5, 16):** only a run that re-reads every version closes a list that holds anything a run reads. A counted answer reopens it. A run that an answer arrived during does not close it.
+- **Kind (rule 14):** a caller's source only adds default items; its list is `other` or `change`, and every rule applies. Only datawatch's own request sources make `delivery` or `deliverable` lists. Later words on a delivery draft open items. A removed or changed daemon default shows as a change.
+- **No change (rules 2, 8):** once a check turns out to have passed before the work, only a command or state item that had to see a change can show one, on every list but delivery.
+- **Ask text (rule 12):** heading and colon lines open items; signs that change a sentence are kept.
+- **Proof lines (rule 2):** a pass line, and the start run's failing line, must start an output line and carry no skip or to-do words.
+- **Replacement (rule 14):** replacing the unit drops answers, acceptances, readings and holders; the earlier holders stay doers.
+
 ## 3. No stalls, storms or runaway cost
 
 - A judged result binds to the **content judged**. Only deterministic checks run again at the effect. A done request closes with its versions; unrelated commits start no reviewer.

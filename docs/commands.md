@@ -463,7 +463,7 @@ pipeline cancel pipe-42851
 
 ### `acceptance`
 
-"Done when" lists. They work only while `acceptance.mode` is `report`, and block nothing.
+"Done when" lists. The command exists only while `acceptance.mode` is `report`; otherwise a message that starts with the word is an ordinary message. They block nothing.
 
 | Message | Does |
 |---|---|

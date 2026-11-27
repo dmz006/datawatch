@@ -74,9 +74,11 @@ func (s *Server) auditAcceptance(requestID string, e acceptance.Event) {
 	})
 }
 
-// acceptanceCallerFields is what a body may say about its caller. Via and
-// ViaSession can only lower how much an answer counts: datawatch's model tools
-// and command line send them because they call with the daemon's own token.
+// acceptanceCallerFields is what a body may say about its caller. datawatch's
+// model tools and command line send Via and ViaSession because they call with
+// the daemon's own token. They are the request's own word and are not
+// verified: who counts is recorded, not enforced, until the authentication
+// work.
 type acceptanceCallerFields struct {
 	Actor      string `json:"actor,omitempty"`
 	Via        string `json:"via,omitempty"`

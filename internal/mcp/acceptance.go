@@ -3,10 +3,10 @@
 // the comm channel. They are registered only when acceptance.mode is report.
 //
 // The loopback call carries the daemon's own token, so every write says it came
-// from a model tool, with the calling session when it is known. The daemon
-// then never counts a doer's own answer as proof. These fields can only lower
-// how much an answer counts. No tool takes command text, submits a verdict or
-// sets an item met.
+// from a model tool, with the calling session when it is known, so that an
+// answer from a recorded holder reads as a claim. The fields are not verified:
+// who counts is recorded, not enforced, until the authentication work. No tool
+// takes command text, submits a verdict or sets an item met.
 
 package mcp
 
@@ -44,7 +44,7 @@ func (s *Server) toolAcceptanceEdit() mcpsdk.Tool {
 	return mcpsdk.NewTool("acceptance_edit",
 		mcpsdk.WithDescription("Create or change a request's \"done when\" list. A draft changes freely; after it is fixed every change is recorded as a revision and shown against the first version. To fix a draft send only id, freeze=true and the hash you read. Items cannot carry command or script text: a command item names a project check the operator registered."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Request id")),
-		mcpsdk.WithString("source", mcpsdk.Description("New list only: where the request came from (message, intake, handoff, question, report, research, design, docs, automaton, bug, code, operation, rule, schedule; anything else is kind other)")),
+		mcpsdk.WithString("source", mcpsdk.Description("New list only: where the request came from (message, intake, handoff, question, report, research, design, docs, automaton, bug, code, operation, rule, schedule). It only adds that source's default items; the list is held to every rule whatever you name")),
 		mcpsdk.WithString("ask", mcpsdk.Description("New list only: the ask, word for word")),
 		mcpsdk.WithString("add_ask", mcpsdk.Description("Later words added to the ask; they open new items")),
 		mcpsdk.WithString("items", mcpsdk.Description("JSON array of items to add or replace: {id, statement, from, method, project_check, inputs, expect:[{pass,fail}], state:{path,contains,want,target}, wait:{after_seconds,window_seconds,max_gap_seconds}, before, change, negative, report_only, effect}")),
@@ -110,7 +110,7 @@ func (s *Server) handleAcceptanceEdit(ctx context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolAcceptanceConfirm() mcpsdk.Tool {
 	return mcpsdk.NewTool("acceptance_confirm",
-		mcpsdk.WithDescription("Record a person's answer on a confirm item, or on item \"list\" that the list covers the whole ask (needs hash). The words that were said are required. An answer datawatch cannot show came from someone other than the doer is kept as a claim and does not count. This cannot set an item that is checked another way."),
+		mcpsdk.WithDescription("Record a person's answer on a confirm item, or on item \"list\" that the list covers the whole ask (needs hash). The words that were said are required. An answer datawatch can see may be the doer's is kept as a claim and does not count; who is answering is not verified. This cannot set an item that is checked another way."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Request id")),
 		mcpsdk.WithString("item", mcpsdk.Required(), mcpsdk.Description("Item id, or list")),
 		mcpsdk.WithString("answer", mcpsdk.Required(), mcpsdk.Description("yes or no")),
@@ -136,7 +136,7 @@ func (s *Server) handleAcceptanceConfirm(ctx context.Context, req mcpsdk.CallToo
 
 func (s *Server) toolAcceptanceAccept() mcpsdk.Tool {
 	return mcpsdk.NewTool("acceptance_accept",
-		mcpsdk.WithDescription("Record that an item is accepted without proof (operator action, or a delegate passing on the operator's words). It never reads met: the request shows \"accepted without proof\". A doer's own acceptance is kept as a claim and does not count."),
+		mcpsdk.WithDescription("Record that an item is accepted without proof (operator action, or a delegate passing on the operator's words). It never reads met: the request shows \"accepted without proof\". A recorded doer's own acceptance is kept as a claim and does not count."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Request id")),
 		mcpsdk.WithString("item", mcpsdk.Required(), mcpsdk.Description("Item id")),
 		mcpsdk.WithString("reason", mcpsdk.Required(), mcpsdk.Description("Why it is accepted without proof")),

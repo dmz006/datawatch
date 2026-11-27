@@ -26,10 +26,15 @@ It does not hold, block or merge anything because of them.
 
 - datawatch does not create, fix or run a list by itself when work starts. You
   create lists through the surfaces below.
-- Nothing supplies the version of the work, live sources, receipts or a
-  reviewer yet. So command, state, receipt and review items on a list you make
-  here read **cannot tell** or unchecked. Confirm items and acceptance without
-  proof work now.
+- Nothing runs any check, and nothing supplies the version of the work, live
+  sources, receipts or a reviewer yet. So command, state, receipt and review
+  items on a list you make here stay **unchecked**. Confirm items and
+  acceptance without proof work now.
+- Only a run closes a list that holds something a run has to read (a command,
+  state, receipt or review item, or a confirm item about the work), unless that
+  item is accepted without proof. Since nothing runs yet, such a list never
+  reads done today, even with every answer given. A list can read done today
+  only when each item is a plain confirm item or is accepted without proof.
 - It does not stop a worker from changing its own list. It records every change
   and shows it against the first fixed version. Rules about who may change a
   list come with the authentication work.
@@ -52,7 +57,9 @@ datawatch acceptance show caterer
 ```
 
 The ask is kept word for word. Every sentence of it that no item covers becomes
-an open item. To cover a sentence yourself, give an item whose `from` quotes the
+an open item, including headings and lines ending in `:`. Signs such as `>`,
+`<`, `%` and a minus before a number are part of a sentence. A sentence that
+asks for two things ("do A and B") is still one item. To cover a sentence yourself, give an item whose `from` quotes the
 whole sentence:
 
 ```json
@@ -79,26 +86,31 @@ datawatch acceptance accept caterer d-answers --reason "no reviewer yet" --words
   reviewer) a list reads "met, but nobody has checked that the list covers the
   ask".
 - An accepted item reads **accepted without proof**, never met.
-- An answer counts only when datawatch can show it did not come from the doer.
-  Otherwise it is shown as a claim. A model tool with no known session, a
-  session while the doers are unknown, and a federation peer are all claims.
-  **Limit:** a worker that uses the daemon's own token outside datawatch's tools
-  and command line looks like you. Caller identity comes with the
+- An answer datawatch can see may be the doer's is shown as a claim and does not
+  count. A model tool with no known session, a session while the doers are
+  unknown, and a federation peer are all claims.
+- **Limit: who counts is recorded, not enforced.** datawatch does not verify who
+  is behind a call made with the daemon's own token, including what such a call
+  says about itself, and it counts chat messages as a person's. Do not treat a
+  counted answer as proof of who gave it. Caller identity comes with the
   authentication work.
+- A counted answer or acceptance reopens a closed list: a run has to read the
+  versions again before it reads done.
 
 ## How a list reads
 
 | Reads | Meaning |
 |---|---|
-| done | every item is met on the current version |
+| done | every item was met on the versions the closing run read |
+| answered, but the current versions have not been checked since | nothing is missing, and no run has closed the list since the last answer. It is not done |
 | done, accepted without proof | as above, with one or more items you accepted |
 | not met / open / waiting | something failed, is unproven, or is not due yet |
-| failure now reported, still broken | a change has an item that only reports the failure |
+| failure now reported, still broken | an item only reports the failure |
 | the list is too thin for the ask | only default or receipt items |
 | met, but nobody has checked that the list covers the ask | coverage is unconfirmed |
 | met on a changed list | the list changed after it was fixed. It is not plain done; how it should read is still an open operator choice |
 | the ask changed | later words were added and the list has not been revised |
-| delivered / filed | receipt only. Neither means done |
+| delivered / filed | receipt only, on a delivery list datawatch made. Neither means done. A list you make never reads this way |
 | no criteria | there is no list, or it has no items |
 
 ## Checks that run a command
@@ -120,21 +132,56 @@ acceptance:
 
 - datawatch runs it on a clean copy of the exact version. Untracked and
   uncommitted files are not there, and the copy has no `.git` folder.
-- Exit 0 alone proves nothing: every `pass` line must appear.
+- Exit 0 alone proves nothing: every `pass` line must appear. A line counts only
+  when it **starts** with the text (spaces before it are ignored) and says
+  nothing after it about being skipped or to do (`SKIP`, `skipped`, `TODO`,
+  `xfail`, `deselected`, `ignored`, `not run`). A timestamp or other prefix
+  makes the item read cannot tell. The `fail` line of the start run is read the
+  same way.
 - An item that has to show work was done (`change: true`,
   `before: fail_first`) needs a start run that finished and showed the `fail`
   line.
+- Once any check turns out to have passed before the work, the list reads done
+  only if some other command or state item that had to see a change shows one. A
+  person's yes does not. (Accepting an item without proof shows as that.)
 - `inputs` are frozen. If one differs, the item reads cannot tell until you save
   the item again after reviewing it. That shows as a change.
 
-## Defaults
+## Sources and default items
 
-Four kinds, set from the source: written deliverable (`report`, `research`,
-`design`, `docs`), change to something live (`automaton`, `bug`, `code`,
-`operation`, `rule`), delivery only (`message`, `intake`, `handoff`,
-`question`) and other (anything else). A `schedule` source adds two run items.
-`datawatch acceptance catalog` shows them. `acceptance.defaults_file` (config
-file only) replaces a kind's list or adds a pack; the `software` pack is opt-in.
+datawatch sets a list's rules from what it knows. A source **you** name only adds
+that source's default items: your list is held to every rule, the same as a list
+of unknown source (kind `other`, or `change` for the change sources).
+
+| Source you name | Default items added |
+|---|---|
+| `report`, `research`, `design`, `docs` | delivered to the requester, each question answered, what was not checked |
+| `automaton`, `bug`, `code`, `operation`, `rule` | the running system shows the asked state, the change is connected and used |
+| `message`, `intake`, `handoff`, `question` | the recipient received it |
+| anything else | none |
+
+A `schedule` source also adds two run items. The lighter **delivery** and
+**deliverable** kinds are only for datawatch's own request sources, which do not
+exist yet. On those lists, removing or changing one of datawatch's default items
+shows as a change, also before the list is fixed. No request can claim to be one
+of those sources. `datawatch acceptance catalog` shows the default items.
+`acceptance.defaults_file` (config file only) replaces a kind's list or adds a
+pack; the `software` pack is opt-in.
+
+## Receipt
+
+A receipt item is met only when all of these hold:
+
+- **Who:** the item's named recipient (`state.target`) took it. On a delivery-only
+  list the current holder also counts. On any other list the holder is the one
+  doing the work, so only a named recipient who has not done the work counts. An
+  item with no named recipient and no holder is never met.
+- **When:** the source states the time. It is not in the future, and not before
+  the ask, its latest added words or the last time the work was replaced.
+- **Which run:** for a scheduled run, the receipt carries that run's id and was
+  made after the run was due. A schedule's own list is not a run.
+
+A channel taking a message is not receipt. No receipt source is wired yet.
 
 ## The standing check
 
@@ -155,4 +202,4 @@ proof or on a changed list (I19) and changes without a record or without words
 | Command line | `datawatch acceptance list`, `show`, `edit`, `freeze`, `confirm`, `accept`, `report`, `catalog` |
 | REST | `GET /api/acceptance`, `POST /api/acceptance/edit`, `/confirm`, `/accept`, `GET /api/acceptance/report`, `/catalog` |
 | MCP | `acceptance_view`, `acceptance_edit`, `acceptance_confirm`, `acceptance_accept`, `acceptance_report`, `acceptance_catalog` |
-| Chat | `acceptance`, `acceptance show <id>`, `acceptance confirm <id> <item> yes <words>` (ids and results only on an encrypted install) |
+| Chat | `acceptance`, `acceptance show <id>`, `acceptance confirm <id> <item> yes <words>` (ids and results only on an encrypted install). The word is a command only while the setting is `report`; otherwise such a message is an ordinary message |
