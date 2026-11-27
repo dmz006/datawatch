@@ -2851,7 +2851,7 @@ Atomically claim the oldest pending work item for a given role. Returns the item
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `role` | string | Yes | Role to claim a work item for |
-| `claimed_by` | string | Yes | Session FullID or identifier of the claiming worker |
+| `claimed_by` | string | No | Not used. Who claims is taken from the credential of the call. |
 | `lease_seconds` | number | No | How long (seconds) to hold the claim before it auto-expires back to pending. Default: 300. |
 
 **Example response:**
