@@ -403,8 +403,8 @@ const (
 
 	// BL357 — durable role-based work queue over chat.
 	//   "queue push role=<r> [payload=<json>]"
-//   "queue claim role=<r> [lease=<sec>]" (claimed_by= is read and not used: the
-//    daemon takes who claims from the credential)
+	//   "queue claim role=<r> [lease=<sec>]" (claimed_by= is read and not used: the
+	//    daemon takes who claims from the credential)
 	//   "queue complete id=<id> [result=<json>]"
 	//   "queue fail id=<id> error=<msg>"
 	//   "queue list [role=<r>] [state=<s>]"
