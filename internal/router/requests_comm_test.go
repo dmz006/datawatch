@@ -146,7 +146,7 @@ func TestReqSurfaceChatCommands(t *testing.T) {
 		if hit.method != c.method || hit.path != c.path || hit.surface != "chat" || hit.caller != "" || hit.auth != "Bearer admin-tok" {
 			t.Errorf("%q: %+v", c.say, hit)
 		}
-		if c.body != nil && !reflect.DeepEqual(hit.body, c.body) && !(len(c.body) == 0 && len(hit.body) == 0) {
+		if c.body != nil && !reflect.DeepEqual(hit.body, c.body) && (len(c.body) != 0 || len(hit.body) != 0) {
 			t.Errorf("%q: body %v, want %v", c.say, hit.body, c.body)
 		}
 		for _, want := range c.replyHas {
