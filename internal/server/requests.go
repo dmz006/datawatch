@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/audit"
@@ -434,28 +435,30 @@ func requestForOtherComputer(r *http.Request, remotePath string) bool {
 	if err != nil {
 		return false
 	}
-	var body struct {
-		Tool string `json:"tool"`
-		ID   string `json:"id"`
-		Text string `json:"text"`
-	}
-	// The same reading the other computer makes: the first JSON value.
-	if json.NewDecoder(bytes.NewReader(data)).Decode(&body) != nil {
-		return false
-	}
+	// Each route is read the way the other computer reads it: the first JSON
+	// value, and only the field it uses, so that another field's type is no way
+	// through.
+	read := func(into any) bool { return json.NewDecoder(bytes.NewReader(data)).Decode(into) == nil }
 	switch p {
 	case "/api/mcp/call":
-		for _, name := range delivery.RequestToolNames {
-			if body.Tool == name {
-				return true
-			}
+		var body struct {
+			Tool string `json:"tool"`
 		}
-		return false
+		return read(&body) && slices.Contains(delivery.RequestToolNames, body.Tool)
 	case "/api/test/message":
+		var body struct {
+			Text string `json:"text"`
+		}
+		if !read(&body) {
+			return false
+		}
 		_, _, ok := delivery.RequestChatVerb(body.Text)
 		return ok
 	}
-	return delivery.IsRequestID(body.ID)
+	var body struct {
+		ID string `json:"id"`
+	}
+	return read(&body) && delivery.IsRequestID(body.ID)
 }
 
 // refuseCrossHostRequest writes the refusal for such a call: nothing is sent.

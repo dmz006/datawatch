@@ -622,6 +622,11 @@ func TestReqSurfaceProxyRefusesRequests(t *testing.T) {
 		{"POST", "/api/proxy/box/api/queue/complete", `{"id":"r-held"}`},
 		{"POST", "/api/proxy/box/api/queue/fail", `{"id":"r-held"}`},
 		{"POST", "/api/proxy/box/api/test/message", `{"text":"Request create scope=web ask=x"}`},
+		// An unrelated field of another type is no way through: the other
+		// computer reads only its own fields.
+		{"POST", "/api/proxy/box/api/mcp/call", `{"tool":"request_create","id":5,"text":7}`},
+		{"POST", "/api/proxy/box/api/queue/complete", `{"id":"r-held","tool":5,"text":7}`},
+		{"POST", "/api/proxy/box/api/test/message", `{"text":"request list","id":5,"tool":7}`},
 		{"POST", "/api/proxy/agent/a1/api/requests", create},
 		{"POST", "/remote/box/api/requests", create},
 	} {
