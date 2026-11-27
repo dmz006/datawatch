@@ -20,6 +20,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -284,6 +285,11 @@ func (m *Manager) pushUnpushedBeforeTeardown(sess *Session) PushReport {
 	if err != nil {
 		// Not a git repository (or git itself missing): nothing to save.
 		rep.Reason = err.Error()
+		if errors.Is(err, git.ErrRemoteName) {
+			// A bad push_remote setting: the operator has to hear of it.
+			m.recordTeardownPushFailure(sess, rep.Reason)
+			m.saveTeardownPushState(sess)
+		}
 		return rep
 	}
 	rep.Count = count

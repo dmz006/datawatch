@@ -48,7 +48,7 @@ func scheduleRequest(cfg *config.Config, method, path string, body any) (int, []
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- loopback to self-signed daemon
+			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- accepted risk: the daemon's self-signed certificate is not verified, for any server address in use
 		},
 	}
 	resp, err := client.Do(req)

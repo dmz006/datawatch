@@ -238,6 +238,9 @@ func unpushedCommitList(ctx context.Context, dir, remote string) ([]string, erro
 	if remote == "" {
 		remote = "origin"
 	}
+	if err := checkRemoteName(remote); err != nil {
+		return nil, err
+	}
 	out, err := runGit(ctx, dir, "rev-list", "HEAD", "--not", "--remotes="+remote)
 	if err != nil {
 		return nil, fmt.Errorf("list unpushed commits vs %q: %s", remote, tailReason(out))

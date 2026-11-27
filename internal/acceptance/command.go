@@ -60,10 +60,15 @@ type Repo interface {
 // Git implements Runner and Repo with the git command.
 type Git struct{}
 
+// noFetchEnv keeps every read inside the folder it names. The first entry
+// stops git from fetching a missing object. Older releases ignore it, so the
+// second also allows no transport at all, whatever the folder's settings say.
+var noFetchEnv = []string{"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL="}
+
 func git(ctx context.Context, repo string, env []string, args ...string) ([]byte, error) {
 	full := append([]string{"-C", repo, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + os.DevNull, "--literal-pathspecs"}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...) // #nosec G204 -- fixed binary, arguments are not shell-interpreted
-	cmd.Env = append(cleanEnv(os.Environ()), env...)
+	cmd.Env = append(append(cleanEnv(os.Environ()), noFetchEnv...), env...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {

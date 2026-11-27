@@ -54,7 +54,9 @@ The goroutines already respect `ctx.Done()` for cancellation in addition to a pr
 
 **Decision:** false positive. The pinning is correct and tested in `TestPinnedTLSConfig_RoundTrip`.
 
-### G402 — TLS InsecureSkipVerify=true (7 findings)
+### G402 — TLS InsecureSkipVerify=true (6 rows, 8 listed lines)
+
+The table is the v5.26.3 pass (7 findings) plus the schedule commands row added 2026-11-27: 2 rows are false positives and 4 are accepted. It is not a list of every `InsecureSkipVerify` site in the current tree.
 
 | File:Line | Context | Verdict |
 |-----------|---------|---------|
@@ -65,7 +67,7 @@ The goroutines already respect `ctx.Done()` for cancellation in addition to a pr
 | `cmd/datawatch/main.go:6250,6392` | self-update binary fetch + datawatch-app heartbeat probe — both gated behind operator opt-in | Accept (documented) |
 | `cmd/datawatch/schedule_cli.go:51` | schedule commands calling a datawatch daemon, which uses a self-signed certificate; the certificate is not verified for whichever server address the command uses | Accept (documented; operator 2026-11-27, self-signed certificate). No pinning and no config setting for this one yet: planned with the 11.0 authentication and authorization work. See `security/accepted-risks.yml` `code-scanning/903`. |
 
-All five "accept" entries get a `//#nosec G402 -- <reason>` annotation in the v5.26.3 patch. The two pinning-pattern entries get `//#nosec G402 G123 -- pinned via VerifyPeerCertificate; see TestPinnedTLSConfig_RoundTrip`.
+The accepted rows of the v5.26.3 pass got a `//#nosec G402 -- <reason>` annotation in that patch, and the schedule commands line carries one too. The two pinning-pattern entries get `//#nosec G402 G123 -- pinned via VerifyPeerCertificate; see TestPinnedTLSConfig_RoundTrip`.
 
 ### G702 — command-injection via taint analysis (7 findings)
 
