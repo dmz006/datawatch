@@ -67,3 +67,55 @@ func (c DeliveryConfig) Interval() time.Duration {
 	s = min(max(s, 60), MaxDeliveryIntervalSeconds)
 	return time.Duration(s) * time.Second
 }
+
+func secondsOr(s, def int) time.Duration {
+	if s <= 0 {
+		s = def
+	}
+	return time.Duration(s) * time.Second
+}
+
+// RequestTakeBy is how long a request waits to be taken before it is listed.
+func (c DeliveryConfig) RequestTakeBy() time.Duration {
+	return secondsOr(c.RequestTakeBySeconds, DefaultRequestTakeBySeconds)
+}
+
+// RequestDue is how long a request has before it is overdue.
+func (c DeliveryConfig) RequestDue() time.Duration {
+	return secondsOr(c.RequestDueSeconds, DefaultRequestDueSeconds)
+}
+
+// RequestDueByKind are the kinds with a due time of their own.
+func (c DeliveryConfig) RequestDueByKind() map[string]time.Duration {
+	out := map[string]time.Duration{}
+	for kind, s := range c.RequestDueSecondsByKind {
+		if s > 0 {
+			out[kind] = time.Duration(s) * time.Second
+		}
+	}
+	return out
+}
+
+// ReminderInterval is the shortest time between two reminders to a session.
+func (c DeliveryConfig) ReminderInterval() time.Duration {
+	return secondsOr(c.ReminderIntervalSeconds, DefaultReminderIntervalSeconds)
+}
+
+// limitOr reads a reminder limit. Unset is the default; 0, and anything below
+// it, types no reminders.
+func limitOr(v *int, def int) int {
+	if v == nil {
+		return def
+	}
+	return max(*v, 0)
+}
+
+// SessionReminderLimit is the most reminders to one session in an hour.
+func (c DeliveryConfig) SessionReminderLimit() int {
+	return limitOr(c.RemindersPerSessionHour, DefaultRemindersPerSessionHour)
+}
+
+// HostReminderLimit is the most reminders on this computer in an hour.
+func (c DeliveryConfig) HostReminderLimit() int {
+	return limitOr(c.RemindersPerHostHour, DefaultRemindersPerHostHour)
+}
