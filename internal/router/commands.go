@@ -107,8 +107,9 @@ const (
 	// Operator pause: "pause [project=<p>] [peers=all|a,b] <reason>",
 	// "pause status", "resume [all] [project=<p>] [peers=all|a,b]". Same
 	// behaviour as REST / MCP / CLI.
-	CmdPause  CommandType = "pause"
-	CmdResume CommandType = "resume"
+	CmdDelivery CommandType = "delivery"
+	CmdPause    CommandType = "pause"
+	CmdResume   CommandType = "resume"
 	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
 	// as REST / MCP / CLI.
 	CmdUsageBackoff CommandType = "usage_backoff"
@@ -554,6 +555,9 @@ type Command struct {
 	UsageBackoffUntil   string
 	UsageBackoffReason  string
 	UsageBackoffModels  []string
+
+	// CmdDelivery field: the subcommand; its arguments are in Text.
+	DeliveryVerb string
 
 	// CmdPause / CmdResume fields.
 	//   PauseVerb: "set" | "status" (CmdPause only)
@@ -1518,6 +1522,12 @@ func Parse(text string) Command {
 	case lower == "usage" || strings.HasPrefix(lower, "usage "):
 		return parseUsage(strings.TrimSpace(text[len("usage"):]))
 
+	// Delivery check: "delivery [status]|check|ack|accept|drop|test". Every
+	// "delivery …" message is captured, so a mistyped one gets the usage and is
+	// never taken for anything else.
+	case lower == "delivery" || strings.HasPrefix(lower, "delivery "):
+		return parseDelivery(strings.TrimSpace(text[len("delivery"):]))
+
 	case lower == "pause" || strings.HasPrefix(lower, "pause "):
 		return parsePause(strings.TrimSpace(text[len("pause"):]))
 
@@ -2079,6 +2089,12 @@ cooldown clear                   clear active cooldown
 pause <reason…> [project=<p>] [peers=all|a,b]  pause new work (all, or one project); running tasks finish
 pause status [peers]             show the pause state (global and per project), and each peer's own with peers
 resume [all] [project=<p>] [peers=all|a,b]  resume the global pause, one project, or every pause; only the operator can resume
+delivery                         show the delivery check's report: unfinished and undelivered work (report only, blocks nothing)
+delivery check                   run the delivery check now and show the report
+delivery ack <key…>|backlog      mark listed entries as seen; they stay listed
+delivery accept <key…>|backlog|kind=<k> reason=<code> until=<date>  let entries wait until a review date at most 30 days ahead
+delivery drop <key…>|backlog reason=<code>  close failed or backlog entries
+delivery test                    send a test message on every message channel
 usage_backoff                    show per-backend usage back-off flags, the effective config (incl. the backoff_reserve_for_review and backoff_reserve_tokens_per_hour reserve settings) and the live reserve usage (reserve array), plus the patterns_version/patterns_stale/claude_cli_version drift guard
 usage_backoff set <backend> <minutes> [reason …] [models=a,b]  hold autonomous dispatch to a backend (or only the named models of it)
 usage_backoff clear [backend|all] [models=a,b]  clear one back-off, or all (default); models=a,b narrows the clear to those models of the named backend

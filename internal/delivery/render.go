@@ -30,10 +30,13 @@ func RenderReport(r Report, maxItems int) string {
 		head += " (report only: nothing is blocked)"
 	}
 	line("%s", head)
-	if r.At.IsZero() {
-		line("The check has not run yet.")
-	} else {
+	switch {
+	case !r.At.IsZero():
 		line("At %s, pass %d", renderTime(r.At), r.Pass)
+	case r.Pass > 0:
+		line("Pass %d", r.Pass)
+	default:
+		line("The check has not run yet.")
 	}
 	if len(r.Red) > 0 {
 		line("Why: %s", renderList(r.Red))
