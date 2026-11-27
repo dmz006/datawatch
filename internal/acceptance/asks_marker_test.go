@@ -106,8 +106,8 @@ func TestReplacingTheUnitDropsAcceptances(t *testing.T) {
 	w := newWorld(t)
 	w.frozen("r", "bug", oneAsk, fix())
 	w.cover("r")
-	l := must[*List](t)(w.svc.Accept("r", "fix", "later", "ok", "", operator))
-	l = must[*List](t)(w.svc.Evaluate(context.Background(), "r"))
+	must[*List](t)(w.svc.Accept("r", "fix", "later", "ok", "", operator))
+	l := must[*List](t)(w.svc.Evaluate(context.Background(), "r"))
 	wantStatus(t, l, StatusDoneAccepted)
 	l = must[*List](t)(w.svc.NoteUnitReplaced("r", "reset", "", operator))
 	if got := Read(l); got.Done || read(l, "fix").Accepted || l.State["fix"].Accept != nil {

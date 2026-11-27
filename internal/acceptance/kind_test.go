@@ -54,12 +54,12 @@ func TestACallersSourceOnlyMakesAListStricter(t *testing.T) {
 	const alert = "The update runs or raises an alert"
 	for _, source := range callerSources {
 		w := newWorld(t)
-		l := dropDefaults(w, draftFrom(w, "r", source, alert, Item{ID: "c", Statement: alert, From: alert, Method: MethodConfirm}))
+		dropDefaults(w, draftFrom(w, "r", source, alert, Item{ID: "c", Statement: alert, From: alert, Method: MethodConfirm}))
 		if source == "schedule" {
 			continue
 		}
 		w.cover("r")
-		l = must[*List](t)(w.svc.Confirm("r", "c", true, "it alerted", "", "", operator))
+		l := must[*List](t)(w.svc.Confirm("r", "c", true, "it alerted", "", "", operator))
 		if got := Read(l); got.Status != StatusReportOnly {
 			t.Errorf("%q: reads %s %v", source, got.Status, got.Reasons)
 		}
@@ -71,11 +71,11 @@ func TestACallersSourceOnlyMakesAListStricter(t *testing.T) {
 func TestACallersMessageListKeepsTheAsk(t *testing.T) {
 	w := newWorld(t)
 	const ask = "Fix the export crash"
-	l := draftFrom(w, "r", "message", ask, Item{ID: "told", Statement: "someone was told", Method: MethodConfirm})
-	l = must[*List](t)(w.svc.Edit(context.Background(), EditInput{RequestID: "r", Remove: []string{"d-received"}}, operator))
+	draftFrom(w, "r", "message", ask, Item{ID: "told", Statement: "someone was told", Method: MethodConfirm})
+	l := must[*List](t)(w.svc.Edit(context.Background(), EditInput{RequestID: "r", Remove: []string{"d-received"}}, operator))
 	must[*List](t)(w.svc.Freeze(context.Background(), "r", l.Hash(), operator, "start"))
 	w.cover("r")
-	l = must[*List](t)(w.svc.Confirm("r", "told", true, "yes", "", "", operator))
+	must[*List](t)(w.svc.Confirm("r", "told", true, "yes", "", "", operator))
 	l = must[*List](t)(w.svc.Evaluate(context.Background(), "r"))
 	if got := Read(l); got.Done || read(l, askItemID(ask)).Result.Value != ResultUnchecked {
 		t.Fatalf("%s done=%v: %+v", got.Status, got.Done, got.Items)
@@ -87,8 +87,8 @@ func TestOnlyADeliveryListReadsDeliveredOrFiled(t *testing.T) {
 		w := newWorld(t)
 		r := Reading{}
 		receipts(w, &r)
-		l := draftFrom(w, "r", source, "tell Sam", Item{ID: "got", Statement: "it arrived", From: "tell Sam", Method: MethodReceipt, State: &StateSpec{Target: "sam"}})
-		l = must[*List](t)(w.svc.Edit(context.Background(), EditInput{RequestID: "r", Remove: []string{"d-received"}}, operator))
+		draftFrom(w, "r", source, "tell Sam", Item{ID: "got", Statement: "it arrived", From: "tell Sam", Method: MethodReceipt, State: &StateSpec{Target: "sam"}})
+		l := must[*List](t)(w.svc.Edit(context.Background(), EditInput{RequestID: "r", Remove: []string{"d-received"}}, operator))
 		must[*List](t)(w.svc.Freeze(context.Background(), "r", l.Hash(), operator, "start"))
 		r = fetched("sam", w.now)
 		l = must[*List](t)(w.svc.Evaluate(context.Background(), "r"))

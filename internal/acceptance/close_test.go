@@ -62,7 +62,7 @@ func TestOnlyARunClosesAList(t *testing.T) {
 	l = w.work("r", "c1")
 	wantStatus(t, l, StatusDone)
 	// A claim changes nothing that counts, so it does not reopen the list.
-	must[error](t)(nil, w.svc.NoteHolder("r", "w1"))
+	w.hold("r", "w1")
 	wantStatus(t, must[*List](t)(w.svc.Confirm("r", "look", true, "mine", "", "", worker)), StatusDone)
 	// A counting answer does: the next run has to look again.
 	wantStatus(t, must[*List](t)(w.svc.Confirm("r", "look", true, "again", "", "", operator)), StatusNeedsRun)

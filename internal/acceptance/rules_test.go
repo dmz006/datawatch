@@ -557,7 +557,7 @@ func TestRule14KindAndTheListBelongsToTheAsk(t *testing.T) {
 		w := newWorld(t)
 		w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return fetched("x", w.now), nil }}
 		w.sourced("r1", source, "Tell the coordinator Saturday moved and fix the roster")
-		must[error](t)(nil, w.svc.NoteHolder("r1", "x"))
+		w.hold("r1", "x")
 		l := w.work("r1", "c1")
 		wantStatus(t, l, want)
 		if Read(l).Done {
@@ -997,7 +997,7 @@ func TestAMessageWithMoreItemsNeedsCoverage(t *testing.T) {
 	w := newWorld(t)
 	w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return fetched("x", w.now), nil }}
 	w.sourced("r1", "message", "Tell them and fix the roster", Item{ID: "c", Statement: "told", Method: MethodConfirm})
-	must[error](t)(nil, w.svc.NoteHolder("r1", "x"))
+	w.hold("r1", "x")
 	w.work("r1", "c1")
 	wantStatus(t, must[*List](t)(w.svc.Confirm("r1", "c", true, "told", "", "", operator)), StatusNotReviewed)
 }

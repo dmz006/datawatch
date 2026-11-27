@@ -14,6 +14,14 @@ func (w *world) sourced(id, source, ask string, items ...Item) *List {
 	return must[*List](w.t)(w.svc.Freeze(context.Background(), id, l.Hash(), operator, "start"))
 }
 
+// hold records a session that does the work.
+func (w *world) hold(list, session string) {
+	w.t.Helper()
+	if err := w.svc.NoteHolder(list, session); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
 // receipts wires a receipt source that answers with whatever *r holds.
 func receipts(w *world, r *Reading) {
 	w.probes[MethodReceipt] = &fakeProbe{read: func() (Reading, error) { return *r, nil }}
@@ -49,7 +57,7 @@ func TestReceiptNeedsTheHolderOrTheNamedRecipient(t *testing.T) {
 	wantReceipt(t, receiptValue(w, "nobody", "d-received"), false, "no holder and no named recipient")
 
 	w.sourced("held", "message", "tell Sam")
-	must[error](t)(nil, w.svc.NoteHolder("held", "w1"))
+	w.hold("held", "w1")
 	wantReceipt(t, receiptValue(w, "held", "d-received"), false, "a stranger while a holder is recorded")
 	r = fetched("w1", w.now)
 	wantReceipt(t, receiptValue(w, "held", "d-received"), true, "the holder")
@@ -68,14 +76,14 @@ func TestReceiptOnAWorkListNeedsANamedRecipientWhoIsNotTheDoer(t *testing.T) {
 	r := Reading{}
 	receipts(w, &r)
 	w.sourced("rep", "report", "write it up", named("boss"))
-	must[error](t)(nil, w.svc.NoteHolder("rep", "w1"))
+	w.hold("rep", "w1")
 	r = fetched("w1", w.now)
 	wantReceipt(t, receiptValue(w, "rep", "d-delivered"), false, "the doer fetched its own report")
 	r = fetched("boss", w.now)
 	wantReceipt(t, receiptValue(w, "rep", "got"), true, "the named recipient")
 
 	w.sourced("self", "report", "write it up", named("w1"))
-	must[error](t)(nil, w.svc.NoteHolder("self", "w1"))
+	w.hold("self", "w1")
 	r = fetched("w1", w.now)
 	wantReceipt(t, receiptValue(w, "self", "got"), false, "the doer named as its own recipient")
 }
@@ -108,14 +116,14 @@ func TestReceiptDoesNotCarryOverAReplacedUnit(t *testing.T) {
 	r := Reading{}
 	receipts(w, &r)
 	w.sourced("m", "message", "tell them")
-	must[error](t)(nil, w.svc.NoteHolder("m", "w1"))
+	w.hold("m", "w1")
 	first := w.now
 	r = fetched("w1", first)
 	wantReceipt(t, receiptValue(w, "m", "d-received"), true, "the holder")
 
 	w.now = w.now.Add(time.Hour)
 	must[*List](t)(w.svc.NoteUnitReplaced("m", "reassigned", "m2", operator))
-	must[error](t)(nil, w.svc.NoteHolder("m", "w2"))
+	w.hold("m", "w2")
 	wantReceipt(t, receiptValue(w, "m", "d-received"), false, "the earlier holder's old receipt")
 	r = fetched("w1", w.now)
 	wantReceipt(t, receiptValue(w, "m", "d-received"), false, "the earlier holder, no longer holding")
