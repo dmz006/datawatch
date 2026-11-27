@@ -9111,6 +9111,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
 		testRouter := router.NewRouter(cfg.Hostname, "__test__", nil, mgr, cfg.Session.TailLines, wm)
+		// The live settings, as the messaging routers have them: a chat command
+		// that depends on a setting behaves the same on this route.
+		testRouter.SetConfig(cfg)
 		// The comm verbs that proxy REST (autonomous tags, attention, ...) need
 		// the local loopback port, the same as the messaging routers above.
 		if cfg.Server.Enabled && cfg.Server.Port > 0 {
