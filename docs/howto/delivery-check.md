@@ -113,6 +113,8 @@ other hosts). Green does not mean those are fine.
 |---|---|
 | Signal, Telegram, Discord, Slack, Matrix, Twilio SMS, ntfy, email, imap-mcp email | the generic webhook, the GitHub webhook and the DNS channel: they only receive, and a send on them succeeds without sending anything |
 
+imap-mcp email counts only when its `to` recipient is set.
+
 If no channel that can reach you is set up, or `delivery.notify` is off, the
 check is **red** and its heartbeat says `cannot_tell`.
 
@@ -180,6 +182,27 @@ folder. On a secure install they are sealed with a key of their own, kept
 separately from the configuration file's key. The heartbeat file is never
 sealed: it holds a time, a state and counts, so the outside timer can read it
 without a password.
+
+The key's salt, settings and a sealed test value are in
+`<data dir>/queue.d/store.key`. The key itself comes from your secure-mode
+password. The file is written once, on the first secure start where the check is
+on and every other store opened. Records that were plain before secure mode was
+turned on are sealed at that start.
+
+**datawatch does not start**, and says why, when:
+
+- the password does not open `store.key`, or the file is damaged;
+- `store.key` is there and datawatch is started without secure mode;
+- `store.key` is missing while sealed delivery records exist. It is never made
+  again, because a new key could not open them. Restore the file.
+
+Keep `store.key` in your backups of the data folder. Changing a setting does not
+change this key.
+
+If the list or the start mark is damaged, or the start mark is missing, the
+check does nothing, changes nothing and is red. Restore the files. Removing the
+whole `delivery` folder starts the check over: everything then wrong becomes a
+new backlog, and acknowledgements and acceptances are lost.
 
 ## The outside timer
 
