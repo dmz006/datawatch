@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.187.36 — The test isolation check covers the settings file tests
+## v9.187.36 — Two flagged test packages now pass the test isolation check
 
 ### Changed
 - The two test packages the check flagged for looking up files in the home folder now use their own folders. Fixed a timing fault that made an older stop-command test fail at times. This is developer tooling and one internal refactor: how datawatch behaves does not change.
