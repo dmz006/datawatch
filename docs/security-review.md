@@ -63,6 +63,7 @@ The goroutines already respect `ctx.Done()` for cancellation in addition to a pr
 | `internal/observerpeer/client.go:126` | observer-peer push — pinning + verify-by-default landed (worker/peers pushes pin or verify against the system trust store); `Insecure` remains opt-in (default off, startup-warned) | Accept (documented) |
 | `internal/observer/cluster_k8s.go:139,142` | k8s API server cert verification skipped for cluster-internal traffic via in-cluster ServiceAccount | Accept (k8s convention) |
 | `cmd/datawatch/main.go:6250,6392` | self-update binary fetch + datawatch-app heartbeat probe — both gated behind operator opt-in | Accept (documented) |
+| `cmd/datawatch/schedule_cli.go:51` | schedule commands calling a datawatch daemon, which uses a self-signed certificate; the certificate is not verified for whichever server address the command uses | Accept (documented; operator 2026-11-27, self-signed certificate). No pinning and no config setting for this one yet: planned with the 11.0 authentication and authorization work. See `security/accepted-risks.yml` `code-scanning/903`. |
 
 All five "accept" entries get a `//#nosec G402 -- <reason>` annotation in the v5.26.3 patch. The two pinning-pattern entries get `//#nosec G402 G123 -- pinned via VerifyPeerCertificate; see TestPinnedTLSConfig_RoundTrip`.
 

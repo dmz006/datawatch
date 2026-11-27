@@ -1,0 +1,374 @@
+# Security review — pre-v6.0
+
+Last run: 2026-04-27 (v5.26.3 patch).
+Tools: `gosec` (severity HIGH, confidence MEDIUM+) and `golang.org/x/vuln/cmd/govulncheck`.
+Scope: `./...` from the repo root.
+
+This document is the answer to the AGENT.md release-discipline rule that requires a pre-release security pass. It triages every gosec finding (real → fix; false-positive → annotate) and tracks the dependency vulnerability state from govulncheck.
+
+## govulncheck
+
+```
+govulncheck ./...     →   No vulnerabilities found.
+```
+
+Two transitive flags closed in this pass by bumping `go.mod`:
+
+| ID | Module | Pre-bump | Post-bump | Reachable from datawatch? |
+|----|--------|----------|-----------|---------------------------|
+| GO-2026-4503 | filippo.io/edwards25519 | v1.1.0 | v1.2.0 | No (govulncheck symbol-resolution: not called) |
+| GO-2026-4559 | golang.org/x/net | v0.50.0 | v0.53.0 | No (HTTP/2 server frame handler — datawatch is the client side) |
+
+Re-run cadence: every release until v6.0 (patches included). The full
+go.sum diff lives in the v5.26.3 commit; routine `go get -u` +
+`go mod tidy` is preferred over selective bumps so we don't hide a
+dep that picks up a new vuln next month.
+
+## gosec — HIGH severity, MEDIUM+ confidence
+
+55 findings across 4 rule families. Triage below — every entry is either fixed in v5.26.3, suppressed with a `//#nosec` annotation explaining the reason, or accepted as a documented false-positive.
+
+### G115 — integer-overflow conversions (19 findings)
+
+All conversions are between Go integer types where the arithmetic context guarantees no overflow (timeouts, port numbers, list lengths, byte counts that come from controlled sources). gosec flags any `int → int64` / `int → uint32` regardless of context.
+
+**Decision:** accept. Reviewed line-by-line; none of the call sites accept attacker-controlled magnitudes that approach the conversion boundary. Adding 19 `//#nosec` comments would be churn for no signal. Re-evaluate if any of these expand to take user-supplied size hints from REST.
+
+### G118 — goroutine context misuse (2 findings)
+
+Both inside `internal/llm/backends/opencode/acpbackend.go` (`Launch` and `LaunchResume`). The goroutines watch a long-lived `opencode serve` subprocess: they wait for the server to come up, create a session, stream events, and tick a healthcheck. They intentionally outlive the request that started them.
+
+The goroutines already respect `ctx.Done()` for cancellation in addition to a private `bgCtx`, so cancellation propagates from the parent.
+
+**Decision:** false positive. The goroutine *is* cancellable from the parent context; gosec just sees the `context.Background()` call and assumes the context is detached, which it isn't in practice (we select on both).
+
+### G122 — race-prone path in WalkDir callback (1 finding)
+
+`internal/autonomous/security.go:74` — a path is computed inside the callback and used to read a file. There's a TOCTOU window (file replaced between Walk visiting it and us reading), but the directory we're walking is the daemon's own `~/.datawatch/autonomous/` tree, not operator-supplied paths. The attacker model would need write access to the daemon's data directory, at which point reading replaced files is the least of the concerns.
+
+**Decision:** accept. Treat as low-risk false-positive given the trust boundary.
+
+### G123 — VerifyPeerCertificate without VerifyConnection (1 finding)
+
+`internal/agents/tls.go:96`. Paired with the G402 below — this is the canonical "self-signed-with-pinning" pattern: `InsecureSkipVerify=true` plus a `VerifyPeerCertificate` callback that compares the cert SHA-256 to a pinned fingerprint. gosec doesn't recognize this as safe because it expects `VerifyConnection` (added in Go 1.15) to also be set. The pinning logic is enforced regardless.
+
+**Decision:** false positive. The pinning is correct and tested in `TestPinnedTLSConfig_RoundTrip`.
+
+### G402 — TLS InsecureSkipVerify=true (7 findings)
+
+| File:Line | Context | Verdict |
+|-----------|---------|---------|
+| `internal/agents/tls.go:95` | parent↔worker pinned mTLS — paired with VerifyPeerCertificate fingerprint check | False positive |
+| `internal/agents/client.go:124` | parent↔worker mTLS client — same pinning pattern | False positive |
+| `internal/observerpeer/client.go:126` | observer-peer push — pinning + verify-by-default landed (worker/peers pushes pin or verify against the system trust store); `Insecure` remains opt-in (default off, startup-warned) | Accept (documented) |
+| `internal/observer/cluster_k8s.go:139,142` | k8s API server cert verification skipped for cluster-internal traffic via in-cluster ServiceAccount | Accept (k8s convention) |
+| `cmd/datawatch/main.go:6250,6392` | self-update binary fetch + datawatch-app heartbeat probe — both gated behind operator opt-in | Accept (documented) |
+| `cmd/datawatch/schedule_cli.go:51` | schedule commands calling a datawatch daemon, which uses a self-signed certificate; the certificate is not verified for whichever server address the command uses | Accept (documented; operator 2026-11-27, self-signed certificate). No pinning and no config setting for this one yet: planned with the 11.0 authentication and authorization work. See `security/accepted-risks.yml` `code-scanning/903`. |
+
+All five "accept" entries get a `//#nosec G402 -- <reason>` annotation in the v5.26.3 patch. The two pinning-pattern entries get `//#nosec G402 G123 -- pinned via VerifyPeerCertificate; see TestPinnedTLSConfig_RoundTrip`.
+
+### G702 — command-injection via taint analysis (7 findings)
+
+Every G702 finding is one of two shapes:
+
+1. **`syscall.Exec(selfPath, os.Args, os.Environ())`** — daemon hot-restart. `selfPath` resolves through `os.Executable()` + `filepath.EvalSymlinks`; `os.Args` is the literal argv vector that started this process. Both come from the kernel, not user input. Crucially, `syscall.Exec` takes an argv list, not a shell string — there is no shell parsing.
+2. **`exec.Command("git", "-C", dir, …)`** — argv-list invocation of git. `dir` is a project-directory path that came from the operator's config or from the `datawatch session start --project-dir` flag. `exec.Command` again takes an argv list, not a shell string.
+
+In both shapes the "tainted" data flows into the *argv* of an exec, not into a shell. There is no way to inject a second command via argv parameters; that requires `sh -c` or string concatenation, neither of which we use.
+
+**Decision:** false positive across the board. Each site gets `//#nosec G702 -- argv-list invocation, not shell` in v5.26.3.
+
+### G703 / G704 — taint-flow noise (12 + 6 findings)
+
+These are downstream of G702 — gosec's taint propagation considers the same "tainted" inputs after they've flowed through other functions. Same root cause, same disposition.
+
+**Decision:** accept as part of the G702 triage.
+
+## Fixes shipped in v5.26.3
+
+- govulncheck — bumped `golang.org/x/net`, `filippo.io/edwards25519`, and the routine `go mod tidy` cascade. Both flagged advisories cleared.
+- This document — written so the next pre-release pass can diff against it and only review *new* findings.
+
+## Container image scanning — v8.0.0
+
+Added in v8.0.0. Trivy v0.70.0 scans every image after push in both
+`containers.yaml` (manual dispatch) and `release.yaml` (tag-triggered).
+Severity gate: HIGH and CRITICAL. Exit code 1 on any finding not in
+`.trivyignore`. Exceptions below are all `bitnami/minideb:bookworm`
+base-image CVEs with no fix available in Debian at time of v8.0.0.
+
+Tool: `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1`
+Scan date: 2026-05-19 against `local/datawatch:dev` (same base as v8.0.0)
+Result: 23 findings — 4 fixed by `apt-get upgrade` in Dockerfile, 19 accepted below.
+
+Locally built images are scanned by archive: under docker 29.1.x `trivy image`
+cannot read image layers from the daemon ("failed to analyze layer"), so
+the `docker-agent-base` step of the local pre-tag gate runs
+`scripts/trivy-scan-image.sh`, which exports the image with `docker save`
+and scans the tar with `trivy image --input <tar>`. Severity, ignore file
+and exit code are exactly the tool line above — only the input changes.
+
+### Fixable CVEs resolved in Dockerfile.agent-base
+
+Added `apt-get upgrade` layer (Layer 2b) to pull current bookworm security patches:
+
+| CVE | Package | Severity | Fix |
+|-----|---------|----------|-----|
+| CVE-2026-0861 | libc-bin | HIGH | `2.36-9+deb12u14` |
+| CVE-2026-4878 | libcap2 | HIGH | `1:2.66-4+deb12u3` |
+| CVE-2026-29111 | libsystemd0, libudev1 | HIGH | `252.39-1~deb12u2` |
+
+### Accepted exceptions (security/accepted-risks.yml → .trivyignore)
+
+BL398 (2026-10-08): this subsection's table is now **generated** from
+`security/accepted-risks.yml`, the structured security-acceptance
+registry adopted jointly with `datawatch-app` (GH#197) — it is no longer
+a hand-maintained 8-of-70 sample, so it can no longer silently drift the
+way it did before this migration (the old table also listed
+CVE-2026-93990, which was never actually in `.trivyignore` — a stale
+entry this regeneration drops). Do not hand-edit the table below; edit
+the registry and run `python3 scripts/gen_trivyignore.py`.
+
+**Operator review (agent-base staging scan):** the image-refresh blocking
+scan of the agent-base staging image failed on findings that the Dockerfile
+upgrade layer or the registry did not yet cover; the fix lives in
+`docker/dockerfiles/Dockerfile.agent-base`, `security/accepted-risks.yml` and
+`.trivyignore`. Confirm the next refresh run promotes agent-base and re-check
+the expiry of every entry added for it. See
+[container image refresh](howto/container-image-refresh.md#staging-scan-failures-on-agent-base).
+
+**Operator review (soupsieve, agent-aider):** the CVE-2026-126191 suppression
+was removed because the agent-aider venv now runs on a uv-managed Python 3.12,
+which lets soupsieve 4.x install (`scripts/check-dockerfile-soupsieve.sh`
+guards the floor in CI). The removed entry was untraced, so the "independently
+traced" count is unchanged. Confirm the next Release scan of agent-aider is
+clean, and re-scope the remaining agent-aider `python3.11` entries if they no
+longer apply to aider. See
+[container image refresh](howto/container-image-refresh.md#agent-aider-python-and-the-soupsieve-floor).
+
+<!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
+
+**110 suppressed container CVEs across 8 images, 40 independently traced.**
+
+| CVE | Package | Severity | Images | Traced | Expires | Reason |
+|---|---|---|---|---|---|---|
+| CVE-2023-25193 | `libharfbuzz0b` | high | parent-full | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2023-2953 | `libldap-2.5-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2023-45853 | `zlib1g` | critical | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2025-6020 | `pam: libpam0g, libpam-modules, libpam-modules-bin, libpam-runtime` | high | agent-base | no | 2026-12-18 | The blocking Trivy scan of the agent-base staging image in the image-refresh wor... |
+| CVE-2025-69534 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2025-69720 | `ncurses (libncursesw6, libtinfo6, ncurses-base)` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2025-7458 | `libsqlite3-0` | critical | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-105437 | `git` | high | agent-base | no | 2026-12-13 | The Trivy scan of agent-base in the Release workflow lists CVE-2026-105437 (HIGH... |
+| CVE-2026-105802 | `git-lfs` | high | agent-base | no | 2026-12-22 | The blocking Trivy scan of the agent-base staging image in the image-refresh wor... |
+| CVE-2026-105803 | `git-lfs` | high | agent-base | no | 2026-12-22 | The blocking Trivy scan of the agent-base staging image in the image-refresh wor... |
+| CVE-2026-106553 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
+| CVE-2026-106555 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
+| CVE-2026-106583 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
+| CVE-2026-107364 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-107364... |
+| CVE-2026-111497 | `libbrotli1` | critical | agent-base | yes | 2027-01-22 | No fix available in Debian bookworm (status affected). Found live by the Release... |
+| CVE-2026-111760 | `git, git-man` | high | agent-base | no | 2026-12-13 | The Release scan of agent-base 9.171.1 lists CVE-2026-111760 (HIGH) on git and g... |
+| CVE-2026-112315 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112315... |
+| CVE-2026-112316 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112316... |
+| CVE-2026-112317 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112317... |
+| CVE-2026-112318 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112318... |
+| CVE-2026-112319 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112319... |
+| CVE-2026-112320 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112320... |
+| CVE-2026-112321 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112321... |
+| CVE-2026-112322 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112322... |
+| CVE-2026-112323 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112323... |
+| CVE-2026-113351 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-04 | The Trivy scan of agent-base in the 9.84.1 Release run lists CVE-2026-113351 (HI... |
+| CVE-2026-114466 | `git, git-man` | high | agent-base | no | 2026-12-13 | The Release scan of agent-base 9.171.1 lists CVE-2026-114466 (HIGH) on git and g... |
+| CVE-2026-114820 | `openjdk-17-jre-headless` | high | parent-full | yes | 2026-11-29 | No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-202... |
+| CVE-2026-115506 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
+| CVE-2026-117610 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-02 | The Trivy scan of agent-base in the 9.64.1 Release run lists CVE-2026-117610 (HI... |
+| CVE-2026-11822 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-07-25 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-11824 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-07-25 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-118370 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-02 | The Trivy scan of agent-base in the 9.64.1 Release run lists CVE-2026-118370 (HI... |
+| CVE-2026-118380 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-118380... |
+| CVE-2026-119079 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-119079... |
+| CVE-2026-119373 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-12-01 | The Trivy scan of agent-base in the 9.58.0 Release run lists CVE-2026-119373 (HI... |
+| CVE-2026-119374 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
+| CVE-2026-119379 | `libsqlite3-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
+| CVE-2026-11940 | `libpython3.11-minimal` | high | agent-gemini, agent-aider | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-119741 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
+| CVE-2026-12064 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-15308 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-09-07 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-16742 | `libsystemd0, libudev1` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-19445 | `libpython3.11-minimal` | high | agent-gemini, agent-aider | yes | 2027-01-06 | No fix available in Debian bookworm. Independently traced and confirmed unreacha... |
+| CVE-2026-19553 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-11-01 | No fix available in Debian bookworm. NOT independently traced (self-admitted cav... |
+| CVE-2026-34980 | `libcups2` | high | parent-full | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-3644 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-07-12 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-40467 | `gawk` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm. BL398 Phase 3 candidate for outright remova... |
+| CVE-2026-40468 | `gawk` | critical | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm. BL398 Phase 3 candidate for outright remova... |
+| CVE-2026-40469 | `gawk` | critical | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm. BL398 Phase 3 candidate for outright remova... |
+| CVE-2026-40553 | `gawk` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm. BL398 Phase 3 candidate for outright remova... |
+| CVE-2026-41992 | `gzip` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-53613 | `bsdutils, libmount1, util-linux` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-53615 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux, util-linux-extra` | high | agent-base | yes | 2026-11-20 | No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-202... |
+| CVE-2026-53783 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-53784 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-53785 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-53789 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-53790 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-53791 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-53793 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-53795 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-53802 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-53803 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-54369 | `libacl1` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-55453 | `libcups2` | high | parent-full | yes | 2026-11-20 | No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-202... |
+| CVE-2026-58010 | `libglib2.0-0` | high | parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-58011 | `libglib2.0-0` | high | parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-58012 | `libglib2.0-0` | high | parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-58013 | `libglib2.0-0` | high | parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-58014 | `libglib2.0-0` | high | parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-58015 | `libglib2.0-0` | high | parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-58016 | `libglib2.0-0` | critical | parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-58471 | `wget` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-58472 | `wget` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-59999 | `openssh-client` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-60000 | `openssh-client` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-60002 | `openssh-client` | critical | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-6276 | `curl, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-69260 | `git-lfs` | high | agent-base | no | 2026-12-22 | The blocking Trivy scan of the agent-base staging image in the image-refresh wor... |
+| CVE-2026-70452 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-70455 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-70456 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-70457 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-70458 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-70460 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-70461 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-70463 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-70464 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
+| CVE-2026-71199 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-71199 ... |
+| CVE-2026-71200 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-71200 ... |
+| CVE-2026-7210 | `python3.11, libpython3.11-*` | critical | agent-gemini, agent-aider | yes | 2026-12-02 | Operator accepted this finding for 30 days on 2026-11-02 (queue answer, option a... |
+| CVE-2026-7246 | `python3-click` | high | agent-aider | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-76642 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux-extra` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-76844 | `zlib1g` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-05 | The Trivy scan of agent-base in the 9.93.0 Release run lists CVE-2026-76844 (HIG... |
+| CVE-2026-77214 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2027-01-06 | Found live by image-refresh.yaml's blocking scan (new since the BL398 migration ... |
+| CVE-2026-78408 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux-extra` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-78409 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux-extra` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-78410 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux-extra` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-8286 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-8328 | `libpython3.11-minimal, libpython3.11-stdlib, python3.11, python3.11-minimal, python3.11-venv` | high | agent-gemini, agent-aider | no | 2026-10-26 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-8458 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-07 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-84782 | `libssl3` | high | agent-base, agent-gemini, agent-aider, parent-full, stats-cluster | no | 2026-10-29 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-85091 | `zlib1g` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
+| CVE-2026-8927 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-91403 | `openjdk-17-jre-headless` | critical | parent-full | yes | 2027-01-22 | No fix available in Debian bookworm (status affected, no fixed version). Found l... |
+| CVE-2026-91415 | `openjdk-17-jre-headless` | high | parent-full | yes | 2027-01-22 | No fix available in Debian bookworm (status affected, no fixed version). Same pa... |
+| CVE-2026-93748 | `http-cache-semantics (npm)` | high | agent-gemini | no | 2026-11-02 | No newer published npm version exists as of this migration. NOT independently tr... |
+| CVE-2026-9538 | `perl, perl-base, perl-modules-5.36, libperl5.36` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-30 | No fix available in Debian bookworm. GH#163 (2026-10-07) already removed CVE-202... |
+| CVE-2026-96512 | `sudo` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-26 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+
+<!-- END GENERATED -->
+
+Re-review: see each entry's `expires` date above, enforced structurally
+(not just by convention) via `scripts/check_accepted_risks.py` and
+reported by the daily watch in `.github/workflows/image-refresh.yaml`.
+To close an accepted CVE once fixed: remove its entry from
+`security/accepted-risks.yml` and regenerate.
+
+### Stop and report when a security check fails
+
+When a security workflow fails because of a dependency, the Automation
+coordinator does not fix the finding and does not document it away. It stops the
+Automaton line the failing commit belongs to (in `on` mode; the default
+`shadow` mode only records the stop it would have made) and stores a security
+failure report: the dependency, the advisory identifier, the publication date
+when it is known, the matching registry entry and its dates, a fixed version
+when one is known, and a recommendation (`upgrade`, `keep`, `keep_no_entry` or
+`unknown`). The report is read on the REST, MCP, CLI, chat and PWA surfaces;
+see [howto/automation-security-failure.md](howto/automation-security-failure.md).
+
+Suppressions stay in the registry. The coordinator never writes
+`security/accepted-risks.yml`, `.trivyignore` or the generated table above, and
+it never reruns a security run. An operator who decides to accept a risk adds
+the entry to `security/accepted-risks.yml` and runs
+`make security-registry-gen`; `scripts/check-no-direct-ignore-writes.sh` (part
+of `make lint`) fails when either generated file differs from what the registry
+produces.
+
+## Prompt injection mitigations — v8.18.0
+
+User-controlled text flowing into LLM prompts is a class of vulnerability not covered by gosec or Trivy. The following controls were added:
+
+| Call site | File | Mitigation |
+|---|---|---|
+| `decomposeFn` — PRD spec sent to planning LLM | `cmd/datawatch/main.go` | Security preamble + `<user_data>` wrap |
+| `autonomousVerify` — task spec sent to verifier LLM | `cmd/datawatch/main.go` | Security preamble (spec already tagged) |
+| `autonomousGuardrail` — unit title+spec sent to guardrail LLM | `cmd/datawatch/main.go` | Security preamble + `<user_data>` wrap on both fields |
+
+Input scanner: `ScanForInjection(text)` in `internal/autonomous/security.go` checks PRD/task specs at create and edit boundaries against 11 known injection patterns. Enabled via `autonomous.injection_guard: true`; blocking via `autonomous.block_on_injection: true`.
+
+**Residual risk:**
+- Memory retrieval: learnings injected into decompose context are not yet scanned (scanner only runs at create/edit boundaries; stored memories can grow stale)
+- Memory retrieval injection: conversation history retrieved from memory is not yet scanned before injection into LLM context
+- Council persona descriptions: user-controlled and injected into debate prompts; not yet covered by the scanner
+
+**Procedural addition:** Any new LLM prompt site that interpolates user-supplied text (spec, title, description) must add a security preamble and `<user_data>` tag. Reviewers: grep for `fmt.Sprintf` calls in `cmd/datawatch/main.go` that interpolate `req.Spec`, `task.Spec`, or user-facing string fields.
+
+## gosec baseline-diff refresh — SEC-026, 2026-10-08
+
+`.gosec-baseline.json` had drifted out of sync with reality: `total: 60` against a measured live count of 63 (`by_rule` was last taken 2026-05-19, v8.4.0-era). Every one of the 63 live findings is one of the six rule IDs the baseline file's own `_comment` already blanket-accepts (G118, G122, G123, G702, G703, G704) — no new rule category appeared, so this is a bookkeeping refresh to the measured true count, not a loosening of what's actually accepted:
+
+| Rule | Old baseline | Live (2026-10-08) |
+|---|---|---|
+| G118 | 2 | 2 |
+| G122 | 6 | 6 |
+| G123 | 1 | 1 |
+| G702 | 3 | 3 |
+| G703 | 29 | 32 |
+| G704 | 19 | 19 |
+| **Total** | **60** | **63** |
+
+`.gosec-baseline.json` updated to `total: 63` / `by_rule.G703: 32` so future *actual* regressions (a new rule category, or a count above 63) get caught, instead of a gate that was already 3 over and about to pass anything up to the next bump regardless.
+
+**Separate gap, not fixed here:** `.github/workflows/security-scan.yaml` only triggers on `pull_request` to `main`, never on a direct push — so this drift went uncaught through roughly 5 months of main-branch commits (2026-05-19 → 2026-10-08), none of which went through a PR. Whether to also run this gate on push (and how that interacts with the release pipeline's own `gosec` step in `release.yaml`) is a CI-workflow-trigger decision, not a baseline-number change — flagged for a deliberate call, not decided unilaterally here.
+
+## Code-scanning triage
+
+Open code-scanning alerts for Go path injection, disabled certificate validation and the JavaScript sanitization rules in test files were triaged one by one; the per-alert reasons are in `docs/plans/path-injection-alert-decisions.md`.
+
+| Outcome | Count | Detail |
+|---|---|---|
+| Fixed in code | 9 | 6 path-injection alerts (project directory containment and cleaning, pack directory containment, test-run directory cleaning), 2 certificate-check alerts in the PWA story scripts, and the Go node-usage client, which now verifies certificates unless the node sets `tls_insecure_skip_verify` |
+| Dismissed | 16 | 5 path-injection alerts on sanitized or fixed-name paths, 3 certificate-check alerts in test-only scripts against local listeners, and 8 sanitization alerts in test files |
+
+Each dismissed alert has a `code-scanning/<alert number>` entry in `security/accepted-risks.yml` with the traced evidence; alerts fixed in code have none. The GitHub dismissals are applied by the operator using the commands listed in the decision list.
+
+## Supervisor watch probe — certificate verification
+
+The supervisor watch's host probe (`ResidentModels` in `internal/autonomous/supervisor_watch_host.go`), which reads the models a compute node has resident over `https://`, no longer disables certificate verification. It verifies the node's certificate against the system roots (which honour `SSL_CERT_FILE` and `SSL_CERT_DIR`), plus the node's own `tls_ca_file` or `tls_cert_fingerprint` when set. A node with none of the settings and a certificate the roots do not cover fails the probe; the watch treats the node as unknown and raises no finding, and the error names the fix. The behaviour is described in `docs/datawatch-definitions.md` (Compute node TLS verification).
+
+What remains, stated so the list is complete:
+
+- The per-node opt-out `tls_insecure_skip_verify` in `internal/compute/node_tls.go` (`NodeTLSConfig`). It is off by default, refused together with `tls_ca_file` or `tls_cert_fingerprint`, shown on the node record and as a red badge in the PWA, written to the audit log as `compute_node_tls_verification_off` when a node is saved with it and the first time the watch probes it, and named in the wording of a watch finding raised for that node. The same file holds two more `InsecureSkipVerify` sites that are not an opt-out: the pin-only mode (`VerifyPeerCertificate` compares the leaf SHA-256 to `tls_cert_fingerprint`) and the CA file plus pin mode (`VerifyConnection` verifies the chain and then the pin). Each carries a `#nosec G402` with its reason.
+- Three other sites that skip certificate verification and are not part of this change: `probeHTTP` in `internal/compute/probe.go` (the connectivity probe made when a node is added or updated), and the monitoring detail handler (`serveComputeNodeDetail`) and models handler (`handleComputeNodeModels`) in `internal/server/compute.go`.
+
+Whether to dismiss or keep any code scanning alert for these sites is the operator's decision. This entry does not record any alert as dismissed or fixed in GitHub.
+
+## Procedural changes
+
+- Run `gosec -severity high -confidence medium ./...` and `govulncheck ./...` before every patch. The audit doc is updated only when triage changes (new findings or new mitigations).
+- Run `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1` on the agent-base image before every release. CI enforces this automatically. The local pre-tag gate's `docker-agent-base` step does the same: it builds the image and scans it through `scripts/trivy-scan-image.sh`, which exports it with `docker save` and runs the identical `trivy image --input <tar> --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1`. The archive form exists because under docker 29.1.x trivy cannot read image layers from the daemon ("failed to analyze layer").
+- New `//#nosec` annotations must include the rule ID *and* a one-line reason. PRs adding bare `//#nosec` get rejected by review.
+- New `InsecureSkipVerify=true` sites must be paired with pinning (`VerifyPeerCertificate` + a fingerprint check) or get an entry in the G402 table above with an "accept (documented)" verdict and a config gate.
+- New `.trivyignore` entries require a one-line rationale in this document. PRs adding bare CVE IDs without rationale get rejected.
+- Before a push that changes Go, JavaScript, Python or workflow files, run the local CodeQL scan (`make codeql-local`, or opt in to the pre-push hook with `DATAWATCH_CODEQL_PRE_PUSH=1`; see `docs/howto/codeql-local-scan.md`) so a finding that would fail the alert gate shows up before CI does.
+
+## CodeQL workflow and alert gate
+
+CodeQL analysis is done by GitHub default setup: languages `actions`, `go`, `javascript-typescript` and `python`, the default query suite, a weekly schedule, categories `/language:<name>` and analysis key `dynamic/github-code-scanning/codeql:analyze`. Default setup stays on; the repository settings are not changed by this work.
+
+`.github/workflows/codeql.yaml` has no analysis job and uploads nothing. An advanced workflow and default setup cannot both upload the same categories, and the advanced one failed on every push, so the analysis was removed from it. The workflow holds only the blocking `alert-gate` job. It runs only when a change can add a finding: a push to `main` that changes only documents (`docs/**`, `CHANGELOG.md` and any `*.md`) starts no run, and a pull request starts a run only if it touches a tracked code, dependency, workflow or script path (Go sources and `go.mod`/`go.sum`, the `channel` package and its lock file, the `internal/server/web` app files, `*.js`/`*.ts`/`*.mjs`/`*.py`, `.github/workflows/**` and `scripts/**`). Scheduled (Monday) and manual runs have no path filter and always run the gate. For pushes and pull requests that do run, the job first waits for default setup's analyses of the commit (one per expected category), so it never reads the alerts of the previous commit. It then fails when any open alert at severity high or critical exists for the ref, printing the counts and a list of rule, path and alert number. Only alerts in state `open` count, so a dismissed alert is excluded. The gate does not read `security/accepted-risks.yml`; that registry records the reason for each dismissal, which the operator applies in GitHub. The trigger list, the schedule entries and the workflow's permissions are pinned in `tests/test-codeql-trigger-listing.sh`, which `make test` runs: an edit to `.github/workflows/codeql.yaml` that re-widens the triggers or adds a permission scope fails `make test` instead of silently putting the gate back on every change. The script needs `python3` with the `yaml` (PyYAML) package.
+
+Local reproduction is feasible. A developer can run the same four languages with the same default suite and the same CodeQL bundle version as default setup, without uploading anything, and see the findings before a push. See `docs/howto/codeql-local-scan.md`. The key figures: the bundle is a 664 MB download and 1.4 GB extracted (about 3 GB under `.datawatch/codeql/` with the databases); a full four-language run takes about 2 to 3 minutes on a 48-core machine with a warm Go build cache; and the local results matched default setup's own analysis of `main` exactly (92 results, the same per-language and rule counts, and all 5 open alerts at the same rule, file and line). The caveat is dismissals: they live only in the code-scanning alerts API, so the local report must be compared with the alerts GitHub holds (a read-only call, `--compare`) before its high and critical count means the same as the gate's. Two steps are optional and opt-in: a pre-push hook that scans only the languages the pushed commits touch, and a run before shipping.
+
+History of the earlier Analyze failures is in `docs/plans/codeql-analyze-upload-failure-findings.md`. The decision, the measurements and the gate check against default setup's alerts are in `docs/plans/2026-10-30-codeql-default-setup-and-local-scan.md`.
+
+## Release workflow: code scanning upload
+
+The Release workflow's SARIF uploads to Code Scanning (gosec, and Trivy for the base and agent images) do not block a release: each tries up to four times with waits of 60, 180 and 300 seconds, a failed attempt never fails the job, and if every attempt fails the step logs a warning and the run continues. The blocking gosec baseline check and Trivy scan steps are unchanged, and each SARIF file is also kept as a run artifact (`gosec-results`, `trivy-<image>-sarif`). A run whose upload gave up leaves no new entry in Code Scanning for that commit, so the absence of an alert there is not evidence the scan was clean; read the scan step's result. `make check-sarif-upload` (in `make lint`) guards against an upload becoming blocking. See [operations.md](operations.md#code-scanning-upload-in-the-release-workflow). Operator review: decide whether a failed upload should raise an alert.
