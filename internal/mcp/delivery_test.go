@@ -17,6 +17,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -261,5 +262,41 @@ func TestDeliveryConfigSetSendsTheKey(t *testing.T) {
 		map[string]any{"key": "delivery.interval_seconds", "value": "600"})
 	if res.IsError || len(f.hits) != 1 || f.hits[0].method != "PUT" || f.hits[0].body["delivery.interval_seconds"] != float64(600) {
 		t.Fatalf("error=%v %q hits=%+v", res.IsError, deliveryText(res), f.hits)
+	}
+}
+
+// A federation peer connected straight to the tool server is held to the same
+// capabilities as on REST and recorded under its own name. The loopback uses
+// the admin token, so nothing after the tool would refuse it.
+func TestDeliveryToolsNetworkPeer(t *testing.T) {
+	cases := []struct {
+		caps        []string
+		read, write bool
+	}{
+		{[]string{"federation-peer"}, false, false},
+		{[]string{"monitor"}, false, false},
+		{[]string{"read-only"}, true, false},
+		{[]string{federation.CapDeliveryRead, federation.CapDeliveryWrite}, true, true},
+		{[]string{"full-control"}, true, true},
+	}
+	for _, c := range cases {
+		for _, tool := range deliveryToolCalls {
+			s, f := newDeliveryMCP(t)
+			ctx := context.WithValue(context.Background(), mcpFedPeerKey, &multiserver.Entry{Name: "desk", Federated: true, Capabilities: c.caps})
+			res := deliveryRun(t, s, ctx, tool.name, tool.fn, tool.args)
+			allowed := c.write
+			if federation.MCPToolCap[tool.name] == federation.CapDeliveryRead {
+				allowed = c.read
+			}
+			if !allowed {
+				if !res.IsError || len(f.hits) != 0 || !strings.Contains(deliveryText(res), "lacks capability") {
+					t.Errorf("%v %s: error=%v calls=%d %q, want refused", c.caps, tool.name, res.IsError, len(f.hits), deliveryText(res))
+				}
+				continue
+			}
+			if res.IsError || len(f.hits) != 1 || f.hits[0].caller != "peer:desk" {
+				t.Errorf("%v %s: error=%v hits=%+v, want one call as peer:desk", c.caps, tool.name, res.IsError, f.hits)
+			}
+		}
 	}
 }

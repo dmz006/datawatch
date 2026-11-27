@@ -2,7 +2,10 @@
 // (/api/delivery) so names and validation match REST, the CLI and the chat
 // channels. The loopback uses the tool server's own token, so a call made with
 // a session or peer credential names that caller in a header; the daemon
-// records it as who acted. No tool argument can set it.
+// records it as who acted. No tool argument can set it. The admin token also
+// means the daemon cannot refuse a federation peer that is connected straight
+// to the tool server, so every delivery tool checks that peer's capability
+// itself before it calls.
 
 package mcp
 
@@ -28,6 +31,9 @@ import (
 func (s *Server) deliveryCaller(ctx context.Context) string {
 	if id, scoped := s.scopedCallerSessionID(ctx); scoped && id != "" {
 		return "session:" + id
+	}
+	if peer := mcpPeerFromContext(ctx); peer != nil {
+		return "peer:" + peer.Name
 	}
 	switch p := federation.PrincipalFromContext(ctx); {
 	case strings.HasPrefix(p, "peer:"):
@@ -76,7 +82,11 @@ func (s *Server) deliveryDo(ctx context.Context, method, path string, body map[s
 	return out, nil
 }
 
+// deliveryCall runs one tool: it needs the capability the tool is listed with.
 func (s *Server) deliveryCall(ctx context.Context, tool, method, path string, body map[string]any) (*mcpsdk.CallToolResult, error) {
+	if deny := mcpFedCap(ctx, federation.MCPToolCap[tool]); deny != nil {
+		return deny, nil
+	}
 	out, err := s.deliveryDo(ctx, method, path, body)
 	if err != nil {
 		return toolError(tool, err), nil
