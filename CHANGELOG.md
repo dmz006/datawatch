@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.45 — Merge steps keep the files they read and write inside the project
+
+### Fixed
+- Merge steps and merge comparisons now keep the files they read and write inside the project, also where the project holds symbolic links. Links that stay inside the project keep working.
+- Three smaller input checks around recording a merged commit are stricter.
+
+### Changed
+- A Makefile that links outside the project now counts as having no targets: steps that require a make target are skipped, and build detection looks at go.mod instead.
+
+### Not covered
+- Two other places that look at files in a project (the check for a Makefile gate target in merge comparisons, and the registry-row step after a merge) are unchanged. Tested on made-up repositories only.
+
 ## v9.187.44 — Hand merges are compared with datawatch's own rebuild; merging stays off
 
 ### Added
