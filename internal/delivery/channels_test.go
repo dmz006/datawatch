@@ -151,3 +151,47 @@ func TestChannelAHungSendTimesOutAndIsNotStartedAgain(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestChannelASendLeftRunningByACancelledPassIsNotStartedAgain(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	var calls atomic.Int32
+	started := make(chan struct{}, 8)
+	s := NewChannelSender(func() []Channel {
+		return []Channel{{Name: "email", Send: func(string) error {
+			calls.Add(1)
+			started <- struct{}{}
+			<-release
+			return nil
+		}}}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() { errc <- s.Send(ctx, "email", "hi") }()
+	<-started
+	cancel()
+	if err := <-errc; !errors.Is(err, context.Canceled) {
+		t.Fatalf("%v", err)
+	}
+	for i := 0; i < 3; i++ {
+		ctx2, stop := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		if err := s.Send(ctx2, "email", "hi"); err == nil {
+			t.Fatal("reported success")
+		}
+		stop()
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("%d sends piled up behind a running one", calls.Load())
+	}
+	// A pass that was already cancelled starts nothing and marks nothing.
+	var fresh atomic.Int32
+	s2 := NewChannelSender(func() []Channel {
+		return []Channel{{Name: "ntfy", Send: func(string) error { fresh.Add(1); return nil }}}
+	})
+	if err := s2.Send(ctx, "ntfy", "hi"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("%v", err)
+	}
+	if err := s2.Send(context.Background(), "ntfy", "hi"); err != nil || fresh.Load() != 1 {
+		t.Fatalf("err=%v calls=%d", err, fresh.Load())
+	}
+}
