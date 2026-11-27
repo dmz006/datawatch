@@ -741,8 +741,15 @@ const noMakeTargetNote = "the project's Makefile has no "
 // execute performs the step and returns its result and a short account. The
 // caller bounds it with the step's timeout.
 func (s *runState) execute(ctx context.Context, step Step) (string, string, error) {
-	if step.RequiresMakeTarget != "" && !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
-		return autonomous.MergeStepSkipped, noMakeTargetNote + step.RequiresMakeTarget + " target", nil
+	if step.RequiresMakeTarget != "" {
+		// A makefile link out of the project fails the step; it is not
+		// skipped as a missing target would be.
+		if name, out := makefileLinksOut(s.r.Dir); out {
+			return autonomous.MergeStepFailed, makefileLinkNote(name, step.RequiresMakeTarget), nil
+		}
+		if !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
+			return autonomous.MergeStepSkipped, noMakeTargetNote + step.RequiresMakeTarget + " target", nil
+		}
 	}
 	// The release gate applies to every step that leaves the machine, and
 	// only to those: it is decided at most once per run, before the first
