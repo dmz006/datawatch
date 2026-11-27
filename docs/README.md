@@ -29,6 +29,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [mcp.md](mcp.md) | MCP (Model Context Protocol) server — Cursor, Claude Desktop, VS Code, remote AI agents |
 | [cursor-mcp.md](cursor-mcp.md) | Quick-start for Cursor and Claude Desktop MCP integration |
 | [pwa-setup.md](pwa-setup.md) | Browser PWA interface over Tailscale |
+| [howto/done-when.md](howto/done-when.md) | "Done when" lists (report only): what each request must meet, read per item as met, not met or cannot tell, with confirm, accept without proof and the standing check |
 | [howto/generated-artefacts.md](howto/generated-artefacts.md) | Generated artefacts: the change record an Automaton keeps and the gate report, changelog draft, parity draft, tracker rows and registry row drawn from it, the seven switches, template overrides, edit protection, reading and regenerating from every surface |
 | [howto/mcp-prompts.md](howto/mcp-prompts.md) | 10 MCP prompt slash commands — live context injection for every operator workflow (v7.1.0) |
 | [howto/automata-completion-review-autofix.md](howto/automata-completion-review-autofix.md) | Completion review auto-fix: the three outcomes, where the findings show, adding a fix task, and `autonomous.auto_fix_retries`; the re-review (re-judgment) of a finished, not-merged Automaton (merge state `finished_not_merged`, shown in the list, Projects and Gantt views) that clears a stale block — a pass keeps the finished status, a block flips back to blocked — and the loop not archiving a completed Automaton while its work is unmerged |

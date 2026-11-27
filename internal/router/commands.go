@@ -110,6 +110,8 @@ const (
 	CmdDelivery CommandType = "delivery"
 	CmdPause    CommandType = "pause"
 	CmdResume   CommandType = "resume"
+	// "Done when" lists (see acceptance_comm.go).
+	CmdAcceptance CommandType = "acceptance"
 	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
 	// as REST / MCP / CLI.
 	CmdUsageBackoff CommandType = "usage_backoff"

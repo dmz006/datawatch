@@ -459,6 +459,11 @@ const (
 	ActionPlanRecordRestored = "plan_record_restored"
 )
 
+// ActionAcceptanceChanged — a "done when" list changed. Subject: the request
+// id. Details: change, item, claimed, observed, after_freeze. The ask, item
+// statements and spoken words are never in the audit line.
+const ActionAcceptanceChanged = "acceptance_changed"
+
 // Audit action names for the operator pause service. Subject: the scope
 // ("global") or the paused project directory.
 const (

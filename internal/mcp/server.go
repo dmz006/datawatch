@@ -147,6 +147,8 @@ type Server struct {
 	callerStoryID string
 	// BL368 Phase 3 — vision describer for vision_describe tool and image_paths injection.
 	visioner VisionerMCP
+	// acceptanceTools says the "done when" tools are registered.
+	acceptanceTools bool
 }
 
 // VisionerMCP is the narrow interface the MCP server needs for image description.
@@ -295,6 +297,10 @@ type KGMCP interface {
 
 // Options holds optional dependencies for the MCP server.
 type Options struct {
+	// AcceptanceTools registers the "done when" list tools. Set from
+	// acceptance.mode when the server is built, so a change to the setting
+	// shows in the tool list after a restart.
+	AcceptanceTools     bool
 	AlertStore          *alerts.Store
 	SchedStore          *session.ScheduleStore
 	ExitHookStore       *session.ExitHookStore       // BL356
@@ -599,6 +605,16 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAgentTerminate(), tracked(s.handleAgentTerminate))
 	// F10 sprint 3.6: session-on-worker binding.
 	mcpSrv.AddTool(s.toolSessionBindAgent(), tracked(s.handleSessionBindAgent))
+
+	s.acceptanceTools = opts.AcceptanceTools
+	if opts.AcceptanceTools { // "done when" lists: only while acceptance.mode is report
+		mcpSrv.AddTool(s.toolAcceptanceView(), tracked(s.handleAcceptanceView))
+		mcpSrv.AddTool(s.toolAcceptanceEdit(), tracked(s.handleAcceptanceEdit))
+		mcpSrv.AddTool(s.toolAcceptanceConfirm(), tracked(s.handleAcceptanceConfirm))
+		mcpSrv.AddTool(s.toolAcceptanceAccept(), tracked(s.handleAcceptanceAccept))
+		mcpSrv.AddTool(s.toolAcceptanceReport(), tracked(s.handleAcceptanceReport))
+		mcpSrv.AddTool(s.toolAcceptanceCatalog(), tracked(s.handleAcceptanceCatalog))
+	}
 
 	// Sprint Sx (v3.7.2) — parity backfill for v3.5–v3.7 endpoints.
 	mcpSrv.AddTool(s.toolAsk(), tracked(s.handleAsk))                                       // BL34
@@ -1752,6 +1768,17 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolGetMyScope, "get_my_scope"},
 		// BL350 — orphan lineage listing
 		{s.toolListOrphanedSessions, "list_orphaned_sessions"},
+	}
+
+	if s.acceptanceTools { // listed only while they are registered
+		defs = append(defs,
+			toolDef{s.toolAcceptanceView, "acceptance_view"},
+			toolDef{s.toolAcceptanceEdit, "acceptance_edit"},
+			toolDef{s.toolAcceptanceConfirm, "acceptance_confirm"},
+			toolDef{s.toolAcceptanceAccept, "acceptance_accept"},
+			toolDef{s.toolAcceptanceReport, "acceptance_report"},
+			toolDef{s.toolAcceptanceCatalog, "acceptance_catalog"},
+		)
 	}
 
 	var docs []ToolDoc

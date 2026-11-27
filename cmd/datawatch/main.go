@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/acceptance"
 	"github.com/dmz006/datawatch/internal/trace"
 	"github.com/dmz006/datawatch/internal/trace/observe"
 	"io"
@@ -417,6 +418,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30
 		newPauseCmd(),          // operator pause
+		newAcceptanceCmd(),     // "done when" lists
 		newResumeCmd(),         // operator pause
 		newDeliveryCmd(),       // delivery check
 		newUsageBackoffCmd(),   // BL428 Phase 4
@@ -7938,6 +7940,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			var requestWatchReader requestwatch.Reader = requestWatcher
 			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
 			wirePause(cfg, amgr, httpServer)
+			wireAcceptance(cfg, encKey, httpServer)
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, headroom.Gate, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)
@@ -9134,6 +9137,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
 		testRouter := router.NewRouter(cfg.Hostname, "__test__", nil, mgr, cfg.Session.TailLines, wm)
+		// The live settings, as the messaging routers have them: a chat command
+		// that depends on a setting behaves the same on this route.
+		testRouter.SetConfig(cfg)
 		// The comm verbs that proxy REST (autonomous tags, attention, ...) need
 		// the local loopback port, the same as the messaging routers above.
 		if cfg.Server.Enabled && cfg.Server.Port > 0 {
@@ -10129,6 +10135,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
+		AcceptanceTools:        cfg.Acceptance.Mode == acceptance.ModeReport,
 		AlertStore:             alertStore,
 		SchedStore:             schedStore,
 		ExitHookStore:          exitHookStore,
@@ -15845,6 +15852,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
+		AcceptanceTools:        cfg.Acceptance.Mode == acceptance.ModeReport,
 		AlertStore:             mcpAlertStore,
 		SchedStore:             mcpSchedStore,
 		QueueStore:             mcpQueueStore,  // BL357

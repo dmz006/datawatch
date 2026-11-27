@@ -812,6 +812,9 @@ type Config struct {
 	// operator sets, not configuration; this section only holds the default.
 	Pause PauseConfig `yaml:"pause,omitempty" json:"pause,omitempty"`
 
+	// Acceptance configures the "done when" lists. Off by default.
+	Acceptance AcceptanceConfig `yaml:"acceptance,omitempty" json:"acceptance,omitempty"`
+
 	// Plugins (BL33, v3.11.0) — subprocess plugin framework.
 	// Disabled by default. See docs/api/plugins.md.
 	Plugins PluginsConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
@@ -10207,6 +10210,48 @@ func ParseArchiveGraceMinutes(v any) (int, error) {
 		return ParseArchiveGraceMinutes(n)
 	}
 	return 0, fmt.Errorf("%s: must be a whole number of minutes >= 0, got %v", key, v)
+}
+
+// AcceptanceConfig configures the "done when" lists (internal/acceptance).
+type AcceptanceConfig struct {
+	// Mode is "off" (default) or "report". In report mode lists are kept and
+	// checked and nothing is blocked, held or merged differently. Any other
+	// value is off.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	// ReworkRounds is how many rework rounds one list gets before it is the
+	// operator's (0 = 2).
+	ReworkRounds int `yaml:"rework_rounds,omitempty" json:"rework_rounds,omitempty"`
+	// InfraRetries is how often a run that failed for an infrastructure reason
+	// is tried again for the same version (0 = 2).
+	InfraRetries int `yaml:"infra_retries,omitempty" json:"infra_retries,omitempty"`
+	// CheckTimeoutSeconds limits one command check (0 = 600).
+	CheckTimeoutSeconds int `yaml:"check_timeout_seconds,omitempty" json:"check_timeout_seconds,omitempty"`
+	// FreshnessSeconds is how old a source's answer may be (0 = 300).
+	FreshnessSeconds int `yaml:"freshness_seconds,omitempty" json:"freshness_seconds,omitempty"`
+	// WarnHours is the early warning before a needed-by time (0 = 24).
+	WarnHours int `yaml:"warn_hours,omitempty" json:"warn_hours,omitempty"`
+	// ProjectChecks are the saved, named commands a list may refer to. They
+	// are read from this file only: no API, tool or chat command writes them,
+	// because they hold command text datawatch runs.
+	ProjectChecks map[string]AcceptanceProjectCheck `yaml:"project_checks,omitempty" json:"-"`
+	// DefaultsFile overlays the built-in default items. File only, so default
+	// lists cannot be weakened through an API.
+	DefaultsFile string `yaml:"defaults_file,omitempty" json:"defaults_file,omitempty"`
+}
+
+// AcceptanceProjectCheck is one saved, named command.
+type AcceptanceProjectCheck struct {
+	Command        string             `yaml:"command" json:"command"`
+	Inputs         []string           `yaml:"inputs,omitempty" json:"inputs,omitempty"`
+	Expect         []AcceptanceExpect `yaml:"expect,omitempty" json:"expect,omitempty"`
+	TimeoutSeconds int                `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+}
+
+// AcceptanceExpect names a line a passing run must show, and the line the
+// starting run must show.
+type AcceptanceExpect struct {
+	Pass string `yaml:"pass" json:"pass"`
+	Fail string `yaml:"fail,omitempty" json:"fail,omitempty"`
 }
 
 // PauseConfig is the operator pause service's configuration.

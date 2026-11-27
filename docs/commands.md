@@ -482,6 +482,23 @@ A review date is at most 30 days ahead. A date without a time means the end of t
 
 ---
 
+### `acceptance`
+
+"Done when" lists. The command exists only while `acceptance.mode` is `report`; otherwise a message that starts with the word is an ordinary message. They block nothing.
+
+| Message | Does |
+|---|---|
+| `acceptance` | every list in short |
+| `acceptance show <id>` | each item's result and the list hash (ids and results only on an encrypted install) |
+| `acceptance confirm <id> <item> yes\|no <words>` | record your answer on a confirm item |
+| `acceptance confirm <id> list yes\|no <list hash> <words>` | say whether the list covers the whole ask |
+| `acceptance accept <id> <item> <why>` | accept an item without proof (it never reads met) |
+| `acceptance edit <id> <json>` | create or change a list |
+| `acceptance freeze <id> <list hash>` | fix the list you read |
+| `acceptance report` / `acceptance catalog` | the standing check; methods and default items |
+
+See [howto/done-when.md](howto/done-when.md).
+
 ## Implicit Reply
 
 If exactly one session on a machine is in `waiting_input` state, you can reply without specifying the session ID. Just type your response directly.

@@ -12324,6 +12324,117 @@ paths:
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
+  /api/acceptance:
+    get:
+      summary: The "done when" lists. Without id, every list in short with open items grouped by reason; with id, one list and how each item reads. Answers {mode off} when acceptance.mode is not report. Saved command and script text is shown only as a hash
+      operationId: acceptanceView
+      tags: [Singletons]
+      parameters:
+        - {name: id, in: query, required: false, schema: {type: string}, description: Request id}
+      responses:
+        "200": {description: OK}
+        "404": {description: No list for that request (it reads no criteria)}
+        "503": {description: Lists are not available}
+  /api/acceptance/edit:
+    post:
+      summary: Create or change a list, or fix it before work starts. A change to a fixed list is recorded as a revision. No field carries command or script text; an unknown field is refused
+      operationId: acceptanceEdit
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              additionalProperties: false
+              properties:
+                id: {type: string}
+                source: {type: string, description: "New list only; adds that source's default items. It never gives the list lighter rules than an unknown source has"}
+                ask: {type: string, description: New list only; kept word for word}
+                add_ask: {type: string, description: Later words; they open new items}
+                scheduled: {type: boolean}
+                packs: {type: array, items: {type: string}}
+                items: {type: array, items: {type: object}, description: "Items to add or replace: id, statement, from, source, method, project_check, inputs, expect, timeout_seconds, state, wait, before, change, negative, report_only, checker, effect"}
+                remove: {type: array, items: {type: string}}
+                needed_by: {type: string, format: date-time}
+                words: {type: string}
+                hash: {type: string, description: The list hash that was read; required with freeze}
+                freeze: {type: boolean, description: Fix the list named by hash; sent without other changes}
+                actor: {type: string, description: Name recorded beside the observed caller}
+                via: {type: string, description: Set by model tools and the command line to say how they called. Not verified; who counts is recorded and not enforced}
+                via_session: {type: string, description: The calling session as the request states it, not verified. Ignored for a session or federation credential}
+      responses:
+        "200": {description: OK}
+        "400": {description: Invalid request or unknown field}
+        "409": {description: Off, or the list changed since it was read}
+  /api/acceptance/confirm:
+    post:
+      summary: A person's answer on a confirm item, or on item list that the list covers the ask. An answer that cannot be shown to come from someone other than the doer is kept as a claim and does not count
+      operationId: acceptanceConfirm
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, item, answer, words]
+              properties:
+                id: {type: string}
+                item: {type: string, description: Item id, or list (needs hash)}
+                answer: {type: string, enum: ["yes", "no"]}
+                words: {type: string}
+                relayed_for: {type: string}
+                hash: {type: string}
+                actor: {type: string}
+                via: {type: string}
+                via_session: {type: string}
+      responses:
+        "200": {description: OK}
+        "400": {description: Missing words, unknown item, or an item that is not checked by confirm}
+        "409": {description: Off, or the list changed since it was read}
+  /api/acceptance/accept:
+    post:
+      summary: Accept an item without proof, with a reason and the words said. It never reads met
+      operationId: acceptanceAccept
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, item, reason, words]
+              properties:
+                id: {type: string}
+                item: {type: string}
+                reason: {type: string}
+                words: {type: string}
+                hash: {type: string}
+                actor: {type: string}
+                via: {type: string}
+                via_session: {type: string}
+      responses:
+        "200": {description: OK}
+        "400": {description: Missing reason or words, or an unknown item}
+        "409": {description: Off, or the list changed since it was read}
+  /api/acceptance/report:
+    get:
+      summary: The standing check of the lists (I18 to I20). It reports only and blocks nothing
+      operationId: acceptanceReport
+      tags: [Singletons]
+      responses:
+        "200": {description: OK}
+        "409": {description: Off}
+  /api/acceptance/catalog:
+    get:
+      summary: Check methods, default items and the names of registered project checks (never their commands)
+      operationId: acceptanceCatalog
+      tags: [Singletons]
+      responses:
+        "200": {description: OK}
+        "409": {description: Off}
   /api/pause:
     get:
       summary: The operator pause state (global pause and every project pause, with who paused, why and when); peers=1 also reads each federation peer's own state. Needs pause:read

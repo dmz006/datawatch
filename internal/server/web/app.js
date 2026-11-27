@@ -27238,6 +27238,16 @@ const GENERAL_CONFIG_FIELDS = [
   // Standard task packs: the enabled switch, the active order list and the
   // pack inputs. The fields live in app-packs-settings-fields.js, loaded first.
   { id: 'packs', sectionKey: 'settings_packs', section: 'Standard task packs', docs: 'howto/automata-standard-tasks.md', fields: (typeof PACKS_SETTINGS_FIELDS !== 'undefined' ? PACKS_SETTINGS_FIELDS : []) },
+  // "Done when" lists. Project checks and the defaults file are set in the
+  // config file only.
+  { id: 'acceptance', sectionKey: 'settings_acceptance', section: 'Done when (acceptance lists)', docs: 'howto/done-when.md', fields: [
+    { key: 'acceptance.mode', label: '', labelKey: 'settings_acceptance_mode', type: 'select', options: ['off','report'] },
+    { key: 'acceptance.rework_rounds', label: '', labelKey: 'settings_acceptance_rework_rounds', type: 'number', placeholder: '2', min: 0, step: 1 },
+    { key: 'acceptance.infra_retries', label: '', labelKey: 'settings_acceptance_infra_retries', type: 'number', placeholder: '2', min: 0, step: 1 },
+    { key: 'acceptance.check_timeout_seconds', label: '', labelKey: 'settings_acceptance_check_timeout_seconds', type: 'number', placeholder: '600', min: 0, step: 1 },
+    { key: 'acceptance.freshness_seconds', label: '', labelKey: 'settings_acceptance_freshness_seconds', type: 'number', placeholder: '300', min: 0, step: 1 },
+    { key: 'acceptance.warn_hours', label: '', labelKey: 'settings_acceptance_warn_hours', type: 'number', placeholder: '24', min: 0, step: 1 },
+  ]},
   { id: 'costreport', sectionKey: 'settings_cost_report', section: 'Cost Report', docs: 'datawatch-definitions.md', fields: [
     { key: 'cost_report.default_group_by', label: 'Default group by', labelKey: 'settings_cost_report_default_group_by', type: 'select', options: ['automaton','automation','backend','week'] },
     { key: 'cost_report.default_window_days', label: 'Default window (days)', labelKey: 'settings_cost_report_default_window_days', type: 'number', placeholder: '7', min: 1, step: 1 },
@@ -38607,6 +38617,7 @@ function _renderDetailContent(prd) {
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
+  if (tab === 'overview' && window.doneWhen) window.doneWhen.mount(body, id);
   _automataDetailTabsReveal();
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(_automataDetailTabsReveal);
   window.loadDecisionLineCard(prd.id);
