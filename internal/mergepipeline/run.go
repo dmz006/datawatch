@@ -549,7 +549,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		}
 		failures++
 		st.failedSteps++
-		if step.EffectiveOnFailure() != OnFailureContinue {
+		// A makefile link out of the project stops the run whatever the step's
+		// on_failure says; other failures follow on_failure.
+		if step.EffectiveOnFailure() != OnFailureContinue || errors.Is(err, errMakefileLinksOut) {
 			return finish(autonomous.MergeRunFailed, fmt.Errorf("step %s failed: %w", step.Name, err))
 		}
 		i++
@@ -745,7 +747,8 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 		// A makefile link out of the project fails the step; it is not
 		// skipped as a missing target would be.
 		if name, out := makefileLinksOut(s.r.Dir); out {
-			return autonomous.MergeStepFailed, makefileLinkNote(name, step.RequiresMakeTarget), nil
+			note := makefileLinkNote(name, step.RequiresMakeTarget)
+			return autonomous.MergeStepFailed, note, fmt.Errorf("%w: %s", errMakefileLinksOut, note)
 		}
 		if !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
 			return autonomous.MergeStepSkipped, noMakeTargetNote + step.RequiresMakeTarget + " target", nil

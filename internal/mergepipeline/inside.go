@@ -92,6 +92,10 @@ func linkLeavesDangling(dir, name string) bool {
 	return err != nil || !filepath.IsLocal(rel)
 }
 
+// errMakefileLinksOut is the failure of a step whose make target would come
+// through a makefile link out of the project. It stops the run.
+var errMakefileLinksOut = errors.New("a makefile link leaves the project")
+
 // makefileLinkNote says why a step that needs a make target did not run: the
 // project's makefile is a link out of the project, and the link is not followed.
 func makefileLinkNote(name, target string) string {

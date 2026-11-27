@@ -97,3 +97,33 @@ func TestInsideMakefileLinkStillRunsGateStep(t *testing.T) {
 		t.Fatalf("passed=%v output=%q; want the inside link's step to run and pass", passed, out)
 	}
 }
+
+// A link out of the project stops the run even when the step is set to
+// continue; the steps after it do not run.
+func TestMakefileLinkOutStopsRunEvenWhenContinue(t *testing.T) {
+	dir := newMergeRepo(t)
+	other := t.TempDir()
+	writeFile(t, other, "Makefile", "test:\n\ttrue\n")
+	if err := os.Symlink(filepath.Join(other, "Makefile"), filepath.Join(dir, "Makefile")); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "Makefile")
+	runGit(t, dir, "commit", "-q", "-m", "link the makefile out")
+	def := Definition{Steps: []Step{
+		{Name: "tests", Kind: KindTest, Command: "true", RequiresMakeTarget: "test", OnFailure: OnFailureContinue},
+		{Name: "after", Kind: KindCustom, Command: "echo fine"},
+	}}
+	rec := &memRecorder{}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def), Recorder: rec}
+	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err == nil || res.Run.Result != autonomous.MergeRunFailed {
+		t.Fatalf("want failed run, got %q err %v", res.Run.Result, err)
+	}
+	got := stepResults(res.Run)
+	if got["tests"] != "failed" {
+		t.Errorf("tests step %q, want failed; steps %v", got["tests"], got)
+	}
+	if _, ran := got["after"]; ran {
+		t.Errorf("the step after the link ran: %v", got)
+	}
+}
