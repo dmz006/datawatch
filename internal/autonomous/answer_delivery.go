@@ -268,6 +268,11 @@ func (m *Manager) sendDecisionLine(prdID, taskID string, q Question, ans *Answer
 		m.deliveryNeedsReview(prd, taskID, q.ID, deliverySessionChanged)
 		return
 	}
+	// Nothing is typed while the restart is still counting the workers that
+	// outlived it: this worker may not hold its slot yet. A later tick types.
+	if m.capacityOn() && m.Capacity().AdoptionPending() {
+		return
+	}
 	fn := m.sessionContinueLineFnLocked()
 	if fn == nil {
 		return
@@ -329,6 +334,17 @@ func (m *Manager) sendDecisionLine(prdID, taskID string, q Question, ans *Answer
 	recordWorkerQuestion(WorkerQuestionOutcomeResumed)
 	log.Printf("[autonomous] %s: resumed after decision %s (answer %q, withdrawn=%v, delivery=%s); no retry counted",
 		taskID, q.ID, done.AnswerID, done.Withdrawn, done.Delivery)
+}
+
+// listDroppedResume ends the delivery of a resume that gave up its place in
+// the capacity queue: the worker can no longer take the line, so nothing is
+// typed and the decision is listed. The caller holds the task's in-flight slot.
+func (m *Manager) listDroppedResume(prd *PRD, taskID string, rec *DecisionResume) {
+	reason := deliveryTaskMovedOn
+	if cur, ok := m.store.TaskSnapshot(taskID); ok && rec.DeliverySessionID != "" && cur.SessionID != rec.DeliverySessionID {
+		reason = deliverySessionChanged
+	}
+	m.deliveryNeedsReview(prd, taskID, rec.QuestionID, reason)
 }
 
 // deliveryNeedsReview ends an open delivery as one the operator must look at.

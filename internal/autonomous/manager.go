@@ -2095,6 +2095,9 @@ type Manager struct {
 	// the alert it recorded ("" when it cannot name one) so an emitter
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
+	// resumes are the resumes of worker sessions under way (resume_slot.go).
+	// It has its own lock.
+	resumes resumeBook
 	// notices are the delivery notices the sink has not taken yet
 	// (delivery_notices.go). It has its own lock.
 	notices noticeBox
@@ -2963,9 +2966,9 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 	}
 	var reset []pendingTaskEvent
 	completedCount, requeuedCount := 0, 0
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			t := &prd.Story[si].Tasks[ti]
+	// Parked workers come last: every running worker is counted first.
+	for _, group := range parkedLast(prd) {
+		for _, t := range group {
 			prevStatus := t.Status
 			if t.Kind == TaskKindFinalGate && (prevStatus == TaskInProgress || prevStatus == TaskVerifying || prevStatus == TaskRunningTests) && m.holdFinalGateForRecord(prd, t) {
 				// The final gate outlived the daemon (or finished while it was
@@ -2997,12 +3000,24 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				// the task resumes without having counted a retry.
 				if IsAwaitExternalWaitReason(t.WaitReason) {
 					if t.SessionID != "" && aliveFn != nil && aliveFn(t.SessionID) {
+						// A parked worker holds no slot. When one is not free now, the
+						// run waits for it before prompting the session
+						// (resumeParkedAtRestart); the wait reason stays as it is.
+						if !m.resumeFitsNow(prd, t) {
+							m.store.WithLock(func() {
+								t.AdoptedSession = true
+								t.UpdatedAt = time.Now()
+							})
+							reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+							log.Printf("[autonomous] boot-resume: await-external task %s on live session %s for prd=%s waits for a capacity slot before it is prompted (no retry counted)", t.ID, t.SessionID, prd.ID)
+							continue
+						}
+						m.adoptCapacity(prd, t)
 						if contFn := m.sessionContinueFnLocked(); contFn != nil {
 							if cerr := contFn(t.SessionID); cerr != nil {
 								log.Printf("[autonomous] boot-resume: await-external continue prompt to session %s: %v", t.SessionID, cerr)
 							}
 						}
-						m.adoptCapacity(prd, t)
 						m.store.WithLock(func() {
 							t.Status = TaskInProgress
 							t.AdoptedSession = true

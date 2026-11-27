@@ -326,7 +326,17 @@ path) and `autonomous.backoff_max_wait_minutes`
 A related admission rule, in the same area: a task's guardrail judge never queues
 behind the task's own worker lease, and the lease is never handed over to it. The task
 shows `verifying` from the moment its worker has started and keeps the worker lease while
-that session runs. Ending the session frees the lease bound to it
+that session runs, except while it is parked on a question or an outside wait. Every resume
+of a session goes through `readmitSession` (`internal/autonomous/resume_slot.go`): it waits
+for a slot, binds the slot to the session and is dropped when the session ends; a resume
+never waits for the tree lock while holding a slot (`resumeSlotAndTree`, and the same
+rule for a new start in `executeOne`). After a restart or a resume, parked workers are
+reconciled last (`parkedLast`) and the run walks running tasks, then parked tasks, then
+the rest (`restartOrder`). A queued resume of a parked task is dropped when its
+verification takes over (`verificationTookOver`), and a new worker admission removes
+the task's queued resume first (`resumeBook.supersede`). The daemon's wait loop and
+the adopted wait hold while `DecisionResumeWaiting` is true, and `sendDecisionLine`
+types nothing while the ledger's restart hold is on (`AdoptionPending`). Ending the session frees the lease bound to it
 (`releaseLeasesOfEndedSession`, `cmd/datawatch/capacity_reap.go`); a session adopted
 after a restart releases it when its wait ends (`releaseWorkerLeaseForVerify`,
 `internal/autonomous/capacity.go`). A `JudgeAdmit.WorkerHolder` lease still present when

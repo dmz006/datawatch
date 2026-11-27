@@ -902,6 +902,14 @@ func (l *Ledger) MarkAdoptionComplete() {
 	l.dispatchLocked()
 }
 
+// AdoptionPending reports whether requests are still held back for the work
+// resumed after a restart to be adopted (BeginAdoption).
+func (l *Ledger) AdoptionPending() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.adoptionPendingLocked() != ""
+}
+
 // reportAdoptOverLimitLocked raises one finding per pool whose held leases are
 // above its limit when the adoption hold ends.
 func (l *Ledger) reportAdoptOverLimitLocked() {

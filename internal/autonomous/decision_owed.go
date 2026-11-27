@@ -285,7 +285,9 @@ func (m *Manager) resumeOwedDecision(ctx context.Context, store *QuestionStore, 
 	if now, ok := m.store.TaskSnapshot(snap.ID); okPRD && okTask && ok && now.Status == snap.Status &&
 		now.SessionID == snap.SessionID && now.WaitReason == snap.WaitReason &&
 		(now.DecisionResume == nil || !now.DecisionResume.deliveryOpen()) {
-		m.parkOnDecision(prd, t, q.ID)
+		// A running worker waits for nobody: it keeps its slot and the tree
+		// while its decision is typed.
+		m.parkOnDecision(prd, t, q.ID, now.Status != TaskWaitingCapacity && now.Status != TaskWaitingDecision)
 	}
 	m.questionTick.parkMu.Unlock()
 	m.questionTick.end(snap.ID)

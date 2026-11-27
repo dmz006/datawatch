@@ -88,7 +88,7 @@ func (d *adoptedDecision) hold() bool {
 		return false
 	}
 	if !open {
-		return d.m.decisionParkPending(snap)
+		return d.m.DecisionResumeWaiting(d.task.ID)
 	}
 	if q.ID != d.handled {
 		switch {

@@ -73,7 +73,7 @@ func (m *Manager) ParkForDecision(prd *PRD, t *Task, questionID string) bool {
 			return false
 		}
 	}
-	m.parkOnDecision(prd, t, questionID)
+	m.parkOnDecision(prd, t, questionID, false)
 	return true
 }
 
@@ -85,12 +85,20 @@ func (m *Manager) ParkedOnDecision(taskID, questionID string) bool {
 	return ok && questionID != "" && parkedQuestionID(cur) == questionID
 }
 
-// parkOnDecision makes the park ParkForDecision describes.
-func (m *Manager) parkOnDecision(prd *PRD, t *Task, questionID string) {
+// parkOnDecision makes the park ParkForDecision describes. With running set
+// the worker is not waiting for anybody (its decision is already made): only
+// the wait state changes, and it keeps its slot and the tree lock.
+func (m *Manager) parkOnDecision(prd *PRD, t *Task, questionID string, running bool) {
 	reason := AwaitDecisionWaitReasonFor(questionID)
 
 	// Visible wait state (the reason carries the question id).
 	m.setWaiting(t, reason)
+
+	if running {
+		recordWorkerQuestion(WorkerQuestionOutcomeParked)
+		log.Printf("[autonomous] %s: decision %s is typed into the running worker: slot and tree lock kept", t.ID, questionID)
+		return
+	}
 
 	// Release the lease(s). Capture which pools for the audit event.
 	var releasedPools []string

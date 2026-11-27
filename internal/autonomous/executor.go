@@ -380,6 +380,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if err != nil {
 		return err
 	}
+	order = m.restartOrder(prd, order)
 	retries := m.effectiveSpawnRetries(prd)
 	if retries < 0 {
 		retries = 0
@@ -478,7 +479,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if o, err := topoSort(tasks); err != nil {
 					log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
 				} else {
-					order = o
+					order = m.restartOrder(prd, o)
 				}
 				failedIDs = make(map[string]bool)
 				heldIDs = make(map[string]bool)
@@ -785,7 +786,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			if o, err := topoSort(tasks); err != nil {
 				log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
 			} else {
-				order = o
+				order = m.restartOrder(latest, o)
 			}
 			for _, tid := range order {
 				if inFlight[tid] {
@@ -1471,7 +1472,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// A read-only task (flagged, with the setting on) never takes the write
 	// lock, so it runs in the pool beside other tasks. Writers always lock.
 	readOnly := m.readOnlyTaskSkipsLock(prd, t)
-	holdTree := func() error {
+	lockTree := func(wait bool) error {
 		if treeRelease != nil {
 			return nil // already held for this executeOne (idempotent)
 		}
@@ -1481,7 +1482,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if werr := m.ensureTaskWorktreeFor(prd, t); werr != nil {
 			return werr
 		}
-		rel, terr := m.acquireTreeWritersLock(ctx, prd, t)
+		rel, terr := m.treeWritersLock(ctx, prd, t, wait)
 		if terr != nil {
 			return terr
 		}
@@ -1493,6 +1494,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		m.attachTreeRelease(t.ID, &treeRelease)
 		return nil
 	}
+	holdTree := func() error { return lockTree(true) }
 	spawn = m.capacityRetrySpawn(t, spawn)
 	// Attempt budget. With failure escalation on, the task gets MaxFailures
 	// failed attempts counted from the last operator action. With it off, the
@@ -1554,6 +1556,16 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// running while the first attempt was recorded failed): adopt it instead
 		// of spawning a second one. The attempt number and counters are kept.
 		adoptedLive := false
+		// A worker parked on an outside wait across a restart gets its slot
+		// before it is prompted and before anything below adopts it.
+		if attempt == 0 && m.parkedAtRestart(t) {
+			if perr := m.resumeParkedAtRestart(ctx, prd, t); perr != nil {
+				if errors.Is(perr, errCancelledWhileWaiting) || ctx.Err() != nil {
+					return nil
+				}
+				return perr
+			}
+		}
 		// A worker kept parked on a question across a restart is waited for as
 		// it is: parked, with no capacity lease, until its decision is typed.
 		keptRunning, keptParked := m.adoptedState(t)
@@ -1680,7 +1692,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// adopted on restart. The decision's outcome is carried on the run so the
 		// attempt's record says whether it resumed and why.
 		if !skipSpawn && resumeCandidate && attempt > 0 {
-			run.Resumed, run.ResumeReason = m.tryRetryResume(prd, t, hint)
+			var rerr error
+			run.Resumed, run.ResumeReason, rerr = m.tryRetryResume(ctx, prd, t, hint)
+			if rerr != nil {
+				if errors.Is(rerr, errCancelledWhileWaiting) || ctx.Err() != nil {
+					return nil
+				}
+				return rerr
+			}
 		}
 		if run.Resumed {
 			skipSpawn = true
@@ -1932,57 +1951,74 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				contextPrepend = m.contextFn(prd.Type)
 			}
 			m.mu.Unlock()
-			m.resetCapacityWait(t.ID) // each relaunch is a new admission
-			if aerr := m.admitPreferring(ctx, prd, t, backend, model, capacity.RoleWorker, prevNode); aerr != nil {
-				if errors.Is(aerr, errCancelledWhileWaiting) {
-					return nil
-				}
-				return aerr
-			}
-			// A fall-through admission leased the alternate's pools: spawn there.
-			// reqBackend and reqModel stay the pair the task asked for, so a
-			// later re-admission (no node leased) weighs the fall-through again.
-			reqBackend, reqModel := backend, model
-			if alt, ok := m.fallthroughOf(t.ID); ok {
-				backend, model = alt.Backend, alt.Model
-			}
-			// A multi-node LLM entry needs its model resident on the leased node
-			// before the spawn; a single-node entry skips this step entirely.
-			lerr := m.loadWorkerNode(ctx, prd, t, backend, model)
-			m.resetCapacityWait(t.ID) // admission, failover included, is over
-			if lerr != nil {
-				if errors.Is(lerr, errCancelledWhileWaiting) {
-					return nil
-				}
-				return lerr
-			}
-			// The node the lease was granted on decides where the worker runs.
-			if rerr := m.replaceStaleLease(ctx, prd, t, backend, model); rerr != nil {
-				if errors.Is(rerr, errCancelledWhileWaiting) {
-					return nil
-				}
-				return rerr
-			}
-			heldNode := m.heldNode(t.ID)
-			if nerr := m.requireLeasedNode(t, backend, model, heldNode); nerr != nil {
-				// A lease that names no node is not a failed attempt: release it
-				// and wait for a node (or another free pool), within the
-				// capacity wait budget. No retry counter moves.
-				log.Printf("[autonomous] prd=%s task=%s no node leased, waiting for a node: %v", prd.ID, t.ID, nerr)
-				var werr error
-				backend, model, heldNode, werr = m.awaitLeasedNode(ctx, prd, t, reqBackend, reqModel)
-				if werr != nil {
-					if errors.Is(werr, errCancelledWhileWaiting) {
+			// BL428 §3a — tree lock after capacity, before spawn: a second
+			// writer on the same canonical tree waits (visible as a waiting
+			// task with a "tree lock" reason), and the lock is released by the
+			// deferred treeRelease on every exit path below. It never waits
+			// holding its slot, because the writer that has the tree may need
+			// that slot for its verifier: it gives the slot back, waits for
+			// the tree, and is admitted again holding the tree.
+			var heldNode string
+			askedBackend, askedModel := backend, model
+			for {
+				backend, model = askedBackend, askedModel
+				m.resetCapacityWait(t.ID) // each relaunch is a new admission
+				if aerr := m.admitPreferring(ctx, prd, t, backend, model, capacity.RoleWorker, prevNode); aerr != nil {
+					if errors.Is(aerr, errCancelledWhileWaiting) {
 						return nil
 					}
-					return werr
+					return aerr
 				}
-			}
-			// BL428 §3a — tree lock after capacity, before spawn: a second
-			// writer on the same canonical tree waits here (visible as a
-			// waiting task with a "tree lock" reason), and is released by
-			// the deferred treeRelease on every exit path below.
-			if terr := holdTree(); terr != nil {
+				// A fall-through admission leased the alternate's pools: spawn there.
+				// reqBackend and reqModel stay the pair the task asked for, so a
+				// later re-admission (no node leased) weighs the fall-through again.
+				reqBackend, reqModel := backend, model
+				if alt, ok := m.fallthroughOf(t.ID); ok {
+					backend, model = alt.Backend, alt.Model
+				}
+				// A multi-node LLM entry needs its model resident on the leased node
+				// before the spawn; a single-node entry skips this step entirely.
+				lerr := m.loadWorkerNode(ctx, prd, t, backend, model)
+				m.resetCapacityWait(t.ID) // admission, failover included, is over
+				if lerr != nil {
+					if errors.Is(lerr, errCancelledWhileWaiting) {
+						return nil
+					}
+					return lerr
+				}
+				// The node the lease was granted on decides where the worker runs.
+				if rerr := m.replaceStaleLease(ctx, prd, t, backend, model); rerr != nil {
+					if errors.Is(rerr, errCancelledWhileWaiting) {
+						return nil
+					}
+					return rerr
+				}
+				heldNode = m.heldNode(t.ID)
+				if nerr := m.requireLeasedNode(t, backend, model, heldNode); nerr != nil {
+					// A lease that names no node is not a failed attempt: release it
+					// and wait for a node (or another free pool), within the
+					// capacity wait budget. No retry counter moves.
+					log.Printf("[autonomous] prd=%s task=%s no node leased, waiting for a node: %v", prd.ID, t.ID, nerr)
+					var werr error
+					backend, model, heldNode, werr = m.awaitLeasedNode(ctx, prd, t, reqBackend, reqModel)
+					if werr != nil {
+						if errors.Is(werr, errCancelledWhileWaiting) {
+							return nil
+						}
+						return werr
+					}
+				}
+				terr := lockTree(false)
+				if terr == nil {
+					break
+				}
+				if errors.Is(terr, errTreeBusy) {
+					m.releaseCapacity(t.ID)
+					terr = holdTree()
+					if terr == nil {
+						continue
+					}
+				}
 				if errors.Is(terr, errCancelledWhileWaiting) {
 					return nil
 				}
