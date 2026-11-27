@@ -13,7 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Only request lists are checked by datawatch, and no command checks are run. No reviewer is wired, so a review item reads "cannot tell" and keeps the request not done unless it is accepted without proof, which reads "done, accepted without proof".
 - If the holder ends, work it had accepted fails and is listed, and is not sent again. A request it never fetched goes to the next holder after that session takes its hello.
 - A pi confirmation shows datawatch's pi extension saw the text in a completed model call. Until 11.0 datawatch cannot prove that the extension, not other use of that session's credential, sent the report. **In this build pi delivery is not switched on.**
-- A worker with no proven way to fetch gets a request's text typed once. datawatch's tracker records `request <id> typed` only; what the terminal and the worker keep still holds the text.
+- A role held by a worker with no proven way to fetch is given no work; it stays listed. A request addressed straight to one such session has its text typed once, and not at all into shell, one-shot, chat-mode, HTTP conversation or pi sessions, which stay listed. datawatch's tracker records `request <id> typed` only; what the terminal and the worker keep still holds the text.
 - Six settings under `delivery.` for request times and reminder limits. At most 2 reminders per session and 20 per computer each hour by default. The default times (take-by 1 hour, due 24 hours, 15 minutes between reminders) are not yet approved.
 
 ### Changed

@@ -71,7 +71,11 @@ text. It is saved before it is typed.
 
 ### Typed once
 
-A worker with no proven take gets the request's text typed one time, as one
+This applies to a request addressed straight to one session. A **role** held by
+a worker with no proven take is given no work: its hello never counts, so the
+work stays listed as `take_not_proven`.
+
+A worker with no proven take gets such a request's text typed one time, as one
 line. It is never typed again, also after a restart. If datawatch cannot tell
 whether the keys arrived, it counts as typed. Only independent proof closes it.
 
