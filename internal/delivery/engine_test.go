@@ -876,14 +876,17 @@ func TestAnAcceptedTestMessageClearsCannotTell(t *testing.T) {
 	h := newHarness(t)
 	h.pass()
 	h.sender.setFail(true)
-	if rs := h.e.TestMessage(context.Background()); len(rs) != 1 || rs[0].OK {
+	if rs, _ := h.e.TestMessage(context.Background()); len(rs) != 1 || rs[0].OK {
 		t.Fatalf("results=%v", rs)
 	}
 	if r := h.e.Report(); !hasRed(r, RedSendsFail) {
 		t.Fatalf("a refused test message: %v", r.Red)
 	}
 	h.sender.setFail(false)
-	h.e.TestMessage(context.Background())
+	h.now = h.now.Add(2 * time.Minute)
+	if _, err := h.e.TestMessage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	if r := h.next(); r.Result != ResultGreen || r.Heartbeat != HeartbeatOK {
 		t.Fatalf("after an accepted one: %v %s", r.Red, r.Heartbeat)
 	}

@@ -46,7 +46,7 @@ type Journal struct {
 // NewJournal opens the journal at path, sealing it with key when set. Runs
 // still marked running are marked interrupted. A journal that cannot be read
 // is an error and is left as it is.
-func NewJournal(path string, key []byte) (*Journal, error) {
+func NewJournal(path string, key []byte, adoptPlain bool) (*Journal, error) {
 	j := &Journal{path: path, key: key}
 	data, err := secfile.ReadFile(path, key)
 	if errors.Is(err, fs.ErrNotExist) {

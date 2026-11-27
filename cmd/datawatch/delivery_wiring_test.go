@@ -11,6 +11,8 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/delivery"
+	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -197,5 +199,58 @@ func TestFilterSendFailuresAreRecorded(t *testing.T) {
 	}
 	if len(w.pending) != n {
 		t.Errorf("recorded %d more times", len(w.pending)-n)
+	}
+}
+
+// A start that stopped between writing the key and sealing the plain records
+// is finished by the next one, and the plain pipeline journal is sealed at
+// the secure start, not at the next pipeline.
+func TestASecureStartSealsWhatWasPlainEvenAfterAStopInBetween(t *testing.T) {
+	cfg := deliveryTestConfig(t)
+	dir := filepath.Join(cfg.DataDir, delivery.HeartbeatDir)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// A non-secure run leaves plain records.
+	plain := deliveryTestWiring()
+	if err := plain.openKey(cfg, nil); err != nil {
+		t.Fatal(err)
+	}
+	e, err := plain.start(ctx, deliveryDeps{cfg: cfg, firstPassDelay: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(dir, "pipelines.rec")
+	if err := os.WriteFile(journal, []byte(`{"version":1,"runs":[{"id":"pipe-1","state":"failed","started_at":"2026-11-01T00:00:00Z","ended_at":"2026-11-01T01:00:00Z"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The first secure start writes the key and stops.
+	first := deliveryTestWiring()
+	if err := first.openKey(cfg, []byte("pw")); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.key.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	// The next one finishes.
+	w := deliveryTestWiring()
+	if err := w.openKey(cfg, []byte("pw")); err != nil {
+		t.Fatal(err)
+	}
+	e, err = w.start(ctx, deliveryDeps{cfg: cfg, pipelines: pipelinePkg.NewExecutor(nil, "shell"), firstPassDelay: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"state.rec", "startmark.rec", "pipelines.rec"} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || !secfile.IsEncrypted(data) {
+			t.Fatalf("%s is not sealed at the start: %v", name, err)
+		}
+	}
+	r, err := e.Pass(ctx)
+	if err != nil || strings.Contains(strings.Join(r.Red, ","), delivery.RedRecords) {
+		t.Fatalf("err=%v red=%v", err, r.Red)
 	}
 }

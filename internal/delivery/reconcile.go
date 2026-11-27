@@ -30,6 +30,7 @@ const (
 const (
 	alarmFlood      = "flood"
 	alarmMassExpiry = "mass_expiry"
+	alarmEventsLost = "events_lost"
 	alarmState      = "held"
 	reasonOverLimit = "over_limit"
 )

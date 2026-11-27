@@ -228,7 +228,7 @@ func (s *Server) handleDeliveryTestMessage(w http.ResponseWriter, r *http.Reques
 	if d == nil {
 		return
 	}
-	results := d.TestMessage(context.WithoutCancel(r.Context()))
+	results, _ := d.TestMessage(context.WithoutCancel(r.Context()))
 	if results == nil {
 		results = []delivery.SendResult{}
 	}

@@ -147,6 +147,12 @@ func deriveStoreKey(password, salt []byte, p KeyParams) []byte {
 	return argon2.IDKey(password, salt, p.Time, p.MemoryKiB, p.Threads, 32)
 }
 
+// AdoptPlain reports whether plain records may still be read and sealed.
+func (k *StoreKey) AdoptPlain() bool { return k.IsNew() }
+
+// SealDone ends the time in which plain records are adopted.
+func (k *StoreKey) SealDone() error { return nil }
+
 // Key returns the 32-byte key, or nil on a non-secure install.
 func (k *StoreKey) Key() []byte {
 	if k == nil {

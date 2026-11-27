@@ -22,6 +22,7 @@ import (
 
 // fakeDeliveryService records what the REST surface asked of the check.
 type fakeDeliveryService struct {
+	testErr  error
 	mu       sync.Mutex
 	calls    []string
 	selector delivery.Selector
@@ -64,12 +65,15 @@ func (f *fakeDeliveryService) Drop(sel delivery.Selector, reason, by string) (in
 	f.selector, f.reason, f.by = sel, reason, by
 	return f.changed, f.err
 }
-func (f *fakeDeliveryService) TestMessage(ctx context.Context) []delivery.SendResult {
+func (f *fakeDeliveryService) TestMessage(ctx context.Context) ([]delivery.SendResult, error) {
 	f.note("test")
-	if f.noSends {
-		return nil
+	if f.testErr != nil {
+		return nil, f.testErr
 	}
-	return []delivery.SendResult{{Channel: "signal", OK: true}}
+	if f.noSends {
+		return nil, nil
+	}
+	return []delivery.SendResult{{Channel: "signal", OK: true}}, nil
 }
 
 func deliveryMux(s *Server) *http.ServeMux {

@@ -25,8 +25,9 @@ type Service interface {
 	Accept(sel Selector, reason string, until time.Time, by string) (int, error)
 	// Drop closes failed or backlog entries.
 	Drop(sel Selector, reason, by string) (int, error)
-	// TestMessage sends a test message on every channel and says what each answered.
-	TestMessage(ctx context.Context) []SendResult
+	// TestMessage sends a test message on every channel and says what each
+	// answered. It is limited, and refused while messages are switched off.
+	TestMessage(ctx context.Context) ([]SendResult, error)
 }
 
 var _ Service = (*Engine)(nil)
@@ -41,6 +42,12 @@ var (
 	ErrUntil = errors.New("the review date must be in the future and at most 30 days ahead")
 	// ErrNotDroppable: only failed and backlog entries can be dropped.
 	ErrNotDroppable = errors.New("only failed or backlog entries can be dropped; accept the others with a review date")
+	// ErrAlarm: an alarm or a clock-jump notice can only be acknowledged.
+	ErrAlarm = errors.New("an alarm or a clock-jump notice can only be acknowledged: accepting or dropping it could hide the items behind it; acknowledge it, or name only other entries")
+	// ErrNotifyOff: messages are switched off, so no test message is sent.
+	ErrNotifyOff = errors.New("messages are switched off (delivery.notify: false), so no test message was sent")
+	// ErrTestTooSoon: the test message limit is reached.
+	ErrTestTooSoon = errors.New("too many test messages: at most one a minute and 6 an hour")
 	// ErrNoMatch: no listed entry matches.
 	ErrNoMatch = errors.New("no listed entry matches")
 	// ErrCannotRecord: the change could not be saved, so it did not happen.

@@ -186,7 +186,7 @@ func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.E
 	var journal *pipelinePkg.Journal
 	var journalErr error
 	if d.pipelines != nil {
-		journal, journalErr = pipelinePkg.NewJournal(filepath.Join(dir, "pipelines.rec"), w.key.Key())
+		journal, journalErr = pipelinePkg.NewJournal(filepath.Join(dir, "pipelines.rec"), w.key.Key(), adopt)
 		if journalErr != nil {
 			log.Printf("[delivery] %v", journalErr)
 		} else {

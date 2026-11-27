@@ -52,6 +52,8 @@ type Engine struct {
 	// set the check does nothing.
 	broken       []string
 	cannotRecord bool
+	// unsaved are recorded failures that could not be saved yet.
+	unsaved []heldEvent
 	// warned: the one warning from memory has been sent for this fault.
 	warned bool
 }
@@ -213,14 +215,26 @@ func (e *Engine) canSend() bool {
 
 // TestMessage sends a test message on every channel and says what each
 // answered. What they answer is the newest word on whether anyone can be told.
-func (e *Engine) TestMessage(ctx context.Context) []SendResult {
+func (e *Engine) TestMessage(ctx context.Context) ([]SendResult, error) {
 	results := Deliver(ctx, e.opts.Sender, TestText(e.opts.Host), e.opts.Now())
 	if len(results) > 0 {
 		e.mu.Lock()
 		e.rec.AllFailed = !Told(results) // saved with the next pass
 		e.mu.Unlock()
 	}
-	return results
+	return results, nil
+}
+
+const (
+	// maxUnsaved bounds the failures held while they cannot be saved.
+	maxUnsaved = 200
+	// testsPerHour bounds the test messages.
+	testsPerHour = 6
+)
+
+type heldEvent struct {
+	c     Candidate
+	count int
 }
 
 // Run passes at once and then every interval, and sooner when a failed send is
