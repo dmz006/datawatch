@@ -18,13 +18,19 @@
 #   - a manual run takes an existing version tag and rejects any other input;
 #   - the table is written only to the release of that tag.
 #
-# Usage: bash tests/test-release-ci-summary.sh [workflow-file]
+# It runs the two release steps of .github/workflows/owasp-zap.yaml the same
+# way: the tag comes from the event with the same limits, a failed lookup fails
+# the step, reports go only to that tag's release, a manual run does neither,
+# and no part of the tag check can skip a scan.
+#
+# Usage: bash tests/test-release-ci-summary.sh [summary-file] [zap-file]
 # Needs python3 with PyYAML, and jq; fails (does not skip) without them.
 
 set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 wf="${1:-$root/.github/workflows/release-ci-summary.yaml}"
+zap="${2:-$root/.github/workflows/owasp-zap.yaml}"
 
 for tool in python3 jq bash; do
   command -v "$tool" >/dev/null 2>&1 || { echo "FAIL environment - $tool is not on PATH"; exit 1; }
@@ -55,6 +61,10 @@ if args[:2] == ["release", "edit"]:
     log({"kind": "edit", "tag": rest[0], "notes": opts.get("--notes", "")})
     sys.exit(0)
 
+if args[:2] == ["release", "upload"]:
+    log({"kind": "upload", "tag": args[2], "files": [a for a in args[3:] if not a.startswith("--")]})
+    sys.exit(0)
+
 if not args or args[0] != "api":
     sys.stderr.write("fake gh: unsupported command %r\n" % args); sys.exit(2)
 
@@ -83,10 +93,10 @@ else:
 FAKE
 chmod +x "$work/bin/gh"
 
-python3 - "$wf" "$work" "$root" <<'PY'
+python3 - "$wf" "$work" "$root" "$zap" <<'PY'
 import glob, json, os, re, subprocess, sys
 
-wf_path, work, root = sys.argv[1:4]
+wf_path, work, root, zap_path = sys.argv[1:5]
 try:
     import yaml
 except ImportError as exc:
@@ -124,27 +134,29 @@ def context(event="workflow_run", branch="v9.1.0", run_event="push", sha=C1,
     c["github.event.workflow_run.head_repository.full_name"] = head_repo if run else ""
     return c
 
-def job_runs(ctx):
-    """Evaluate the job-level `if` (only the operators this workflow needs)."""
-    expr = job.get("if")
+def eval_if(expr, ctx):
+    """Evaluate an `if` expression (only the operators these workflows need)."""
     if expr is None:
         return True
     expr = str(expr).strip()
     if expr.startswith("${{"):
         expr = expr[3:-2]
-    tokens = re.findall(r"'[^']*'|&&|\|\||==|!=|[(),]|[A-Za-z_][A-Za-z0-9_.]*|\S", expr)
+    tokens = re.findall(r"'[^']*'|&&|\|\||==|!=|[!(),]|[A-Za-z_][A-Za-z0-9_.]*|\S", expr)
     out = []
     for t in tokens:
         if t.startswith("'") or t in ("==", "!=", "(", ")", ",", "startsWith"):
             out.append(t)
-        elif t in ("&&", "||"):
-            out.append("and" if t == "&&" else "or")
+        elif t in ("&&", "||", "!"):
+            out.append({"&&": "and", "||": "or", "!": "not"}[t])
         elif t in ctx:
             out.append(repr(ctx[t]))
         else:
             raise SystemExit("FAIL gate - the test cannot evaluate token %r" % t)
     return bool(eval(" ".join(out), {"__builtins__": {}},
                      {"startsWith": lambda a, b: a.lower().startswith(b.lower())}))
+
+def job_runs(ctx):
+    return eval_if(job.get("if"), ctx)
 
 def subst(text, ctx):
     return re.sub(r"\$\{\{\s*([^}]*?)\s*\}\}", lambda m: ctx.get(m.group(1), ""), str(text))
@@ -158,7 +170,7 @@ def run_step(step, ctx, replies, outputs=None):
            "FAKE_LOG": log, "FAKE_REPLIES": rep, "GITHUB_OUTPUT": out}
     for k, v in (step.get("env") or {}).items():
         v = str(v)
-        m = re.fullmatch(r"\$\{\{\s*steps\.resolve\.outputs\.(\w+)\s*\}\}", v)
+        m = re.fullmatch(r"\$\{\{\s*steps\.\w+\.outputs\.(\w+)\s*\}\}", v)
         env[k] = (outputs or {}).get(m.group(1), "") if m else subst(v, ctx)
     r = subprocess.run(["bash", "-e", "-c", subst(step["run"], ctx)], env=env, cwd=work,
                        capture_output=True, text=True, timeout=120)
@@ -166,6 +178,7 @@ def run_step(step, ctx, replies, outputs=None):
     return {"rc": r.returncode, "stdout": r.stdout, "stderr": r.stderr,
             "api": [x["endpoint"] for x in recs if x["kind"] == "api"],
             "edits": [x for x in recs if x["kind"] == "edit"],
+            "uploads": [x for x in recs if x["kind"] == "upload"],
             "out": dict(l.rstrip("\n").split("=", 1) for l in open(out) if "=" in l)}
 
 def automatic(ctx, replies):
@@ -292,6 +305,89 @@ idle = [n for n in listed
         if not (isinstance(names.get(n), dict) and (names[n].get("push") or {}).get("tags"))]
 check("every listed workflow starts on a tag push", listed and not idle, "no tag trigger: %s" % idle)
 check("manual dispatch is still offered", "tag" in on["workflow_dispatch"]["inputs"], "missing input")
+
+# 9. owasp-zap.yaml: attaching the scan reports to the release.
+zdoc = yaml.safe_load(open(zap_path))
+zon = zdoc.get("on", zdoc.get(True))
+zjob = zdoc["jobs"]["zap-suite"]
+zsteps = zjob["steps"]
+zres = next(s for s in zsteps if s.get("id") == "release_tag")
+zatt = next(s for s in zsteps if s.get("name") == "Attach ZAP reports to GitHub release")
+scans = [s for s in zsteps if str(s.get("uses", "")).startswith("zaproxy/")]
+upload = next(i for i, s in enumerate(zsteps) if str(s.get("uses", "")).startswith("actions/upload-artifact@"))
+
+check("zap: no scan is gated by the tag check",
+      "if" not in zjob and len(scans) == 5 and not any("if" in s for s in scans), "scans=%d" % len(scans))
+check("zap: still scans after every completed Release run, and by hand",
+      zon["workflow_run"] == {"workflows": ["Release"], "types": ["completed"]}
+      and "workflow_dispatch" in zon, str(zon))
+check("zap: tag lookup comes after every scan and the report upload",
+      upload < zsteps.index(zres) < zsteps.index(zatt)
+      and all(zsteps.index(s) < upload for s in scans), "order")
+# A condition without a status function also requires the earlier steps to have
+# succeeded, so a failed lookup skips the attach step.
+check("zap: attach is skipped when the lookup step fails",
+      not re.search(r"(always|failure|cancelled)\s*\(", str(zatt.get("if"))), str(zatt.get("if")))
+
+def attaches(ctx, tag):
+    return eval_if(zatt.get("if"), dict(ctx, **{"steps.release_tag.outputs.tag": tag}))
+
+def zap_resolve(ctx, replies):
+    r = run_step(zres, ctx, replies)
+    r["tag"] = r["out"].get("tag", "")
+    return r
+
+ctx = context(event="workflow_dispatch")
+check("zap: manual run neither looks up a tag nor attaches",
+      not eval_if(zres.get("if"), ctx) and not attaches(ctx, "") and not attaches(ctx, "v9.1.0"), "step runs")
+
+for name, ctx in [
+    ("main push run", context(branch="main")),
+    ("fork pull request from a branch named like a tag", context(run_event="pull_request", head_repo="someone/datawatch")),
+    ("own pull request from a branch named like a tag", context(run_event="pull_request")),
+    ("push run from another repository", context(head_repo="someone/datawatch")),
+    ("pre-release tag", context(branch="v9.1.0-rc1")),
+    ("branch reference", context(branch="refs/heads/v9.1.0")),
+    ("branch name holding shell text", context(branch="v1.0.0$(touch %s)" % marker, run_event="pull_request")),
+    ("tag name holding shell text", context(branch='v1.0.0"; touch %s; "' % marker)),
+    ("name with a second line", context(branch="v9.1.0\ntag=v1.0.0")),
+]:
+    r = zap_resolve(ctx, many)
+    check("zap: no lookup: " + name,
+          r["rc"] == 0 and not r["api"] and r["tag"] == "" and not attaches(ctx, r["tag"])
+          and not os.path.exists(marker), brief(r))
+
+for name, replies, requests in [
+    ("lightweight", merged(many, ref("v9.1.0", "commit", C1)), 1),
+    ("annotated", merged(many, ref("v9.1.0", "tag", TOBJ), tagobj(TOBJ, "commit", C1)), 2),
+]:
+    r = zap_resolve(context(), replies)
+    check("zap: %s release tag found in %d request(s)" % (name, requests),
+          r["rc"] == 0 and r["tag"] == "v9.1.0" and len(r["api"]) == requests
+          and attaches(context(), r["tag"]), brief(r))
+
+r = zap_resolve(context(sha="3" * 40), merged(many, ref("v9.1.0", "commit", C1)))
+check("zap: moved tag attaches nothing",
+      r["rc"] == 0 and r["tag"] == "" and not attaches(context(), r["tag"]) and len(r["api"]) <= 2, brief(r))
+check("zap: never lists tags or releases",
+      not any("/git/refs/tags" in e or "/releases" in e for e in r["api"]), brief(r))
+
+for name, replies in [
+    ("tag lookup fails", {}),
+    ("annotated tag object lookup fails", ref("v9.1.0", "tag", TOBJ)),
+    ("tag points at a tree", ref("v9.1.0", "tree", C1)),
+    ("reply has no usable id", ref("v9.1.0", "commit", "nope")),
+]:
+    r = zap_resolve(context(), replies)
+    check("zap: fails loudly: " + name, r["rc"] != 0 and r["tag"] == "", brief(r))
+
+reports = ["report_pwa-baseline.html", "report_api-scan.html"]
+for f in reports:
+    open(os.path.join(work, f), "w").close()
+res = zap_resolve(context(), ref("v9.1.0", "commit", C1))
+r = run_step(zatt, context(), {}, res["out"])
+check("zap: reports go to the tag's release only",
+      r["rc"] == 0 and [(u["tag"], u["files"]) for u in r["uploads"]] == [("v9.1.0", reports)], brief(r))
 
 if failed:
     print("FAIL (%d check(s) failed)" % len(failed)); sys.exit(1)
