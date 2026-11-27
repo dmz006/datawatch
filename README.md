@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.34 (2026-11-26).** When a prompt stops datawatch from typing an answer, supervisor wake-up or one-time session message, it now keeps it to retry, and when it cannot tell whether one arrived it raises a review alert and does not send it again; the changelog lists the limits, including that delivery alerts stored while the daemon starts reach only the alert list. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.37 (2026-11-26).** The time limit for the lint step on GitHub is now 10 minutes instead of 5, with no check removed. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

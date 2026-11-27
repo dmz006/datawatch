@@ -1,6 +1,6 @@
 //go:build !linux
 
-// Command testisolation-guard needs Linux (bubblewrap and inotify).
+// Command testisolation-guard needs Linux: bubblewrap, and file access times.
 package main
 
 import (

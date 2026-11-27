@@ -5,6 +5,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.37 — The GitHub lint step has more time
+
+### Fixed
+- The time limit for the lint step in the GitHub CI and release workflows, and in `.golangci.yml`, is now 10 minutes (was 5). Four CI runs on 2026-11-26 (UTC) failed on this step with "Timeout exceeded". No linter, path or check was removed.
+
+## v9.187.36 — Two flagged test packages now pass the test isolation check
+
+### Changed
+- The two test packages the check flagged for looking up files in the home folder now use their own folders. Fixed a timing fault that made an older stop-command test fail at times. This is developer tooling and one internal refactor: how datawatch behaves does not change.
+### Not covered
+- `make check-test-isolation` can pass, but it is not a reliable release check and is not part of the release steps: another older test, for session-end process cleanup, sometimes fails, with or without the check.
+- The check misses some outside access, such as a started program writing below an existing home subfolder, or writes to `/var/tmp`. Tests can still leave their own files in the shared temporary folder.
+
+## v9.187.35 — End-of-run cleanup keeps more tracked scratch files
+
+### Fixed
+- The cleanup at the end of an Automaton run now also keeps a scratch file (`decompose-output.json`, `decompose-output.json.failed`, `.decompose-output-*.json`, `.verify-output-*.json`) that git, run in the file's own folder, reports as tracked, for example by a clone, submodule or linked work tree inside the project folder; before, it could delete such a file. It also keeps such a file when git, run in that folder, cannot say whether it is tracked. These kept files are listed under *Files left behind*. It deletes no file that the earlier cleanup would have kept.
+
+### Before you upgrade
+- The cleanup can now run git in subfolders of the project, with `core.fsmonitor` turned off for that new check. As before, git commands it runs in the project folder follow that repository's settings, so a command set in `core.fsmonitor` there, or in a submodule's settings, can still run with datawatch's permissions.
+
+### Not covered
+- As before, it can delete a tracked file if neither the project folder's repository nor the one git finds from the file's own folder tracks it, for example after `git init` was run over the file in a folder below the repository that tracks it. Only this end-of-run cleanup changed.
+
 ## v9.187.34 — Answers, wake-ups and one-time messages say whether they were typed
 
 ### Fixed
