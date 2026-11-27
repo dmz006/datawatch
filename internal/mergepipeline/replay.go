@@ -229,13 +229,21 @@ func lines(s string) []string { return strings.Fields(s) }
 // holds the branch's head; the commit before it on main is the base.
 func readHandMerge(ctx context.Context, src *Merger, rec *mergeshadow.Replay, branchHead string) error {
 	h := &rec.Hand
+	noCommit := fmt.Errorf("the recorded commit %q is not in the repository", h.Commit)
+	if strings.HasPrefix(h.Commit, "-") {
+		return noCommit
+	}
 	commit, err := src.revParse(ctx, src.Dir, h.Commit+"^{commit}")
-	if err != nil || strings.HasPrefix(h.Commit, "-") {
-		return fmt.Errorf("the recorded commit %q is not in the repository", h.Commit)
+	if err != nil {
+		return noCommit
 	}
 	h.Commit = commit
-	if _, err := src.revParse(ctx, src.Dir, branchHead+"^{commit}"); err != nil || strings.HasPrefix(branchHead, "-") {
-		return fmt.Errorf("the head of branch %s is not in the repository", rec.Branch)
+	noHead := fmt.Errorf("the head of branch %s is not in the repository", rec.Branch)
+	if strings.HasPrefix(branchHead, "-") {
+		return noHead
+	}
+	if _, err := src.revParse(ctx, src.Dir, branchHead+"^{commit}"); err != nil {
+		return noHead
 	}
 	holds := func(c string) (bool, error) {
 		r, err := src.git(ctx, src.Dir, "merge-base", "--is-ancestor", branchHead, c)
