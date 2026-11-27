@@ -26,6 +26,23 @@ steps:
   - {name: parity-gates, kind: test, command: bash scripts/merge/parity-gates.sh, timeout: 30m}
   - {name: push-release, kind: ship, action: push_release, timeout: 15m}
   - {name: deploy-latest, kind: deploy, action: deploy_latest, on_failure: continue, timeout: 10m}
+# What the shadow of a hand merge needs: the private pattern list the lint and
+# outgoing checks read (never committed), and the files whose change restarts
+# the count of matched merges. release_text stays strict until the operator
+# says whether the hand merge's own release wording counts (ignore leaves out
+# the new changelog section and the wording of the README release line).
+shadow:
+  private_files: [.leak-patterns.local]
+  check_files:
+    - scripts/merge
+    - scripts/check-outgoing.sh
+    - scripts/check-no-local-leaks.sh
+    - scripts/leak-check.exclude
+    - scripts/leak-check.allowed-emails
+    - scripts/check-merge-version.sh
+    - scripts/release-smoke.sh
+    - Makefile
+  release_text: strict
 # The hand merge's file rules: main's side for the shared reference documents,
 # both sides for plan notes. Every other conflict keeps the built-in handling
 # or asks.

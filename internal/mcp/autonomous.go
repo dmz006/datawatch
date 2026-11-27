@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/mergeshadow"
 	"math"
 	"net/http"
 	"net/url"
@@ -1273,6 +1274,7 @@ func (s *Server) toolAutonomousShippedRecord() mcpsdk.Tool {
 		mcpsdk.WithString("merged_at", mcpsdk.Description("Merge time, RFC 3339 (default now)")),
 		mcpsdk.WithString("source", mcpsdk.Enum("merge_step", "backfill"), mcpsdk.Description("How the record was written (default backfill)")),
 		mcpsdk.WithBoolean("automation", mcpsdk.Description("Record an Automation instead of a PRD")),
+		mcpsdk.WithString("hand_checks", mcpsdk.Description("With source=merge_step: the hand merge's result of each lint and test step of the merge pipeline, as name=pass|fail|skip pairs separated by commas. The merge shadow compares them with its own run")),
 	)
 }
 func (s *Server) handleAutonomousShippedRecord(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1292,6 +1294,13 @@ func (s *Server) handleAutonomousShippedRecord(_ context.Context, req mcpsdk.Cal
 		body["source"] = src
 	} else {
 		body["source"] = "backfill" // the daemon demands one of the two; same default as the CLI and comm verbs
+	}
+	if v := strings.TrimSpace(req.GetString("hand_checks", "")); v != "" {
+		checks, err := mergeshadow.ParseHandChecks([]string{v})
+		if err != nil {
+			return mcpsdk.NewToolResultError(err.Error()), nil
+		}
+		body["hand_checks"] = checks
 	}
 	path := "/api/autonomous/prds/" + url.PathEscape(id) + "/shipped"
 	if req.GetBool("automation", false) {

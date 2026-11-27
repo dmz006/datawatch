@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // LintToolUnavailableCode is the finding code raised when the pinned
@@ -72,7 +74,7 @@ func (o LintToolOptions) readVersion(ctx context.Context, bin string) (string, e
 	}
 	vctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(vctx, bin, "version").CombinedOutput() // #nosec G204 -- resolved binary path
+	out, err := proclimit.CombinedOutput(vctx, exec.CommandContext(vctx, bin, "version")) // #nosec G204 -- resolved binary path
 	if err != nil {
 		return "", err
 	}
@@ -96,7 +98,7 @@ func (o LintToolOptions) install(ctx context.Context, toolsDir, version string) 
 	}
 	cmd := exec.CommandContext(ctx, goBin, "install", golangciLintModule+"@v"+version) // #nosec G204 -- fixed module, validated version
 	cmd.Env = append(os.Environ(), "GOBIN="+toolsDir)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := proclimit.CombinedOutput(ctx, cmd); err != nil {
 		return fmt.Errorf("go install: %w: %s", err, tailLines(string(out), 5))
 	}
 	return nil

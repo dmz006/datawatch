@@ -89,8 +89,9 @@ func mergeShadowCommSummary(raw string) (string, error) {
 // replyMergeShadow answers the merge-shadow verb.
 func (r *Router) replyMergeShadow(args []string) {
 	const label = "autonomous merge-shadow"
-	if len(args) > 1 {
-		r.reply(label+" failed", "usage: autonomous merge-shadow")
+	report := len(args) == 2 && strings.EqualFold(args[1], "report")
+	if len(args) > 1 && !report {
+		r.reply(label+" failed", "usage: autonomous merge-shadow [report]")
 		return
 	}
 	out, err := r.commGet(mergeShadowCommPath, nil)
@@ -98,10 +99,36 @@ func (r *Router) replyMergeShadow(args []string) {
 		r.reply(label+" failed", err.Error())
 		return
 	}
+	var turnOn struct {
+		TurnOn *struct {
+			Merges []json.RawMessage `json:"merges"`
+			Lines  []string          `json:"lines"`
+		} `json:"turn_on"`
+	}
+	if err := json.Unmarshal([]byte(out), &turnOn); err != nil {
+		r.reply(label+" failed", err.Error())
+		return
+	}
+	if report {
+		if turnOn.TurnOn == nil {
+			r.reply(label, "No turn-on report: no merge repository is configured")
+			return
+		}
+		r.reply(label, strings.Join(turnOn.TurnOn.Lines, "\n"))
+		return
+	}
 	line, err := mergeShadowCommSummary(out)
 	if err != nil {
 		r.reply(label+" failed", err.Error())
 		return
+	}
+	if t := turnOn.TurnOn; t != nil && len(t.Merges) > 0 && len(t.Lines) > 1 {
+		hand := strings.Join(t.Lines[:2], "\n") + "\nFull report: autonomous merge-shadow report"
+		if line == mergeShadowCommEmpty {
+			line = hand
+		} else {
+			line = hand + "\n" + line
+		}
 	}
 	r.reply(label, line)
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/deploy"
+	"github.com/dmz006/datawatch/internal/genartifacts"
 	"github.com/dmz006/datawatch/internal/git"
 )
 
@@ -269,6 +270,9 @@ func (r *Runner) scriptDir() string {
 
 // runState is one run in progress.
 type runState struct {
+	// base is the run's context without its cancellation, for the reads made
+	// where no context is passed: it keeps what that context carries.
+	base   context.Context
 	r      *Runner
 	m      *Merger
 	req    RunRequest
@@ -389,7 +393,7 @@ func (s *runState) record() {
 // always carries the steps that ran.
 func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	res, rerr := r.resolve()
-	st := &runState{r: r, req: req, source: string(res.Source)}
+	st := &runState{base: context.WithoutCancel(ctx), r: r, req: req, source: string(res.Source)}
 	st.run = autonomous.MergePipelineRun{
 		ID: newRunID(), Project: r.Project, Branches: append([]string{}, req.Branches...),
 		Source: st.source, Reason: redact(res.Reason), Start: r.now(),
@@ -450,7 +454,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			st.run.Reason = redact(err.Error())
 			return finish(autonomous.MergeRunFailed, err)
 		}
-		defer st.closeIsolation()
+		defer st.closeIsolation(ctx)
 		if err := st.openIsolation(ctx); err != nil {
 			st.run.Reason = redact(err.Error())
 			return finish(autonomous.MergeRunFailed, err)
@@ -730,11 +734,15 @@ func (s *runState) builtinPostShipHook(ctx context.Context, builtin, version str
 	return "", builtinErr("unknown built-in post-ship hook %q", builtin)
 }
 
+// noMakeTargetNote begins the account of a step left out for a missing make
+// target.
+const noMakeTargetNote = "the project's Makefile has no "
+
 // execute performs the step and returns its result and a short account. The
 // caller bounds it with the step's timeout.
 func (s *runState) execute(ctx context.Context, step Step) (string, string, error) {
 	if step.RequiresMakeTarget != "" && !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
-		return autonomous.MergeStepSkipped, "the project's Makefile has no " + step.RequiresMakeTarget + " target", nil
+		return autonomous.MergeStepSkipped, noMakeTargetNote + step.RequiresMakeTarget + " target", nil
 	}
 	// The release gate applies to every step that leaves the machine, and
 	// only to those: it is decided at most once per run, before the first
@@ -852,6 +860,9 @@ func (s *runState) command(ctx context.Context, step Step) (string, error) {
 	if err != nil {
 		return tail(res.Out, 2000), fmt.Errorf("did not finish: %w", err)
 	}
+	if res.Limit != "" {
+		return res.Limit + "\n" + tail(res.Out, 2000), errors.New(res.Limit)
+	}
 	if res.Code != 0 {
 		return fmt.Sprintf("exit %d\n%s", res.Code, tail(res.Out, 2000)), fmt.Errorf("exit %d", res.Code)
 	}
@@ -875,7 +886,6 @@ func (s *runState) hook(ctx context.Context, step Step) (string, error) {
 
 // action runs a built-in action.
 func (s *runState) action(ctx context.Context, step Step) (string, error) {
-	r := s.r
 	switch step.Action {
 	case ActionRebaseOntoMain:
 		return s.rebaseOntoMain(ctx)
@@ -890,7 +900,7 @@ func (s *runState) action(ctx context.Context, step Step) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return r.insertChangelog(v, s.req.Title)
+		return s.insertReleaseEntry(v)
 	case ActionSetReadmeReleaseLine:
 		return s.setReadmeReleaseLine()
 	case ActionCommitReleaseBump:
@@ -1007,16 +1017,16 @@ func (s *runState) rebaseBranch(ctx context.Context, branch, old, main string) e
 		return err
 	}
 	defer func() {
-		_, _ = s.m.git(context.Background(), s.r.Dir, "worktree", "remove", "--force", tmp)
+		_, _ = s.m.git(context.WithoutCancel(ctx), s.r.Dir, "worktree", "remove", "--force", tmp)
 		_ = os.RemoveAll(tmp)
-		_, _ = s.m.git(context.Background(), s.r.Dir, "worktree", "prune")
+		_, _ = s.m.git(context.WithoutCancel(ctx), s.r.Dir, "worktree", "prune")
 	}()
 	if _, err := s.m.gitOK(ctx, s.r.Dir, "worktree", "add", "--quiet", "--detach", tmp, old); err != nil {
 		return err
 	}
 	res, err := s.m.git(ctx, tmp, "rebase", "refs/heads/"+main)
 	if err != nil || res.Code != 0 {
-		_, _ = s.m.git(context.Background(), tmp, "rebase", "--abort")
+		_, _ = s.m.git(context.WithoutCancel(ctx), tmp, "rebase", "--abort")
 		if err != nil {
 			return err
 		}
@@ -1078,6 +1088,11 @@ func (s *runState) mergeBranches(ctx context.Context) (string, error) {
 			}
 		}
 		out, err := s.m.MergeBranch(ctx, req)
+		if len(out.Files) > 0 {
+			s.run.Conflicts = append(s.run.Conflicts, autonomous.MergeRunConflict{
+				Branch: b, Files: append([]string(nil), out.Files...), Asked: out.Status == StatusAsked, Note: redact(out.Summary),
+			})
+		}
 		if err != nil && s.shadow() && errors.Is(err, ErrNoQuestionChannel) {
 			err = fmt.Errorf("shadow run: this conflict would be put to the operator. %s", out.Summary)
 		}
@@ -1749,6 +1764,69 @@ func (r *Runner) insertChangelog(version, title string) (string, error) {
 		return "", err
 	}
 	return "inserted the heading for v" + version, nil
+}
+
+// changelogDraft is the changelog entry the Automaton drafted, as the
+// candidate holds it, without a version heading of its own; "" when there is
+// none.
+func (s *runState) changelogDraft() string {
+	id := s.req.AutomatonID
+	if !automatonFileID.MatchString(id) {
+		return ""
+	}
+	rel := strings.ReplaceAll(genartifacts.DefaultPaths()[genartifacts.ChangelogDraft], genartifacts.IDPlaceholder, id)
+	_, data, err := s.r.readInside(rel)
+	if err != nil || len(data) > maxChangelogDraftBytes {
+		return ""
+	}
+	body := strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n"))
+	if strings.HasPrefix(body, "## ") {
+		_, body, _ = strings.Cut(body, "\n")
+		body = strings.TrimSpace(body)
+	}
+	// A second release heading would be a second release.
+	for _, l := range strings.Split(body, "\n") {
+		if strings.HasPrefix(l, "## ") {
+			return ""
+		}
+	}
+	return body
+}
+
+var automatonFileID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+const maxChangelogDraftBytes = 64 << 10
+
+// insertReleaseEntry writes the release's changelog heading and, under it, the
+// Automaton's drafted entry when the candidate holds one.
+func (s *runState) insertReleaseEntry(version string) (string, error) {
+	note, err := s.r.insertChangelog(version, s.req.Title)
+	if err != nil || !strings.HasPrefix(note, "inserted") {
+		return note, err
+	}
+	body := s.changelogDraft()
+	if body == "" {
+		return note + "; no changelog draft was found, so it has no text", nil
+	}
+	p, data, err := s.r.readInside(s.r.changelog())
+	if err != nil {
+		return "", err
+	}
+	head := "## v" + version + " — " + s.req.Title + "\n"
+	// The entry sits as one block: a blank line before it and one before
+	// the next release.
+	gap := "\n\n"
+	if !strings.Contains(string(data), head+gap) {
+		return "", fmt.Errorf("the heading for v%s was not found to put the drafted entry under", version)
+	}
+	if strings.Contains(string(data), head+"\n\n\n") {
+		gap = "\n\n\n"
+	}
+	text := strings.Replace(string(data), head+gap, head+"\n"+body+"\n\n", 1)
+	if err := os.WriteFile(p, []byte(text), 0o644); err != nil { // #nosec G306 -- changelog, normal mode
+		return "", err
+	}
+	return note + " with the Automaton's drafted entry", nil
 }
 
 // readmeReleaseShape matches the version and date on a Current release: line,

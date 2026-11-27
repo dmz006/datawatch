@@ -105,3 +105,9 @@ type MergePlan struct {
 	// nil on plans made without it.
 	Selection *PlanSelection `json:"selection,omitempty"`
 }
+
+// BaseVersionUnreadCode and PlanNotMadeCode.
+const (
+	BaseVersionUnreadCode = "base_version_unread"
+	PlanNotMadeCode       = "plan_not_made"
+)

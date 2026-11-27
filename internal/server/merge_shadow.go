@@ -258,5 +258,9 @@ func (s *Server) handleAutonomousMergeShadow(w http.ResponseWriter, r *http.Requ
 	if s.cfg != nil {
 		threshold = s.cfg.Autonomous.MergeShadow.EffectiveAgreementStreak()
 	}
-	writeJSONOK(w, map[string]any{"projects": buildMergeShadowView(plans, comps, threshold)})
+	out := map[string]any{"projects": buildMergeShadowView(plans, comps, threshold)}
+	if rep := s.mergeTurnOnReport(r.Context(), threshold); rep != nil {
+		out["turn_on"] = rep
+	}
+	writeJSONOK(w, out)
 }

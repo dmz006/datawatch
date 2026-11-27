@@ -105,6 +105,10 @@ func ownerGone(o *MergeLockOwner) (gone, rebooted bool) {
 	return state == "Z" || (o.Started != "" && started != o.Started), false
 }
 
+// ProcessesOfMergeRun lists the processes still working in the scratch folder
+// of merge run runID. checked is false where processes cannot be listed.
+func ProcessesOfMergeRun(runID string) (found []int, checked bool) { return processesOfRun(runID) }
+
 // processesOfRun lists the processes still working in the scratch folder of
 // run runID: by their working folder, or by the environment a check was given.
 // checked is false where processes cannot be listed.

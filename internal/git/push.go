@@ -22,14 +22,17 @@
 package git
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/proclimit"
 )
 
 // PushPolicy is the wire format of a push-on-complete policy. It is
@@ -119,6 +122,12 @@ type PushResult struct {
 	// the secret_found refusal in enforce mode. Findings never hold,
 	// and never render, the matched secret itself.
 	SecretFindings []SecretFinding
+	// ProjectCheckRan says the project's own check target ran over the push,
+	// and ProjectCheckOutput is the end of its output with secrets removed.
+	// SecretScanned says the secret scan ran.
+	ProjectCheckRan    bool
+	ProjectCheckOutput string
+	SecretScanned      bool
 }
 
 // pushTimeout caps every individual git call, on top of the
@@ -151,11 +160,18 @@ func gitEnv() []string {
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd, done := Command(ctx, args...)
+	defer done()
 	cmd.Dir = dir
 	cmd.Env = gitEnv()
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := proclimit.Run(ctx, cmd)
+	var over *proclimit.LimitError
+	if errors.As(err, &over) {
+		out.WriteString("\n" + over.Why)
+	}
+	return out.String(), err
 }
 
 // redactCreds strips embedded user:pass pairs from any URL in text,

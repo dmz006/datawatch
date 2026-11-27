@@ -113,6 +113,12 @@ func (s *RecordStore) List() []Record {
 func cloneRecord(r Record) Record {
 	r.Definition.Steps = append([]Step(nil), r.Definition.Steps...)
 	r.Definition.ConflictRules = append([]ConflictRule(nil), r.Definition.ConflictRules...)
+	if r.Definition.Shadow != nil {
+		sh := *r.Definition.Shadow
+		sh.PrivateFiles = append([]string(nil), sh.PrivateFiles...)
+		sh.CheckFiles = append([]string(nil), sh.CheckFiles...)
+		r.Definition.Shadow = &sh
+	}
 	return r
 }
 

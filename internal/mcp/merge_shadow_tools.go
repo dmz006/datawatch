@@ -15,7 +15,7 @@ const mergeShadowPath = "/api/autonomous/merge/shadow"
 
 func (s *Server) toolAutonomousMergeShadowStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_merge_shadow_status",
-		mcpsdk.WithDescription("Read the shadow merge state: per project, the stored shadow merge plans, the stored comparisons, the matched and different comparison counts per release size (patch, minor, major, none), and the agreement streak against the configured autonomous.merge_shadow.agreement_streak threshold. Read-only; the same data as GET /api/autonomous/merge/shadow. project limits the answer to one project (default: every project)."),
+		mcpsdk.WithDescription("Read the shadow merge state. turn_on is the turn-on report for the merge repository: the run of shadowed hand merges that matched against the target, seven results per merge, the work eligible and excluded now with why, the next push, what merging would do outside a run and what is still to apply (turn_on.lines is the same as text). Also, per project, the stored shadow merge plans, the stored comparisons, the matched and different comparison counts per release size (patch, minor, major, none), and the agreement streak against the configured autonomous.merge_shadow.agreement_streak threshold. Read-only; the same data as GET /api/autonomous/merge/shadow. project limits the answer to one project (default: every project)."),
 		mcpsdk.WithString("project", mcpsdk.Description("Optional — only this project's entry; default is every project")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
@@ -34,6 +34,7 @@ func (s *Server) handleAutonomousMergeShadowStatus(_ context.Context, req mcpsdk
 	}
 	var body struct {
 		Projects []json.RawMessage `json:"projects"`
+		TurnOn   json.RawMessage   `json:"turn_on"`
 	}
 	if err := json.Unmarshal(out, &body); err != nil {
 		return toolError(op, fmt.Errorf("decode response: %w", err)), nil
@@ -47,7 +48,14 @@ func (s *Server) handleAutonomousMergeShadowStatus(_ context.Context, req mcpsdk
 			kept = append(kept, raw)
 		}
 	}
-	b, _ := json.Marshal(map[string]any{"projects": kept})
+	filtered := map[string]any{"projects": kept}
+	var turnOn struct {
+		Project string `json:"project"`
+	}
+	if len(body.TurnOn) > 0 && json.Unmarshal(body.TurnOn, &turnOn) == nil && turnOn.Project == project {
+		filtered["turn_on"] = body.TurnOn
+	}
+	b, _ := json.Marshal(filtered)
 	return mcpsdk.NewToolResultText(string(b)), nil
 }
 

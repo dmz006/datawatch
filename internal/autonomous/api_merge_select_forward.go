@@ -39,3 +39,20 @@ func (a *API) MergeModelLookup() config.LLMLookup { return a.M.MergeModelLookup(
 
 // MergePauseMessage forwards the operator pause check of a merge run.
 func (a *API) MergePauseMessage() (string, bool) { return a.M.MergePauseMessage() }
+
+// RecordMergeLandingOfPushedTip forwards the landing record of a repaired push
+// whose branch changed afterwards.
+func (a *API) RecordMergeLandingOfPushedTip(ctx context.Context, id, release, commit, tip string, at time.Time) (*PRD, error) {
+	return a.M.RecordMergeLandingOfPushedTip(ctx, id, release, commit, tip, at)
+}
+
+// MergeShadowSubject forwards what the shadow of a hand merge reads about its
+// Automaton.
+func (a *API) MergeShadowSubject(ctx context.Context, id string) (ShadowSubject, bool) {
+	return a.M.MergeShadowSubject(ctx, id)
+}
+
+// MergeEligibilityForHandMerge forwards the selection rule as of a hand merge.
+func (a *API) MergeEligibilityForHandMerge(ctx context.Context, id, tip string, mergedAt time.Time) MergeSelectionEntry {
+	return a.M.MergeEligibilityForHandMerge(ctx, id, tip, mergedAt)
+}

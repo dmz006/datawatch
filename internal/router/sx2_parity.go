@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/mergeshadow"
 	"io"
 	"net/http"
 	"net/url"
@@ -551,7 +552,7 @@ func splitCreateParent(words []string) (spec []string, parent string, errMsg str
 }
 
 // shippedRecordUsage is the comm-channel usage line for recording shipped state.
-const shippedRecordUsage = "usage: autonomous shipped-record <id> commit=<commit> [release=<release>] [source=merge_step|backfill] [merged_at=<RFC3339>] [automation=true]"
+const shippedRecordUsage = "usage: autonomous shipped-record <id> commit=<commit> [release=<release>] [source=merge_step|backfill] [merged_at=<RFC3339>] [automation=true] [hand_checks=<name=pass|fail|skip,...>]"
 
 // shippedBackfillUsage is the comm-channel usage line for the shipped backfill.
 const shippedBackfillUsage = "usage: autonomous shipped-backfill [dry_run=true]   (one shipped-state backfill pass from the base repository's main-branch history)"
@@ -605,6 +606,13 @@ func (r *Router) handleAutonomousShippedVerb(args []string) {
 			body["source"] = v
 		case "merged_at", "at":
 			body["merged_at"] = v
+		case "hand_checks", "hand-checks":
+			checks, err := mergeshadow.ParseHandChecks([]string{v})
+			if err != nil {
+				r.reply("autonomous shipped-record failed", err.Error())
+				return
+			}
+			body["hand_checks"] = checks
 		case "automation":
 			automation = strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "on")
 		default:
