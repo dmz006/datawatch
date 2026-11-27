@@ -135,6 +135,14 @@ func (v *listsVerifier) Prepare(ctx context.Context, r Request, content RequestC
 		if l, err = v.lists.Edit(ctx, in, datawatchActor); err != nil {
 			return listErr(err)
 		}
+		// A reissued request starts with the doers of the chain, so their
+		// answers never count as independent, even before any read.
+		if err = v.syncHolders(l, r); err != nil {
+			return err
+		}
+		if l, err = v.lists.Get(r.ID); err != nil {
+			return listErr(err)
+		}
 	case err != nil:
 		return listErr(err)
 	}

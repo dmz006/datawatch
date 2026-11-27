@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -180,6 +181,16 @@ func (w *work) close(r *Request, state RequestState, why, by string) {
 			w.close(&w.edit(id).index, StateFailed, WhyParentClosed, "datawatch")
 		}
 	}
+}
+
+// doersOf lists every session that did a request's work: its former holders
+// and its current holder.
+func doersOf(r *Request) []string {
+	out := append([]string(nil), r.FormerHolders...)
+	if r.Holder != nil && !slices.Contains(out, r.Holder.SessionID) {
+		out = append(out, r.Holder.SessionID)
+	}
+	return out
 }
 
 // dropHolder takes a request off its holder. The next one starts a delivery
@@ -933,6 +944,9 @@ func (s *Requests) Reissue(ctx context.Context, c Caller, id string, in ReasonIn
 		return RequestView{}, err
 	}
 	st.index.ReissueOf, st.index.MayRunTwice = id, twice
+	// Every session that did the work before stays a doer on the new request,
+	// across the whole reissue chain.
+	st.index.FormerHolders = doersOf(&old)
 	nid := st.index.ID
 	err = s.insert(ctx, st, func(w *work) {
 		prev := w.edit(id)
