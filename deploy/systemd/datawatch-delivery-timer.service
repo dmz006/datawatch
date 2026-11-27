@@ -1,0 +1,22 @@
+# The outside timer for the datawatch delivery check: it alerts when datawatch
+# stops writing its heartbeat or says it cannot tell you anything.
+# See docs/howto/delivery-check.md before installing.
+#
+# As shipped the script has no message route: when there is something to report
+# it writes it to the journal and this unit fails.
+#
+# User unit. It must not depend on the datawatch unit: it has to run when
+# datawatch is dead.
+
+[Unit]
+Description=datawatch delivery check, outside timer
+Documentation=https://github.com/dmz006/datawatch/blob/main/docs/howto/delivery-check.md
+
+[Service]
+Type=oneshot
+# Copy scripts/delivery-outside-timer.sh here. The argument is the datawatch
+# data folder; change it if yours is elsewhere.
+ExecStart=%h/.local/bin/datawatch-delivery-outside-timer %h/.datawatch
+TimeoutStartSec=2min
+NoNewPrivileges=true
+PrivateTmp=true
