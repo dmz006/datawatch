@@ -3039,6 +3039,28 @@ entries:
     reason: >-
       false positive -- see impact.analysis for the full dismissal record
 
+  - id: code-scanning/903
+    kind: code-scanning
+    package: "go/disabled-certificate-check"
+    path: "cmd/datawatch/schedule_cli.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "yes"
+      method: >-
+        Code read of the schedule command on 9.187.39 and 9.187.40.
+      analysis: >-
+        Not a false positive. The schedule commands do not verify the server
+        certificate of the address they use. Operator accepted the risk for
+        10.0; the change is planned with the 11.0 authentication and
+        authorization work.
+    first_added: "2026-11-27"
+    added: "2026-11-27"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      accepted risk (operator decision 2026-11-27): fix planned for 11.0
+
   - id: code-scanning/608
     kind: code-scanning
     package: "go/disabled-certificate-check"

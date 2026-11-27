@@ -928,6 +928,11 @@ type AutomationConfig struct {
 	// not a write-path error.
 	CleanupMode string `json:"cleanup_mode,omitempty"`
 
+	// CleanupArchived mirrors autonomous.automation.cleanup_archived.
+	// Pointer on purpose: unset (nil) reads true via
+	// EffectiveCleanupArchived and an explicit false survives.
+	CleanupArchived *bool `json:"cleanup_archived,omitempty"`
+
 	// CleanupRetentionHours: zero or a negative value reads the config
 	// package default of 24 via EffectiveCleanupRetentionHours.
 	CleanupRetentionHours int `json:"cleanup_retention_hours,omitempty"`
@@ -935,6 +940,13 @@ type AutomationConfig struct {
 	// CleanupMaxRemovalsPerPass: zero or a negative value reads the config
 	// package default of 10 via EffectiveCleanupMaxRemovalsPerPass.
 	CleanupMaxRemovalsPerPass int `json:"cleanup_max_removals_per_pass,omitempty"`
+
+	// CleanupSharedCacheSweep: the switch of the shared-cache sweep
+	// (autonomous.automation.cleanup_shared_cache_sweep), off by default.
+	// That sweep removes go-build and trivy scan-cache folders in the temp
+	// folder whichever process made them, so cleanup_mode alone does not run
+	// it. Not omitempty: an explicit false reads back.
+	CleanupSharedCacheSweep bool `json:"cleanup_shared_cache_sweep"`
 
 	// DiskAlertPercent: zero (unset) reads the config package default of 85,
 	// and the EffectiveDiskAlertPercent accessor clamps any other value into
@@ -1011,6 +1023,15 @@ func (c AutomationConfig) EffectiveCreateSearchThreshold() float64 {
 		return 0.5
 	}
 	return *c.CreateSearchThreshold
+}
+
+// EffectiveCleanupArchived returns whether archived Automata count as finished
+// for cleanup: unset (nil) reads true.
+func (c AutomationConfig) EffectiveCleanupArchived() bool {
+	if c.CleanupArchived == nil {
+		return config.DefaultCleanupArchived
+	}
+	return *c.CleanupArchived
 }
 
 // EffectiveChildInherit returns whether a child Automaton inherits from its
@@ -1474,6 +1495,11 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
+	// archivedTaskCursor is the archived Automaton the last periodic pass
+	// stopped at while releasing task work (worktree_cleanup_archived.go).
+	// Guarded by mu.
+	archivedTaskCursor string
+
 	// mergeModel is the merge conflict model wiring (merge_run_facts.go).
 	mergeModel atomic.Pointer[mergeModelWiring]
 

@@ -3,7 +3,8 @@
 // rules as for task worktrees (task_worktree_keep.go) apply: cleanup_mode off
 // and report remove nothing; a worktree with its own uncommitted or untracked
 // files, real files in an ignored folder (parked_work.go), a live session,
-// detached commits of its own, or anything that cannot be checked is kept; and
+// detached commits of its own, one an Automaton that has not finished points
+// at, or anything that cannot be checked is kept; and
 // what was removed or kept is written to the audit log. Neither step deletes a
 // branch.
 package autonomous
@@ -128,6 +129,10 @@ func (m *Manager) releaseAutomatonCheckout(prd *PRD, step automatonCheckoutStep)
 	tip = got
 	if m.taskWorktreeInUse(dir) {
 		keep(taskKeepLiveSession, "a live session works in the worktree")
+		return
+	}
+	if by := m.worktreeNeededBy(prd.ID, dir, ""); by != "" {
+		keep(taskKeepNeeded, "the Automaton "+by+" has not finished and still points at the worktree")
 		return
 	}
 	wt, listed, err := findLinkedWorktree(ctx, dir, dir)

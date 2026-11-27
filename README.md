@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.40 (2026-11-26).** A new delivery check keeps one list of unfinished and undelivered work and can message you about it; it is on by default, its result blocks nothing, and it was tested with made-up records and stand-in channels, with its limits listed in the changelog. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.42 (2026-11-27).** Cleanup now treats archived Automata like completed and cancelled ones, removing no files or branches while cleanup is off or report-only, and the safe-to-delete report no longer lists an unmerged branch as safe when its base has not moved. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

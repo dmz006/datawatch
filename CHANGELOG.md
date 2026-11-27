@@ -5,6 +5,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.42 — Archived Automata join cleanup, and a fault in the safe-to-delete report is fixed
+
+### Changed
+- Cleanup now treats archived Automata like completed and cancelled ones (`autonomous.automation.cleanup_archived`, on by default; `false` leaves them out). Nothing is removed with `cleanup_mode` `off` or `report`, except git's own leftover entry for a worktree whose folder is already gone, which can be cleared when that Automaton's worktree is made again. Only the periodic cleanup releases archived work, after the retention time and within the per-pass limit; archiving releases nothing more than before. A clean task worktree can go while its unmerged branch is kept. A task branch is deleted only if its commits or identical changes are on the default branch; the work branch only if its commits are on its base.
+- Removing a branch records no landing. The finished-work audit lists an archived Automaton as `branch_gone_unlanded` if its work branch is gone, it has a completed task, and no shipped record, merge commit or landing decision covers it; this can include merged work never recorded. Cleanup keeps anything an unfinished Automaton points at. An Automaton's own missing worktree is made again at its next plan or run (on its branch, or from the base if that is gone), unless git has it locked or it held detached commits not on the branch; lane fill no longer refuses it for being missing.
+- Cleanup no longer looks at Go build cache (`go-build`) or Trivy scan-cache folders in the temp folder unless you turn on the new setting `autonomous.automation.cleanup_shared_cache_sweep` (off by default). With it on, the cleanup mode decides as before, and mode `on` removes such folders whichever program made them.
+- The temp-file cleanup now lists only the temp folder itself, not what is inside the folders there. It no longer reports an error just after removing one of its own folders.
+
+### Fixed
+- The safe-to-delete report no longer lists an unmerged branch as safe when its base has not moved, and counts commits ahead instead of behind.
+- A withdrawn finished-work question is no longer raised again at the next check. If the work is still not on the default branch, it is asked again when the branch moves to another commit or after 14 days. Withdrawing is not a keep or drop decision: archive and cancel still refuse.
+
+### Before you upgrade
+- Unless you turn the new setting on, these cache folders are no longer removed or listed in any cleanup mode, so they can use up disk space. Turn it on only if every program using that temp folder may lose them.
+- A question already raised again after an earlier withdrawal stays open. If a finished-work entry still names a withdrawn question, the first check settles it, counting 14 days from then.
+- Removing a worktree also deletes ignored files outside protected folders and assume-unchanged or skip-worktree edits, even in your own clean checkout of a landed work branch; backup refs keep commits only. With mode `on`, archiving still removes the Automaton's own clean folder at once. Mode `report` (used when unset) now lists archived work too, adds notes to those records and can take longer. The audit skips records with no completed task. A worktree remade after its branch is gone restores no backup.
+
+### Not covered
+- With the setting on, there is no per-pass removal limit, and a program only running from a cache folder does not keep it.
+- If you withdraw an older question while another is open for the same Automaton, a later "I will land it" on the other may not be asked again for up to 14 days from the withdrawal, instead of 3, unless the branch moves.
+- If git cannot read the branch when you withdraw, a move made before git can read it again is not noticed.
+- Known gap, accepted for this release line and planned for 11.0: `datawatch schedule add`, `list`, `cancel` and `spawn` do not verify the TLS certificate of the server they connect to.
+
+## v9.187.41 — The GitHub release summary no longer searches all tags
+
+### Fixed
+- The "Release CI Summary" GitHub workflow is now set to run only after a "Release" run started by a release tag (vX.Y.Z) pushed to this repository, or by hand with a version tag, which is checked and no longer pasted into the shell script. Its tag step and the one in the owasp-zap workflow no longer search all tags: a lookup takes at most two requests for one tag, and a failed lookup fails the step. Later CI results no longer start a table update; run the summary by hand. The ZAP scan steps are unchanged. Tested locally with made-up API replies; not yet run on GitHub Actions.
+
 ## v9.187.40 — One delivery check lists unfinished and undelivered work; its result blocks nothing
 
 ### Added
