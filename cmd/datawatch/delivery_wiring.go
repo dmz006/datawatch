@@ -13,9 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/acceptance"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/delivery"
+	"github.com/dmz006/datawatch/internal/pause"
 	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
@@ -46,6 +48,12 @@ type deliveryWiring struct {
 
 	questions *autonomouspkg.QuestionStore
 	subs      *autonomouspkg.SubscriptionStore
+
+	// requests is the open request store, and ctx the run it belongs to.
+	requests *delivery.Requests
+	ctx      context.Context
+	// pause is the operator's pause, set while the daemon starts.
+	pause pause.Gate
 }
 
 func newDeliveryWiring() *deliveryWiring {
@@ -165,6 +173,9 @@ type deliveryDeps struct {
 	autonomy  *autonomouspkg.Manager
 	pipelines *pipelinePkg.Executor
 	http      *server.HTTPServer
+	// queue is the older work queue, which moves into the request store.
+	queue *session.QueueStore
+	pause pause.Gate
 	// firstPassDelay replaces deliveryFirstPassDelay in tests.
 	firstPassDelay time.Duration
 }
@@ -174,7 +185,10 @@ type deliveryDeps struct {
 func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.Engine, error) {
 	if !d.cfg.Delivery.EnabledOn() {
 		fmt.Println("[delivery] the check is off (delivery.enabled: false)")
-		return nil, nil
+		return nil, w.startOff(d)
+	}
+	if d.pause == nil {
+		d.pause = w.pause
 	}
 	dataDir := expandHome(d.cfg.DataDir)
 	if err := w.key.Commit(); err != nil {
@@ -198,21 +212,42 @@ func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.E
 	if d.pipelines != nil {
 		sources = append(sources, pipelineSource(journal, journalErr))
 	}
+	// Requests need datawatch's session records.
+	var lists *acceptance.Service
+	if d.sessions != nil {
+		lists = openLists(d, w.key.Key(), adopt, w.requestBook)
+		sources = append(sources, w.requestSource())
+	}
 	e, err := delivery.New(delivery.Options{
 		Dir: dir, Key: w.key.Key(), AdoptPlain: adopt, Host: d.cfg.Hostname,
 		Interval: d.cfg.Delivery.Interval(), Sources: sources,
-		Sender: delivery.NewChannelSender(w.channelList),
-		Notify: func() bool { return d.cfg.Delivery.NotifyOn() },
-		Slots:  deliverySlots(d.schedules),
+		Sender:  delivery.NewChannelSender(w.channelList),
+		Notify:  func() bool { return d.cfg.Delivery.NotifyOn() },
+		Slots:   deliverySlots(d.schedules),
+		Healthy: w.requestsHealthy,
 	})
 	if err != nil {
 		return nil, err
 	}
+	// The request store opens before anything below writes: if it cannot, the
+	// daemon does not start and queue.json and queue.d are as they were.
+	var reqs *delivery.Requests
+	if d.sessions != nil {
+		if reqs, err = w.openRequests(d, e, lists, adopt); err != nil {
+			return nil, err
+		}
+	}
 	// Secure mode was just turned on: seal what was plain before anything
 	// else. Until that and the journal worked, the next start adopts again.
+	var requestsErr error
+	if reqs != nil {
+		if requestsErr = reqs.SealAdopted(); requestsErr != nil {
+			log.Printf("[delivery] sealing the plain request records failed: %v", requestsErr)
+		}
+	}
 	if err := e.SealAdopted(); err != nil {
 		log.Printf("[delivery] sealing the plain records failed: %v", err)
-	} else if journalErr == nil {
+	} else if journalErr == nil && requestsErr == nil {
 		if err := w.key.SealDone(); err != nil {
 			log.Printf("[delivery] %v", err)
 		}
@@ -230,6 +265,9 @@ func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.E
 	}
 	if d.http != nil {
 		d.http.SetDelivery(e)
+	}
+	if reqs != nil {
+		w.startRequests(ctx, d, reqs)
 	}
 
 	delay := d.firstPassDelay
