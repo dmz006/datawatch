@@ -74,6 +74,17 @@ func New(opts Options) (*Engine, error) {
 	return e, nil
 }
 
+// SealAdopted seals, at once, plain records that were read because the store
+// key is new. It writes nothing otherwise.
+func (e *Engine) SealAdopted() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.broken) > 0 || !e.markDirty {
+		return nil
+	}
+	return e.persistLocked(e.rec, e.mark, true)
+}
+
 // Interval is the time between checks.
 func (e *Engine) Interval() time.Duration { return e.opts.Interval }
 
@@ -141,7 +152,7 @@ func (e *Engine) Pass(ctx context.Context) (Report, error) {
 
 	var notice Notice
 	due := false
-	if e.notifyOn() && e.opts.Sender != nil {
+	if e.canSend() {
 		notice, due = DueNotice(e.opts.Host, e.rec.pointers(), now)
 	}
 	e.mu.Unlock()
@@ -194,10 +205,22 @@ func (e *Engine) warn(ctx context.Context) {
 
 func (e *Engine) notifyOn() bool { return e.opts.Notify == nil || e.opts.Notify() }
 
+// canSend reports whether there is a channel to send on. With none, nothing
+// is counted as a failed send: the check says it cannot tell anyone.
+func (e *Engine) canSend() bool {
+	return e.notifyOn() && e.opts.Sender != nil && len(e.opts.Sender.Channels()) > 0
+}
+
 // TestMessage sends a test message on every channel and says what each
-// answered.
+// answered. What they answer is the newest word on whether anyone can be told.
 func (e *Engine) TestMessage(ctx context.Context) []SendResult {
-	return Deliver(ctx, e.opts.Sender, TestText(e.opts.Host), e.opts.Now())
+	results := Deliver(ctx, e.opts.Sender, TestText(e.opts.Host), e.opts.Now())
+	if len(results) > 0 {
+		e.mu.Lock()
+		e.rec.AllFailed = !Told(results) // saved with the next pass
+		e.mu.Unlock()
+	}
+	return results
 }
 
 // Run passes at once and then every interval, and sooner when a failed send is
@@ -229,11 +252,11 @@ const runTick = 30 * time.Second
 func (e *Engine) retryDue(now time.Time) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if len(e.broken) > 0 || e.cannotRecord || !e.notifyOn() {
+	if len(e.broken) > 0 || e.cannotRecord || !e.canSend() {
 		return false
 	}
 	for _, en := range e.rec.Entries {
-		if en.ClosedAt == nil && en.NextTryAt != nil && !now.Before(*en.NextTryAt) && en.SeenAt == nil {
+		if en.ClosedAt == nil && en.NextTryAt != nil && !now.Before(*en.NextTryAt) && en.SeenAt == nil && en.Accepted == nil {
 			return true
 		}
 	}

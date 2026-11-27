@@ -199,6 +199,10 @@ func (w *deliveryWiring) start(ctx context.Context, d deliveryDeps) (*delivery.E
 	if err != nil {
 		return nil, err
 	}
+	// Secure mode was just turned on: seal what was plain before anything else.
+	if err := e.SealAdopted(); err != nil {
+		log.Printf("[delivery] sealing the plain records failed: %v", err)
+	}
 
 	w.mu.Lock()
 	w.engine = e

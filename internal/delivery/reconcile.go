@@ -81,7 +81,9 @@ func (e *Engine) apply(rec *records, mark *startMark, reads []sourceRead, now ti
 		}
 		readOK[r.name] = true
 		sm := mark.Sources[r.name]
-		capturing := sm == nil
+		// Before the first saved check, everything found is old: also when an
+		// earlier first check saved the start mark and not the list.
+		capturing := sm == nil || first
 		if capturing {
 			sm = &sourceMark{At: now}
 			mark.Sources[r.name] = sm

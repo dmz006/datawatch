@@ -802,3 +802,96 @@ func TestNewWritesNothing(t *testing.T) {
 		t.Fatalf("New wrote under %s: %v", dir, err)
 	}
 }
+
+// A first enable that saved the start mark and not the list must not make
+// every old item new at the next start.
+func TestAHalfSavedFirstEnableMakesNoStorm(t *testing.T) {
+	h := newHarness(t)
+	for i := 0; i < 200; i++ {
+		h.cands = append(h.cands, failedWork(fmt.Sprintf("old%03d", i), h.now.Add(-time.Hour)))
+	}
+	opts := h.options()
+	opts.writeFile = func(path string, data, key []byte) error {
+		if strings.HasSuffix(path, stateFileName) {
+			return errors.New("no space left on device")
+		}
+		return writeRecordFile(path, data, key)
+	}
+	e, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Pass(context.Background()); !errors.Is(err, ErrCannotRecord) {
+		t.Fatalf("err=%v", err)
+	}
+	h.sender.sent = nil
+	h.open()
+	r := h.next()
+	r = h.next()
+	if len(r.Backlog) != 200 || len(r.Items) != 0 || h.sender.count() != 0 {
+		t.Fatalf("backlog=%d items=%d sends=%d, want 200, 0 and 0", len(r.Backlog), len(r.Items), h.sender.count())
+	}
+}
+
+// Turning secure mode on seals the records at once, not at the next check: a
+// stop in between would leave plain records beside a new key.
+func TestAdoptedRecordsAreSealedBeforeTheFirstCheck(t *testing.T) {
+	h := newHarness(t)
+	h.cands = []Candidate{failedWork("markerid42", h.now)}
+	h.pass()
+	h.key = []byte("0123456789abcdef0123456789abcdef")
+	opts := h.options()
+	opts.AdoptPlain = true
+	e, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SealAdopted(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{stateFileName, startMarkFile} {
+		data, _ := os.ReadFile(filepath.Join(h.dir, name))
+		if !strings.HasPrefix(string(data), "DWDAT2\n") {
+			t.Fatalf("%s is still plain: %.40q", name, data)
+		}
+	}
+	// Once sealed, a plain file is not adopted again.
+	if err := os.WriteFile(filepath.Join(h.dir, stateFileName), []byte(`{"version":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.mu.Lock()
+	e.load()
+	e.mu.Unlock()
+	if r := e.Report(); !hasRed(r, RedRecords) {
+		t.Fatalf("a plain file was adopted after sealing: %v", r.Red)
+	}
+}
+
+func TestAnAcceptedTestMessageClearsCannotTell(t *testing.T) {
+	h := newHarness(t)
+	h.pass()
+	h.sender.setFail(true)
+	if rs := h.e.TestMessage(context.Background()); len(rs) != 1 || rs[0].OK {
+		t.Fatalf("results=%v", rs)
+	}
+	if r := h.e.Report(); !hasRed(r, RedSendsFail) {
+		t.Fatalf("a refused test message: %v", r.Red)
+	}
+	h.sender.setFail(false)
+	h.e.TestMessage(context.Background())
+	if r := h.next(); r.Result != ResultGreen || r.Heartbeat != HeartbeatOK {
+		t.Fatalf("after an accepted one: %v %s", r.Red, r.Heartbeat)
+	}
+}
+
+func TestNoChannelRecordsNoFailedSends(t *testing.T) {
+	h := newHarness(t)
+	h.pass()
+	h.sender.channels = nil
+	h.cands = []Candidate{failedWork("s1", h.now)}
+	r := h.run(time.Hour)
+	e, ok := findEntry(r.Items, "s1")
+	if !ok || e.SendFails != 0 || len(e.Sends) != 0 {
+		t.Fatalf("entry=%+v ok=%v", e, ok)
+	}
+}

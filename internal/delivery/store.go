@@ -218,6 +218,8 @@ func (e *Engine) persistLocked(rec *records, mark *startMark, markDirty bool) er
 		return err
 	}
 	e.rec, e.mark, e.markDirty = rec, mark, false
+	// From here a plain record in a sealed store is a foreign write.
+	e.opts.AdoptPlain = false
 	return nil
 }
 
