@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -37,6 +38,16 @@ var tellingBackends = map[string]bool{
 // CanTell reports whether a backend's accepted send reaches a person. Some
 // backends only receive, and their send succeeds without sending anything.
 func CanTell(backend string) bool { return tellingBackends[backend] }
+
+// channelBackend is the backend of a channel name: a second channel of one
+// backend is named "backend#2".
+func channelBackend(name string) string {
+	base, n, numbered := strings.Cut(name, "#")
+	if numbered && (n == "" || strings.Trim(n, "0123456789") != "") {
+		return name
+	}
+	return base
+}
 
 // A send returns one of these and never the backend's own error, which can
 // carry credentials or content.
@@ -72,7 +83,7 @@ func (c channelSender) usable() []Channel {
 	var out []Channel
 	seen := map[string]bool{}
 	for _, ch := range c.list() {
-		if ch.Send == nil || !CanTell(ch.Name) || seen[ch.Name] {
+		if ch.Send == nil || !CanTell(channelBackend(ch.Name)) || seen[ch.Name] {
 			continue
 		}
 		seen[ch.Name] = true

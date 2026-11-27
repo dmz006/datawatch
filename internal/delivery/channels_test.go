@@ -195,3 +195,23 @@ func TestChannelASendLeftRunningByACancelledPassIsNotStartedAgain(t *testing.T) 
 		t.Fatalf("err=%v calls=%d", err, fresh.Load())
 	}
 }
+
+// Two channels of one backend are registered as "name" and "name#2".
+func TestChannelASecondOfTheSameBackendCounts(t *testing.T) {
+	var sent []string
+	ch := func(name string) Channel {
+		return Channel{Name: name, Send: func(string) error { sent = append(sent, name); return nil }}
+	}
+	s := NewChannelSender(func() []Channel {
+		return []Channel{ch("slack"), ch("slack#2"), ch("webhook#2"), ch("slack#x"), ch("slack#"), ch("#2")}
+	})
+	if got := strings.Join(s.Channels(), ","); got != "slack,slack#2" {
+		t.Fatalf("channels=%s", got)
+	}
+	if err := s.Send(context.Background(), "slack#2", "hi"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(sent, ",") != "slack#2" {
+		t.Fatalf("sent=%v", sent)
+	}
+}
