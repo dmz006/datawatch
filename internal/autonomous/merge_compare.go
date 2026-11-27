@@ -94,6 +94,14 @@ func CompareBranchToMain(ctx context.Context, git MergeGitRunner, repo, branch, 
 		return fail("rev-list count", out, convErr)
 	}
 	res.Ahead = ahead
+	if ahead == 0 {
+		// Nothing is ahead: the answer is empty whatever the patch and
+		// subject comparisons would say, so they are not run. The cleanup
+		// asks this for every candidate, and they cost most of its time.
+		res.SubjectsOnBase = true
+		res.State = decideMergeState(res)
+		return res
+	}
 
 	out, err = git.Run(ctx, repo, "cherry", base, branch)
 	if err != nil {

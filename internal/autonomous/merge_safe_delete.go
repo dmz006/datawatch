@@ -116,7 +116,8 @@ func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base 
 	report := SafeDeleteReport{Safe: []SafeDeleteEntry{}, Held: []SafeDeleteHeld{}}
 
 	// Fixed-cost listing: one for-each-ref that prints each branch name and
-	// its behind/ahead counts against base (needs git >= 2.36).
+	// its ahead and behind counts against base, in that order. A git without
+	// the ahead-behind atom fails the call and takes the fallback.
 	var branchNames []string
 	aheads := map[string]int{}
 	fellBack := false
@@ -131,11 +132,11 @@ func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base 
 				continue
 			}
 			fields := strings.Fields(line)
-			if len(fields) != 3 { // name <behind> <ahead>
+			if len(fields) != 3 { // name <ahead> <behind>
 				ok = false
 				break
 			}
-			n, convErr := strconv.Atoi(fields[2])
+			n, convErr := strconv.Atoi(fields[1])
 			if convErr != nil {
 				ok = false
 				break

@@ -7104,9 +7104,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// defaults; the alert percent reads 85 when unset and is
 				// clamped to 1..100 otherwise.
 				"cleanup_mode":                  s.cfg.Autonomous.Automation.EffectiveCleanupMode(),
+				"cleanup_archived":              s.cfg.Autonomous.Automation.EffectiveCleanupArchived(),
 				"cleanup_retention_hours":       s.cfg.Autonomous.Automation.EffectiveCleanupRetentionHours(),
 				"cleanup_max_removals_per_pass": s.cfg.Autonomous.Automation.EffectiveCleanupMaxRemovalsPerPass(),
 				"disk_alert_percent":            s.cfg.Autonomous.Automation.EffectiveDiskAlertPercent(),
+				"cleanup_shared_cache_sweep":    s.cfg.Autonomous.Automation.CleanupSharedCacheSweep,
 				// Effective, not raw: an unset key reads hold and task_files.
 				"uncommitted_work_policy": s.cfg.Autonomous.Automation.EffectiveUncommittedWorkPolicy(),
 				"uncommitted_work_scope":  s.cfg.Autonomous.Automation.EffectiveUncommittedWorkScope(),
@@ -7641,6 +7643,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Cleanup of archived Automata: a boolean. Any other type rejects the whole
+	// PUT.
+	if v, ok := patch["autonomous.automation.cleanup_archived"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.automation.cleanup_archived: must be true or false", http.StatusBadRequest)
+			return
+		}
+	}
 	// Merge-pending mode: off | shadow | on. Any other value rejects the whole
 	// PUT. The alert threshold is whole minutes >= 0; unset reads the 30-minute
 	// default and an explicit 0 turns the merge-pending alert off.
@@ -7744,6 +7754,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// range percents are not refusals either (they read their defaults or
 	// clamp to 1..100), unlike the merge-pending and search-before-create
 	// keys above.
+	// The shared-cache sweep removes caches any process made, so only a real
+	// boolean switches it: any other value rejects the whole PUT.
+	if v, ok := patch["autonomous.automation.cleanup_shared_cache_sweep"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.automation.cleanup_shared_cache_sweep: must be true or false", http.StatusBadRequest)
+			return
+		}
+	}
 	if v, ok := patch["autonomous.automation.cleanup_mode"]; ok {
 		if verr := validateCleanupModeValue(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
@@ -10509,6 +10527,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.Automation.ChildInherit = &b
 			}
+		case "autonomous.automation.cleanup_archived":
+			// Validated above in handlePutConfig; a non-bool is left unchanged.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Automation.CleanupArchived = &b
+			}
 		case "autonomous.automation.merge_pending_mode":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -10558,6 +10581,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// EffectiveCleanupMode.
 			if validateCleanupModeValue(v) == nil {
 				cfg.Autonomous.Automation.CleanupMode = toString(v)
+			}
+		case "autonomous.automation.cleanup_shared_cache_sweep":
+			// Validated above in handlePutConfig as a JSON boolean.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Automation.CleanupSharedCacheSweep = b
 			}
 		case "autonomous.automation.cleanup_retention_hours":
 			// Stored as written (a whole number, checked above); zero or a

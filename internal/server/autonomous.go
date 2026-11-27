@@ -251,10 +251,15 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					// hours and limit of at least 1; alert percent whole in
 					// 1..100), so a GET /api/autonomous/config readback always
 					// shows exactly what was written.
-					CleanupMode               *string  `json:"cleanup_mode"`
+					CleanupMode *string `json:"cleanup_mode"`
+					// CleanupArchived: declared only as the type check.
+					CleanupArchived           *bool    `json:"cleanup_archived"`
 					CleanupRetentionHours     *float64 `json:"cleanup_retention_hours"`
 					CleanupMaxRemovalsPerPass *float64 `json:"cleanup_max_removals_per_pass"`
 					DiskAlertPercent          *float64 `json:"disk_alert_percent"`
+					// The shared-cache sweep switch: a boolean, so any other
+					// type is refused by the unmarshal.
+					CleanupSharedCacheSweep *bool `json:"cleanup_shared_cache_sweep"`
 					// Uncommitted-work keys: a present word must be one of
 					// hold|warn|off (policy) or task_files|worktree (scope).
 					UncommittedWorkPolicy *string `json:"uncommitted_work_policy"`

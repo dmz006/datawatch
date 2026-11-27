@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders, live daemon housekeeping routes, autonomous disabled, federation capability]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, archived cleanup, cleanup_archived, needed_by_record, recreate worktree, missing worktree, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders, live daemon housekeeping routes, autonomous disabled, federation capability]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what the cleanup passes did last, the two disk readings, the disk alert and the biggest temp folders while the temp disk is over threshold
@@ -77,13 +77,13 @@ is that project's own default branch, whatever it is called.
 
 ## What it removes
 
-Three safety nets. Two of them — the worktrees pass and the temp sweep — each have their own mode, counts and last-run record. The third, the **cache folders sweep**, removes stale `go-build` and Trivy scan-cache folders directly in your temp directory; it has no row of its own in the status and you read it in the log and audit stream (**The cache folders sweep** below).
+Three safety nets. Two of them — the worktrees pass and the temp sweep — each have their own mode, counts and last-run record. The third, the **cache folders sweep**, is **off by default**: switched on, it removes stale `go-build` and Trivy scan-cache folders directly in your temp directory, whichever program made them; it has no row of its own in the status and you read it in the log and audit stream (**The cache folders sweep** below).
 
 | Pass | What it removes | When |
 |---|---|---|
-| **Worktrees** | A finished Automaton's work branch and its worktree | When the Automaton completes or is cancelled, and again on a periodic sweep for anything that was held back or missed |
+| **Worktrees** | A finished Automaton's work branch and its worktree, and the task worktrees and task branches of archived Automata | When the Automaton completes or is cancelled, and again on a periodic sweep for anything that was held back or missed. Archived work goes on the periodic sweep only |
 | **Temp files** | The scratch files and directories the daemon's own worker sessions created in the temporary directory | When the session ends, and again on a periodic sweep for anything that refused to go the first time |
-| **Cache folders** | Stale Go build cache (`go-build`) and Trivy scan-cache (`trivy-scan-cache*`) folders directly under your temp directory, at least 60 minutes old, that no live process holds | Not at all on the owner path: once at daemon start, and again on a periodic sweep beside the temp sweep — the sweep is their only cleanup |
+| **Cache folders** | Stale Go build cache (`go-build`) and Trivy scan-cache (`trivy-scan-cache*`) folders directly under your temp directory, at least 60 minutes old, that no live process holds, made by any program. Only with `cleanup_shared_cache_sweep` on | Not at all on the owner path: once at daemon start, and again on a periodic sweep beside the temp sweep |
 
 The first time something is removed is the **owner** path: the Automaton or
 session cleans up after itself the moment it ends. The periodic sweep is the
@@ -96,7 +96,13 @@ owner removals and a net that finds little or nothing.
 The worktrees pass removes an entry only if **every** one of these holds. If any
 one does not, the entry is left exactly as it is and the reason is recorded.
 
-- The branch belongs to an Automaton that is **completed or cancelled**, as the
+- No Automaton that has **not finished** points at the worktree or the branch:
+  as its project directory (the folder itself or one below it), its work branch,
+  its base branch, or a task's directory, worktree or branch. A later run needs
+  it. The entry is held as `needed_by_record` and names that Automaton.
+- The branch belongs to an Automaton that is **completed, cancelled or
+  archived** (archived only while `cleanup_archived` is on; see **Archived
+  Automata** below), as the
   store says right now. A running, paused, blocked or restarted Automaton is
   never touched.
 - **No live session** is working in the worktree or bound to the Automaton, and
@@ -169,8 +175,9 @@ the same for another remote if there is no `origin`). It never assumes a name:
 a project whose default branch is `master`, `trunk` or anything else is judged
 against that branch.
 
-**The temp sweep** is stricter still. It looks only inside the daemon's
-temporary directory, only at names carrying the daemon's own `datawatch-` prefix,
+**The temp sweep** is stricter still. It lists only the daemon's temporary
+directory itself, where the daemon creates its scratch files and folders, and
+never lists what is inside the other folders there. It looks only at names carrying the daemon's own `datawatch-` prefix,
 and removes a path only if the daemon **recorded creating that exact path for a
 session that is no longer alive and ended more than the retention window ago**.
 A prefixed name the daemon has no record of is skipped as foreign. A session
@@ -183,17 +190,31 @@ record of what the daemon created is kept in memory, scratch left behind by an
 earlier daemon process (one that crashed, or ran before a restart) is not
 attributed and is left alone; remove those by hand if you want them gone.
 
-**The cache folders sweep.** A build or scan runs under the Automaton's
-worktree, but its cache folders land in **your temp directory**, not in the
-Automaton's directory or worktree: Go's build cache folders (`go-build`) and
-Trivy's scan-cache folders (`trivy-scan-cache*`). The temp sweep does not cover
-them — the daemon never recorded creating them, and they do not carry the
-`datawatch-` prefix — and nothing on the worktree side ever does. Left alone,
-they outlive every Automaton that made them and the temp directory grows until
-builds and tests start failing. The sweep is the only thing that removes them.
+**The cache folders sweep.** A build or scan can leave cache folders in
+**your temp directory**: Go's build cache folders (`go-build`) and Trivy's
+scan-cache folders (`trivy-scan-cache*`). The temp sweep does not cover them —
+the daemon never recorded creating them, and they do not carry the `datawatch-`
+prefix.
 
-It runs once when the daemon starts, before the first poll, and on every
-coordinator poll beside the temp sweep, in every mode. It looks only at entries
+**This sweep is off by default, and `cleanup_mode` alone does not run it.**
+The daemon does not create these folders and has no way to tell who did: the
+sweep removes them **whichever program made them**, including your own builds
+and other users' tools that share the temp directory. A program that is only
+running from such a folder, without an open file or a working directory in it,
+does not hold it. Switch it on only when everything that shares the temp
+directory may lose these caches:
+
+```sh
+datawatch config set autonomous.automation.cleanup_shared_cache_sweep true
+```
+
+With the switch off the daemon does not look at these folders at all: no
+removal, no report line and no audit event. With it off they can fill the temp
+directory; the disk alert still names the biggest folders there.
+
+With the switch on it runs once when the daemon starts, before the first poll,
+and on every coordinator poll beside the temp sweep, unless the mode is `off`.
+It looks only at entries
 directly under the temp directory (a symbolic link there is counted as skipped
 and never followed; a folder inside a subfolder is outside the pass), and
 removes one only if all of these hold:
@@ -240,12 +261,30 @@ re-fetches what it needs; that is the trade-off for leaving nothing behind. If
 directory is created. The sweep above remains the net for the stray `go-build`
 and Trivy scan-cache folders it could not remove itself.
 
+## What cleanup cannot protect
+
+A worktree counts as clean when `git status` reports nothing of yours. Removing
+it also deletes:
+
+- **ignored files** outside the protected folders, for example an `.env` file or
+  local data your ignore rules hide;
+- **hidden edits**: changes to files marked with `git update-index
+  --assume-unchanged` or `--skip-worktree`, which `git status` does not report.
+
+This includes a clean checkout you made yourself of a landed work branch. The
+backup refs keep **commits only**: none of these files can be restored from
+them. Copy what you need out of a worktree before you set `cleanup_mode` to
+`on`.
+
 ## Task worktrees and task branches
 
 With a worktree per task, each task also has a worktree and a branch
 (`automaton/<id>-...--tasks-<task>`). They are looked at when the Automaton
-completes or is cancelled. The worktree and the branch are judged apart, and
-anything that cannot be checked is kept.
+completes or is cancelled. At archive they are only listed; the periodic pass
+looks at them again later (see **Archived Automata**). The worktree and the
+branch are judged
+apart, and anything that cannot be checked is kept. A worktree or branch that an
+Automaton which has not finished still points at is kept.
 
 A **task worktree** is removed only if all of these hold:
 
@@ -261,7 +300,8 @@ A **task worktree** is removed only if all of these hold:
 
 Real files in the daemon's own ignored folders also keep the worktree (see
 **Real files in ignored folders** below). Other files that the repository's
-ignore rules hide are not counted: git removes them with the worktree.
+ignore rules hide are not counted: git removes them with the worktree. See
+**What cleanup cannot protect** below.
 
 A **task branch** is deleted only if every one of its commits is on the default
 branch, directly or through an Automaton branch that is itself on the default
@@ -278,11 +318,11 @@ branch setting is not used for task branches.
 
 A clean worktree of a branch that has not landed is removed and the branch is
 kept, so no commit is lost. A kept branch is looked at again on later passes
-over a completed Automaton.
+over a completed Automaton, and by the periodic pass over an archived one.
 
 The mode applies here too. `off` removes nothing and runs no git command.
 `report` removes nothing and records what it would remove. `on` removes.
-Archiving never removes a task worktree or branch.
+Archiving itself removes no task worktree or branch.
 
 **What was kept and why.** The Automaton record carries
 `task_worktree_cleanup`: the counts of worktrees and branches removed and kept,
@@ -294,7 +334,9 @@ carry it on every surface (REST, MCP, CLI, chat), and the web app shows a notice
 |---|---|
 | `cleanup_off` | `cleanup_mode` is `off`: nothing was looked at |
 | `report_mode` | `cleanup_mode` is `report`: it would be removed in `on` |
-| `not_removed_by_archive` | Safe to remove, but archiving removes nothing |
+| `not_removed_by_archive` | Safe to remove, but archiving removes no task worktree or branch; with `cleanup_archived` on, the periodic pass takes it later |
+| `needed_by_record` | An Automaton that has not finished still points at the worktree or branch; the detail names it |
+| `over_limit` | The periodic pass reached `cleanup_max_removals_per_pass`; a later pass takes it |
 | `no_base_repo` | No base repository is configured |
 | `live_session` | A session is still working in the worktree |
 | `uncommitted_work` | Uncommitted or untracked files |
@@ -338,9 +380,70 @@ Rejecting or archiving an Automaton also cleans up its worktree. It follows
 `cleanup_mode` in the same way: `off` and `report` remove nothing. In `on` it
 keeps everything the release after a pull request keeps, and it is never forced:
 if any untracked file is left, even one of the daemon's own, git refuses and the
-worktree stays. No branch is deleted. The audit actions are
+worktree stays. This step deletes no branch. The audit actions are
 `autonomous_orphan_worktree_remove`, `autonomous_orphan_worktree_kept` and
 `autonomous_orphan_worktree_would_remove`.
+
+## Archived Automata
+
+With `autonomous.automation.cleanup_archived` on (the default) an archived
+Automaton counts as finished, like a completed or cancelled one. Every keep-work
+rule on this page applies to it unchanged: uncommitted or untracked files, real
+files in a protected folder, commits that are not on the default branch, a live
+session or lease, anything that cannot be checked, and a folder or branch an
+unfinished Automaton points at are all **kept**. The switch removes nothing by
+itself: `cleanup_mode` still decides.
+
+- **Archiving releases nothing more because of this switch.** It does what the
+  step in **Reject and archive** above does, and no branch, task worktree or
+  task branch is removed.
+- **The periodic pass** alone releases archived work, including records that
+  were archived earlier. It waits `cleanup_retention_hours` from the record's
+  last change. Work that lands **after** the archive is released by a later
+  pass.
+- The pass takes task work first, then work branches, and
+  `cleanup_max_removals_per_pass` bounds both together. One task's worktree and
+  branch count as one removal. The task step stops after 60 seconds and carries
+  on from there on the next pass. Like the release at completion and cancel, it
+  passes `--force` when the only files left in a worktree are the daemon's own
+  tool files.
+- Removing a branch writes **no landing record**: a removed branch does not
+  prove where the work went. The finished-work audit reports an archived
+  Automaton as `branch_gone_unlanded` when its work branch is gone, it has a
+  completed task, and it has no merge commit or shipped record and no `landed`
+  or `dropped` landing. That includes work that was merged and never recorded.
+  Find where the work went, then record the shipped release, or a landing drop.
+- Read **What cleanup cannot protect** above before you set `cleanup_mode` to
+  `on`.
+
+To see what would happen before anything is removed, set `cleanup_mode` to
+`report`. Work branches are listed in the cleanup status (`datawatch autonomous
+cleanup`, `would_remove`) and the audit log; task worktrees and branches are on
+each record's `task_worktree_cleanup` with the reason `report_mode`, and in the
+audit log.
+
+Turn the switch off with `datawatch config set
+autonomous.automation.cleanup_archived=false` (or comm `configure
+autonomous.automation.cleanup_archived=false`, `PUT /api/config`, MCP
+`autonomous_config_set` with `automation_cleanup_archived`, or the PWA: Settings,
+Automata, *Clean up archived Automata like other finished ones*). Then the
+periodic pass leaves archived Automata alone.
+
+## A cleared worktree is made again
+
+An Automaton's own worktree (`<worktree dir>/<id>`) that was removed is created
+again at its next plan or run, instead of that step failing. It is checked out on
+the work branch; when the work branch is gone too, a new branch of the same name
+starts from the base branch. The record gets a `worktree_recreated` entry that
+says which. Lane fill does not refuse such an Automaton as `worktree_invalid`.
+So the folder of an Automaton that has not run yet can be cleared by hand (use
+`git worktree remove`, which refuses a folder with changes).
+
+Only that one path is ever created. Any other missing directory is refused as
+before, and so is a folder that exists but is not a valid worktree. If git still
+lists the missing folder, only that registration is removed, without force: a
+locked one, or one whose detached HEAD holds a commit the work branch does not
+have, stops the run with the reason.
 
 ## Real files in ignored folders
 
@@ -399,6 +502,7 @@ mode is read live, so a change applies on the next poll without a restart.
 
 | Key | Meaning | Default | Allowed |
 |---|---|---|---|
+| `autonomous.automation.cleanup_archived` | Whether archived Automata count as finished (see **Archived Automata**) | `true` (an unset key reads `true`) | `true`, `false` |
 | `autonomous.automation.cleanup_retention_hours` | How long a finished Automaton's branch, or a finished session's scratch, must have sat before it can be removed | 24 | whole number, at least 1 |
 | `autonomous.automation.cleanup_max_removals_per_pass` | The most entries one pass removes. In `report` mode, what is over the limit is counted as would-remove | 10 | whole number, at least 1 |
 | `autonomous.automation.disk_alert_percent` | Disk usage percent at or above which the disk alert is raised | 85 | whole number, 1 to 100 |
@@ -471,7 +575,12 @@ key:
 | MCP | `config_set` with `key: autonomous.automation.cleanup_mode` and `value: on` |
 | CLI | `datawatch config set autonomous.automation.cleanup_mode on` |
 | Comm channel | `configure autonomous.automation.cleanup_mode=on` |
-| PWA | Settings → General → the Automata settings: **Automaton cleanup**, **Automaton cleanup retention**, **Automaton cleanup limit** and **Automata disk alert** |
+| PWA | Settings → General → the Automata settings: **Automaton cleanup**, **Sweep shared temp caches**, **Automaton cleanup retention**, **Automaton cleanup limit** and **Automata disk alert** |
+
+The shared cache switch is `autonomous.automation.cleanup_shared_cache_sweep`
+(`true` or `false`, default `false`; any other value is refused). It is set the
+same ways; the MCP `autonomous_config_set` tool calls it
+`automation_cleanup_shared_cache_sweep`.
 
 `GET /api/config` shows the keys under `autonomous.automation`. A key that was
 never set is not shown; it is running on its default.
@@ -487,8 +596,9 @@ threshold the daemon raises one warning alert that names every over-threshold
 disk with its usage. When the temp disk is the one over, the alert body also
 lists the **biggest folders directly in the temp folder** — the top five —
 each with its approximate size and whether a **running process** holds it — its **ownership**, judged by the same `/proc` liveness probe the sweep uses (an open handle into it, or a process working out of it). That list
-is what points you at what is eating the space; in practice it is the stale
-`go-build` and Trivy scan-cache folders the sweep above was added for.
+is what points you at what is eating the space; often it is stale `go-build`
+and Trivy scan-cache folders, which the daemon removes only with the shared
+cache sweep switched on.
 
 - The alert is **rate limited**: while a disk stays above its threshold it
   fires at most once an hour, not once per poll. The time it last fired is kept
@@ -627,7 +737,8 @@ readable `/proc`, that is all of them — and the disk alert never removes
 anything, in any mode. The no-space gate reason (temporary folder full) is
 only a label on a gate failure plus an infra-retry path; it removes nothing,
 either. In `off` it does not even run git for the
-cleanup, and it does not scan the cache folders either. The only thing that
+cleanup, and it does not scan the cache folders either. In no mode does it
+scan or remove the shared cache folders unless you switched that sweep on. The only thing that
 still runs in `off` is the disk reading and its alert. Its status record is
 guarded the same way: the status file path is resolved once inside the data
 directory, a data directory that is not usable leaves the status recorder

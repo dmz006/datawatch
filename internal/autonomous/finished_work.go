@@ -8,7 +8,8 @@
 //     gets an owner and one open question, an Automaton whose code tasks are
 //     all done is offered for landing while its docs and gate tasks stay
 //     separately retryable, and a branch that was left alone is asked about
-//     again on its re-ask date;
+//     again on its re-ask date. A question someone withdraws stays settled
+//     until the branch moves or its re-ask date passes;
 //   - the daily digest of everything waiting (FinishedWorkDigest);
 //   - the weekly audit (RunFinishedWorkAudit): a full read over every
 //     Automaton, cancelled and branchless ones included, written as a
@@ -104,6 +105,10 @@ const (
 	// DecisionLandByHand is the decision-log kind of an "I will land it"
 	// answer.
 	DecisionLandByHand = "land_by_hand"
+	// DecisionFinishedWorkWithdrawn is the decision-log kind written when
+	// someone withdraws a finished-work question; its note names the re-ask
+	// date.
+	DecisionFinishedWorkWithdrawn = "finished_work_withdrawn"
 )
 
 // EffectiveFinishedWork returns the rule's mode; empty or unknown reads as on.
@@ -671,12 +676,28 @@ func (m *Manager) actOnFinishedWork(sw *FinishedWorkSweep, mode string, p *PRD, 
 		sw.Upsert(*f)
 		return
 	}
-	if prev, ok := sw.Get(p.ID); ok && prev.Cause == f.Cause {
-		f.QuestionID = prev.QuestionID
+	if prev, ok := sw.Get(p.ID); ok {
+		// A withdrawal the question hook did not record (a crash between the
+		// two writes) is settled here, before anything is asked.
+		m.settleMissedWithdrawal(sw, prev.QuestionID)
+		if prev.Cause == f.Cause {
+			f.QuestionID = prev.QuestionID
+		}
 	}
 	if f.QuestionID == "" || !m.finishedWorkQuestionOpen(f.QuestionID) {
+		if w, ok := m.withdrawalSettles(sw, p, now); ok {
+			date := w.ReaskAt.UTC().Format("2006-01-02")
+			f.ReaskAt = w.ReaskAt.UTC().Format(time.RFC3339)
+			f.Action = fmt.Sprintf("its question was withdrawn: asked again on %s, or sooner if the branch moves; land the branch, or record a keep or drop decision for its landing", date)
+			f.QuestionID = ""
+			sw.upsertUnasked(*f)
+			return
+		}
 		q, isNew := m.raiseFinishedWorkQuestion(p, *f, c)
 		f.QuestionID = q.ID
+		if q.ID != "" {
+			sw.forgetWithdrawal(p.ID) // asked again: the old withdrawal is used up
+		}
 		if isNew {
 			pass.Asked++
 			if c.reask {
@@ -784,6 +805,7 @@ func (m *Manager) appendFinishedWorkDecision(id string, f FinishedWorkFinding, q
 // finishedWorkLanded drops the finding of an Automaton whose work is on the
 // default branch (or whose branch is gone) and withdraws its open question.
 func (m *Manager) finishedWorkLanded(sw *FinishedWorkSweep, id string) {
+	sw.forgetWithdrawal(id)
 	f, had := sw.Remove(id)
 	if !had {
 		return
@@ -961,6 +983,93 @@ func (m *Manager) onFinishedWorkAnswer(c QuestionChange) bool {
 		log.Printf("[autonomous] prd=%s finished work answer to question %s: %v", q.PRDID, q.ID, err)
 	}
 	return true
+}
+
+// ---- withdrawn questions ----
+
+// onFinishedWorkWithdrawn settles a withdrawn finished-work question. It
+// reports whether the change was the withdrawal of one of these questions.
+func (m *Manager) onFinishedWorkWithdrawn(c QuestionChange) bool {
+	q := c.Question
+	if c.Kind != QuestionChangeWithdrawn ||
+		q.AskedBy != finishedWorkAsker || q.AskerKind != QuestionAskerSystem {
+		return false
+	}
+	if sw := m.FinishedWorkSweep(); sw != nil {
+		m.settleWithdrawnQuestion(sw, q, c.Actor)
+	}
+	return true
+}
+
+// settleWithdrawnQuestion remembers that someone withdrew the question about
+// an Automaton's finished work: it is not asked again until the branch moves
+// off the commit it points at now, or FinishedWorkReaskDays pass. The date is
+// written on the decision log. A withdrawal is not a keep or drop decision, so
+// the archive and cancel guard is unchanged. The daemon's own withdrawal (the
+// work landed) settles nothing.
+func (m *Manager) settleWithdrawnQuestion(sw *FinishedWorkSweep, q Question, actor string) {
+	actor = strings.TrimSpace(actor)
+	if actor == finishedWorkActor || q.PRDID == "" {
+		return
+	}
+	if actor == "" {
+		actor = operatorActor
+	}
+	p, ok := m.store.GetPRD(q.PRDID)
+	if !ok {
+		return
+	}
+	now := m.holdNow()
+	w := FinishedWorkWithdrawal{QuestionID: q.ID, Actor: actor, At: now,
+		Tip: m.landingBranchTip(p), ReaskAt: now.AddDate(0, 0, FinishedWorkReaskDays)}
+	if !sw.settleWithdrawal(p.ID, w) {
+		return
+	}
+	m.store.WithLock(func() {
+		p.Decisions = trimDecisions(append(p.Decisions, Decision{At: now, Kind: DecisionFinishedWorkWithdrawn, Actor: actor,
+			Note:       fmt.Sprintf("finished-work question withdrawn; the daemon asks again on %s, or sooner if the branch moves, while the work is still not on the default branch", w.ReaskAt.UTC().Format("2006-01-02")),
+			QuestionID: q.ID}))
+	})
+	if err := m.store.SavePRD(p); err != nil {
+		log.Printf("[autonomous] prd=%s finished work withdrawal: %v", p.ID, err)
+	}
+}
+
+// settleMissedWithdrawal settles question id when it is withdrawn and the
+// withdrawal is not remembered yet.
+func (m *Manager) settleMissedWithdrawal(sw *FinishedWorkSweep, id string) {
+	if id == "" {
+		return
+	}
+	m.mu.Lock()
+	store := m.decisionStore
+	m.mu.Unlock()
+	if store == nil {
+		return
+	}
+	q, ok := store.Get(id)
+	if !ok || q.State != QuestionWithdrawn || q.AskedBy != finishedWorkAsker {
+		return
+	}
+	m.settleWithdrawnQuestion(sw, q, store.withdrawnBy(id))
+}
+
+// withdrawalSettles says whether a withdrawn question still keeps the daemon
+// from asking about p: its re-ask date has not come and the branch has not
+// moved. A branch git cannot read is not proof of a move.
+func (m *Manager) withdrawalSettles(sw *FinishedWorkSweep, p *PRD, now time.Time) (FinishedWorkWithdrawal, bool) {
+	w, ok := sw.withdrawal(p.ID)
+	if !ok || !now.Before(w.ReaskAt) {
+		return w, false
+	}
+	cur := m.landingBranchTip(p)
+	if w.Tip != "" && cur != "" && cur != w.Tip {
+		return w, false
+	}
+	if w.Tip == "" && cur != "" {
+		sw.noteWithdrawalTip(p.ID, cur)
+	}
+	return w, true
 }
 
 // ---- the weekly audit ----
