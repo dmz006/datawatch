@@ -120,8 +120,8 @@ other hosts). Green does not mean those are fine.
 
 ### Which channels can reach you
 
-An ntfy send counts only when the ntfy server itself answers with success. A
-redirect, for example to a sign-in page, is a failed send. This applies to
+An ntfy send counts only on a 2xx answer to the request itself; redirects are
+not followed. This applies to
 every ntfy message datawatch sends: set the server address to where ntfy
 answers directly.
 
@@ -221,11 +221,13 @@ turned on are sealed at that start.
 Keep `store.key` in your backups of the data folder. Changing a setting does not
 change this key.
 
-If the list or the start mark is damaged or has missing parts, the start mark
-is missing, or the list file is gone while a heartbeat shows one was saved, the
-check does nothing, changes nothing and is red. Restore the files. Removing the
-whole `delivery` folder starts the check over: everything then wrong becomes a
-new backlog, and acknowledgements and acceptances are lost.
+After a completed check, if `state.rec` is gone, or `state.rec` or
+`startmark.rec` cannot be read or holds a null entry, the check changes nothing,
+sends only the cannot-save warning and is red until restored. A file that still
+reads but was emptied is not detected: what is wrong can go to the silent
+backlog. To start over, stop datawatch and remove the whole `delivery` folder.
+Everything then wrong becomes a new backlog, and acknowledgements and
+acceptances are lost.
 
 These refusals to start apply **also with `delivery.enabled: false`**. To leave
 secure mode on purpose, stop datawatch and remove both `queue.d/store.key` and

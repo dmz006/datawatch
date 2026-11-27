@@ -14386,7 +14386,7 @@ paths:
   /api/delivery/ack:
     post:
       summary: Mark delivery list entries as seen; their messages stop and they stay listed
-      description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer, and who did it comes from the credential. Needs delivery:write."
+      description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer. Needs delivery:write. Known, also in earlier code: a credential with sessions:list can use the chat test route with operator access; permissions and recorded actor names cannot be relied on."
       operationId: deliveryAck
       tags: [Singletons]
       requestBody:
@@ -14417,7 +14417,7 @@ paths:
   /api/delivery/accept:
     post:
       summary: Let delivery list entries wait until a review date at most 30 days ahead (a plain date means the end of that day, UTC, so at most 29 days after today)
-      description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer, and who did it comes from the credential. Needs delivery:write."
+      description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer. Needs delivery:write. Known, also in earlier code: a credential with sessions:list can use the chat test route with operator access; permissions and recorded actor names cannot be relied on."
       operationId: deliveryAccept
       tags: [Singletons]
       requestBody:
@@ -14452,7 +14452,7 @@ paths:
   /api/delivery/drop:
     post:
       summary: Close failed or backlog delivery list entries
-      description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer, and who did it comes from the credential. Needs delivery:write."
+      description: "A selector needs at least one of keys, kind, state, match_reason and backlog; every one given narrows the choice. An unknown field is refused. The rule that only the operator does this is recorded and not enforced: no caller is refused for being a session or a peer. Needs delivery:write. Known, also in earlier code: a credential with sessions:list can use the chat test route with operator access; permissions and recorded actor names cannot be relied on."
       operationId: deliveryDrop
       tags: [Singletons]
       requestBody:

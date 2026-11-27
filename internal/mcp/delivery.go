@@ -161,7 +161,7 @@ func (s *Server) deliveryAction(ctx context.Context, req mcpsdk.CallToolRequest,
 
 func deliverySelectorOptions(desc string, more ...mcpsdk.ToolOption) []mcpsdk.ToolOption {
 	return append([]mcpsdk.ToolOption{
-		mcpsdk.WithDescription(desc + " Name the entries with keys, kind, state, match_reason or backlog; every one given narrows the choice and at least one is needed. Who did it is recorded from the caller's credential."),
+		mcpsdk.WithDescription(desc + " Name the entries with keys, kind, state, match_reason or backlog; every one given narrows the choice and at least one is needed. Known, also in earlier code: a credential with sessions:list can use the chat test route with operator access; permissions and recorded actor names cannot be relied on."),
 		mcpsdk.WithArray("keys", mcpsdk.WithStringItems(), mcpsdk.Description("Entry keys, as <kind>:<id>:<state>")),
 		mcpsdk.WithString("kind", mcpsdk.Description("Only entries of this kind (automaton, task, bug, schedule, session, ...)")),
 		mcpsdk.WithString("state", mcpsdk.Description("Only entries in this state")),
