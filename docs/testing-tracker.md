@@ -6379,5 +6379,8 @@ An Automation's limit on members running at once, its stage gate and its decisio
 | "Done when" check, receipt probe, version resolver | **Yes** (`internal/delivery/request_proof_test.go`) | **No** | Real list engine and temporary git repositories |
 | Over the real request store | **Yes** (`request_proof_join_test.go`) | **No** | Skips until the store is in the tree; run in a combined copy before the merge |
 | Typed input records only `request <id> typed` | **Yes** (`internal/session/request_typed_test.go`, `cmd/datawatch/delivery_wiring_typer_test.go`) | **No** | Fake tmux; no real terminal. The pane output log is not covered: it shows what was typed |
-| pi extension | **Yes** (`internal/llm/backends/pi/delivery_test.go`) | **No** | Fake pi and fake daemon. **The sandbox proof with a real daemon, pi and model has not been run on the built extension.** Not loaded by any launch |
-| pi launch wiring | **Yes** (`cmd/datawatch/launch_pi_delivery_test.go`) | **No** | No live pi session |
+| pi extension | **Yes** (`internal/llm/backends/pi/delivery_test.go`) | **Sandbox** | Under node against a fake pi; and a sandbox proof with a sandbox daemon, real pi 1.3.0, one local model and a separate proxy (follow-up delivery with the note). Not run on a live daemon |
+| pi launch wiring | **Yes** (`cmd/datawatch/launch_pi_delivery_test.go`, `internal/session/delivery_extension_launch_test.go`) | **Sandbox** | Sandbox pi sessions started by the product's own launch command. Restart is checked by test only |
+| Reminder stop at take-by, typed requests in the limits, approved times | **Yes** (`internal/delivery/request_decisions_notice_test.go`) | **No** | Fakes, real store, injected clock |
+| Only datawatch creates kinds that close on receipt | **Yes** (`internal/delivery/request_decisions_kinds_test.go`) | **No** | Every caller kind and surface at the store |
+| Repair of damaged request storage; damage never stops a start | **Yes** (`internal/delivery/request_repair_test.go`, `cmd/datawatch/delivery_wiring_damage_test.go`) | **No** | Damage planted in temporary stores; not run on a live daemon |

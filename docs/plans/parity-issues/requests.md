@@ -16,6 +16,7 @@ Draft, not filed. For `datawatch-app` (Android and iOS).
 3. Operator actions with a reason code: reissue (with the "may run twice" confirmation), drop, force, accept unproven.
 4. The six settings.
 5. Five locales, as the web app.
+6. The reason code `repaired` on a failed request (rebuilt by a repair of damaged storage): show it as given; reissue needs the "may run twice" confirmation. Creating or reissuing a `hello`, `answer` or `rules` request is refused with a reason; show it as given.
 
 ## Not in the app
 

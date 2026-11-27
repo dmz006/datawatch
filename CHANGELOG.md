@@ -7,12 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - Requests: saved items addressed to a role, not to a session. Today the role you can give is the supervisor of a project. They are on REST, assistant tools, chat (`request …`), `datawatch request` and the web app (Settings → Automata, five languages; no create form). Requests are for this computer only; a call forwarded to another datawatch is refused.
+- Only datawatch itself creates the kinds that close on receipt (hello, answer, rules). Create and reissue refuse them on every surface and give the reason.
 - A request reads done only when its "done when" list reads done. A worker saying done does not mark it done. This needs `acceptance.mode: report`; with it off (the default) requests are saved and never close. A hello, an answer and a rule bundle close on a counted receipt and read "delivered (not the same as done)".
 - Only request lists are checked by datawatch, and no command checks are run. No reviewer is wired, so a review item reads "cannot tell" and keeps the request not done unless it is accepted without proof, which reads "done, accepted without proof".
 - If the holder ends, work it had accepted fails and is listed, and is not sent again. Work it had fetched but not accepted (unless read-only), and requests for one session, also fail when the holder ends. A request it never fetched goes to the next holder after that session takes its hello.
-- A pi confirmation shows datawatch's pi extension saw the text in a completed model call. Until 11.0 datawatch cannot prove that the extension, not other use of that session's credential, sent the report. **In this build pi delivery is not switched on.**
+- Interactive pi sessions get requests: the pi launch now loads datawatch's pi extension. A busy pi gets a request after its current task, with a short note that such messages are real. pi accepts with `datawatch_ack` and says it finished with `datawatch_report`; a report only starts datawatch's check and never marks a request done. Proven with pi 1.3.0 and one local Ollama model only. One-shot pi is not covered.
+- A pi confirmation shows datawatch's pi extension saw the text in a completed model call. Until 11.0 datawatch cannot prove that the extension, not other use of that session's credential, sent the report.
 - A role held by a worker with no proven way to fetch is given no work; it stays listed. A request addressed straight to one such session has its text typed once, and not at all into shell, one-shot, chat-mode, HTTP conversation or pi sessions, which stay listed. datawatch's tracker records `request <id> typed` only; what the terminal and the worker keep still holds the text.
-- Six settings under `delivery.` for request times and reminder limits. At most 2 reminders per session and 20 per computer each hour by default. The default times (take-by 1 hour, due 24 hours, 15 minutes between reminders) are not yet approved.
+- Six settings under `delivery.` for request times and reminder limits. By default a request has 1 hour to be picked up and 24 hours to be finished, a hello 1 hour, and reminders are at least 15 minutes apart. At most 2 reminders per session and 20 per computer each hour; a request typed in full counts toward both, and a limit of 0 stops it too. A request nobody fetched gets no more reminders once its 1-hour pickup time has passed, also from a holder who gets it later; it stays listed.
+- Damaged request storage never stops datawatch from starting. At start it rebuilds a damaged or missing manifest from the intact records; on a secure install restores a readable index that differs from the sealed copy; and sets a record it cannot believe aside so the others work. With a key that opens nothing, or files from a newer datawatch, it changes nothing and runs with delivery requests off. A repair never marks anything done. A request rebuilt while open, or waiting for one that was lost, reads failed (repaired) and is not run again until you reissue or drop it. A system alert and the delivery list say what was and was not repaired. Every file as it was is kept in `queue.d/repair-<time>/`.
 
 ### Changed
 - "Done when" lists (`acceptance.mode`, off by default): nothing is blocked, held or merged because of a list. datawatch creates and checks a list only for its requests. On a list made by hand, anything needing a check stays unchecked and the list does not read plain done (accepted without proof it reads "done, accepted without proof"). An item removed before the list is fixed is not required; removed later, the list reads changed, not done.
@@ -24,18 +27,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Chat messages that start with `request` and a request command word, or are only `request`, are now commands.
 
 ### Before you upgrade
-- To go back: stop datawatch, then run `datawatch queue export` (`--plain` on a secure install; the file is plain content).
-- Before going back to an older version run datawatch queue export, or the older daemon will not start.
+- Rolling back needs `datawatch queue export`. Before going back to an older version, stop datawatch and run it (`--plain` on a secure install; the file is plain content), or the older daemon will not start.
 
 ### Known
 - Who may create or manage requests, or answer, accept or change a "done when" list, is recorded, not enforced. Do not treat a counted answer as proof of who gave it.
 - Known, also in earlier code: a credential with sessions:list can use the chat test route with operator access; permissions and recorded actor names cannot be relied on.
 - On an install with no server token no session can take, accept or report a request.
-- On a secure install, words a Claude Code session passes into a request tool are kept in plain in the agent trace, and the session record's saved screen text can show them. The request, delivery and list stores did not hold them in our scan.
+- On a secure install, words passed to the request tools are plain on disk in places outside the request store: the agent trace (tool arguments) and the session record's saved screen text. pi also keeps its own conversation files, which hold the text of a request given to it; datawatch does not seal them. The request, delivery and list stores did not hold the words in our scan.
 - Known, also before this version: on a secure install, if the first `--secure` start is the one that encrypts a plain config file, the next start fails to open a store.
-- Typed requests are not counted in the hourly reminder limits, and a limit of 0 does not stop them. Reminder lines do obey the limits.
+- Limits of the repair: it runs only at start. A rebuilt manifest has lost the role holders and reminder counts (give the roles again) and any change not yet written to a record file; a rebuild cannot tell an older copy of a file from the current one; older work queue items read as their files do. A plain install has no sealed copy to restore from. While requests are off, a work queue that had moved into `queue.d` is unavailable too. A hello, answer or rule bundle held by a repair can only be dropped. datawatch never deletes the repair folders.
+- On a secure start, a `queue.d/store.key` that is wrong, damaged or missing now leaves datawatch running with delivery requests **and the delivery check** off, and an alert; before, datawatch did not start. Starting a secure install without secure mode is still refused.
 - A `datawatch request` command run inside a worker session counts as the operator. An accept-unproven typed there can close the request as done, accepted without proof. Not enforced until 11.0.
-- Each pi launch still writes datawatch's pi extension, a credential file with a session token (default session grant) and an environment variable, although pi delivery is off.
+- Each pi launch, one-shot too, writes a credential file with a session token (default session grant) and names it in an environment variable. The session's own model tools can read that file; until 11.0 nothing stops that use of the token.
 
 ### Not covered
 - Do not use pipelines or graphs for work that must not be lost. Other computers, containers, opencode and other workers are not covered.

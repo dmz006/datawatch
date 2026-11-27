@@ -325,8 +325,8 @@ func TestReqPiBothTimingsDeliverAndReportSeen(t *testing.T) {
 	}
 }
 
-// Choosing when a busy pi gets a request is open (design question Q1): with
-// nothing chosen the extension takes nothing, so nothing is marked fetched.
+// With no timing named in the credential the extension takes nothing, so
+// nothing is marked fetched.
 func TestReqPiWithNoTimingChosenTakesNothing(t *testing.T) {
 	for _, timing := range []string{"", "sometime", "followup", "nextTurn"} {
 		d := newFkDaemon(t)

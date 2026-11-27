@@ -52,9 +52,9 @@ var workerPolicies = map[string]WorkerPolicy{
 	// completed (99 requests, 94 confirmed, 5 planted never to be; 0 false and
 	// 0 missed against a separate proxy). Take alone must never count: in 11
 	// forced cases no completed call held a fetched request. The model's own
-	// receipt is extra only. The proof used a prototype: the built extension
-	// must pass the same sandbox proof before release, or this row goes back to
-	// Proven false.
+	// receipt is extra only. The built extension passed a sandbox proof of its
+	// own (build/d4-finish-report.md): follow-up delivery with the note, pi
+	// 1.3.0, "seen" agreeing with a separate proxy.
 	"pi": {Family: "pi", Proven: true, Needs: LevelInModelCall, ReceiptCode: true, PollsItself: true},
 }
 
