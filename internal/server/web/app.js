@@ -37065,18 +37065,16 @@ function _automataRenderCards() {
 }
 
 // _automataNormalizeTab returns the sub-tab the view should show. The
-// Automation sub-tab needs the autonomous subsystem enabled: when it is
-// disabled or its config was unreachable, a stored 'automation' falls back to
-// 'automata'.
+// Automation sub-tab needs a readable autonomous setting (on or off): when the
+// setting cannot be read, a stored 'automation' falls back to 'automata'.
 function _automataNormalizeTab() {
   const st = _automataState;
-  if (st.tab === 'automation' && state._autonomousEnabled === false) st.tab = 'automata';
+  if (st.tab === 'automation' && state._autonomousConfigReadable === false) st.tab = 'automata';
   return st.tab;
 }
 
-// _automataFallbackFromAutomation applies the enable gate once the config
-// answer is known: a disabled subsystem moves the view off the Automation
-// sub-tab.
+// _automataFallbackFromAutomation applies that gate once the config answer is
+// known: an unreadable setting moves the view off the Automation sub-tab.
 function _automataFallbackFromAutomation() {
   const before = _automataState.tab;
   if (_automataNormalizeTab() !== before && state.activeView === 'autonomous' && !_automataDetailId) {
@@ -48456,7 +48454,7 @@ function renderAutonomousView() {
            consistent sizing + padding (defined in style.css). -->
       <div class="output-tabs automata-tabs-bar">
         <button class="output-tab ${st.tab==='projects'?'active':''}" data-tab="projects" onclick="switchAutomataTab('projects')">${escHtml(t('nav_projects'))}</button>
-        ${state._autonomousEnabled === false ? '' : `<button class="output-tab ${st.tab==='automation'?'active':''}" data-tab="automation" onclick="switchAutomataTab('automation')">${escHtml(t('nav_automation'))}</button>`}
+        ${state._autonomousConfigReadable === false ? '' : `<button class="output-tab ${st.tab==='automation'?'active':''}" data-tab="automation" onclick="switchAutomataTab('automation')">${escHtml(t('nav_automation'))}</button>`}
         <button class="output-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
         <button class="output-tab ${st.tab==='events'?'active':''}" data-tab="events" onclick="switchAutomataTab('events')">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}</button>
         <button class="output-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
@@ -58965,7 +58963,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Automata, so a stored 'automation' view restores into that sub-tab.
     if (_initView === 'automation') {
       _automataState.tab = 'automation';
-      _initView = state._autonomousEnabled === false ? 'sessions' : 'autonomous';
+      _initView = state._autonomousConfigReadable === false ? 'sessions' : 'autonomous';
     }
     // A stored 'projects' view or a #projects hash restores into the Automata
     // Projects sub-tab; navigate maps the old view name onto it.
@@ -58975,11 +58973,11 @@ document.addEventListener('DOMContentLoaded', () => {
     navigate(_initView || 'sessions', _initSession || undefined);
 
     // A saved link to the Automation list or one Automation lands on the
-    // Automata tab's Automation sub-tab (and opens the item) once the
-    // subsystem is known to be on.
+    // Automata tab's Automation sub-tab (and opens the item), unless the
+    // autonomous setting is known to be unreadable.
     const _deepLinkAutomation = _automationRouteFromLocation(window.location);
-    if (_deepLinkAutomation !== null && state._autonomousEnabled !== false) {
-      setTimeout(() => { if (state._autonomousEnabled !== false) openAutomationLink(_deepLinkAutomation); }, 300);
+    if (_deepLinkAutomation !== null && state._autonomousConfigReadable !== false) {
+      setTimeout(() => { if (state._autonomousConfigReadable !== false) openAutomationLink(_deepLinkAutomation); }, 300);
     }
 
     // GH#182 — alert deep link. A browser rewrites a registered
@@ -59030,30 +59028,7 @@ document.addEventListener('DOMContentLoaded', () => {
     })
     .catch(() => { state._whisperEnabled = false; });
 
-  // v5.26.8 — hide the Autonomous tab when autonomous.enabled=false.
-  // Operator-reported: tabs for disabled subsystems shouldn't render
-  // at all. The button starts display:none in index.html; JS unhides
-  // when /api/autonomous/config returns enabled:true. If the request
-  // fails (auth issue, daemon down) we leave it hidden — better to
-  // be invisible than to show a tab that 503s on click.
-  fetch('/api/autonomous/config', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
-    .then(cfg => {
-      const btn = document.getElementById('navBtnAutonomous');
-      if (btn && cfg && cfg.enabled === true) btn.style.display = '';
-      // The Automation sub-tab needs the subsystem enabled: when it is
-      // disabled, a stored 'automation' sub-tab falls back to 'automata'.
-      state._autonomousEnabled = !!(cfg && cfg.enabled === true);
-      _automataFallbackFromAutomation();
-      // BL313 — Dashboard is part of the autonomous subsystem; gate it on the same flag.
-      const dashBtn = document.getElementById('navBtnDashboard');
-      if (dashBtn && cfg && cfg.enabled === true) dashBtn.style.display = '';
-    })
-    .catch(() => {
-      // Config unreachable: no Automation sub-tab, so do not stay on it.
-      state._autonomousEnabled = false;
-      _automataFallbackFromAutomation();
-    });
+  _loadAutomataPageGate();
 
   // BL247-followup v6.7.2 — Observer view folded into Settings → Monitor
   // (Federated Peers card). The standalone nav button + view path were
@@ -59071,6 +59046,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }, 30000);
 });
+
+// _loadAutomataPageGate reads /api/autonomous/config at boot. The Automata and
+// Dashboard nav buttons (display:none in index.html) and the Automation sub-tab
+// show whenever the setting can be read, with automatic work on or off: with it
+// off the stored records stay viewable. When it cannot be read (daemon down,
+// refused token, no engine to answer) they stay hidden.
+function _loadAutomataPageGate() {
+  return fetch('/api/autonomous/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null)
+    .then(cfg => {
+      state._autonomousConfigReadable = !!cfg && typeof cfg === 'object';
+      if (state._autonomousConfigReadable) {
+        for (const id of ['navBtnAutonomous', 'navBtnDashboard']) {
+          const btn = document.getElementById(id);
+          if (btn) btn.style.display = '';
+        }
+      }
+      _automataFallbackFromAutomation();
+    });
+}
 
 // Make navigate global so onclick attributes work
 window.navigate = navigate;
@@ -62924,14 +62920,15 @@ function renderDashboardView() {
   _dash.rafId = requestAnimationFrame(_dashLoop);
 }
 
-// BL313 — unhide dashboard nav button; only shown when autonomous.enabled.
+// BL313 — unhide dashboard nav button; shown when the autonomous setting can be
+// read, with automatic work on or off.
 // Called when dashboard view activates (ensures nav is visible after navigate()).
 function _dashCheckEnabled() {
   fetch('/api/autonomous/config', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(cfg => {
       const navBtn = document.getElementById('navBtnDashboard');
-      if (navBtn && cfg && cfg.enabled === true) navBtn.style.display = '';
+      if (navBtn && cfg && typeof cfg === 'object') navBtn.style.display = '';
     })
     .catch(() => {});
 }

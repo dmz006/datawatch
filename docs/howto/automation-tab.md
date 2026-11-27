@@ -82,16 +82,30 @@ with its short name so the title fits one line. See
   that Automation on Automations, and the back control on a member's Automaton
   page returns to the Automation that holds it, on Automations. Older links and
   history entries that name the Automation view land in the same place.
-- **Subsystem off.** When the autonomous subsystem is not enabled, the
-  Automation sub-tab is not offered and every one of these links lands on the
-  Automata sub-tab.
+- **Automatic work off.** With `autonomous.enabled: false` the Automata and
+  Dashboard buttons, the Automation sub-tab, remembered views and every one of
+  these links work as when it is on, so stored Automations and Automata can be
+  read. Opening a page starts no work.
+- **Buttons while automatic work is off.** The setting does not switch the
+  buttons off. **Run**, **Resume**, task **Retry** and **Activate** on an
+  Automation can still start agent sessions, and **Plan** still calls the
+  planning model. A daemon restart also still carries on recently active Automata
+  that were left running. To hold agent work, use **Pause automation work** in the
+  header: Run is then refused and tasks wait. Plan still works while paused.
+  Retry and Resume are still accepted: the Automaton reads running, and its
+  waiting task can start as soon as you remove the pause.
+- **Setting cannot be read.** When the web app cannot read the setting (the
+  daemon is down, the access token is refused, or the engine is not available),
+  the Automata and Dashboard buttons stay hidden, the Automation sub-tab is not
+  offered and these links do not open it.
 - **Phone width.** On a narrow screen the first row fits at 360 px, and the
   second row scrolls sideways instead of wrapping; every sub-tab in both rows
   is at least 40 px tall and wide enough to tap.
 
 ## Base requirements
 
-- A running daemon with `autonomous.enabled: true`.
+- A running daemon with `autonomous.enabled: true`. To only read the tab, the
+  setting can be `false`.
 - At least one approved Automaton that is not already part of another
   Automation, to have something to put in a chain.
 
