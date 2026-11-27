@@ -32,18 +32,17 @@ type DeliveryConfig struct {
 	// ReminderIntervalSeconds is the shortest time between two reminders to a
 	// session.
 	ReminderIntervalSeconds int `yaml:"reminder_interval_seconds,omitempty" json:"reminder_interval_seconds,omitempty"`
-	// RemindersPerSessionHour is the operator's limit for one session. Default
-	// 2; 0 types no reminders.
+	// RemindersPerSessionHour is the operator's limit for one session, over
+	// reminder lines and typed requests. Default 2; 0 types neither.
 	RemindersPerSessionHour *int `yaml:"reminders_per_session_hour,omitempty" json:"reminders_per_session_hour,omitempty"`
-	// RemindersPerHostHour is the operator's limit for this computer. Default
-	// 20; 0 types no reminders.
+	// RemindersPerHostHour is the operator's limit for this computer, over the
+	// same two. Default 20; 0 types neither.
 	RemindersPerHostHour *int `yaml:"reminders_per_host_hour,omitempty" json:"reminders_per_host_hour,omitempty"`
 }
 
-// Defaults of the request settings. The two reminder limits are the operator's
-// numbers. The three times are PLACEHOLDERS the operator has not approved (a
-// design question in build/d4-split-final.md): job 4 is not released with them
-// until they are.
+// Defaults of the request settings, all approved by the operator. A hello's own
+// due time of 1 hour is in the kind table; request_due_seconds_by_kind replaces
+// it. Typed full requests count toward the two limits.
 const (
 	DefaultRemindersPerSessionHour = 2
 	DefaultRemindersPerHostHour    = 20

@@ -199,6 +199,10 @@ func (w *work) dropHolder(r *Request) {
 	if r.Holder != nil {
 		r.FormerHolders = append(r.FormerHolders, r.Holder.SessionID)
 	}
+	// A typed send still counts toward the hourly limits once its claim goes.
+	if n, ok := typedSend(r); ok {
+		w.t.meta = append(w.t.meta, func(m *storeMeta) { m.Notices = append(m.Notices, n) })
+	}
 	r.Holder, r.Delivery = nil, DeliveryRecord{}
 }
 

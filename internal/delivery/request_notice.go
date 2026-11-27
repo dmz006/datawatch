@@ -93,6 +93,7 @@ func (n *notifier) Notify(ctx context.Context, b RequestBook, now time.Time) err
 			sent = append(sent, x)
 		}
 	}
+	sent = append(sent, typedSends(b, now.Add(-time.Hour))...)
 	for key, at := range n.refused {
 		if now.Sub(at) > time.Hour {
 			delete(n.refused, key)
@@ -112,11 +113,17 @@ func (n *notifier) Notify(ctx context.Context, b RequestBook, now time.Time) err
 				sent = append(sent, *saved)
 			}
 		case len(w.toType) > 0:
-			if !w.lastAny.IsZero() && now.Sub(w.lastAny) < set.ReminderInterval {
+			// A typed request counts toward both hourly limits, as a line does.
+			if ok, _ := ReminderAllowed(set, sent, w.id, now); !ok ||
+				!w.lastAny.IsZero() && now.Sub(w.lastAny) < set.ReminderInterval {
 				continue
 			}
 			r := w.toType[0]
 			err = typeOnce(ctx, b, n.opts.Typer, r.ID, now)
+			if after, ok := b.Request(r.ID); ok && after.Delivery.TypeClaimAt != nil {
+				// The claim stays whenever the keys may have arrived.
+				sent = append(sent, RequestNotice{At: now, SessionID: w.id, RequestIDs: []string{r.ID}})
+			}
 			if err == nil || !errors.Is(err, ErrPromptRefused) && !errors.Is(err, ErrCannotRecord) {
 				n.started(ctx, r)
 			}
@@ -130,6 +137,34 @@ func (n *notifier) Notify(ctx context.Context, b RequestBook, now time.Time) err
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// typedSends are the full requests typed since then, read from the claims saved
+// on the requests before each was typed. A claim taken back because nothing was
+// typed is not there.
+func typedSends(b RequestBook, since time.Time) []RequestNotice {
+	var out []RequestNotice
+	for _, r := range b.Requests(RequestFilter{}) {
+		if n, ok := typedSend(&r); ok && !n.At.Before(since) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// typedSend is the send a request's typed claim stands for.
+func typedSend(r *Request) (RequestNotice, bool) {
+	if r.Holder == nil || r.Delivery.TypeClaimAt == nil {
+		return RequestNotice{}, false
+	}
+	return RequestNotice{At: *r.Delivery.TypeClaimAt, SessionID: r.Holder.SessionID, RequestIDs: []string{r.ID}}, true
+}
+
+// pickupPassed reports a request whose take-by time, held time not counted, is
+// over.
+func pickupPassed(r *Request) bool {
+	return r.ReasonCode == WhyTakeByPassed ||
+		r.TakeBySeconds > 0 && r.AgeSeconds-r.HeldSeconds >= r.TakeBySeconds
 }
 
 // work groups what could be sent by session, the longest without a send
@@ -175,6 +210,8 @@ func (n *notifier) work(b RequestBook, sent []RequestNotice) []*sessionWork {
 			}
 		case r.State != StateWaiting && r.State != StateDelivered:
 		case r.Delivery.FetchedAt != nil && r.Delivery.Reminders >= MaxFetchedReminders:
+		// Nobody fetched it in time: it is listed and no longer reminded of.
+		case r.Delivery.FetchedAt == nil && pickupPassed(&r):
 		default:
 			get(id).remind = append(get(id).remind, r)
 		}
