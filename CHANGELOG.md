@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.41 — The GitHub release summary no longer searches all tags
+
+### Fixed
+- The "Release CI Summary" GitHub workflow is now set to run only after a "Release" run started by a release tag (vX.Y.Z) pushed to this repository, or by hand with a version tag, which is checked and no longer pasted into the shell script. Its tag step and the one in the owasp-zap workflow no longer search all tags: a lookup takes at most two requests for one tag, and a failed lookup fails the step. Later CI results no longer start a table update; run the summary by hand. The ZAP scan steps are unchanged. Tested locally with made-up API replies; not yet run on GitHub Actions.
+
 ## v9.187.40 — One delivery check lists unfinished and undelivered work; its result blocks nothing
 
 ### Added
