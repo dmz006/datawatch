@@ -542,6 +542,11 @@ func TestReqPiTheReceiptToolAccepts(t *testing.T) {
 	if got := d.last("/accept"); got.Path != "/api/requests/r-1/accept" || got.Body["code"] != "c0de" || got.Token != "token-one" {
 		t.Fatalf("%+v", got)
 	}
+	// A model can miscopy an id (seen with real pi): the refusal says to check it.
+	miscopied := p.do(map[string]any{"cmd": "tool", "name": "datawatch_ack", "params": map[string]string{"request_id": "r-l", "code": "c0de"}})
+	if !strings.Contains(miscopied.ToolError, "check the request id and code") {
+		t.Errorf("%+v", miscopied)
+	}
 	for name, params := range map[string]map[string]string{
 		"a wrong code":    {"request_id": "r-1", "code": "nope"},
 		"a made-up id":    {"request_id": "r-9", "code": "c0de"},
@@ -564,7 +569,7 @@ func TestReqPiGuidanceOnlyWhenChosen(t *testing.T) {
 	e.save()
 	note := p.do(map[string]any{"cmd": "agent_start"}).Sections["datawatch_requests"]
 	for _, want := range []string{"[datawatch request <id> begin]", "real instruction", "datawatch_ack", "datawatch_report",
-		"hello needs only datawatch_ack", "do not retry"} {
+		"hello needs only datawatch_ack", "call once more", "another way"} {
 		if !strings.Contains(note, want) {
 			t.Fatalf("the note lacks %q: %q", want, note)
 		}
