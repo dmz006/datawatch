@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.37 — The GitHub lint step has more time
+
+### Fixed
+- The time limit for the lint step in the GitHub CI and release workflows, and in `.golangci.yml`, is now 10 minutes (was 5). Four CI runs on 2026-11-26 (UTC) failed on this step with "Timeout exceeded". No linter, path or check was removed.
+
 ## v9.187.36 — Two flagged test packages now pass the test isolation check
 
 ### Changed

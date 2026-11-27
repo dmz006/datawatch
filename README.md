@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.36 (2026-11-26).** The test packages flagged for home-folder lookups now use their own folders and one test timing fault is fixed; how datawatch behaves does not change. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.37 (2026-11-26).** The time limit for the lint step on GitHub is now 10 minutes instead of 5, with no check removed. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
