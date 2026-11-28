@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.49 — Fixes: secret scan, Archive button, usage back-off card, long Claude tasks and pi startup
+
+### Fixed
+- The secret scan now counts a commit's parents the same way git does.
+- The Archive button on one Automaton works: it was answered "method not allowed".
+- The usage back-off card now calls the address the server has.
+- A typed Claude task taller than the terminal (40 rows by default) was reported as never delivered: it was typed again, then the session was ended. Its first line scrolls off at once and Claude keeps no terminal history. datawatch now also accepts the end of the task on screen as proof it arrived. The check still looks at only one end of the task, so it cannot tell that the rest arrived; that end can now be the last one.
+- An interactive pi session now starts when the session name has spaces or other characters pi rejects, and a failed pi run is no longer reported as complete.
+
 ## v9.187.48 — Dashboard and Automata pages stay visible with automatic work off
 
 ### Fixed

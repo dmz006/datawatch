@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.48 (2026-11-27).** The Dashboard and Automata pages now stay visible when automatic Automata work is turned off, work finished by hand shows as done, and tag filters accept tag names. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.49 (2026-11-28).** This release fixes a secret scan gap, the Automaton Archive button, the usage back-off card, delivery proof for long Claude tasks and interactive pi startup. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
