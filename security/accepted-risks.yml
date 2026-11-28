@@ -4477,3 +4477,100 @@ entries:
     expires: "2026-12-22"
     validated_by: "claude-session"
     reason: "The blocking Trivy scan of the agent-base staging image in the image-refresh workflow lists CVE-2026-69260 (HIGH) on git-lfs 3.3.0-1+deb12u2 as affected with no fixed version; the Debian security tracker (read 2026-11-22) lists it vulnerable in bookworm and trixie, fixed only in forky and sid; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew, or drop git-lfs from the image if the agent tooling does not need it."
+  - id: code-scanning/942
+    kind: code-scanning
+    package: "go/incorrect-integer-conversion"
+    path: "internal/server/requests_settings.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        Validation on 2026-11-27 of the 10.0 candidate by a session that wrote
+        neither the check nor its first trace. The exact text of the function
+        was run on amd64 and 386 against exact arithmetic, and its callers
+        were listed from the source.
+      analysis: >-
+        The conversion on the flagged line follows a refusal of fractions, not-a-number,
+        negatives, values above the caller's limit and values above the largest
+        int. About 9.6 million calls per architecture gave no wrong result.
+        Without the last term, 386 stored wrong numbers. The three callers pass
+        a limit of 2147483647 or 9223372036. Not covered: a future caller that
+        passes the largest 64-bit number as its limit, and a run of the whole
+        server package on 386.
+    first_added: "2026-11-27"
+    added: "2026-11-27"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive -- see impact.analysis
+
+  - id: code-scanning/943
+    kind: code-scanning
+    package: "go/command-injection"
+    path: "internal/acceptance/command.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        Validation on 2026-11-27 of the 10.0 candidate by a session that wrote
+        neither the code nor its first trace: every caller of the flagged
+        function was read, and function-level tests ran on git 2.53 with
+        made-up repositories and harmless marker programs, with no network.
+      analysis: >-
+        git's name is fixed and no shell is used. All callers are in one file.
+        Request text is a version name, refused if it starts with "-", or a file
+        path placed after "--"; other values are ids git printed or paths
+        datawatch made. The folder is also named by the request, and git reads
+        that folder's settings: each of 1084 setting names built from git's own
+        list, set one at a time to a marker program in an ordinary and in a
+        partial clone, ran nothing in version reads, file reads or the clean
+        copy. Not covered: combinations of settings beyond one sample, git
+        versions other than 2.53, Windows and macOS, and which callers may name
+        a folder (planned for 11.0).
+    first_added: "2026-11-27"
+    added: "2026-11-27"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive for command injection through this line -- see
+      impact.analysis for what is not covered
+
+  - id: code-scanning/904
+    kind: code-scanning
+    package: "go/command-injection"
+    path: "internal/git/limits.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        Validation on 2026-11-27 of the 10.0 candidate by a session that wrote
+        neither the code nor its first trace: its own syntax-tree listing of
+        the calls that lead to the flagged line (175 calls, 548 arguments), a
+        code read of those not safe from their written form, and function-level
+        tests on git 2.53 with made-up repositories and marker programs.
+      analysis: >-
+        git's name is fixed and no shell is used. In the positions where git
+        reads options, values from a request or setting are refused if they
+        start with "-", follow a fixed beginning or "--", or are checked ids;
+        commit messages and copied setting values are taken as text. Some values
+        are git's own printed output and are not checked again; where that was
+        found they go to subcommands that have no option naming a program, or
+        begin with an id or git's own message word (code read). Tests: 516 calls
+        of exported push and check functions with option-like values, and the
+        merge replay, merge run and merge step tests (73, 493, 171 git calls),
+        put no such value in an option position. Not covered: the project
+        folder's own git settings and hooks, which apply to these git commands
+        by design; which callers may name folders or start runs (planned for
+        11.0); git versions other than 2.53; Windows and macOS; a full run
+        through a daemon.
+    first_added: "2026-11-27"
+    added: "2026-11-27"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive for command or option injection through arguments -- see
+      impact.analysis for what is not covered
+
