@@ -6,6 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- The secret scan now counts a commit's parents the same way git does.
 - The clean copy a "done when" command check would run in is now made without the project folder's own git settings, hooks and local attributes. The running daemon does not run command checks, so this changes nothing you can see today. The copy now always holds the whole recorded version, also when the named folder is below the project's top folder. Line-ending and other file conversions set only in that folder's own settings or local attributes are no longer applied to the copy; the account's and the system's git settings still apply.
 - Push checks, the merge pipeline and its saved push records now check more of the names and commit ids they read back from a project, a remote or a record before giving them to git. A git remote whose name starts with "-" is no longer used by the merge pipeline, and a saved push record with such a value is reported as one that cannot be understood.
 
