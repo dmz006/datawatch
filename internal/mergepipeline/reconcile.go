@@ -60,6 +60,21 @@ type journalledPush struct {
 	At          time.Time          `json:"at"`
 }
 
+// readsAsOption reports whether a value that is later given to git as an
+// argument starts with "-", which no record this package writes does.
+func (p journalledPush) readsAsOption() bool {
+	values := []string{p.Remote, p.Main, p.Base, p.Commit, p.Tag}
+	for _, b := range p.Branches {
+		values = append(values, b.Old, b.New)
+	}
+	for _, v := range values {
+		if strings.HasPrefix(v, "-") {
+			return true
+		}
+	}
+	return false
+}
+
 // pushedTipLanding is the optional Landing surface a repair uses when the
 // branch changed after its push: it records the landing for the exact tip that
 // was pushed, which the pushed commit must hold.
@@ -137,7 +152,7 @@ func readJournal(dir string) ([]journalledPush, error) {
 			return nil, fmt.Errorf("read the push journal %s: %w", name, err)
 		}
 		var p journalledPush
-		if err := json.Unmarshal(data, &p); err != nil || p.RunID+".json" != filepath.Base(name) || p.Commit == "" {
+		if err := json.Unmarshal(data, &p); err != nil || p.RunID+".json" != filepath.Base(name) || p.Commit == "" || p.readsAsOption() {
 			return nil, fmt.Errorf("the push journal %s cannot be understood; check what it records, then remove it", name)
 		}
 		out = append(out, p)
@@ -381,10 +396,12 @@ func (r *Runner) ReconcilePushes(ctx context.Context) ([]ReconciledPush, error) 
 }
 
 // pickRemote is origin when the repository has it, else its last remote.
+//
+// A name that starts with "-" is never picked: git would read it as an option.
 func pickRemote(listed string) string {
 	remote := ""
 	for _, n := range strings.Fields(listed) {
-		if remote == "" || n == "origin" {
+		if !strings.HasPrefix(n, "-") && (remote == "" || n == "origin") {
 			remote = n
 		}
 	}

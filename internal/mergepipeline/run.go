@@ -1001,15 +1001,9 @@ func (s *runState) fetchMain(ctx context.Context, main string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	names := strings.Fields(out)
-	if len(names) == 0 {
+	remote := pickRemote(out)
+	if remote == "" {
 		return "", nil
-	}
-	remote := names[0]
-	for _, n := range names {
-		if n == "origin" {
-			remote = n
-		}
 	}
 	if _, err := s.m.gitOK(ctx, s.r.Dir, "fetch", "--quiet", remote, main); err != nil {
 		return "", fmt.Errorf("fetch %s from %s: %w", main, remote, err)
@@ -2006,6 +2000,9 @@ func (e ExecShipRunner) checkFastForward(ctx context.Context, m *Merger, dir, re
 		return nil
 	}
 	remoteHead := fields[0]
+	if !git.IsObjectID(remoteHead) {
+		return fmt.Errorf("list %s on %s: git's answer does not start with a commit id", branch, remote)
+	}
 	if _, err := m.gitOK(ctx, dir, "fetch", "--quiet", remote, branch); err != nil {
 		return fmt.Errorf("fetch %s from %s: %w", branch, remote, err)
 	}

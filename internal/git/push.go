@@ -243,6 +243,9 @@ func checkRemoteName(remote string) error {
 
 // remoteExists reports whether dir already has a remote of that name.
 func remoteExists(ctx context.Context, dir, remote string) bool {
+	if checkRemoteName(remote) != nil {
+		return false
+	}
 	out, err := runGit(ctx, dir, "remote", "get-url", remote)
 	return err == nil && strings.TrimSpace(out) != ""
 }

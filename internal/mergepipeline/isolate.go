@@ -100,7 +100,7 @@ func (i *isolation) remoteMainHead(ctx context.Context) (string, error) {
 	}
 	head := ""
 	for _, line := range strings.Split(ls, "\n") {
-		if f := strings.Fields(line); len(f) == 2 && f[1] == "refs/heads/"+main {
+		if f := strings.Fields(line); len(f) == 2 && f[1] == "refs/heads/"+main && git.IsObjectID(f[0]) {
 			head = f[0]
 		}
 	}
@@ -236,7 +236,7 @@ func (i *isolation) sweep(ctx context.Context, remoteHead string) {
 	if marks, err := i.git.gitOK(ctx, repo, "for-each-ref", "--format=%(refname) %(objectname)", strings.TrimSuffix(scratchTagMarks, "/")); err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(marks), "\n") {
 			ref, commit, ok := strings.Cut(line, " ")
-			if !ok {
+			if !ok || !git.IsObjectID(commit) {
 				continue
 			}
 			pushed := false
@@ -286,6 +286,9 @@ func removeNotedTmuxDir(root string) {
 
 // deleteTag removes the local tag only while it still names commit.
 func (i *isolation) deleteTag(ctx context.Context, tag, commit string) {
+	if strings.HasPrefix(tag, "-") {
+		return // git would read the name as an option
+	}
 	at, err := i.git.revParse(ctx, i.git.Dir, "refs/tags/"+tag+"^{commit}")
 	if err != nil || at != commit {
 		return

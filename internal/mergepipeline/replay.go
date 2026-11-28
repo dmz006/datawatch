@@ -677,7 +677,7 @@ func (c *shadowCopy) copyPrivateFiles(ctx context.Context, repo string, s *Shado
 func refMap(out string) map[string]string {
 	m := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
-		if f := strings.Fields(line); len(f) == 2 {
+		if f := strings.Fields(line); len(f) == 2 && git.IsObjectID(f[1]) {
 			m[f[0]] = f[1]
 		}
 	}
