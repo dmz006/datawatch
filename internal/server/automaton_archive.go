@@ -44,8 +44,8 @@ func (s *Server) archiveAPI(w http.ResponseWriter) (automatonArchiveAPI, bool) {
 
 // handlePRDArchive serves GET /api/autonomous/prds/{id}/archive. A POST on
 // the same path is the archive action for this one Automaton: it hands to the
-// case "archive" of handleAutonomousPRDs, which carries its own permission
-// checks, the optional outcome body and the archive audit. This route was only
+// case "archive" of handleAutonomousPRDs, which reads the optional outcome
+// body and writes the archive audit. This route was only
 // shadowing that action with a 405.
 func (s *Server) handlePRDArchive(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {

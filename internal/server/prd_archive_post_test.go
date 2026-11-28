@@ -1,6 +1,6 @@
 // Per-Automaton archive POST: POST /api/autonomous/prds/{id}/archive must
-// reach the case "archive" action of handleAutonomousPRDs (its permission
-// checks, optional outcome body and archive audit intact), while GET keeps
+// reach the case "archive" action of handleAutonomousPRDs (optional outcome body
+// and archive audit intact), while GET keeps
 // reading the one Automaton's archive.
 package server
 
