@@ -60,10 +60,15 @@ type Repo interface {
 // Git implements Runner and Repo with the git command.
 type Git struct{}
 
+// noFetchEnv keeps every read inside the folder it names. The first entry
+// stops git from fetching a missing object. Older releases ignore it, so the
+// second also allows no transport at all, whatever the folder's settings say.
+var noFetchEnv = []string{"GIT_NO_LAZY_FETCH=1", "GIT_ALLOW_PROTOCOL="}
+
 func git(ctx context.Context, repo string, env []string, args ...string) ([]byte, error) {
 	full := append([]string{"-C", repo, "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + os.DevNull, "--literal-pathspecs"}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...) // #nosec G204 -- fixed binary, arguments are not shell-interpreted
-	cmd.Env = append(cleanEnv(os.Environ()), env...)
+	cmd.Env = append(append(cleanEnv(os.Environ()), noFetchEnv...), env...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
@@ -174,17 +179,42 @@ func (Git) ReadFile(ctx context.Context, sub Subject, file string) ([]byte, bool
 }
 
 // materialize writes the tracked files of one version into dir, without
-// touching the repository, its index or its worktrees.
+// touching the repository, its index or its worktrees. The files are checked
+// out by a new, empty git folder under work that only borrows the repository's
+// objects, so none of the repository's own settings, hooks or local
+// attributes take part: nothing they name is run.
 func materialize(ctx context.Context, sub Subject, work, dir string) error {
 	commit, err := exactCommit(ctx, sub)
 	if err != nil {
 		return err
 	}
-	env := []string{"GIT_INDEX_FILE=" + filepath.Join(work, "index")}
-	if _, err := git(ctx, sub.Repo, env, "read-tree", commit); err != nil {
+	out, err := git(ctx, sub.Repo, nil, "rev-parse", "--git-path", "objects")
+	if err != nil {
 		return err
 	}
-	_, err = git(ctx, sub.Repo, env, "checkout-index", "--all", "--force", "--prefix="+dir+string(os.PathSeparator))
+	objects := strings.TrimSuffix(string(out), "\n")
+	if !filepath.IsAbs(objects) {
+		objects = filepath.Join(sub.Repo, objects)
+	}
+	if objects, err = filepath.Abs(objects); err != nil {
+		return err
+	}
+	own := filepath.Join(work, "git")
+	args := []string{"init", "--quiet", "--bare", "--template="}
+	if len(commit) == 64 {
+		args = append(args, "--object-format=sha256")
+	}
+	if _, err := git(ctx, work, nil, append(args, own)...); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(own, "objects", "info", "alternates"), []byte(objects+"\n"), 0o600); err != nil {
+		return err
+	}
+	env := []string{"GIT_DIR=" + own, "GIT_WORK_TREE=" + dir}
+	if _, err := git(ctx, dir, env, "read-tree", commit); err != nil {
+		return err
+	}
+	_, err = git(ctx, dir, env, "checkout-index", "--all", "--force", "--prefix="+dir+string(os.PathSeparator))
 	return err
 }
 

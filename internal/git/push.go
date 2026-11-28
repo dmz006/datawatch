@@ -230,8 +230,22 @@ func failedPush(out, remote, ref string) PushResult {
 	}
 }
 
+// ErrRemoteName is the refusal of a remote name that starts with "-": git
+// reads such a value as an option, not as a name.
+var ErrRemoteName = errors.New(`git: unsafe remote name: it starts with "-"`)
+
+func checkRemoteName(remote string) error {
+	if strings.HasPrefix(remote, "-") {
+		return ErrRemoteName
+	}
+	return nil
+}
+
 // remoteExists reports whether dir already has a remote of that name.
 func remoteExists(ctx context.Context, dir, remote string) bool {
+	if checkRemoteName(remote) != nil {
+		return false
+	}
 	out, err := runGit(ctx, dir, "remote", "get-url", remote)
 	return err == nil && strings.TrimSpace(out) != ""
 }
@@ -300,9 +314,14 @@ func pushBranch(ctx context.Context, dir, remote, branch string, rules pushRules
 //  3. `main` and then `master`, each accepted only if that ref is
 //     actually advertised by the remote (`git ls-remote --refs`) —
 //     this package never invents a branch name.
+//
+// A remote name that starts with "-" is refused before git runs.
 func DefaultBranch(ctx context.Context, dir, remote string) (string, error) {
 	if remote == "" {
 		remote = "origin"
+	}
+	if err := checkRemoteName(remote); err != nil {
+		return "", err
 	}
 
 	// 1. Cached symref from a previous clone/fetch.
@@ -409,6 +428,9 @@ func UnpushedCommits(ctx context.Context, dir, remote string) (count int, branch
 	if remote == "" {
 		remote = "origin"
 	}
+	if err := checkRemoteName(remote); err != nil {
+		return 0, "", err
+	}
 	out, e := runGit(ctx, dir, "rev-list", "--count", "HEAD", "--not", "--remotes="+remote)
 	if e != nil {
 		return 0, "", fmt.Errorf("count unpushed commits vs %q: %s", remote, tailReason(out))
@@ -434,6 +456,9 @@ func UnpushedCommits(ctx context.Context, dir, remote string) (count int, branch
 func ForeignUnpushedCommits(ctx context.Context, dir, remote string) (int, error) {
 	if remote == "" {
 		remote = "origin"
+	}
+	if err := checkRemoteName(remote); err != nil {
+		return 0, err
 	}
 	if _, err := runGit(ctx, dir, "remote", "get-url", remote); err != nil {
 		// No such remote: a push fails on its own with a clear reason and

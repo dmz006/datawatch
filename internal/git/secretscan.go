@@ -238,15 +238,23 @@ func unpushedCommitList(ctx context.Context, dir, remote string) ([]string, erro
 	if remote == "" {
 		remote = "origin"
 	}
+	if err := checkRemoteName(remote); err != nil {
+		return nil, err
+	}
 	out, err := runGit(ctx, dir, "rev-list", "HEAD", "--not", "--remotes="+remote)
 	if err != nil {
 		return nil, fmt.Errorf("list unpushed commits vs %q: %s", remote, tailReason(out))
 	}
 	var shas []string
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if sha := strings.TrimSpace(line); sha != "" {
-			shas = append(shas, sha)
+		sha := strings.TrimSpace(line)
+		if sha == "" {
+			continue
 		}
+		if !IsObjectID(sha) {
+			return nil, fmt.Errorf("list unpushed commits vs %q: git printed a line that is not a commit id", remote)
+		}
+		shas = append(shas, sha)
 	}
 	return shas, nil
 }

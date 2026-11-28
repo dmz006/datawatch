@@ -41,7 +41,8 @@ var requestWholeKeys = []struct {
 	{requestSessionLimitKey, math.MaxInt32}, {requestHostLimitKey, math.MaxInt32},
 }
 
-// requestWhole reads a whole number from 0 to max.
+// requestWhole reads a whole number from 0 to max that an int holds: where int
+// is 32 bits, a larger number is refused whatever max says.
 func requestWhole(v interface{}, max int64) (int, bool) {
 	var f float64
 	switch x := v.(type) {
@@ -58,7 +59,7 @@ func requestWhole(v interface{}, max int64) (int, bool) {
 	default:
 		return 0, false
 	}
-	if f != math.Trunc(f) || f < 0 || f > float64(max) {
+	if f != math.Trunc(f) || f < 0 || f > float64(max) || f > float64(math.MaxInt) {
 		return 0, false
 	}
 	return int(f), true

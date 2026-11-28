@@ -136,6 +136,15 @@ func effectiveScanPolicy(p SecretScanPolicy) SecretScanPolicy {
 
 // ---- git plumbing that ignores local rewriting ----
 
+// IsObjectID reports whether s is a full object id: 40 or 64 lowercase hex
+// digits. Such a value is never read by git as an option.
+func IsObjectID(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	return strings.Trim(s, "0123456789abcdef") == ""
+}
+
 // outgoingEnv is the environment for every read the check does: replace refs
 // and grafts are off, so the objects read are the objects a push sends.
 func outgoingEnv() []string {
@@ -223,8 +232,10 @@ func readRemote(ctx context.Context, dir, remote string) (st remoteState, out st
 			}
 			continue
 		}
-		if len(left) < 40 {
-			continue // a warning line on stderr, not a ref
+		// Anything else, such as a warning on stderr, is not a ref. Both
+		// values are given to git again later.
+		if !IsObjectID(left) || (name != "HEAD" && !strings.HasPrefix(name, "refs/")) {
+			continue
 		}
 		st.refs[name] = left
 		if strings.HasPrefix(name, "refs/heads/") {
@@ -638,7 +649,7 @@ func commitParents(raw string) []string {
 	header, _, _ := strings.Cut(raw, "\n\n")
 	var parents []string
 	for _, line := range strings.Split(header, "\n") {
-		if p, ok := strings.CutPrefix(line, "parent "); ok {
+		if p, ok := strings.CutPrefix(line, "parent "); ok && IsObjectID(strings.TrimSpace(p)) {
 			parents = append(parents, strings.TrimSpace(p))
 		}
 	}
@@ -847,7 +858,7 @@ func buildManifest(ctx context.Context, dir string, st remoteState, refs []check
 			}
 			m.tags = append(m.tags, outgoingTag{id: id, raw: raw})
 			next, ok := strings.CutPrefix(strings.SplitN(raw, "\n", 2)[0], "object ")
-			if !ok {
+			if !ok || !IsObjectID(strings.TrimSpace(next)) {
 				return nil, fmt.Errorf("tag object %s names no object", id)
 			}
 			id = strings.TrimSpace(next)

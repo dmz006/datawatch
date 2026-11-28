@@ -3039,6 +3039,74 @@ entries:
     reason: >-
       false positive -- see impact.analysis for the full dismissal record
 
+  - id: code-scanning/905
+    kind: code-scanning
+    package: "go/command-injection"
+    path: "internal/git/limits_unix.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        Independent review on 2026-11-27 of main 05f9dd44ed (a code trace of
+        the callers and values, plus function-level tests on git 2.53 with
+        made-up repositories and harmless marker commands, with no network).
+        The same tests were run again on the 10.0 security fix branch and
+        passed. Not covered: a full merge or shadow run through a daemon, and
+        the Windows form of the git memory limit.
+      analysis: >-
+        Line 23 is the plain git call, with git's name fixed and each argument a separate value. Only the merge shadow sets a process limit, so only
+        it reaches these lines. The script is fixed text, and git's arguments
+        are passed as positional parameters ("$@"), which the shell does not
+        expand again: values containing shell syntax reached git unchanged.
+        Replay inputs (73 git calls), 22 merge runs (493 calls) and the later
+        merge steps run alone (171 calls) were given option-like and
+        shell-like values: none ran anything and none stood where git reads an
+        option. Shipped-record text starting "-" is refused before git runs,
+        and the settings the shadow copies come from the project's own
+        configuration, not from a request (both by code trace).
+    first_added: "2026-11-27"
+    added: "2026-11-27"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive (operator decision 2026-11-27) -- see impact.analysis for
+      the traced and tested record
+
+  - id: code-scanning/906
+    kind: code-scanning
+    package: "go/command-injection"
+    path: "internal/git/limits_unix.go"
+    severity: critical
+    impact:
+      traced: true
+      reachable: "no"
+      method: >-
+        Independent review on 2026-11-27 of main 05f9dd44ed (a code trace of
+        the callers and values, plus function-level tests on git 2.53 with
+        made-up repositories and harmless marker commands, with no network).
+        The same tests were run again on the 10.0 security fix branch and
+        passed. Not covered: a full merge or shadow run through a daemon, and
+        the Windows form of the git memory limit.
+      analysis: >-
+        Line 25 is the call to sh that sets the memory limit and then becomes git. Only the merge shadow sets a process limit, so only
+        it reaches these lines. The script is fixed text, and git's arguments
+        are passed as positional parameters ("$@"), which the shell does not
+        expand again: values containing shell syntax reached git unchanged.
+        Replay inputs (73 git calls), 22 merge runs (493 calls) and the later
+        merge steps run alone (171 calls) were given option-like and
+        shell-like values: none ran anything and none stood where git reads an
+        option. Shipped-record text starting "-" is refused before git runs,
+        and the settings the shadow copies come from the project's own
+        configuration, not from a request (both by code trace).
+    first_added: "2026-11-27"
+    added: "2026-11-27"
+    expires: "2027-01-02"
+    validated_by: "claude-session"
+    reason: >-
+      false positive (operator decision 2026-11-27) -- see impact.analysis for
+      the traced and tested record
+
   - id: code-scanning/903
     kind: code-scanning
     package: "go/disabled-certificate-check"
