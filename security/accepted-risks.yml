@@ -4546,31 +4546,40 @@ entries:
       traced: true
       reachable: "no"
       method: >-
-        Validation on 2026-11-27 of the 10.0 candidate by a session that wrote
-        neither the code nor its first trace: its own syntax-tree listing of
-        the calls that lead to the flagged line (175 calls, 548 arguments), a
-        code read of those not safe from their written form, and function-level
-        tests on git 2.53 with made-up repositories and marker programs.
+        Validation on 2026-11-27 by a session that wrote neither the code nor its
+        earlier checks. A call-graph listing of the exported functions in
+        internal/git and internal/mergepipeline that lead to git.Command, the
+        only way to this line and used only in those two packages. Function-level
+        tests on a copy that logged what reached the line, on git 2.53 (Linux
+        amd64) with made-up repositories, harmless marker programs and controls.
       analysis: >-
-        git's name is fixed and no shell is used. In the positions where git
-        reads options, values from a request or setting are refused if they
-        start with "-", follow a fixed beginning or "--", or are checked ids;
-        commit messages and copied setting values are taken as text. Some values
-        are git's own printed output and are not checked again; where that was
-        found they go to subcommands that have no option naming a program, or
-        begin with an id or git's own message word (code read). Tests: 516 calls
-        of exported push and check functions with option-like values, and the
-        merge replay, merge run and merge step tests (73, 493, 171 git calls),
-        put no such value in an option position. Not covered: the project
-        folder's own git settings and hooks, which apply to these git commands
-        by design; which callers may name folders or start runs (planned for
-        11.0); git versions other than 2.53; Windows and macOS; a full run
-        through a daemon.
+        git's name is fixed and no shell is used. 22 listed functions were
+        tested (3 others start only fixed non-git programs; git.Command passes
+        on what these packages give it; the merge shadow takes only the
+        memory-limited branch beside this line). 20336 cases set one string
+        field at a time to 31 values, with and without matching refs and
+        remotes; 2441 more used option-like names from branches, tags, remotes,
+        files and folders, through merges, conflict resolution, runs and pushes.
+        git ran no marker (a configured hook command, a shell command by design,
+        did). Exception: a relative folder value starting with "-" (the exported
+        scratch folder, which the daemon builds from data_dir in its config
+        file, or a project folder in a run without isolation, which the daemon
+        does not start: code read) can be read as options of git worktree add or
+        remove. git 2.53 lists no program-naming option for either; in tests it
+        mostly failed, and two values made an unexpected branch and worktree.
+        Results rest on git's default transport policy: some exported or
+        recorded remote values reach git without a configured-remote check (no
+        daemon request or setting route found: code read). Not covered: two
+        hostile values at once; callback results, pipeline records, empty lists
+        and function-valued settings; a looser transport policy; the project
+        folder's own git settings and hooks; which callers may name folders or
+        start runs (planned for 11.0); other git versions; Windows and macOS; a
+        full run through a daemon.
     first_added: "2026-11-27"
     added: "2026-11-27"
     expires: "2027-01-02"
     validated_by: "claude-session"
     reason: >-
-      false positive for command or option injection through arguments -- see
-      impact.analysis for what is not covered
+      false positive for command injection through this line -- see
+      impact.analysis for the exception and what is not covered
 
