@@ -51,6 +51,12 @@ func TestPipeOutputTakesAnyLogPathLiterally(t *testing.T) {
 		"shell-chars":   "e$(touch ran-dollar)`touch ran-tick`.log",
 		"tmux-style":    "f#[x]##[y].log",
 	}
+	// One session stays open for the whole test. Without it the server exits
+	// each time a case closes its session, and the next new-session can reach
+	// the server while it is shutting down ("server exited unexpectedly").
+	if out, err := TmuxCommand("new-session", "-d", "-s", "pq-hold", "cat").CombinedOutput(); err != nil {
+		t.Fatalf("new-session for the held session: %v %s", err, out)
+	}
 	tm := &TmuxManager{}
 	for _, how := range []string{"pipe", "repipe"} {
 		for label, name := range names {
