@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.46 (2026-11-27).** datawatch can now save requests addressed to a role and, when a server token is set, deliver them to supported sessions and remind them; with `acceptance.mode: report`, a request reads done only when its done-when list does (see the changelog for what is not covered).
+**Current release: v9.187.47 (2026-11-27).** Version reads, push remote names and values read back before git runs are now checked more strictly (see the changelog for what is not limited). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
