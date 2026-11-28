@@ -480,11 +480,24 @@ func (t *TmuxManager) SendKeysLiteral(session, data string) error {
 	return TmuxCommand("send-keys", "-t", session, "-l", data).Run()
 }
 
+// pipePaneCommand is the command tmux runs to append a pane's output to
+// logFile. The path is one shell word, and '#' and '%' are doubled because
+// tmux expands formats and time sequences in the command before the shell
+// reads it. Any character in the path is taken literally.
+func pipePaneCommand(logFile string) string {
+	// tmux leaves '#' runs before '[' unexpanded, so doubling alone would not
+	// round-trip there: split '#[' into two quoted pieces first.
+	quoted := strings.ReplaceAll(shellSingleQuote(logFile), "#[", "#''[")
+	quoted = strings.ReplaceAll(quoted, "#", "##")
+	quoted = strings.ReplaceAll(quoted, "%", "%%")
+	return "cat >> " + quoted
+}
+
 // PipeOutput configures the tmux session to pipe all output to a log file.
 // Uses tmux pipe-pane to append to the file. Uses -o (toggle): only opens
 // a pipe if no pipe is in effect, which is correct for the create path.
 func (t *TmuxManager) PipeOutput(session, logFile string) error {
-	cmd := fmt.Sprintf("cat >> '%s'", logFile)
+	cmd := pipePaneCommand(logFile)
 	out, err := TmuxCommand("pipe-pane", "-o", "-t", session, cmd).CombinedOutput()
 	if err != nil {
 		if len(out) > 0 {
@@ -514,7 +527,7 @@ func (t *TmuxManager) RepipeOutput(session, logFile string) error {
 	// Close any existing pipe-pane (no-op if none in effect).
 	_ = TmuxCommand("pipe-pane", "-t", session).Run()
 	// Start a fresh pipe.
-	cmd := fmt.Sprintf("cat >> '%s'", logFile)
+	cmd := pipePaneCommand(logFile)
 	out, err := TmuxCommand("pipe-pane", "-t", session, cmd).CombinedOutput()
 	if err != nil {
 		if len(out) > 0 {
