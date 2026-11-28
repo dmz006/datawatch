@@ -3,6 +3,7 @@ package server
 // Finished-Automaton archive REST surface.
 //
 //	GET  /api/autonomous/prds/{id}/archive  the archive of one Automaton, read on ask
+//	POST /api/autonomous/prds/{id}/archive  archive this one Automaton (the case "archive" action)
 //	POST /api/autonomous/archive            {dry_run: bool} (dry run is the default)
 //
 // The GET reads the archive file of that one Automaton and nothing else. The
@@ -41,14 +42,22 @@ func (s *Server) archiveAPI(w http.ResponseWriter) (automatonArchiveAPI, bool) {
 	return a, true
 }
 
-// handlePRDArchive serves GET /api/autonomous/prds/{id}/archive.
+// handlePRDArchive serves GET /api/autonomous/prds/{id}/archive. A POST on
+// the same path is the archive action for this one Automaton: it hands to the
+// case "archive" of handleAutonomousPRDs, which carries its own permission
+// checks, the optional outcome body and the archive audit. This route was only
+// shadowing that action with a 405.
 func (s *Server) handlePRDArchive(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		s.handleAutonomousPRDs(w, r)
+		return
+	}
 	a, ok := s.archiveAPI(w)
 	if !ok {
 		return
 	}
 	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
