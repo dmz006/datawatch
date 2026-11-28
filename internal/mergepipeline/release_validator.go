@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 // The release-bump validator checks, before a merge ships, that the release
@@ -76,6 +77,8 @@ func ValidateReleaseBump(ctx context.Context, in ValidateInput) autonomous.Merge
 	res := autonomous.MergeValidatorResult{CheckedAt: time.Now().UTC()}
 	if in.Dir == "" {
 		res.Checks = failAllChecks("no project directory is set")
+	} else if err := git.CheckRemoteName(in.Remote); err != nil {
+		res.Checks = failAllChecks(err.Error())
 	} else {
 		version, vc := checkVersionVariablesEqual(in)
 		res.Version = version
