@@ -290,6 +290,9 @@ func (m *Merger) proposeWithModel(ctx context.Context, set ConflictSettings, req
 // fastForwardTo moves the project's checked-out branch onto a tested proposal.
 // The project must be at the pre-merge HEAD, which the proposal was built on.
 func (m *Merger) fastForwardTo(ctx context.Context, prop *modelProposal) ModelAttempt {
+	if err := readsAsOption("proposal commit", prop.Commit); err != nil {
+		return ModelAttempt{Result: AttemptFastForwardFail, Detail: err.Error(), Hunks: prop.Hunks}
+	}
 	if _, err := m.gitOK(ctx, m.Dir, "merge", "--ff-only", prop.Commit); err != nil {
 		return ModelAttempt{Result: AttemptFastForwardFail, Detail: err.Error(), Hunks: prop.Hunks}
 	}

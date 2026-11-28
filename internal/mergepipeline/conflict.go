@@ -460,6 +460,9 @@ func (m *Merger) MergeBranch(ctx context.Context, req MergeRequest) (Outcome, er
 	if strings.TrimSpace(req.Branch) == "" || strings.HasPrefix(req.Branch, "-") {
 		return out, fmt.Errorf("invalid branch name %q", req.Branch)
 	}
+	if err := readsAsOption("ref", req.ref()); err != nil {
+		return out, err
+	}
 	headSHA, err := m.revParse(ctx, m.Dir, "HEAD")
 	if err != nil {
 		return out, err

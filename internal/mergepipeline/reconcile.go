@@ -372,6 +372,9 @@ func (r *Runner) sweepLeftovers(ctx context.Context, g *Merger) {
 // it at start and before it lists what is waiting to merge. With an empty
 // journal it does nothing and takes no lock.
 func (r *Runner) ReconcilePushes(ctx context.Context) ([]ReconciledPush, error) {
+	if err := readsAsOption("main branch name", r.mainBranch()); err != nil {
+		return nil, err
+	}
 	g := &Merger{Dir: r.Dir}
 	dir, err := journalDir(ctx, g)
 	if err != nil {

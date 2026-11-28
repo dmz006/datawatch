@@ -415,6 +415,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	if len(req.Branches) == 0 {
 		return finish(autonomous.MergeRunFailed, errors.New("at least one branch is required"))
 	}
+	if err := readsAsOption("main branch name", r.mainBranch()); err != nil {
+		return finish(autonomous.MergeRunFailed, err)
+	}
 	if r.Locks != nil {
 		holder := autonomous.MergeLockHolder{RunID: st.run.ID, AutomatonID: req.AutomatonID, Branches: req.Branches}
 		status, err := r.Locks.Acquire(r.Dir, holder)
@@ -1927,8 +1930,21 @@ func (e ExecShipRunner) run(ctx context.Context, dir, name string, args ...strin
 	return redact(tail(res.Out, 500)), nil
 }
 
+// readsAsOption is the refusal of a value git would get as an argument of its
+// own and read as an option, because it starts with "-". It returns nil for
+// any other value.
+func readsAsOption(what, value string) error {
+	if strings.HasPrefix(value, "-") {
+		return fmt.Errorf("invalid %s %q: it starts with \"-\"", what, value)
+	}
+	return nil
+}
+
 // Tag implements ShipRunner.
 func (e ExecShipRunner) Tag(ctx context.Context, dir, tag, message string) error {
+	if err := readsAsOption("tag name", tag); err != nil {
+		return err
+	}
 	_, err := e.run(ctx, dir, "git", "tag", "-a", tag, "-m", message)
 	return err
 }
@@ -1960,6 +1976,12 @@ func (e ExecShipRunner) push(ctx context.Context, dir, src, headRev, branch, tag
 	remote := e.Remote
 	if remote == "" {
 		remote = "origin"
+	}
+	if err := git.CheckRemoteName(remote); err != nil {
+		return fmt.Errorf("push %s: %w", branch, err)
+	}
+	if err := errors.Join(readsAsOption("branch name", branch), readsAsOption("commit", headRev)); err != nil {
+		return err
 	}
 	if hasRemote, err := e.hasRemotes(ctx, m, dir); err != nil {
 		return err

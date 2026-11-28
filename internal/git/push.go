@@ -234,7 +234,9 @@ func failedPush(out, remote, ref string) PushResult {
 // reads such a value as an option, not as a name.
 var ErrRemoteName = errors.New(`git: unsafe remote name: it starts with "-"`)
 
-func checkRemoteName(remote string) error {
+// CheckRemoteName returns ErrRemoteName for such a name. A caller that gives
+// a remote name to git itself calls it before any git runs.
+func CheckRemoteName(remote string) error {
 	if strings.HasPrefix(remote, "-") {
 		return ErrRemoteName
 	}
@@ -243,7 +245,7 @@ func checkRemoteName(remote string) error {
 
 // remoteExists reports whether dir already has a remote of that name.
 func remoteExists(ctx context.Context, dir, remote string) bool {
-	if checkRemoteName(remote) != nil {
+	if CheckRemoteName(remote) != nil {
 		return false
 	}
 	out, err := runGit(ctx, dir, "remote", "get-url", remote)
@@ -320,7 +322,7 @@ func DefaultBranch(ctx context.Context, dir, remote string) (string, error) {
 	if remote == "" {
 		remote = "origin"
 	}
-	if err := checkRemoteName(remote); err != nil {
+	if err := CheckRemoteName(remote); err != nil {
 		return "", err
 	}
 
@@ -428,7 +430,7 @@ func UnpushedCommits(ctx context.Context, dir, remote string) (count int, branch
 	if remote == "" {
 		remote = "origin"
 	}
-	if err := checkRemoteName(remote); err != nil {
+	if err := CheckRemoteName(remote); err != nil {
 		return 0, "", err
 	}
 	out, e := runGit(ctx, dir, "rev-list", "--count", "HEAD", "--not", "--remotes="+remote)
@@ -457,7 +459,7 @@ func ForeignUnpushedCommits(ctx context.Context, dir, remote string) (int, error
 	if remote == "" {
 		remote = "origin"
 	}
-	if err := checkRemoteName(remote); err != nil {
+	if err := CheckRemoteName(remote); err != nil {
 		return 0, err
 	}
 	if _, err := runGit(ctx, dir, "remote", "get-url", remote); err != nil {
