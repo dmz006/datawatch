@@ -12,12 +12,15 @@ package pilog
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -52,6 +55,53 @@ func ProjectDirName(workDir string) string {
 	s := strings.TrimLeft(workDir, `/\`)
 	s = strings.NewReplacer("/", "-", `\`, "-", ":", "-").Replace(s)
 	return "--" + s + "--"
+}
+
+// sessionIDPattern is pi's acceptance rule for --session-id: non-empty,
+// only alphanumerics plus '-', '_' and '.', with an alphanumeric first and
+// last character. pi refuses anything else before doing any work, so a
+// session name with a space, colon, slash, non-ASCII rune, or a
+// leading/trailing '-' '_' '.' would be rejected at startup.
+var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$`)
+
+// SessionID translates a datawatch session name into a --session-id value
+// pi accepts, without changing the ones it already accepts.
+//
+// A name that already satisfies the rule is returned unchanged, so IDs that
+// work today keep working. Any other name is translated deterministically:
+// every character outside the rule becomes '-', leading/trailing
+// non-alphanumerics are dropped, and the cleaned base is cut to at most 100
+// characters (pi writes one log file per session ID, so an uncut base from a
+// long task title can exceed the file-name limit). Because different names
+// can sanitize to the same base ("a b", "a:b" and "ab"), a short sha256
+// fingerprint of the ORIGINAL name is appended as a suffix. Same name
+// therefore always maps to the same ID (a launch and its resume must
+// reattach to the same pi session), while two distinct names whose
+// sanitization would otherwise collide never do.
+func SessionID(name string) string {
+	if sessionIDPattern.MatchString(name) {
+		return name
+	}
+	base := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return '-'
+	}, name)
+	if trimmed := strings.Trim(base, "-_."); trimmed != "" {
+		base = trimmed
+	} else {
+		base = "session"
+	}
+	if len(base) > 100 {
+		base = base[:100]
+	}
+	if trimmed := strings.TrimRight(base, "-_."); trimmed != "" {
+		base = trimmed
+	}
+	sum := sha256.Sum256([]byte(name))
+	return base + "-" + hex.EncodeToString(sum[:])[:12]
 }
 
 // LocateLog returns the path of the session log under sessionsRoot for a

@@ -61,8 +61,12 @@ func TestArchiveRESTReadOnAsk(t *testing.T) {
 	if rr := archiveRequest(t, s, http.MethodGet, "/api/autonomous/prds/zz/archive", ""); rr.Code != http.StatusNotFound {
 		t.Fatalf("unknown id: %d", rr.Code)
 	}
-	if rr := archiveRequest(t, s, http.MethodPost, "/api/autonomous/prds/aa11/archive", ""); rr.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST on the read route: %d", rr.Code)
+	// A POST on this path is the archive action for this one Automaton: it
+	// reaches the action and does not read the archive.
+	post := &archivePostFake{}
+	rr = archiveRequest(t, &Server{autonomousMgr: post}, http.MethodPost, "/api/autonomous/prds/aa11/archive", "")
+	if rr.Code != http.StatusOK || post.lastKind != "outcome" || post.lastID != "aa11" || post.readTouched {
+		t.Fatalf("POST archives this Automaton: %d %s kind=%q id=%q read=%v", rr.Code, rr.Body.String(), post.lastKind, post.lastID, post.readTouched)
 	}
 }
 

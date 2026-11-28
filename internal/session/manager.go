@@ -6283,10 +6283,13 @@ func panePromptReady(content string) bool {
 const taskEchoWindow = 10 * time.Second
 
 // awaitTaskEcho polls the pane (virtual-time friendly) until the typed task is
-// visible — its first line, or claude's collapsed "[Pasted text" chip for a
-// long paste — or the session has ended. It reports false when taskEchoWindow
-// elapses first. The session state is deliberately not consulted: typing the
-// task flips it to running even when the keystrokes were swallowed.
+// visible — its first line, its end, or claude's collapsed "[Pasted text" chip
+// for a long paste — or the session has ended. The end counts because Claude
+// Code draws on the alternate screen: a sent task taller than the pane leaves
+// only its end on screen and none of it in the terminal history. It reports
+// false when taskEchoWindow elapses first. The session state is deliberately
+// not consulted: typing the task flips it to running even when the keystrokes
+// were swallowed.
 func (m *Manager) awaitTaskEcho(fullID, input string) bool {
 	snippet := ""
 	for _, l := range strings.Split(input, "\n") {
@@ -6297,6 +6300,10 @@ func (m *Manager) awaitTaskEcho(fullID, input string) bool {
 	}
 	if r := []rune(snippet); len(r) > 30 {
 		snippet = string(r[:30])
+	}
+	ending := ""
+	if r := []rune(strings.ToLower(strings.Join(strings.Fields(input), " "))); len(r) > 60 {
+		ending = string(r[len(r)-30:])
 	}
 	deadline := m.now().Add(taskEchoWindow)
 	for {
@@ -6312,7 +6319,8 @@ func (m *Manager) awaitTaskEcho(fullID, input string) bool {
 		}
 		if content, err := m.tmux.CapturePaneVisible(sess.TmuxSession); err == nil {
 			pane := strings.ToLower(strings.Join(strings.Fields(StripANSI(content)), " "))
-			if snippet == "" || strings.Contains(pane, snippet) || strings.Contains(pane, "[pasted text") {
+			if snippet == "" || strings.Contains(pane, snippet) || strings.Contains(pane, "[pasted text") ||
+				(ending != "" && strings.Contains(pane, ending)) {
 				return true
 			}
 		}

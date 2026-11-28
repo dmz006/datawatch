@@ -40,6 +40,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/scratch"
+	"github.com/dmz006/datawatch/internal/pilog"
 )
 
 // ErrNoModel — a pi-family launch was built with no model configured.
@@ -417,11 +418,30 @@ func buildInteractiveCmdWithAgentDir(binary, model, thinkingLevel, sessionID, ta
 	}
 	sessionFlag := ""
 	if sessionID != "" {
-		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(sessionID))
+		// piSessionID — see it (defined below in this file) for pi's
+		// --session-id rule and why a raw session name has to be translated
+		// before being passed as the ID; it delegates to pilog.SessionID.
+		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(piSessionID(sessionID)))
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
-	return fmt.Sprintf(`cd '%s' && %s --approve %s%s%s%s; %spi_status=$?; %secho; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`,
+	// Capture pi's OWN exit status in the statement immediately
+	// after pi, before any cleanup runs. A task-file "rm -f" (or an agent
+	// directory "rm -rf") in between left $? holding rm's status (0), so a
+	// failed pi still printed DATAWATCH_COMPLETE and exited 0.
+	return fmt.Sprintf(`cd '%s' && %s --approve %s%s%s%s; pi_status=$?; %s%secho; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`,
 		escapedDir, piInvocation(binary, agentDir), modelFlag, thinkingFlag, sessionFlag, argExpr, cleanup, agentDirCleanup(agentDir)), nil
+}
+
+// piSessionID translates a datawatch session name into a --session-id value
+// pi accepts, without changing the ones it already accepts. The translation
+// itself lives in internal/pilog as the exported SessionID so the
+// session-progress log lookup (internal/server) runs the exact same rule;
+// see it there for pi's --session-id rule and the details (already-valid
+// names pass through unchanged, any other name is sanitized, its cleaned
+// base is cut to at most 100 characters, and a short sha256 fingerprint of
+// the original name is appended as a suffix).
+func piSessionID(name string) string {
+	return pilog.SessionID(name)
 }
 
 // Launch starts a fresh interactive pi session. If SetSessionName was
