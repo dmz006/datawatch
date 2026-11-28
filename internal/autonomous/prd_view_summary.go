@@ -59,6 +59,10 @@ type SummaryView struct {
 	// otherwise the stored status. The stored Status never moves because of shipped state.
 	Shipped         bool   `json:"shipped"`
 	EffectiveStatus string `json:"effective_status"`
+	// ClosedOutcome is the recorded outcome class (delivered, superseded,
+	// dropped or held), empty until recorded.
+	ClosedOutcome   string `json:"closed_outcome,omitempty"`
+	shippedReopened bool   // the operator forced it to run again past its shipped record
 	// MergeState is the derived read-only merge state of a finished
 	// record: "finished_not_merged" (autonomous.MergeStateFinishedNotMerged)
 	// when the record completed — or was archived since — while its work
@@ -169,6 +173,8 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		// ApplyShippedSettings.
 		Shipped:         prd.IsShipped(),
 		EffectiveStatus: PRDEffectiveDisplayStatus(prd, true),
+		ClosedOutcome:   prd.ClosedOutcome,
+		shippedReopened: overrideCovers(prd),
 
 		Type:               prd.Type,
 		Backend:            prd.Backend,
@@ -234,7 +240,7 @@ func (v *SummaryView) ApplyShippedSettings(enabled bool) {
 	if v == nil {
 		return
 	}
-	if enabled && v.Shipped {
+	if workReadsDone(v.Status, v.ClosedOutcome, enabled && v.Shipped, v.shippedReopened) {
 		v.EffectiveStatus = CompletedDisplayStatus
 		return
 	}

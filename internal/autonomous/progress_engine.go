@@ -53,6 +53,9 @@ type ProgressOptions struct {
 	Projects map[string]string `json:"-"`
 	// Automations are the Automation records the resolver reads.
 	Automations []*Automation `json:"-"`
+	// IgnoreShipped is set when autonomous.shipped.enabled is off: a shipped
+	// record then does not make a record count as done.
+	IgnoreShipped bool `json:"ignore_shipped,omitempty"`
 }
 
 // ProgressInput is everything ComputeProgress reads.
@@ -236,6 +239,9 @@ type progressRec struct {
 	prd    *PRD
 	status PRDStatus
 	kind   string
+	// byHand marks work that reads done while its stored status is not
+	// completed: its unfinished tasks are not work left to do.
+	byHand bool
 	// project is the resolved project name; empty means use ProjectKey.
 	project string
 }
@@ -396,13 +402,19 @@ func selectProgressRecords(prds []*PRD, o ProgressOptions, rowKinds map[string]s
 			continue
 		}
 		status := NormalizePRDStatus(p.Status)
-		switch status {
-		case PRDCancelled, PRDRejected, PRDArchived:
+		byHand := false
+		switch {
+		case prdReadsDone(p, !o.IgnoreShipped):
+			// Finished by a shipped record or a delivered outcome, whatever
+			// the stored status says.
+			byHand = status != PRDCompleted
+			status = PRDCompleted
+		case status == PRDCancelled || status == PRDRejected || status == PRDArchived:
 			// A cancelled or archived record whose tasks all completed is merged
 			// work whose record was closed or filed away: it counts as completed.
 			// Any other cancelled, archived or rejected record (unfinished tasks,
-			// no tasks) is replaced or abandoned and stays excluded.
-			if (status == PRDCancelled || status == PRDArchived) && allTasksCompleted(p) {
+			// no tasks, held) is replaced or abandoned and stays excluded.
+			if status != PRDRejected && p.ClosedOutcome != OutcomeHeld && allTasksCompleted(p) {
 				status = PRDCompleted
 			} else {
 				continue
@@ -421,7 +433,7 @@ func selectProgressRecords(prds []*PRD, o ProgressOptions, rowKinds map[string]s
 		if !inProgressScope(p, o) {
 			continue
 		}
-		rec := progressRec{prd: p, status: status, kind: EffectiveKind(p, rowKinds)}
+		rec := progressRec{prd: p, status: status, byHand: byHand, kind: EffectiveKind(p, rowKinds)}
 		if idx != nil {
 			rec.project = idx.Of(p.ID).Project
 		}
@@ -527,10 +539,14 @@ func accumulateRecord(acc *progressAcc, r progressRec) {
 		acc.g.Waiting++
 	}
 	for _, t := range progressTasks(p) {
-		acc.g.Tasks++
 		if t.Status != TaskCompleted {
+			// Work finished by hand leaves no tasks left to do.
+			if !r.byHand {
+				acc.g.Tasks++
+			}
 			continue
 		}
+		acc.g.Tasks++
 		acc.g.TasksDone++
 		if t.StartedAt != nil && t.CompletedAt != nil && t.CompletedAt.After(*t.StartedAt) {
 			h := Hours(*t.StartedAt, *t.CompletedAt)

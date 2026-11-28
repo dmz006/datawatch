@@ -91,7 +91,9 @@ with the records whose stored status is `completed` — across the counts, the
 list views, the web app chip and every read surface. There is **no second
 "shipped" bucket**, no "Shipped" chip text and no Shipped filter badge. A
 cancelled-and-shipped Automaton is `cancelled` in the store and `completed`
-in every view. Turn `enabled` off and every record folds back into its
+in every view, the progress numbers and the timeline included. Two records do
+not read Completed although they are shipped: one on **hold**, and one you
+forced to run again past its shipped record, until it ends. Turn `enabled` off and every record folds back into its
 stored status; the shipped fields stay on the record and only the display
 changes.
 

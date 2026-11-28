@@ -95,7 +95,7 @@ func newAutonomousProgressCmd() *cobra.Command {
 	c.Flags().StringVar(&group, "group", "", "split the totals by project, automation or automaton; records with no project or Automation are the (none) row")
 	c.Flags().StringVar(&project, "project", "", "show only this project (implies --group project); use (none) for Automata with no project")
 	c.Flags().StringVar(&automation, "automation", "", "count only the Automata of this Automation")
-	c.Flags().StringArrayVar(&tag, "tag", nil, "count only the Automata carrying this tag (repeatable)")
+	c.Flags().StringArrayVar(&tag, "tag", nil, "count only the Automata carrying this tag, by name or id (repeatable)")
 	c.Flags().StringVar(&tagMatch, "tag-match", "", "match at least one --tag (any) or every --tag (all)")
 	c.Flags().StringVar(&since, "since", "", "first day counted, YYYY-MM-DD")
 	c.Flags().StringVar(&until, "until", "", "last day counted, YYYY-MM-DD (inclusive)")
@@ -162,7 +162,7 @@ func newAutonomousProgressTrendCmd() *cobra.Command {
 	c.Flags().StringVar(&group, "group", "", "also print the current totals split by project, automation or automaton")
 	c.Flags().StringVar(&project, "project", "", "print this project's own points; use (none) for Automata with no project")
 	c.Flags().IntVar(&days, "days", 0, "how many days back to read, 1 to 365 (default 30)")
-	c.Flags().StringArrayVar(&tag, "tag", nil, "scope the trend reply to the Automata carrying this tag (repeatable)")
+	c.Flags().StringArrayVar(&tag, "tag", nil, "scope the trend reply to the Automata carrying this tag, by name or id (repeatable)")
 	c.Flags().StringVar(&tagMatch, "tag-match", "", "match at least one --tag (any) or every --tag (all)")
 	return c
 }

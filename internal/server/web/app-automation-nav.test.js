@@ -35,6 +35,24 @@ function loadView() {
 }
 const tabState = sb => vm.runInContext('_automataState.tab', sb);
 
+// The ways the setting cannot be read: daemon down, refused token, no engine
+// to answer, and an answer that is not JSON.
+const UNREADABLE = {
+  'daemon down': () => Promise.reject(new Error('connection refused')),
+  '401': () => Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve({}) }),
+  '503': () => Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({}) }),
+  'bad answer': () => Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error('not JSON')) }),
+};
+
+// readSetting runs the boot read of /api/autonomous/config against one answer.
+async function readSetting(sb, answer) {
+  const rest = sb.fetch;
+  sb.fetch = (url, opts) => (url === '/api/autonomous/config' ? answer() : rest(url, opts));
+  await sb._loadAutomataPageGate();
+  sb.fetch = rest;
+}
+const OFF = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ enabled: false }) });
+
 test('index.html has no top-level Automation button, only the Automata one', () => {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   assert.ok(!html.includes('navBtnAutomation'), 'the Automation nav button is gone');
@@ -112,17 +130,27 @@ test('renderAutomationView routes to the Automata view with the Automation sub-t
   assert.doesNotMatch(out.view, /id="automationPanel"/, 'the list is on Automations, not the Inbox it opens on');
 });
 
-test('a disabled subsystem, or an unreachable config, falls the Automation sub-tab back to Automata', () => {
-  const { sb, out } = loadView();
-  vm.runInContext('state._autonomousEnabled = false', sb);
-  sb.renderAutonomousView();
-  assert.equal(tabState(sb), 'automata');
-  assert.doesNotMatch(out.view, /data-tab="automation"/);
-  assert.match(out.view, /id="automataPanel"/);
-  // Enabled again: the sub-tab is selectable.
-  vm.runInContext('state._autonomousEnabled = true', sb);
-  sb.switchAutomataTab('automation');
-  assert.equal(tabState(sb), 'automation');
+test('with automatic work off the Automation sub-tab stays; an unreachable config falls it back to Automata', async () => {
+  {
+    const { sb, out } = loadView();
+    await readSetting(sb, OFF);
+    sb.renderAutonomousView();
+    assert.equal(tabState(sb), 'automation');
+    assert.match(out.view, /class="output-tab active" data-tab="automation"/);
+    assert.match(out.view, /id="automationTriageCard"/);
+  }
+  for (const [name, answer] of Object.entries(UNREADABLE)) {
+    const { sb, out } = loadView();
+    await readSetting(sb, answer);
+    sb.renderAutonomousView();
+    assert.equal(tabState(sb), 'automata', name);
+    assert.doesNotMatch(out.view, /data-tab="automation"/, name);
+    assert.match(out.view, /id="automataPanel"/, name);
+    // A later good read: the sub-tab is selectable again.
+    await readSetting(sb, OFF);
+    sb.switchAutomataTab('automation');
+    assert.equal(tabState(sb), 'automation', name);
+  }
 });
 
 test('the header title follows the sub-tab', () => {

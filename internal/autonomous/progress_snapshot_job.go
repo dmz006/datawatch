@@ -33,6 +33,8 @@ type ProgressSnapshotSettings struct {
 	// Projects maps configured project names to directories, so the by-project
 	// grouping uses the membership resolver. Nil keeps the ProjectKey grouping.
 	Projects map[string]string
+	// IgnoreShipped is set when autonomous.shipped.enabled is off.
+	IgnoreShipped bool
 }
 
 // ProgressComputeFunc computes the current metrics.
@@ -153,7 +155,7 @@ func NewProgressCompute(src ProgressSource, settings func() ProgressSnapshotSett
 				rows = loaded
 			}
 		}
-		opts := ProgressOptions{Since: s.Since, Lanes: s.Lanes, GapHours: s.GapHours, Projects: s.Projects}
+		opts := ProgressOptions{Since: s.Since, Lanes: s.Lanes, GapHours: s.GapHours, Projects: s.Projects, IgnoreShipped: s.IgnoreShipped}
 		return CollectProgress(src, rows, nil, opts), nil
 	}
 }

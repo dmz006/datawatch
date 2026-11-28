@@ -20,6 +20,7 @@ func progressSnapshotSettings(cfg *config.Config) autonomous.ProgressSnapshotSet
 	}
 	return autonomous.ProgressSnapshotSettings{
 		Projects:      projects,
+		IgnoreShipped: !cfg.Autonomous.Shipped.EffectiveEnabled(),
 		RetentionDays: p.EffectiveSnapshotRetentionDays(),
 		Lanes:         p.EffectiveLanes(),
 		GapHours:      p.EffectiveInactiveGapHours(),

@@ -206,6 +206,7 @@ func (s *Server) computeProgress(opts autonomous.ProgressOptions) autonomous.Pro
 	if s.cfg != nil && len(s.cfg.Projects) > 0 && opts.Projects == nil {
 		opts.Projects = rollupProjectDirs(s.cfg.Projects)
 	}
+	opts.IgnoreShipped = !s.shippedSettings().EffectiveEnabled()
 	return autonomous.CollectProgress(src, loadProgressBacklog(backlogPath), loadProgressWindows(backlogPath), opts)
 }
 
@@ -250,6 +251,9 @@ func (s *Server) handleAutonomousProgress(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	if !s.resolveTagFilter(w, r, tagFilterManaged) {
 		return
 	}
 	opts, err := s.progressOptions(r.URL.Query(), s.progressClock())
@@ -314,6 +318,9 @@ func (s *Server) handleAutonomousProgressTrend(w http.ResponseWriter, r *http.Re
 			return
 		}
 		days = n
+	}
+	if !s.resolveTagFilter(w, r, tagFilterManaged) {
+		return
 	}
 	q := r.URL.Query()
 	tags, tagMatch, err := progressTagParams(q)

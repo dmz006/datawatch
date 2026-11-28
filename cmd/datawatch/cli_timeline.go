@@ -42,7 +42,7 @@ func newAutonomousTimelineCmd() *cobra.Command {
 	c.Flags().StringVar(&automaton, "automaton", "", "draw only this Automaton (id or title)")
 	c.Flags().StringVar(&stage, "stage", "", "draw only this stage (id or title)")
 	c.Flags().StringVar(&kind, "kind", "", "draw only the Automata of this kind")
-	c.Flags().StringVar(&tag, "tag", "", "draw only the Automata carrying this tag")
+	c.Flags().StringVar(&tag, "tag", "", "draw only the Automata carrying this tag (name or id)")
 	return c
 }
 

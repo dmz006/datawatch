@@ -729,6 +729,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// — a derived axis:value tag, multiple tags, or a tag_match rule — is
 			// the object tag filter and falls through to writePRDList, which
 			// matches SystemTags and the assigned managed TagIDs.
+			if !s.resolveTagFilter(w, r, tagFilterObject) {
+				return
+			}
 			if legacyManagedTagListLookup(r) {
 				tagID := r.URL.Query().Get("tag")
 				if tagID == "" {
@@ -1010,6 +1013,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			detail, ok := parsePRDDetail(r)
 			if !ok {
 				http.Error(w, "invalid detail: accepted values are full, summary, tasks", http.StatusBadRequest)
+				return
+			}
+			if !s.resolveTagFilter(w, r, tagFilterObject) {
 				return
 			}
 			tagSel, terr := objectTagSelectionFromRequest(r)
@@ -3892,6 +3898,9 @@ func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Reques
 			if !s.fedCap(w, r, federation.CapAutonomousRead) {
 				return
 			}
+			if !s.resolveTagFilter(w, r, tagFilterTemplates) {
+				return
+			}
 			tagSel, terr := objectTagSelectionFromRequest(r)
 			if terr != nil {
 				http.Error(w, terr.Error(), http.StatusBadRequest)
@@ -4510,6 +4519,9 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		switch r.Method {
 		case http.MethodGet:
+			if !s.resolveTagFilter(w, r, tagFilterObject) {
+				return
+			}
 			list, err := s.filterShippedAutomations(r)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)

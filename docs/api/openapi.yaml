@@ -5784,7 +5784,7 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: automation_id, in: query, required: false, description: Count only the Automata of this Automation, schema: {type: string}}
-        - {name: tag, in: query, required: false, description: Count only the Automata carrying this tag; repeat the parameter for several (or pass a comma list), combined with tag_match, schema: {type: string}}
+        - {name: tag, in: query, required: false, description: "Count only the Automata carrying this tag (name or id; an unknown tag is a 404, a name several tags share a 400); repeat the parameter for several (or pass a comma list), combined with tag_match", schema: {type: string}}
         - {name: tag_id, in: query, required: false, description: "Legacy single-tag spelling of tag", schema: {type: string}}
         - {name: tag_match, in: query, required: false, description: "Whether the listed tags must all be present (all) or any of them (any, the default)", schema: {type: string, enum: [any, all], default: any}}
         - {name: since, in: query, required: false, description: "First day counted, YYYY-MM-DD", schema: {type: string, format: date}}
@@ -5841,7 +5841,7 @@ paths:
       parameters:
         - {name: days, in: query, required: false, description: "How many days back to read, 1 to 365 (default 30)", schema: {type: integer, minimum: 1, maximum: 365, default: 30}}
         - {name: project, in: query, required: false, description: "Also return the daily counts of this project (use (none) for records with no project) as project and project_points", schema: {type: string}}
-        - {name: tag, in: query, required: false, description: Count only the Automata carrying this tag; repeat the parameter for several (or pass a comma list), combined with tag_match, schema: {type: string}}
+        - {name: tag, in: query, required: false, description: "Count only the Automata carrying this tag (name or id; an unknown tag is a 404, a name several tags share a 400); repeat the parameter for several (or pass a comma list), combined with tag_match", schema: {type: string}}
         - {name: tag_id, in: query, required: false, description: "Legacy single-tag spelling of tag", schema: {type: string}}
         - {name: tag_match, in: query, required: false, description: "Whether the listed tags must all be present (all) or any of them (any, the default)", schema: {type: string, enum: [any, all], default: any}}
       responses:
@@ -7616,7 +7616,7 @@ paths:
         records without a working branch, merged or empty branches,
         dropped branches, and whenever the state cannot be determined.
       parameters:
-        - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
+        - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag (name or id; a tag nothing knows is a 404, a name several tags share a 400)"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, default: 50}, description: "Page size. Summary form: at most 500. With full=true: at most 100, so one call cannot write hundreds of megabytes"}
         - {name: cursor, in: query, required: false, schema: {type: string}, description: "Opaque next_cursor from the previous page; a bad cursor is a 400"}

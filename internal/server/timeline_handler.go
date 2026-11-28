@@ -86,11 +86,15 @@ func (s *Server) handleAutonomousTimeline(w http.ResponseWriter, r *http.Request
 	if !s.fedCap(w, r, federation.CapAutonomousRead) {
 		return
 	}
+	if !s.resolveTagFilter(w, r, tagFilterManaged) {
+		return
+	}
 	var prds []*autonomous.PRD
 	if p, ok := s.autonomousMgr.(timelineProvider); ok {
 		prds = p.TimelineRecords()
 	}
 	filter := timelineFilterFromQuery(r.URL.Query())
+	filter.IgnoreShipped = !s.shippedSettings().EffectiveEnabled()
 	if s.cfg != nil && len(s.cfg.Projects) > 0 {
 		filter.Projects = rollupProjectDirs(s.cfg.Projects)
 		for _, raw := range s.autonomousMgr.ListAutomations() {
