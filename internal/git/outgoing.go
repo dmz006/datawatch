@@ -645,13 +645,25 @@ func outgoingCommits(ctx context.Context, dir string, st remoteState, tips []str
 	return commits, nil
 }
 
+// commitParents returns the parents git itself counts: the consecutive
+// "parent <id>" header lines directly after the "tree" line, nothing a
+// hand-written object may add later in its header. It stops at the first
+// other line.
 func commitParents(raw string) []string {
 	header, _, _ := strings.Cut(raw, "\n\n")
+	lines := strings.Split(header, "\n")
+	if len(lines) < 2 || !strings.HasPrefix(lines[0], "tree ") {
+		return nil
+	}
 	var parents []string
-	for _, line := range strings.Split(header, "\n") {
-		if p, ok := strings.CutPrefix(line, "parent "); ok && IsObjectID(strings.TrimSpace(p)) {
-			parents = append(parents, strings.TrimSpace(p))
+	for _, line := range lines[1:] {
+		p, ok := strings.CutPrefix(line, "parent ")
+		// git reads hex digits in either case.
+		p = strings.ToLower(strings.TrimSpace(p))
+		if !ok || !IsObjectID(p) {
+			break
 		}
+		parents = append(parents, p)
 	}
 	return parents
 }
