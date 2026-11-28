@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.187.50 — Session log paths are passed to tmux literally
+
+### Security
+- A session's log path is now passed to tmux literally, so a path with special characters can no longer be misread.
+
 ## v9.187.49 — Fixes: secret scan, Archive button, usage back-off card, long Claude tasks and pi startup
 
 ### Fixed
