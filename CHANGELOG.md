@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- An interactive pi session now starts when the session name has spaces or other characters pi rejects, and a failed pi run is no longer reported as complete.
+
 ## v9.187.46 — Requests between sessions, with reminders
 
 ### Added

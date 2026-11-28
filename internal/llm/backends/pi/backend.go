@@ -30,12 +30,15 @@ package pi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/llm"
@@ -417,11 +420,57 @@ func buildInteractiveCmdWithAgentDir(binary, model, thinkingLevel, sessionID, ta
 	}
 	sessionFlag := ""
 	if sessionID != "" {
-		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(sessionID))
+		// piSessionID — see it (defined below in this file) for pi's
+		// --session-id rule and why a raw session name has to be translated
+		// before being passed as the ID.
+		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(piSessionID(sessionID)))
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
-	return fmt.Sprintf(`cd '%s' && %s --approve %s%s%s%s; %spi_status=$?; %secho; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`,
+	// Capture pi's OWN exit status in the statement immediately
+	// after pi, before any cleanup runs. A task-file "rm -f" (or an agent
+	// directory "rm -rf") in between left $? holding rm's status (0), so a
+	// failed pi still printed DATAWATCH_COMPLETE and exited 0.
+	return fmt.Sprintf(`cd '%s' && %s --approve %s%s%s%s; pi_status=$?; %s%secho; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`,
 		escapedDir, piInvocation(binary, agentDir), modelFlag, thinkingFlag, sessionFlag, argExpr, cleanup, agentDirCleanup(agentDir)), nil
+}
+
+// piSessionIDPattern is pi's acceptance rule for --session-id: non-empty,
+// only alphanumerics plus '-', '_' and '.', with an alphanumeric first and
+// last character. pi refuses anything else before doing any work, so a
+// session name with a space, colon, slash, non-ASCII rune, or a
+// leading/trailing '-' '_' '.' would be rejected at startup.
+var piSessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$`)
+
+// piSessionID translates a datawatch session name into a --session-id value
+// pi accepts, without changing the ones it already accepts.
+//
+// A name that already satisfies the rule is returned unchanged, so IDs that
+// work today keep working. Any other name is translated deterministically:
+// every character outside the rule becomes '-' and leading/trailing
+// non-alphanumerics are dropped, but because different names can sanitize
+// to the same base ("a b", "a:b" and "ab"), a short sha256 fingerprint of
+// the ORIGINAL name is appended as a suffix. Same name therefore always maps
+// to the same ID (a launch and its resume must reattach to the same pi
+// session), while two distinct names whose sanitization would otherwise
+// collide never do.
+func piSessionID(name string) string {
+	if piSessionIDPattern.MatchString(name) {
+		return name
+	}
+	base := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return '-'
+	}, name)
+	if trimmed := strings.Trim(base, "-_."); trimmed != "" {
+		base = trimmed
+	} else {
+		base = "session"
+	}
+	sum := sha256.Sum256([]byte(name))
+	return base + "-" + hex.EncodeToString(sum[:])[:12]
 }
 
 // Launch starts a fresh interactive pi session. If SetSessionName was
