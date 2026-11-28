@@ -13,6 +13,18 @@ import (
 	"github.com/dmz006/datawatch/internal/session"
 )
 
+// piProgressLogID is the session id as it appears in the name of pi's log
+// file (<time>_<id>.jsonl): the session's recorded name translated by the
+// same rule the launch path uses (pilog.SessionID). An empty name stays
+// empty so LocateLogFor keeps its plain time/project-dir lookup for
+// sessions that recorded no name (one-shot pi-prompt sessions).
+func piProgressLogID(name string) string {
+	if name == "" {
+		return ""
+	}
+	return pilog.SessionID(name)
+}
+
 // piSessionsRootServer returns the directory under which pi stores its
 // per-session JSONL logs: $PI_CODING_AGENT_DIR/sessions when that env is set,
 // otherwise ~/.pi/agent/sessions. Same policy as cmd/datawatch's piSessionsRoot
@@ -76,7 +88,7 @@ func (s *Server) handleSessionProgress(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no session log available", http.StatusNotFound)
 		return
 	}
-	logPath, err := pilog.LocateLogFor(piSessionsRootServer(), sess.ProjectDir, sess.CreatedAt, sess.Name)
+	logPath, err := pilog.LocateLogFor(piSessionsRootServer(), sess.ProjectDir, sess.CreatedAt, piProgressLogID(sess.Name))
 	if err != nil {
 		http.Error(w, "no session log available", http.StatusNotFound)
 		return

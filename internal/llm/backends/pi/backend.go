@@ -30,19 +30,17 @@ package pi
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/scratch"
+	"github.com/dmz006/datawatch/internal/pilog"
 )
 
 // ErrNoModel — a pi-family launch was built with no model configured.
@@ -422,7 +420,7 @@ func buildInteractiveCmdWithAgentDir(binary, model, thinkingLevel, sessionID, ta
 	if sessionID != "" {
 		// piSessionID — see it (defined below in this file) for pi's
 		// --session-id rule and why a raw session name has to be translated
-		// before being passed as the ID.
+		// before being passed as the ID; it delegates to pilog.SessionID.
 		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(piSessionID(sessionID)))
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
@@ -434,43 +432,16 @@ func buildInteractiveCmdWithAgentDir(binary, model, thinkingLevel, sessionID, ta
 		escapedDir, piInvocation(binary, agentDir), modelFlag, thinkingFlag, sessionFlag, argExpr, cleanup, agentDirCleanup(agentDir)), nil
 }
 
-// piSessionIDPattern is pi's acceptance rule for --session-id: non-empty,
-// only alphanumerics plus '-', '_' and '.', with an alphanumeric first and
-// last character. pi refuses anything else before doing any work, so a
-// session name with a space, colon, slash, non-ASCII rune, or a
-// leading/trailing '-' '_' '.' would be rejected at startup.
-var piSessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$`)
-
 // piSessionID translates a datawatch session name into a --session-id value
-// pi accepts, without changing the ones it already accepts.
-//
-// A name that already satisfies the rule is returned unchanged, so IDs that
-// work today keep working. Any other name is translated deterministically:
-// every character outside the rule becomes '-' and leading/trailing
-// non-alphanumerics are dropped, but because different names can sanitize
-// to the same base ("a b", "a:b" and "ab"), a short sha256 fingerprint of
-// the ORIGINAL name is appended as a suffix. Same name therefore always maps
-// to the same ID (a launch and its resume must reattach to the same pi
-// session), while two distinct names whose sanitization would otherwise
-// collide never do.
+// pi accepts, without changing the ones it already accepts. The translation
+// itself lives in internal/pilog as the exported SessionID so the
+// session-progress log lookup (internal/server) runs the exact same rule;
+// see it there for pi's --session-id rule and the details (already-valid
+// names pass through unchanged, any other name is sanitized, its cleaned
+// base is cut to at most 100 characters, and a short sha256 fingerprint of
+// the original name is appended as a suffix).
 func piSessionID(name string) string {
-	if piSessionIDPattern.MatchString(name) {
-		return name
-	}
-	base := strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
-			r == '-' || r == '_' || r == '.' {
-			return r
-		}
-		return '-'
-	}, name)
-	if trimmed := strings.Trim(base, "-_."); trimmed != "" {
-		base = trimmed
-	} else {
-		base = "session"
-	}
-	sum := sha256.Sum256([]byte(name))
-	return base + "-" + hex.EncodeToString(sum[:])[:12]
+	return pilog.SessionID(name)
 }
 
 // Launch starts a fresh interactive pi session. If SetSessionName was
