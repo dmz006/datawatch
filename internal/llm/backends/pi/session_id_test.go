@@ -34,7 +34,7 @@ func TestPiSessionIDRejectedNamesBecomeValid(t *testing.T) {
 		"-leading",              // leading dash
 		"trailing-",             // trailing dash
 		"_.",                    // no alphanumeric at all
-		"café ☕ naïve",           // non-ASCII
+		"café ☕ naïve",          // non-ASCII
 		"tab\there",             // control character
 		"dash and dot .end",
 	}
