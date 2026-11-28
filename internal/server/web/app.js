@@ -40196,7 +40196,7 @@ function usageCalcRerender() {
   if (ctl) ctl.paint();
 }
 
-// Usage back-off card on the usage page: the live holds from GET /api/usage/backoff
+// Usage back-off card on the usage page: the live holds from GET /api/usage-backoff
 // (each with its held and open models) and a set/clear control. The optional
 // models field limits a set or clear to those models of the backend; empty holds
 // or clears the whole backend. Only the status block repaints on refresh, so
@@ -40315,7 +40315,7 @@ function _usageBackoffFormValues() {
 }
 
 window.usageBackoffRefresh = function () {
-  return Promise.resolve(apiFetch('/api/usage/backoff')).then(body => {
+  return Promise.resolve(apiFetch('/api/usage-backoff')).then(body => {
     window._usageBackoff.status = body; window._usageBackoff.error = '';
     _usageBackoffPaint(true);
   }).catch(err => {
@@ -40327,7 +40327,7 @@ window.usageBackoffRefresh = function () {
 window.usageBackoffSet = function () {
   const built = window.usageBackoffBuildSetBody(_usageBackoffFormValues());
   if (built.error) { window._usageBackoff.error = built.error; window._usageBackoff.message = ''; _usageBackoffPaint(); return Promise.resolve(); }
-  return Promise.resolve(apiFetch('/api/usage/backoff', { method: 'POST', body: JSON.stringify(built.body) })).then(body => {
+  return Promise.resolve(apiFetch('/api/usage-backoff', { method: 'POST', body: JSON.stringify(built.body) })).then(body => {
     window._usageBackoff.status = body || window._usageBackoff.status;
     window._usageBackoff.error = ''; window._usageBackoff.message = t('usage_backoff_saved') || 'Back-off set';
     _usageBackoffPaint();
@@ -40348,7 +40348,7 @@ window.usageBackoffClear = function () {
     }
     body.models = models;
   }
-  return Promise.resolve(apiFetch('/api/usage/backoff', { method: 'DELETE', body: JSON.stringify(body) })).then(() => {
+  return Promise.resolve(apiFetch('/api/usage-backoff', { method: 'DELETE', body: JSON.stringify(body) })).then(() => {
     window._usageBackoff.error = ''; window._usageBackoff.message = t('usage_backoff_cleared') || 'Back-off cleared';
     return window.usageBackoffRefresh();
   }).catch(err => {

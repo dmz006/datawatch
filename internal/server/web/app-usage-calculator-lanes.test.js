@@ -18,7 +18,7 @@ function loadApp() {
   const sandbox = buildSandbox();
   sandbox.fetchCalls = [];
   sandbox.fetch = (url, init) => {
-    if (!String(url).includes('/burn-guard') && !String(url).includes('/usage/backoff')) sandbox.fetchCalls.push({ url, init: init || {} }); // the burn guard and back-off cards have their own fetches
+    if (!String(url).includes('/burn-guard') && !String(url).includes('/usage-backoff')) sandbox.fetchCalls.push({ url, init: init || {} }); // the burn guard and back-off cards have their own fetches
     return Promise.resolve({ ok: false, status: 500, text() { return Promise.resolve('no reply'); } });
   };
   vm.createContext(sandbox);
