@@ -49,6 +49,7 @@ func TestPipeOutputTakesAnyLogPathLiterally(t *testing.T) {
 		"tmux-variable": "c#{session_name}#S.log",
 		"percent":       "d-100%Y-%%.log",
 		"shell-chars":   "e$(touch ran-dollar)`touch ran-tick`.log",
+		"tmux-style":    "f#[x]##[y].log",
 	}
 	tm := &TmuxManager{}
 	for _, how := range []string{"pipe", "repipe"} {

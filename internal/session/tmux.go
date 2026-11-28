@@ -485,7 +485,9 @@ func (t *TmuxManager) SendKeysLiteral(session, data string) error {
 // tmux expands formats and time sequences in the command before the shell
 // reads it. Any character in the path is taken literally.
 func pipePaneCommand(logFile string) string {
-	quoted := shellSingleQuote(logFile)
+	// tmux leaves '#' runs before '[' unexpanded, so doubling alone would not
+	// round-trip there: split '#[' into two quoted pieces first.
+	quoted := strings.ReplaceAll(shellSingleQuote(logFile), "#[", "#''[")
 	quoted = strings.ReplaceAll(quoted, "#", "##")
 	quoted = strings.ReplaceAll(quoted, "%", "%%")
 	return "cat >> " + quoted
