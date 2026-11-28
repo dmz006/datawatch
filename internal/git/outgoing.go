@@ -658,10 +658,12 @@ func commitParents(raw string) []string {
 	var parents []string
 	for _, line := range lines[1:] {
 		p, ok := strings.CutPrefix(line, "parent ")
-		if !ok || !IsObjectID(strings.TrimSpace(p)) {
+		// git reads hex digits in either case.
+		p = strings.ToLower(strings.TrimSpace(p))
+		if !ok || !IsObjectID(p) {
 			break
 		}
-		parents = append(parents, strings.TrimSpace(p))
+		parents = append(parents, p)
 	}
 	return parents
 }
