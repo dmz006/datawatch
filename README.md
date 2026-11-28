@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.187.47 (2026-11-27).** Version reads, push remote names and values read back before git runs are now checked more strictly (see the changelog for what is not limited). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.187.48 (2026-11-27).** The Dashboard and Automata pages now stay visible when automatic Automata work is turned off, work finished by hand shows as done, and tag filters accept tag names. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
