@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## v9.187.47 — Safer git reads and push settings
 
 ### Fixed
-- When datawatch reads a version of a project folder for a request or a "done when" item, git no longer fetches anything for that read, whatever the folder's own settings say.
+- When datawatch reads a version of a project folder for a request or a "done when" item, git no longer fetches anything for that read, whatever the folder's own settings say. In a partial clone, a read that needs content the clone has not downloaded now fails instead of fetching it.
 - A git push remote name that starts with "-" is now refused before git runs.
 - A request time setting larger than the program can hold is now refused. This could only affect 32-bit builds, which are not released.
 - The clean copy a "done when" command check would run in is now made without the project folder's own git settings, hooks and local attributes. The running daemon does not run command checks, so this changes nothing you can see today. The copy now always holds the whole recorded version, also when the named folder is below the project's top folder. Line-ending and other file conversions set only in that folder's own settings or local attributes are no longer applied to the copy; the account's and the system's git settings still apply.
@@ -19,7 +19,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The accepted-risk register and the certificate-check table now record the reviewed scanner dismissals and the certificate check of the schedule commands.
 
 ### Known
-- 10.0 does not limit which callers may name a request's project folder or change git push settings, and the schedule commands do not verify the server's certificate. These are planned with the 11.0 authentication and authorization work.
+- 10.0 does not limit which callers may name a request's project folder, start a merge run or merge shadow, or change git push settings, and the schedule commands do not verify the server's certificate. These are planned with the 11.0 authentication and authorization work.
 
 ## v9.187.46 — Requests between sessions, with reminders
 
